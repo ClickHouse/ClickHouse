@@ -201,6 +201,12 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (table_expression_data.subcolumn_names.contains(column_name))
             continue;
 
+        /// Skip a generated internal name of a disambiguated duplicate (e.g. `n.x_1`): it is not
+        /// user-addressable, so the synthesised `nested(...)` tuple must not expose its `_1` suffix
+        /// as a field. The first (display-named) occurrence still contributes its field.
+        if (table_expression_data.isHiddenColumnName(column_name))
+            continue;
+
         Identifier column_identifier(column_name);
         IdentifierView suffix(column_identifier);
         size_t prefix_size = identifier.getPartsSize();

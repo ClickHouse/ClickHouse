@@ -142,3 +142,20 @@ SELECT COLUMNS(`7`) FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNIO
 SELECT COLUMNS(`7_1`) FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT COLUMNS(`7`) FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
 SELECT COLUMNS(`7_1`) FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- The unflatten-nested prefix path (`SELECT n` over flattened `n.x` columns) builds a synthetic
+-- `nested(...)` tuple by iterating the table-expression columns directly. A generated internal name
+-- of a disambiguated duplicate (e.g. `n.x_1`) must be excluded so it does not leak its `_1` suffix as
+-- a tuple field; the first display-named occurrence still contributes its field. The prefix resolves
+-- to the first occurrence value, exactly like the direct reference of the display name `n.x`.
+SELECT n FROM (SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`));
+SELECT toTypeName(n) FROM (SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`));
+SELECT `n.x_1` FROM (SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`)); -- { serverError UNKNOWN_IDENTIFIER }
+-- A distinct nested field alongside the duplicate is still exposed (only the hidden duplicate is dropped).
+SELECT n FROM (SELECT [1] AS `n.x`, [9] AS `n.y`, * FROM (SELECT [2] AS `n.x`));
+SELECT toTypeName(n) FROM (SELECT [1] AS `n.x`, [9] AS `n.y`, * FROM (SELECT [2] AS `n.x`));
+-- A non-duplicate flattened nested column still resolves through the prefix path unchanged.
+SELECT n FROM (SELECT [1] AS `n.x`, [2] AS `n.y`);
+-- Same hidden-name exclusion on the union and materialized-CTE nested-prefix surfaces.
+SELECT n FROM ((SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`)) UNION ALL (SELECT [3] AS `n.x`, * FROM (SELECT [4] AS `n.x`))) ORDER BY 1;
+SELECT n FROM (WITH t AS MATERIALIZED (SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;

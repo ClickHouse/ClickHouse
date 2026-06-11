@@ -63,3 +63,11 @@ x	UInt8
 7
 9
 7
+[(1)]
+Array(Tuple(\n    x UInt8))
+[(1,9)]
+Array(Tuple(\n    x UInt8,\n    y UInt8))
+[(1,2)]
+[(1)]
+[(3)]
+[(1)]
