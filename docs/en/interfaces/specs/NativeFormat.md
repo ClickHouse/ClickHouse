@@ -1241,7 +1241,7 @@ The state prefix (version + type list) is read at the start of every block with 
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
 :::
 
-The runtime type list is written in **type-name order** (sorted by name), the same canonicalization `Variant` uses, so the wire order does not follow insertion order. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
+The runtime type list normally follows the `Variant` canonicalization — the regular variant slots are written in `DataTypeVariant` (type-name) order, so the wire order does not follow insertion order. It is **not always** globally sorted, however: types that overflowed into the shared variant (for example under `Dynamic(max_types=N)`) are appended after the regular slots in first-seen order, so the tail of the list can break type-name order. A decoder must therefore treat the transmitted type list as authoritative for discriminator assignment and must not re-sort it itself. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
