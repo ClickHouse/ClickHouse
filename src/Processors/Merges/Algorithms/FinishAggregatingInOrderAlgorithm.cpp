@@ -124,8 +124,11 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
     addToAggregation();
 
-    /// Each iteration of merge() processes one group boundary.
-    ++groups_produced;
+    /// Each merge() call finalizes every group with key <= X, where X is the smallest last-row
+    /// value across inputs. Since X never reappears in any stream, all these groups are complete,
+    /// and there is always at least one of them. So this counter is a lower bound on the number of
+    /// complete groups emitted, which is what the limit check below relies on.
+    ++finalized_group_batches;
 
     /// At least one chunk should be fully aggregated.
     chassert(!inputs_to_update.empty());
@@ -134,7 +137,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
     /// Do not merge blocks, if there are too few rows or bytes.
     const bool need_flush = accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes;
-    const bool limit_reached = limit_hint != 0 && groups_produced >= limit_hint;
+    const bool limit_reached = limit_hint != 0 && finalized_group_batches >= limit_hint;
 
     if (need_flush || limit_reached)
         status.chunk = prepareToMerge();

@@ -99,7 +99,7 @@ private:
     size_t total_merged_bytes = 0;
 
     size_t limit_hint = 0;
-    size_t groups_produced = 0;
+    size_t finalized_group_batches = 0;
 };
 
 }
