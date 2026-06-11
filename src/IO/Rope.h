@@ -90,13 +90,11 @@ struct RopeNode
 /// front_offset`. `peek()` returns the unconsumed prefix of the front
 /// node (memory stays valid until the next `advance` / `tryRewind` call).
 ///
-/// Overlap contract: `append` tolerates overlapping / duplicate nodes (the merged
-/// `intervals` still reports unique coverage) — this is for transient assembly scratch
-/// ropes. But the sequential consumers `peek` / `advance` / `copyTo` walk the raw
-/// physical `nodes`, so they require a NON-overlapping rope; streaming an overlapping
-/// rope would re-serve the overlapped bytes. A producer that hands a rope to those
-/// consumers must make `nodes` disjoint — the `ReaderExecutor` does this by `extract`-ing
-/// the disjoint gaps / cache-hits it needs and `slice`-ing to the served window.
+/// Overlap: `append` tolerates overlapping / duplicate nodes — the merged `intervals`
+/// reports unique coverage, and the streaming consumers (`peek` / `advance`) work from
+/// the absolute cursor position, dropping nodes that fall entirely behind it, so they
+/// serve the coverage union exactly once regardless of overlap. `copyTo` (random flatten)
+/// still assumes a non-overlapping rope and asserts it.
 class Rope
 {
 public:

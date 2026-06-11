@@ -728,3 +728,48 @@ TEST(Rope, AppendZeroSizeNodeIsIgnored)
     EXPECT_FALSE(rope.atEnd());
     EXPECT_EQ(rope.peek().size, 8u);
 }
+
+TEST(Rope, DrainSkipsNodeEntirelyBehindCursor)
+{
+    /// Streaming an overlapping rope serves the coverage union exactly once: a node that
+    /// falls entirely behind the cursor after an advance is dropped, not re-served.
+    auto a = std::make_shared<OwnedRopeBuffer>(100);
+    auto b = std::make_shared<OwnedRopeBuffer>(10);
+    std::memset(a->data(), 'A', 100);
+    std::memset(b->data(), 'B', 10);
+    Rope rope;
+    rope.append(RopeNode{a, 0, 100, 0});
+    rope.append(RopeNode{b, 0, 10, 50});  /// [50, 60) is entirely inside [0, 100)
+
+    std::string out;
+    while (!rope.atEnd())
+    {
+        auto s = rope.peek();
+        out.append(s.data, s.size);
+        rope.advance(s.size);
+    }
+    EXPECT_EQ(out, std::string(100, 'A'));  /// 100 bytes, not 110; the redundant node skipped
+}
+
+TEST(Rope, DrainServesOnlyNovelTailOfOverlappingNode)
+{
+    /// Partial overlap [0,100) then [50,150): drain serves [0,100) from the first node and
+    /// only the novel [100,150) tail of the second -- the overlapped [50,100) is not re-served.
+    auto a = std::make_shared<OwnedRopeBuffer>(100);
+    auto b = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(a->data(), 'A', 100);
+    std::memset(b->data(), 'B', 100);
+    Rope rope;
+    rope.append(RopeNode{a, 0, 100, 0});
+    rope.append(RopeNode{b, 0, 100, 50});  /// [50, 150)
+
+    std::string out;
+    while (!rope.atEnd())
+    {
+        auto s = rope.peek();
+        out.append(s.data, s.size);
+        rope.advance(s.size);
+    }
+    EXPECT_EQ(out.size(), 150u);
+    EXPECT_EQ(out, std::string(100, 'A') + std::string(50, 'B'));
+}

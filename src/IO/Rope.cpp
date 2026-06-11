@@ -88,26 +88,35 @@ void Rope::extendIntervalsFront(size_t bytes)
 
 void Rope::advance(size_t bytes)
 {
-    while (bytes > 0 && !nodes.empty())
+    if (nodes.empty())
+        return;
+
+    /// Move the cursor by `bytes` (clamped to EOF) and drop everything now behind it.
+    /// Working from an absolute logical position -- rather than popping the front node by
+    /// its physical size -- is what makes consumption correct for overlapping nodes: a
+    /// node that sits entirely behind the new position is released even if it overlaps a
+    /// node still ahead, so its bytes are never re-served.
+    const size_t cur = nodes.front().logical_offset + front_offset;
+    const size_t new_position = std::min(cur + bytes, range().end());
+
+    /// Drop coverage before the new position. Cascades across intervals (a forward
+    /// `tryRewind` can jump over a gap straight to a later node).
+    while (!intervals.empty() && intervals.front().end() <= new_position)
+        intervals.erase(intervals.begin());
+    if (!intervals.empty() && intervals.front().offset < new_position)
     {
-        const size_t available = nodes.front().size - front_offset;
-        if (bytes >= available)
-        {
-            /// Consume the rest of the front node and release it.
-            shrinkIntervalsFront(available);
-            nodes.pop_front();
-            front_offset = 0;
-            bytes -= available;
-        }
-        else
-        {
-            /// Partial consumption inside the front node.
-            shrinkIntervalsFront(bytes);
-            front_offset += bytes;
-            bytes = 0;
-        }
+        intervals.front().size -= new_position - intervals.front().offset;
+        intervals.front().offset = new_position;
     }
-    /// If `bytes > 0` here the caller advanced past EOF — silently clamp.
+
+    while (!nodes.empty() && nodes.front().logical_offset + nodes.front().size <= new_position)
+        nodes.pop_front();
+
+    /// Offset into the new front node: with overlap it may start before `new_position`;
+    /// for a contiguous cover it starts exactly there (front_offset 0).
+    front_offset = (!nodes.empty() && new_position > nodes.front().logical_offset)
+        ? new_position - nodes.front().logical_offset
+        : 0;
 }
 
 bool Rope::tryRewind(size_t new_position)
@@ -141,11 +150,10 @@ bool Rope::tryRewind(size_t new_position)
         return true;
     }
 
-    /// new_position is past the front node. Walk later nodes by physical size
-    /// (advance() pops whole nodes, so a logical gap contributes no bytes).
-    /// Reject positions that land in a gap - no held node covers them, and a
-    /// successful tryRewind must leave the cursor exactly on new_position.
-    size_t phys = front.size - front_offset;
+    /// new_position is past the front node. Walk later nodes to reject positions that land
+    /// in a gap (no held node covers them — `tryRewind` must land exactly on new_position),
+    /// then let `advance` move the cursor there by logical distance.
+    const size_t cur = front.logical_offset + front_offset;
     for (size_t i = 1; i < nodes.size(); ++i)
     {
         const RopeNode & node = nodes[i];
@@ -153,14 +161,13 @@ bool Rope::tryRewind(size_t new_position)
             return false;
         if (new_position < node.logical_offset + node.size)
         {
-            advance(phys + (new_position - node.logical_offset));
+            advance(new_position - cur);
             return true;
         }
-        phys += node.size;
     }
 
     /// new_position == reachable_hi (exclusive end of the last node): EOF.
-    advance(phys);
+    advance(new_position - cur);
     return true;
 }
 
