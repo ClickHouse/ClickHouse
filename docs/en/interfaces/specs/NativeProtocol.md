@@ -984,7 +984,9 @@ These settings are sometimes mistaken for protocol-level settings, but they cont
 - `max_block_size`, `preferred_block_size_bytes` — internal block sizing during query processing; wire blocks are independent of these.
 - `compile_expressions` — JIT compilation; CPU only.
 - `async_insert_max_data_size` — server-side queue buffer.
-- All settings prefixed `input_format_*` and `output_format_*` — these apply to non-native formats over HTTP, not the native protocol.
+- All `input_format_*` and `output_format_*` settings **except** the `input_format_native_*` / `output_format_native_*` family — the non-`native` ones select or tune other formats (for example over HTTP) and do not change the native protocol's `Data` blocks.
+
+The `*_native_*` settings are the exception: they change the bytes inside native TCP `Data` blocks, so a protocol implementation must account for them. `output_format_native_encode_types_in_binary_format` switches the column `type` field from a textual string to a binary type encoding, `output_format_native_write_json_as_string` emits `JSON` columns as a `String`, and `output_format_native_use_flattened_dynamic_and_json_serialization` selects the FLATTENED `Dynamic`/`JSON` layout. Because these affect the block body rather than the packet envelope, they are specified in the [Native Format](/interfaces/specs/NativeFormat) spec — see [column wire layout](/interfaces/specs/NativeFormat#column-wire-layout) and [versioned types](/interfaces/specs/NativeFormat#versioned-types).
 
 ## Glossary {#glossary}
 
