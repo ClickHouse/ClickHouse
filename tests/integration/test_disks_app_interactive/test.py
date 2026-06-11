@@ -82,7 +82,9 @@ class DisksClient(object):
             self.proc.stderr.fileno(): self.proc.stderr,
         }
 
-    def execute_query(self, query: str, timeout: float = 5.0) -> str:
+    # Generous deadline: under sanitizer builds (e.g. MSAN) and CI host
+    # contention the disks subprocess can be slow to produce its first output.
+    def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
 
         self.proc.stdin.write(query.encode() + b"\n")
