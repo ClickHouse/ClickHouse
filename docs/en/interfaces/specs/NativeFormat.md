@@ -1069,7 +1069,7 @@ Type string: `LowCardinality(InnerType)`. Examples: `LowCardinality(String)`, `L
   [8 bytes:  UInt64 LE metadata]                    ← key type code (low byte) + flag bits
   [8 bytes:  UInt64 LE dict_size]                   ← number of dict entries (incl. placeholder slot)
   [N bytes:  dict values]                           ← inner type's encoding for dict_size values
-  [8 bytes:  UInt64 LE keys_count]                  ← always equal to this block's row count
+  [8 bytes:  UInt64 LE keys_count]                  ← number of values at this recursive level (see below)
   [K bytes:  keys]                                  ← (1 << key_type_code) bytes per key
 ```
 
@@ -1090,7 +1090,9 @@ The dict values are `dict_size` values encoded using the inner type T. The dicti
 
 For `LowCardinality(Nullable(T))` the dict is still encoded as plain T (no null-map stream), but **two** slots are reserved: `dict[0]` is the NULL marker and `dict[1]` is the inner type's default value (e.g. `""` for `String`); real distinct values start at `dict[2]`. A NULL row's key points at `dict[0]`, and that slot is written on the wire as the inner type's default bytes.
 
-The keys are indices into the dict, with `keys.len()` equal to the block's row count; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and logical row `N` is reconstructed as `dict[keys[N]]`.
+The keys are indices into the dict; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and value `N` is reconstructed as `dict[keys[N]]`.
+
+`keys_count` is the number of `LowCardinality` values at the **current recursive level**, not necessarily the block's row count. For a top-level `LowCardinality` column the two coincide. But when the `LowCardinality` sits under a composite, the count is the flattened value count that the composite passes down: for `Array(LowCardinality(String))` with three rows holding five elements in total, `keys_count` is `5`, not `3`; for `Map(K, LowCardinality(V))` it is the total pair count, and so on. A decoder must take `keys_count` from this field rather than assuming the block row count. When that flattened count is zero — for example a block whose arrays are all empty — the `LowCardinality` data phase writes **nothing at all**: only the state prefix (emitted in the [composite prefix phase](#composite-types)) is present, with no metadata, dictionary, or `keys_count` following.
 
 The state prefix is read at the start of every block whose row count is greater than zero — header blocks (rows = 0) and empty blocks emit nothing. Within a block, `keys_count` equals the row count, `dict_size` equals the number of values in the dict stream, and each key fits in `1 << key_type_code` bytes.
 
