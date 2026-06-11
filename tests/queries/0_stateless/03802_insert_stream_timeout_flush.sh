@@ -11,20 +11,18 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_insert_timeout"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_timeout (id UInt64, data String) ENGINE MergeTree ORDER BY id"
 
-# Feed the rows through a FIFO instead of piping a subshell straight into the client.
-# A subshell pipe (`{ ...; sleep; ... } | client`) is racy under CI load: the producer can
-# write every row and exit before a slow client starts draining stdin, so the client never
-# observes an idle gap, the block-wait timeout never fires, and all rows land in one part.
-# Writing to a FIFO the client already holds open keeps each per-interval idle gap real on a
-# live pipe, so the timeout-driven partial flush is deterministic.
+# Feed the rows through a FIFO the client already holds open, and gate the inter-batch idle gap
+# on a real client-readiness handshake instead of a blind sleep that races client startup.
 fifo="${CLICKHOUSE_TMP}/03802_insert_stream_timeout.fifo"
 rm -f "$fifo"
 mkfifo "$fifo"
 
 # Tag the INSERT with an explicit query_id so the part count below can be scoped to exactly
-# this INSERT. With async_insert disabled (no-async-insert tag) the parts are written in the
-# INSERT's own context, so part_log.query_id equals this id.
+# this INSERT, and so the readiness handshake can find it in system.processes. With async_insert
+# disabled (no-async-insert tag) the parts are written in the INSERT's own context, so
+# part_log.query_id equals this id.
 insert_query_id="03802_${CLICKHOUSE_DATABASE}_$$"
+rows_per_batch=41
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow" \
     --query_id="$insert_query_id" \
@@ -36,23 +34,39 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow
     < "$fifo" &
 client_pid=$!
 
-# Open the write end. This blocks until the client opens the read end, synchronizing start.
-# Let bash pick the descriptor (stream_fd) instead of hardcoding fd 3: shell_config.sh routes
-# bash xtrace to fd 3 under CI (BASH_XTRACEFD), so writing the rows to fd 3 would interleave
-# trace output into the INSERT stream and break parsing.
+# Open the write end. Let bash pick the descriptor (stream_fd) instead of hardcoding fd 3:
+# shell_config.sh routes bash xtrace to fd 3 under CI (BASH_XTRACEFD), so writing rows to fd 3
+# would interleave trace output into the INSERT stream and break parsing.
 exec {stream_fd}>"$fifo"
 
-for iteration in 1 2; do
-    for i in $(seq 1 40); do
-        echo "{\"id\":$(( (iteration*100) + i )),\"data\":\"batch_${iteration}\"}" >&${stream_fd}
+emit_batch() {
+    local base=$1
+    for i in $(seq 1 "$rows_per_batch"); do
+        echo "{\"id\":$(( base + i )),\"data\":\"batch\"}" >&${stream_fd}
     done
+}
 
-    sleep 6
-
-    echo "{\"id\":$(( (iteration*100) + 99 )),\"data\":\"trigger_${iteration}\"}" >&${stream_fd}
+# Batch 1, then wait for the INSERT to appear in system.processes. Opening the FIFO write end
+# only proves the child shell opened the read end; the client still has to connect and reach its
+# stdin poll loop afterwards. The query registers once the client has sent its first block, which
+# proves it is now draining stdin, so a later idle gap really reaches its poll() instead of being
+# pre-buffered ahead of a slow client. Wall-clock deadline so slow CI builds still catch it.
+emit_batch 100
+deadline=$(( $(date +%s) + 120 ))
+while (( $(date +%s) < deadline )); do
+    started=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '$insert_query_id'")
+    if (( started >= 1 )); then
+        break
+    fi
+    sleep 0.2
 done
 
-# Close the write end so the client finishes the INSERT.
+# The client is confirmed reading, so this idle gap (> input_format_max_block_wait_ms) reaches
+# its poll() and fires the block-wait timeout, closing batch 1 into its own block.
+sleep 3
+emit_batch 200
+
+# Close the write end so the client flushes the final block and finishes the INSERT.
 exec {stream_fd}>&-
 wait "$client_pid"
 rm -f "$fifo"
