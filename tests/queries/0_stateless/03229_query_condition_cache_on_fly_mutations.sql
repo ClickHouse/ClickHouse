@@ -92,7 +92,10 @@ SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_off
 INSERT INTO t_qcc_patch SELECT number, number FROM numbers(100);
 
 SYSTEM STOP MERGES t_qcc_patch;
-ALTER TABLE t_qcc_patch UPDATE v = 0 WHERE id >= 50 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1;
+-- mutations_sync = 1: wait for the patch part to be committed before the read below, otherwise the
+-- ALTER (inheriting mutations_sync = 0 from cases 2-3) can return early and apply_patch_parts = 1
+-- would see no patch and never exercise the info->patch_parts guard.
+ALTER TABLE t_qcc_patch UPDATE v = 0 WHERE id >= 50 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1, mutations_sync = 1;
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
