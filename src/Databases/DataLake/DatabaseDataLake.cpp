@@ -570,21 +570,21 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// in CREATE query (e.g. in `args`).
     /// Vended credentials can be disabled in catalog itself,
     /// so we have a separate setting to know whether we should even try to fetch them.
+    /// Some catalogs manage their own AWS credential provider chain (e.g. Glue uses the
+    /// database `aws_*` settings to authenticate to the catalog API and to drive STS
+    /// assume-role / instance-profile / web-identity providers, refreshed via
+    /// `getCredentialsConfigurationCallback`). For such catalogs the `aws_*` settings are
+    /// not authoritative static table-storage credentials: consuming them here would build
+    /// the S3 client from the raw key pair without the assumed-role/session-token identity
+    /// and would also suppress the provider-chain refresh callback below. So we only fall
+    /// back to static credentials for catalogs whose refresh callback vends storage
+    /// credentials (Unity/REST), which is exactly the case this fallback targets.
+    const bool catalog_manages_provider_chain = catalog->getCatalogType() == DatabaseDataLakeCatalogType::GLUE;
+
     bool static_credentials_applied = false;
     if (args.size() == 1)
     {
         std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
-
-        /// Some catalogs manage their own AWS credential provider chain (e.g. Glue uses the
-        /// database `aws_*` settings to authenticate to the catalog API and to drive STS
-        /// assume-role / instance-profile / web-identity providers, refreshed via
-        /// `getCredentialsConfigurationCallback`). For such catalogs the `aws_*` settings are
-        /// not authoritative static table-storage credentials: consuming them here would build
-        /// the S3 client from the raw key pair without the assumed-role/session-token identity
-        /// and would also suppress the provider-chain refresh callback below. So we only fall
-        /// back to static credentials for catalogs whose refresh callback vends storage
-        /// credentials (Unity/REST), which is exactly the case this fallback targets.
-        const bool catalog_manages_provider_chain = catalog->getCatalogType() == DatabaseDataLakeCatalogType::GLUE;
 
         std::shared_ptr<DataLake::IStorageCredentials> static_credentials;
         if (!catalog_manages_provider_chain)
@@ -696,12 +696,18 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// When we applied static credentials from database settings, they are authoritative:
     /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)
-    /// silently re-fetch credentials and override them. Provider-chain refresh callbacks
-    /// (e.g. Glue STS/role) remain active when no static credentials were applied, so they
-    /// keep refreshing temporary credentials regardless of the `vended_credentials` setting.
+    /// silently re-fetch credentials and override them. The same holds when the user disabled
+    /// `vended_credentials` and no static credentials were applied (e.g. relying on default or
+    /// environment S3 auth): the object storage layer invokes the refresh callback after an
+    /// auth error, so a catalog-vended callback would silently fall back to vended credentials
+    /// and defeat the setting. Provider-chain refresh callbacks (e.g. Glue STS/role) are not
+    /// credential vending, so they remain active regardless of the `vended_credentials` setting
+    /// to keep refreshing temporary credentials on long reads.
     auto get_credentials_refresh_callback = [&](const StorageID & storage_id) -> DataLake::ICatalog::CredentialsRefreshCallback
     {
         if (static_credentials_applied)
+            return std::nullopt;
+        if (!with_vended_credentials && !catalog_manages_provider_chain)
             return std::nullopt;
         return catalog->getCredentialsConfigurationCallback(storage_id);
     };
