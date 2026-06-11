@@ -15,6 +15,12 @@ SELECT * FROM (SELECT 1, * FROM (SELECT 2 AS x, 1) AS a RIGHT JOIN (SELECT 3 AS 
 -- FULL JOIN: the non-matched row must default the constant left column too.
 SELECT * FROM (SELECT 1, * FROM (SELECT 2 AS x, 1) AS a FULL JOIN (SELECT 3 AS y) AS b ON y = x) ORDER BY 4;
 
+-- LEFT JOIN (https://github.com/ClickHouse/ClickHouse/issues/106923): the bug is join-agnostic.
+-- Here the non-preserved (right) side carries the duplicate-named constant: the non-matched row
+-- must default the right-side constant column even when wrapped. The two queries must agree.
+SELECT 1, * FROM (SELECT 2 AS x) AS a LEFT JOIN (SELECT 1, 3 AS y) AS b ON y = x;
+SELECT * FROM (SELECT 1, * FROM (SELECT 2 AS x) AS a LEFT JOIN (SELECT 1, 3 AS y) AS b ON y = x);
+
 -- No join needed: outer constant column collides by name with a starred subquery column.
 SELECT * FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`));
 
