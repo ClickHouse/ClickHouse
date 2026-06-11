@@ -53,8 +53,7 @@ bool PipelineReadBuffer::nextImpl()
         profile_callback(info);
     }
 
-    /// The span points into a rope buffer kept alive by `rope`; we only expose it,
-    /// never write through it, so dropping const is safe.
+    /// The span points into a buffer `rope` owns; it stays valid until the next advance.
     internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
