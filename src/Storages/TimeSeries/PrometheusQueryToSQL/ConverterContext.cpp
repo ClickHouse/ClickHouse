@@ -17,6 +17,7 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
     , scalar_data_type(settings_.scalar_data_type)
     , node_range_getter(promql_tree_, settings_)
     , result_type(getResultType(*promql_tree_, settings_))
+    , use_stats_bucket(settings_.use_stats_bucket)
 {
 }
 
