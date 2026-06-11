@@ -104,8 +104,9 @@ def threaded_run_test(sessions):
         if not any(thread.is_alive() for thread in thread_list):
             break
 
-    for thread in thread_list:
-        thread.join()
+    # Bounded: never fall through to an unbounded join (would hang to the pytest timeout).
+    if any(thread.is_alive() for thread in thread_list):
+        pytest.fail("Timed out waiting for session threads to finish after KILL QUERY")
 
 
 @pytest.fixture(scope="module")
