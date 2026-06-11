@@ -309,7 +309,7 @@ Through `FORMAT Native` (revision `0`), the same result block has no `BlockInfo`
 
 ## Data types {#data-types}
 
-This section documents every type the Native format can encode within a column's `data`. The four families, in increasing decoder complexity:
+This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N)` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
 
 | Family                           | Section | Streams per column | Cross-block state |
 |----------------------------------|---------|--------------------|-------------------|
@@ -973,9 +973,9 @@ So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering a
 `SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
 
 :::note
-Two related types are **not** aliases and carry their own specialized encodings, outside the scope of this page:
+Two related types are **not** aliases. They are valid `Native` column types — a client can receive an `AggregateFunction` column from a `-State` combinator or distributed aggregation, for instance — but each carries its own specialized payload that is outside the scope of this page:
 
-- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function.
+- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version.
 - `QBit(T, N)` stores a vector with its bit planes transposed for vector-search workloads.
 :::
 
