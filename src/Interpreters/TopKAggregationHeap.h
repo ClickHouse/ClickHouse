@@ -139,7 +139,7 @@ struct TopKAggregationHeap
     /// Dispatches to single-column or composite insertion based on `is_composite`.
     void push(const ColumnRawPtrs & source_columns, size_t source_row)
     {
-        size_t new_idx;
+        size_t new_idx = 0;
         if (is_composite)
         {
             auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
