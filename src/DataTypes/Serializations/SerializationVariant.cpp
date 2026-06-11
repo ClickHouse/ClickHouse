@@ -860,11 +860,6 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
     if (granule_format != CompactDiscriminatorsGranuleFormat::COMPACT && granule_format != CompactDiscriminatorsGranuleFormat::PLAIN)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected format of compact discriminators granule: {}", UInt32(granule_format));
 
-    /// Instrumentation: a stream/state desync makes us read a granule header at a non-boundary,
-    /// yielding a garbage granule_size. A real granule never exceeds the index granularity.
-    if (granule_size > 100'000'000)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "DESYNC: implausible granule_size {}, continuous_reading {}", granule_size, continuous_reading);
-
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
     {
