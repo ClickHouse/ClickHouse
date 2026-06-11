@@ -141,6 +141,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
 }
@@ -1663,7 +1664,14 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
 std::shared_ptr<IArchiveReader>
 StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr object_info) const
 {
-    const auto size = object_info->getObjectMetadata()->size_bytes;
+    const auto object_metadata = object_info->getObjectMetadata();
+    if (!object_metadata->is_size_known)
+        throw Exception(
+            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+            "Cannot read archive {} because its size is unknown",
+            object_info->getPath());
+
+    const auto size = object_metadata->size_bytes;
     return DB::createArchiveReader(
         /* path_to_archive */
         object_info->getPath(),

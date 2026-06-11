@@ -58,6 +58,7 @@ DATA_PARTS = {
 
 SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
 SHARD_1_ARCHIVE = make_zip_file([("value.tsv", "202\n"), ("padding.txt", "x" * 1024)])
+UNKNOWN_SIZE_ARCHIVE = make_zip_file([("value.tsv", "47\n")])
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -123,6 +124,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("HEAD", path)
+        if path == "/data/unknown_size_archive/archive.zip":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.end_headers()
+            return
+
         archive_data = self._archive_data_for_request(parsed)
         if archive_data is not None:
             self.send_response(200)
@@ -210,6 +217,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/cross_origin_redirect/",
             "/data/cross_origin_target/",
             "/data/archive_identity/",
+            "/data/unknown_size_archive/",
         ):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -333,6 +341,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(body)
             return
         if path == "/data/archive_identity/":
+            body = "<a href=\"archive.zip\">archive.zip</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/unknown_size_archive/":
             body = "<a href=\"archive.zip\">archive.zip</a>\n"
             self._send_html(body)
             return
@@ -514,6 +526,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(archive_data)))
             self.end_headers()
             self.wfile.write(archive_data)
+            return
+        if path == "/data/unknown_size_archive/archive.zip":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.end_headers()
+            self.wfile.write(UNKNOWN_SIZE_ARCHIVE)
             return
 
         self.send_response(404)

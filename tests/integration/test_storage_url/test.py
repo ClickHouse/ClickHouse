@@ -527,6 +527,18 @@ def test_url_wildcard_archive_metadata_uses_shard_identity():
     assert result.strip() == "303"
 
 
+def test_url_wildcard_rejects_unknown_size_archive():
+    error = node1.query_and_get_error(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('"
+            "http://resolver:8087/data/unknown_size_archive/archive*.zip :: value.tsv', "
+            "'TSV', 'x UInt64')"
+        )
+    )
+    assert "Cannot read archive" in error
+    assert "size is unknown" in error
+
+
 def test_url_wildcard_ignores_failed_failover_option_after_success():
     result = node1.query(
         with_url_wildcard_setting(
