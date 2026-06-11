@@ -335,8 +335,11 @@ def main():
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
         ]
-        if platform.system() == "Darwin":
-            commands.append(write_darwin_no_jit_config)
+        # TEMPORARY: the macOS no-JIT override is disabled to smoke-test whether
+        # the SIGILL ("Illegal instruction") actually reappears with JIT enabled.
+        # Re-enable by uncommenting the two lines below. Not intended to be merged.
+        # if platform.system() == "Darwin":
+        #     commands.append(write_darwin_no_jit_config)
         results.append(
             Result.from_commands_run(
                 name="Install ClickHouse Config",

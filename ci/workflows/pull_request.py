@@ -42,7 +42,7 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 ][0]
 
 # NOTE: this PR workflow is temporarily trimmed down to a Darwin fast-test bed:
-# 10 'Fast test (arm_darwin)' jobs in parallel, plus the arm_darwin build that
+# 50 'Fast test (arm_darwin)' jobs in parallel, plus the arm_darwin build that
 # provides their binary, and nothing else. This is for stress-testing the macOS
 # fast-test lane (e.g. checking that disabling JIT reliably avoids the SIGILL),
 # NOT intended to be merged. Each duplicate gets a unique name so the job digest
@@ -55,7 +55,7 @@ DARWIN_BUILD = [
 
 DARWIN_FAST_TESTS_PARALLEL = [
     JobConfigs.darwin_fast_test_jobs[0].set_name(f"Fast test (arm_darwin) [{i}]")
-    for i in range(1, 11)
+    for i in range(1, 51)
 ]
 
 workflow = Workflow.Config(
