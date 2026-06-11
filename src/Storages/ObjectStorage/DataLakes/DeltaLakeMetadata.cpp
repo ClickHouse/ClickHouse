@@ -315,7 +315,7 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(add_object->getValue<String>("path"), path);
-                auto full_path = fs::path(table_path) / path;
+                auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -361,7 +361,7 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(remove_object->getValue<String>("path"), path);
-                result.erase(fs::path(table_path) / path);
+                result.erase(resolvePathInsideTable(table_path, path));
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -540,7 +540,7 @@ struct DeltaLakeMetadataImpl
             if (path.empty())
                 return;
 
-            auto full_path = fs::path(table_path) / path;
+            auto full_path = resolvePathInsideTable(table_path, path);
             if (file_partition_columns.contains(full_path))
                 return;
 
@@ -610,8 +610,9 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             /// Always register the file path immediately.
+            auto full_path = resolvePathInsideTable(table_path, path);
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
 

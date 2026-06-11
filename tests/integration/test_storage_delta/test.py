@@ -84,8 +84,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files/test_storage_delta",
         )
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
         .master("local")
     )
 
@@ -1552,6 +1552,74 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filesystem_cache_azure(started_cluster, use_delta_kernel):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/106090:
+    # AzureObjectStorage::getObjectMetadata used to return an empty etag, which
+    # silently disabled the object-storage filesystem cache for Azure-backed
+    # tables (logging "Cannot use filesystem cache, no etag specified"). Without
+    # the fix the second read below still hits Azure (AzureGetObject > 0) and
+    # nothing is written to the cache (CachedReadBufferCacheWriteBytes == 0).
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_filesystem_cache_azure")
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
+        TABLE_NAME,
+        node_name=instance.name,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    default_upload_directory(started_cluster, "azure", f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "azure", TABLE_NAME, started_cluster)
+
+    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
+        query_id=query_id,
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    count = int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    # The first read must populate the cache (this is 0 without the etag fix).
+    assert count > 0
+    assert 0 < int(
+        instance.query(
+            f"SELECT ProfileEvents['AzureGetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
+        query_id=query_id,
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # See the comment in test_filesystem_cache about parquet reader v3 reading
+    # small files twice, hence the "no more than 2x" check instead of equality.
+    assert count * 2 > int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    # The second read must be served entirely from the filesystem cache.
+    assert 0 == int(
+        instance.query(
+            f"SELECT ProfileEvents['AzureGetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
@@ -1643,14 +1711,23 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         zk = started_cluster.get_kazoo_client("zoo1")
         zk.set(replica_path + "/digest", "123456".encode())
 
-        assert "123456" in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        # Compare the `digest` value exactly instead of substring-matching the
+        # whole dump of all znodes: the recomputed digest is a 64-bit hash whose
+        # decimal representation can incidentally contain "123456" as a substring.
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            == "123456"
         )
 
         node2.restart_clickhouse()
 
-        assert "123456" not in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            != "123456"
         )
 
 

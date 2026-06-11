@@ -157,6 +157,12 @@ cp $SRC_PATH/config.d/storage_conf_backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
+# distributed_query.xml sets distributed_query.streaming_exchange_port, which the server rejects on
+# non-Linux builds; only install it where the streaming exchange is supported.
+if [ "$(uname -s)" = "Linux" ]; then
+    ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
+fi
+
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
@@ -167,6 +173,7 @@ function is_sanitizer_build()
 }
 if is_sanitizer_build; then
     ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/thread_pool_trim.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
