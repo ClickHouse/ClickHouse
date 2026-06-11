@@ -34,7 +34,11 @@ private:
         const std::string & source_url,
         const std::string & path) const;
 
-    bool tryListDirectory(const std::string & path, RelativePathsWithMetadata & result, std::optional<size_t> shard_index) const;
+    bool tryListDirectory(
+        const std::string & path,
+        RelativePathsWithMetadata & result,
+        std::optional<size_t> shard_index,
+        const std::optional<String> & path_for_glob_matching) const;
 
 public:
     explicit MetadataStorageFromIndexPages(const WebObjectStorage & object_storage_);
@@ -53,7 +57,10 @@ public:
     std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
-    RelativePathsWithMetadata listDirectoryWithMetadata(const std::string & path, std::optional<size_t> shard_index = std::nullopt) const;
+    RelativePathsWithMetadata listDirectoryWithMetadata(
+        const std::string & path,
+        std::optional<size_t> shard_index = std::nullopt,
+        const std::optional<String> & path_for_glob_matching = std::nullopt) const;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 

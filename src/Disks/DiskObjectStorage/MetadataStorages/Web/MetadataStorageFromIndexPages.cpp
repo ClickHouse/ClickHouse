@@ -271,7 +271,7 @@ bool MetadataStorageFromIndexPages::existsFile(const std::string & path) const
 bool MetadataStorageFromIndexPages::existsDirectory(const std::string & path) const
 {
     RelativePathsWithMetadata files;
-    return tryListDirectory(path, files, std::nullopt);
+    return tryListDirectory(path, files, std::nullopt, std::nullopt);
 }
 
 bool MetadataStorageFromIndexPages::existsFileOrDirectory(const std::string & path) const
@@ -303,10 +303,13 @@ std::vector<std::string> MetadataStorageFromIndexPages::listDirectory(const std:
     return result;
 }
 
-RelativePathsWithMetadata MetadataStorageFromIndexPages::listDirectoryWithMetadata(const std::string & path, std::optional<size_t> shard_index) const
+RelativePathsWithMetadata MetadataStorageFromIndexPages::listDirectoryWithMetadata(
+    const std::string & path,
+    std::optional<size_t> shard_index,
+    const std::optional<String> & path_for_glob_matching) const
 {
     RelativePathsWithMetadata result;
-    if (!tryListDirectory(path, result, shard_index))
+    if (!tryListDirectory(path, result, shard_index, path_for_glob_matching))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no path {}", path);
     return result;
 }
@@ -314,7 +317,7 @@ RelativePathsWithMetadata MetadataStorageFromIndexPages::listDirectoryWithMetada
 DirectoryIteratorPtr MetadataStorageFromIndexPages::iterateDirectory(const std::string & path) const
 {
     RelativePathsWithMetadata files;
-    if (!tryListDirectory(path, files, std::nullopt))
+    if (!tryListDirectory(path, files, std::nullopt, std::nullopt))
         return std::make_unique<StaticDirectoryIterator>(std::vector<std::filesystem::path>{});
 
     std::vector<std::filesystem::path> entries;
@@ -502,10 +505,11 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
 bool MetadataStorageFromIndexPages::tryListDirectory(
     const std::string & path,
     RelativePathsWithMetadata & result,
-    std::optional<size_t> requested_shard_index) const
+    std::optional<size_t> requested_shard_index,
+    const std::optional<String> & path_for_glob_matching) const
 {
     const auto normalized_path = ensureTrailingSlashInPath(stripLeadingSlash(path));
-    const auto path_prefix = getPathPrefixForMatching(normalized_path);
+    const auto path_prefix = getPathPrefixForMatching(path_for_glob_matching.value_or(normalized_path));
     const auto & url_shards = object_storage.getURLShards();
     if (requested_shard_index && *requested_shard_index >= url_shards.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *requested_shard_index);
@@ -548,9 +552,9 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
                         relative_path->relative_path, url_options[i].base_url + url_options[i].query_fragment);
                     if (relative_path->relative_path.starts_with(final_path_prefix))
                     {
-                        const auto path_for_glob_matching = path_prefix + relative_path->relative_path.substr(final_path_prefix.size());
-                        if (path_for_glob_matching != relative_path->relative_path)
-                            relative_path->path_for_glob_matching = path_for_glob_matching;
+                        const auto entry_path_for_glob_matching = path_prefix + relative_path->relative_path.substr(final_path_prefix.size());
+                        if (entry_path_for_glob_matching != relative_path->relative_path)
+                            relative_path->path_for_glob_matching = entry_path_for_glob_matching;
                     }
                     relative_path->derive_file_name_from_url_path = true;
                     result.emplace_back(std::move(relative_path));

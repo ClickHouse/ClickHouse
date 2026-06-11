@@ -51,6 +51,7 @@ DATA_PARTS = {
     "/data/unknown_size/subdir/part1.tsv": "31\n",
     "/data/redirect_target/part1.tsv": "19\n",
     "/data/index_redirect/part1.tsv": "41\n",
+    "/data/recursive_redirect_target/subdir/part1.tsv": "43\n",
     "/data/cross_origin_target/part1.tsv": "37\n",
     "/data/auth_failover/part1.tsv": "23\n",
 }
@@ -203,6 +204,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/redirect_target/",
             "/data/index_redirect/",
             "/data/index_redirect/index.html",
+            "/data/recursive_redirect/",
+            "/data/recursive_redirect_target/",
+            "/data/recursive_redirect_target/subdir/",
             "/data/cross_origin_redirect/",
             "/data/cross_origin_target/",
             "/data/archive_identity/",
@@ -289,6 +293,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Location", "/data/index_redirect/index.html")
             self.end_headers()
             return
+        if path == "/data/recursive_redirect/":
+            self.send_response(302)
+            self.send_header("Location", "/data/recursive_redirect_target/")
+            self.end_headers()
+            return
         if path == "/data/cross_origin_redirect/":
             host = self.headers.get("Host", "resolver:8087").split(":", 1)[0]
             self.send_response(302)
@@ -300,6 +309,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(body)
             return
         if path == "/data/index_redirect/index.html":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_redirect_target/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_redirect_target/subdir/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
             self._send_html(body)
             return

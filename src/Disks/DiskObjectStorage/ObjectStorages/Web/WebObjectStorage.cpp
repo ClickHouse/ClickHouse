@@ -170,7 +170,8 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         auto current = pending_directories.front();
         pending_directories.pop_front();
 
-        auto entries = metadata_storage.listDirectoryWithMetadata(current.relative_path, current.read_source_index);
+        auto entries = metadata_storage.listDirectoryWithMetadata(
+            current.relative_path, current.read_source_index, current.path_for_glob_matching);
         for (const auto & entry : entries)
         {
             const auto effective_relative_path = getEffectiveRelativePathForKey(*entry);
@@ -189,7 +190,7 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
                         "setting `url_wildcard_max_directories_to_read`",
                         max_directories_to_read_for_query);
                 }
-                pending_directories.emplace_back(entry->relative_path, entry->read_source_index);
+                pending_directories.emplace_back(*entry);
                 continue;
             }
 
