@@ -222,7 +222,7 @@ private:
     /// a prefetch worker does NOT come through here (it runs `fetchGapsFromSource`
     /// directly and the foreground backfills its bytes at consume). Returns one
     /// contiguous run from the window start (a hole would shift the caller's offset
-    /// interpretation). `geometry` is the residency snapshot (`*read_geometry`, or an
+    /// interpretation). `geometry` is the residency snapshot (`*read_plan.geometry()`, or an
     /// empty one at init); `eof_latch` is the size-unknown EOF latch (`this->reached_eof`).
     Rope readPhysicalWindow(ByteRange physical_window, ConnState & conn,
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
@@ -249,7 +249,7 @@ private:
     /// in `window` still uncovered after the plan's held buffers: a sibling reader /
     /// promotion may have populated a gap between plan-build and consume. Issues a fresh
     /// `planResidencyView` per still-uncovered piece, serves its hits fastest-tier-first
-    /// under the SAME `covered`, and moves each view into `read_plan.late_hit_views` so
+    /// under the SAME `covered`, and moves each view into `read_plan.deferred_lru_bumps` so
     /// its deferred LRU-bump lands after the held write buffers' writes (`[CF-lru]`). Its
     /// writers are ignored (we already have, or are about to fetch, the source bytes).
     /// Run BEFORE the source backfill.
@@ -412,7 +412,7 @@ private:
     /// (or about to be) on the live path, otherwise the constructor-supplied
     /// `window_size` clamped down by `level`. Caller still caps by remaining file
     /// bytes. `level` is the per-plan cached `MemoryPressureLevel` (from the
-    /// `read_geometry`/job snapshot) - NOT a fresh global query per call.
+    /// `read_plan.geometry()`/job snapshot) - NOT a fresh global query per call.
     size_t effectiveWindowSize(MemoryPressureLevel level) const;
 
     /// Effective per-block allocation size: the configured `block_size` at
@@ -507,9 +507,9 @@ private:
     /// object-piece: the file-level (physical-coordinate) ranges this tier holds
     /// resident, plus the cache-ALIGNED miss ranges this populatable tier lacks
     /// (`aligned_miss`, the gap-fetch + write targets). Holds NO cache buffer - those
-    /// live in the parallel foreground-private `ReadPlan::BufEntry` - so the geometry is
-    /// immutable and safe to publish as `shared_ptr<const ReadPlanGeometry>` and co-own
-    /// with a prefetch worker. `aligned_miss` is NOT clamped to the plan span /
+    /// live in the same plan's foreground-private `ReadPlan::bufs` - so the geometry is
+    /// immutable and `ReadPlan` hands it out as a `shared_ptr<const ReadPlanGeometry>`
+    /// snapshot (`ReadPlan::geometry()`). `aligned_miss` is NOT clamped to the plan span /
     /// `read_extent_end`; it may extend past them, clamped only to object end so the
     /// cache segment/block is fully populated and the over-read bound is the aligned
     /// extent (`[CF-overread]`).
@@ -527,10 +527,11 @@ private:
 
     /// The IMMUTABLE geometry of one look-ahead plan: the resident layout + span,
     /// queried positionally by `readNextWindow` / `maybeTriggerPrefetch` (RESIDENT
-    /// run vs GAP) and by a prefetch worker that co-owns its own snapshot. Built
-    /// once by `planResidencyWindow` and never mutated after publish. `entries` is
-    /// in cache-tier priority order (same order as `caches`), 1:1 POSITIONAL with
-    /// `ReadPlan::bufs`, so `residentAt` returns the index of the fastest-tier entry
+    /// run vs GAP). Built once by `planResidencyWindow` and never mutated after
+    /// publish; owned by `ReadPlan` and exposed as a `shared_ptr<const>` snapshot via
+    /// `ReadPlan::geometry()`. `entries` is in cache-tier priority order (same order
+    /// as `caches`), 1:1 POSITIONAL with `ReadPlan::bufs`, so `residentAt` returns the
+    /// index of the fastest-tier entry
     /// holding a byte and the caller maps it to that entry's held read buffers. Empty /
     /// `plan_end == plan_start` means no valid plan.
     struct ReadPlanGeometry
@@ -695,31 +696,39 @@ private:
         std::vector<MissEntry> writers;
     };
 
-    /// The MUTABLE, FOREGROUND-PRIVATE half of a look-ahead plan: the held hit read
-    /// buffers + opened write buffers (`bufs`, 1:1 positional with
-    /// `ReadPlanGeometry::entries`), plus the plan-lifetime late-hit views. Held across
-    /// many windows; destroyed (write buffers finalize, deferred LRU-bumps run) at the
-    /// next `planResidencyWindow` / on seek - after every write into the held buffers
-    /// (`[CF-lru]`). The late-hit views carry their own held read buffers whose deferred
-    /// bump must outlive the write buffers' writes, so they are kept here, off the
-    /// 1:1-positional path; their writers are ignored.
+    /// One look-ahead plan and the SOURCE OF TRUTH for the current read: the immutable
+    /// geometry snapshot (`geometry()`), the held hit read buffers + opened write buffers
+    /// (`bufs`, 1:1 positional with `geometry()->entries`), and the plan-lifetime late-hit
+    /// views held only for their deferred LRU bump. FOREGROUND-PRIVATE: a prefetch worker
+    /// never indexes it (it reads a pre-bounded window). Held across many windows;
+    /// destroyed (write buffers finalize, deferred LRU-bumps run) at the next
+    /// `planResidencyWindow` / on seek - after every write into the held buffers (`[CF-lru]`).
     struct ReadPlan
     {
-        /// `late_hit_views` is declared BEFORE `bufs` so it is destroyed LAST (members
-        /// destruct in reverse declaration order): the late-hit views' deferred LRU
-        /// bumps must run AFTER the held write buffers in `bufs` are finalized, matching
-        /// the blueprint's finalize-then-bump order (`[CF-lru]`).
-        std::vector<CacheViewPtr> late_hit_views;
+        /// The immutable geometry projection of this plan (resident + aligned-miss ranges,
+        /// no buffers). `ReadPlan` owns it; readers take a `shared_ptr<const>` snapshot
+        /// through this method. Null until the first plan is built.
+        const std::shared_ptr<const ReadPlanGeometry> & geometry() const { return geometry_snapshot; }
+
+        /// Late-hit `CacheView`s held ALIVE until plan teardown SOLELY for their
+        /// destructors: `~CacheView` runs the deferred LRU bump, which must land AFTER the
+        /// write buffers in `bufs` are finalized. Declared BEFORE `bufs` so it is destroyed
+        /// AFTER it (members destruct in reverse declaration order), giving bump-after-writes
+        /// (`[CF-lru]`). Never indexed - the value is the destruction timing; writers ignored.
+        std::vector<CacheViewPtr> deferred_lru_bumps;
+
         VectorWithMemoryTracking<BufEntry> bufs;
+
+    private:
+        friend class ReaderExecutor;  /// `planResidencyWindow` is the sole writer of `geometry_snapshot`.
+        /// Set once by `planResidencyWindow`; read via `geometry()`. Holds only ByteRanges,
+        /// so its destruction order relative to `bufs`/`deferred_lru_bumps` is irrelevant.
+        std::shared_ptr<const ReadPlanGeometry> geometry_snapshot;
     };
 
-    /// The current look-ahead plan, split into an immutable co-ownable geometry
-    /// snapshot (`read_geometry`, a prefetch worker captures its own ref at submit;
-    /// holds resident + aligned-miss ranges only, no buffers) and the foreground-private
-    /// held buffers (`read_plan.bufs`, 1:1 positional with `read_geometry->entries`).
-    /// `read_geometry` is null until the first plan is built; the query methods' callers
-    /// guard for that.
-    std::shared_ptr<const ReadPlanGeometry> read_geometry;
+    /// The current look-ahead plan and source of truth: held buffers + the immutable
+    /// geometry snapshot it exposes via `read_plan.geometry()`, which is null until the
+    /// first plan is built (the query methods' callers guard for that).
     ReadPlan read_plan;
 
     /// Pin the partial segment under `frontier` from the first held write buffer whose
