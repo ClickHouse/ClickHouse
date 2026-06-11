@@ -1,5 +1,5 @@
 -- Regression test for a LOGICAL_ERROR "Cannot find input column ... on its position in inputs of
--- expression actions DAG" thrown from buildPhysicalJoinImpl, which aborted the server. A correlated
+-- expression actions DAG" thrown from buildPhysicalJoinImpl. A correlated
 -- scalar subquery is decorrelated into a JOIN; when the input side projects the same identifier twice
 -- (SELECT number, *) and correlated_subqueries_default_join_kind = 'left' swaps that side onto the left
 -- join child, the join's ActionsDAG had a single input for the duplicated name while the child step
@@ -8,9 +8,9 @@
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 
--- Minimal case that previously aborted the server: the duplicated column is NOT projected to the
+-- Minimal case that previously threw: the duplicated column is NOT projected to the
 -- output, so the unreferenced duplicate input was pruned from the join DAG while the left child still
--- produced it. Result is discarded; the test only verifies the query no longer crashes.
+-- produced it. Result is discarded; the test only verifies the query no longer throws.
 SELECT '-- minimal';
 WITH t AS (SELECT number, * FROM numbers(3))
 SELECT (SELECT number) FROM t
@@ -31,7 +31,7 @@ SELECT *, (SELECT t.number WHERE t.number >= 0) AS r FROM t
 ORDER BY 1
 SETTINGS correlated_subqueries_default_join_kind = 'right';
 
--- The original AST-fuzzer query: previously aborted the server under left decorrelation.
+-- The original AST-fuzzer query: previously threw under left decorrelation.
 SELECT '-- fuzzer query runs';
 WITH RECURSIVE
     alias2 AS (
