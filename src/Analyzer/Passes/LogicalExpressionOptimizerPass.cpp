@@ -336,7 +336,10 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     auto & or_argument_nodes = or_node->getArguments().getNodes();
 
-    chassert(or_argument_nodes.size() > 1);
+    /// `or` may have a single argument here when it resolved to Nothing (the Nothing
+    /// short-circuit skips the >= 2 arity check); there is nothing to extract then.
+    if (or_argument_nodes.size() <= 1)
+        return {};
 
     bool first_argument = true;
     QueryTreeNodePtrWithHashSet common_exprs_set;
