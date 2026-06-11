@@ -499,7 +499,6 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::zstd
     ch_contrib::brotli
     ch_contrib::bzip2
-    ch_contrib::curl
 )
 target_link_libraries(_arrow PUBLIC _orc)
 
