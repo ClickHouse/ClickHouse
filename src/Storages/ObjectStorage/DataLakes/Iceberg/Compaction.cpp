@@ -517,7 +517,7 @@ static bool writeConsolidatedManifestFile(
         /// source columns. All metadata schemas are registered first (idempotent) so they can be
         /// queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
-            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(static_cast<UInt32>(i)));
+            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
 
         auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
         {
@@ -539,7 +539,7 @@ static bool writeConsolidatedManifestFile(
         {
             for (UInt32 i = 0; i < schemas->size(); ++i)
             {
-                Int32 candidate_id = schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id);
+                Int32 candidate_id = schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id);
                 if (candidate_id == schema_id_for_spec)
                     continue;
                 spec_sample_block = build_sample_block(candidate_id);
