@@ -452,6 +452,27 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
         const auto & src_offsets = src_variant_column.getOffsets();
         const auto & src_shared_variant = assert_cast<const ColumnString &>(src_variant_column.getVariantByLocalDiscriminator(src_shared_variant_local_discr));
 
+        /// Some rows from the src shared variant may carry a type that is not a regular variant here yet.
+        /// Promote such types to regular variants up front while we still have room, otherwise the loop
+        /// below would copy them into our shared variant even though they can later become a regular
+        /// variant, leaving the type in both storages (see deserializeAndInsertFromArena which follows the
+        /// same logic). This must happen before caching the destination column references below, because
+        /// addNewVariant reallocates them.
+        for (size_t i = 0; i != length && canAddNewVariant(); ++i)
+        {
+            if (src_local_discriminators[start + i] != src_shared_variant_local_discr)
+                continue;
+            ReadBufferFromMemory type_buf(src_shared_variant.getDataAt(src_offsets[start + i]));
+            auto promoted_type = decodeDataType(type_buf);
+            auto promoted_type_name = promoted_type->getName();
+            if (!variant_info.variant_name_to_discriminator.contains(promoted_type_name))
+                addNewVariant(promoted_type, promoted_type_name);
+        }
+
+        /// addNewVariant above reassigns global discriminators (DataTypeVariant sorts its nested types),
+        /// so the shared variant discriminator captured before the promotion pass may now be stale.
+        shared_variant_discr = getSharedVariantDiscriminator();
+
         auto & local_discriminators = variant_col.getLocalDiscriminators();
         auto & offsets = variant_col.getOffsets();
         const auto shared_variant_local_discr = variant_col.localDiscriminatorByGlobal(shared_variant_discr);
