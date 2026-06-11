@@ -43,13 +43,29 @@ public:
             sum_rows -= rows_delta;
         }
 
+        const size_t range_size = end - begin;
+
+        /// Re-check `min_parts_to_merge_at_once` after trimming as well: `allow` checks it
+        /// before trimming, so a range that passes with exactly the minimum number of parts
+        /// could otherwise be shortened below it. Mirror the precedence from `allow`:
+        /// a range that qualifies for force-merge by age is exempt from the minimum.
+        if (settings.min_parts_to_merge_at_once && range_size < settings.min_parts_to_merge_at_once)
+        {
+            time_t trimmed_min_age = begin->age;
+            for (auto it = begin + 1; it != end; ++it)
+                trimmed_min_age = std::min(trimmed_min_age, it->age);
+
+            if (!settings.min_age_to_force_merge || static_cast<size_t>(trimmed_min_age) < settings.min_age_to_force_merge)
+                return;
+        }
+
         /// Re-check the small-parts batching gate after trimming, using the trimmed range's
         /// `max_size` and `max_age` (not the pre-trim values). If the right tail contained
         /// the only large or only old part, the pre-trim max would falsely bypass this gate
         /// even though the surviving range is exactly the all-small-fresh batch the user
         /// wants to defer. Recomputing over `[begin, end)` is the only correct check.
         if (settings.small_parts_min_count
-            && static_cast<size_t>(end - begin) < settings.small_parts_min_count)
+            && range_size < settings.small_parts_min_count)
         {
             size_t trimmed_max_size = 0;
             time_t trimmed_max_age = 0;

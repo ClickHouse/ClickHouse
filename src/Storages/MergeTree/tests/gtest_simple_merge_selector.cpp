@@ -373,3 +373,90 @@ TEST(SimpleMergeSelector, SmallPartsMinCountUsesTrimmedMaxAge)
     ASSERT_TRUE(selected.empty())
         << "small_parts_min_count must use trimmed max_age, not pre-trim max_age";
 }
+
+
+/// Regression test: right-tail trimming must not bypass `min_parts_to_merge_at_once` either.
+///
+/// `allow` checks `min_parts_to_merge_at_once` before `Estimator::consider` runs the
+/// right-tail trimming, so a candidate that passes with exactly the minimum number of
+/// parts could be shortened below it — e.g. with `min_parts_to_merge_at_once = 8` and
+/// sizes [9 MiB, 7 x 64 KiB], the 8-part range passes `allow`, then trimming keeps only
+/// two parts. The same post-trim re-check that guards `small_parts_min_count` must
+/// guard `min_parts_to_merge_at_once`.
+TEST(SimpleMergeSelector, MinPartsToMergeAtOnceSurvivesRightTailTrim)
+{
+    SimpleMergeSelector::Settings settings;
+    /// base = 2 so that the full 8-part range passes the base-ratio check in `allow`
+    /// (ratio is ~3.5 here; with the default base of 5 and fresh parts nothing would be
+    /// selected regardless of the post-trim re-check, making the test vacuous).
+    settings.base = 2;
+    settings.min_parts_to_merge_at_once = 8;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// 8 parts: [9 MiB, 7 x 64 KiB]. The 64 KiB tail is < 1% of the sum, so it would
+    /// be trimmed, shrinking the only `allow`-approved range to 2 parts.
+    add_part(0, 9 * 1024 * 1024, 1);
+    for (int64_t i = 1; i < 8; ++i)
+        add_part(i, 64 * 1024, 1);
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    ASSERT_TRUE(selected.empty())
+        << "min_parts_to_merge_at_once must be enforced after right-tail trimming";
+}
+
+
+/// Companion test: the post-trim `min_parts_to_merge_at_once` re-check must keep the
+/// precedence that `allow` gives to `min_age_to_force_merge`. A range whose parts have
+/// all aged past the force-merge threshold merges regardless of the minimum part count,
+/// even when trimming shrinks it below that minimum.
+TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesMinPartsAfterTrim)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 5;
+    settings.min_parts_to_merge_at_once = 8;
+    settings.min_age_to_force_merge = 3600;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// Same geometry as above, but all parts are older than `min_age_to_force_merge`.
+    add_part(0, 9 * 1024 * 1024, 4000);
+    for (int64_t i = 1; i < 8; ++i)
+        add_part(i, 64 * 1024, 4000);
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    ASSERT_FALSE(selected.empty())
+        << "min_age_to_force_merge must still override min_parts_to_merge_at_once after trimming";
+}
