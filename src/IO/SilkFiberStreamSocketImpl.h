@@ -1,6 +1,8 @@
 #pragma once
 
-#if defined(OS_LINUX)
+#include "config.h"
+
+#if USE_SILK
 
 #include <Poco/Net/StreamSocketImpl.h>
 

@@ -1,6 +1,8 @@
 #pragma once
 
-#if defined(OS_LINUX)
+#include "config.h"
+
+#if USE_SILK && USE_SSL
 
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>

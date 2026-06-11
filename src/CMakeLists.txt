@@ -927,6 +927,10 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
+
+    if (TARGET ch_contrib::silk_fibers)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
+    endif()
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

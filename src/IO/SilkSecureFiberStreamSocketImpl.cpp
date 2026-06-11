@@ -1,6 +1,6 @@
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
 
-#if defined(OS_LINUX)
+#if USE_SILK && USE_SSL
 
 #include <IO/SilkFiberStreamSocketImpl.h>
 
@@ -95,7 +95,7 @@ int silkBioWrite(BIO * bio, const char * buf, int len)
     return -1;
 }
 
-long silkBioCtrl(BIO * bio, int cmd, [[maybe_unused]] long larg, void * parg)
+long silkBioCtrl(BIO * bio, int cmd, [[maybe_unused]] long larg, void * parg) // NOLINT(google-runtime-int)
 {
     switch (cmd)
     {
@@ -172,7 +172,7 @@ bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
     silk::FiberScheduler::poll(sockfd(), events, &triggered, &poll_future);
 
     const Poco::Timestamp started;
-    int r;
+    int r = 0;
     const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
     if (timeout_us >= 0)
     {

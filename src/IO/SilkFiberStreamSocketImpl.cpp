@@ -1,6 +1,6 @@
 #include <IO/SilkFiberStreamSocketImpl.h>
 
-#if defined(OS_LINUX)
+#if USE_SILK
 
 #include <Common/Exception.h>
 
@@ -45,7 +45,7 @@ void FiberStreamSocketImpl::connect(const Poco::Net::SocketAddress & address, co
     silk::FiberScheduler::IoFuture future;
     silk::FiberScheduler::connect(sockfd(), address.addr(), address.length(), &future);
 
-    int r;
+    int r = 0;
     const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
     if (timeout_us >= 0)
     {
@@ -80,7 +80,7 @@ bool FiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
     silk::FiberScheduler::poll(sockfd(), events, &triggered, &poll_future);
 
     const Poco::Timestamp started;
-    int r;
+    int r = 0;
     const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
     if (timeout_us >= 0)
     {
@@ -119,12 +119,14 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
     Poco::Timespan timeout = getSendTimeout();
     while (total < length)
     {
+        throttleSend(static_cast<size_t>(length - total), getBlocking());
+
         uint64_t bytes_written = 0;
         silk::FiberScheduler::IoFuture future;
         iovec iov{const_cast<char *>(ptr), static_cast<size_t>(length - total)};
         silk::FiberScheduler::write(sockfd(), &iov, 1, 0, &bytes_written, &future);
 
-        int r;
+        int r = 0;
         if (timeout.totalMicroseconds() > 0)
         {
             r = silk::FiberFuture::waitWithTimeout(
@@ -145,6 +147,8 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
         if (r)
             error(r, "send");
 
+        useSendThrottlerBudget(static_cast<int>(bytes_written));
+
         total += static_cast<int>(bytes_written);
         ptr += bytes_written;
     }
@@ -159,13 +163,15 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
             "Silk::FiberStreamSocketImpl::receiveBytes: non-zero flags ({}) not supported",
             flags);
 
+    throttleRecv(static_cast<size_t>(length), getBlocking());
+
     uint64_t bytes_read = 0;
     silk::FiberScheduler::IoFuture future;
     iovec iov{buffer, static_cast<size_t>(length)};
     silk::FiberScheduler::read(sockfd(), &iov, 1, 0, &bytes_read, &future);
 
     Poco::Timespan timeout = getReceiveTimeout();
-    int r;
+    int r = 0;
     if (timeout.totalMicroseconds() > 0)
     {
         r = silk::FiberFuture::waitWithTimeout(
@@ -185,6 +191,9 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
 
     if (r)
         error(r, "recv");
+
+    useRecvThrottlerBudget(static_cast<int>(bytes_read));
+
     return static_cast<int>(bytes_read);
 }
 

@@ -37,6 +37,7 @@
 #cmakedefine01 USE_LIBSTEMMER
 #cmakedefine01 USE_VECTORSCAN
 #cmakedefine01 USE_LIBURING
+#cmakedefine01 USE_SILK
 #cmakedefine01 USE_AVRO
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_PARQUET
