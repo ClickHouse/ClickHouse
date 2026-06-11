@@ -662,6 +662,15 @@ class Runner:
         if is_initial_job:
             output = dataclasses.asdict(env)
             output["pipeline_status"] = "success"
+            # User-authored free text must not be embedded into the job output:
+            # the GitHub Actions runner scans outputs with built-in secret
+            # patterns (e.g. "Bearer <chars>") and silently drops the whole
+            # output on a match, which makes every downstream job skip.
+            # Downstream jobs restore these fields from the event payload in
+            # _Environment.from_workflow_data.
+            output["PR_BODY"] = ""
+            output["PR_TITLE"] = ""
+            output["COMMIT_MESSAGE"] = ""
         else:
             output = job_outputs
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:

@@ -265,6 +265,29 @@ class _Environment(MetaClasses.Serializable):
         config_job_data = workflow_status_data.get(normalized_job_name, {})
         data_str = config_job_data.get("outputs", {}).get("data", "{}")
         env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+        if not env_dict or "SHA" not in env_dict:
+            raise RuntimeError(
+                f"Job output [data] of the [{Settings.CI_CONFIG_JOB_NAME}] job is empty or missing. "
+                "If that job itself succeeded, the runner has likely suppressed the output: "
+                "it refuses to export a job output that matches a secret pattern "
+                "(look for a [##[warning]Skip output 'data' since it may contain secret] line "
+                f"at the very end of the [{Settings.CI_CONFIG_JOB_NAME}] job log)"
+            )
+
+        # User-authored free text is stripped from the initial job's output
+        # (see Runner.run: the runner drops outputs matching secret patterns) -
+        # restore it from the local event payload
+        event_file_path = os.getenv("GITHUB_EVENT_PATH", "")
+        if event_file_path and Path(event_file_path).is_file():
+            with open(event_file_path, "r", encoding="utf-8") as f:
+                github_event = json.load(f)
+            if "pull_request" in github_event:
+                env_dict["PR_BODY"] = github_event["pull_request"]["body"] or ""
+                env_dict["PR_TITLE"] = github_event["pull_request"]["title"] or ""
+            elif github_event.get("head_commit"):
+                env_dict["COMMIT_MESSAGE"] = (
+                    github_event["head_commit"]["message"] or ""
+                )
 
         # Reread instance metadata from the host
         env_dict["INSTANCE_TYPE"] = (
