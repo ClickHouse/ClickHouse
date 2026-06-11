@@ -32,13 +32,29 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Create topic
-rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
+# Broker operations below are retried: on a loaded runner the broker can be
+# briefly unavailable, and a single swallowed `rpk` failure leaves the topic
+# missing or empty, which surfaces only as a wrong/empty result far downstream.
 
-# Produce first batch
-for i in $(seq 1 3); do
-    echo "{\"id\": $i, \"data\": \"batch1_$i\"}"
-done | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
+# Create the topic. Retry until it exists (created now or already present);
+# a transient broker error is retryable, "already exists" is success.
+for _ in $(seq 1 30); do
+    create_out=$(rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER 2>&1)
+    if [ $? -eq 0 ] || echo "$create_out" | grep -q "TOPIC_ALREADY_EXISTS"; then
+        break
+    fi
+    sleep 1
+done
+echo "Created topic."
+
+# Produce first batch. Retry the whole produce until it succeeds.
+for _ in $(seq 1 30); do
+    if seq 1 3 | while read -r i; do echo "{\"id\": $i, \"data\": \"batch1_$i\"}"; done \
+        | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
 
 # Create Kafka2 engine table (with keeper path for offset storage)
 $CLICKHOUSE_CLIENT --allow_experimental_kafka_offsets_storage_in_keeper 1 -q "
@@ -77,10 +93,14 @@ done
 echo "--- After first batch ---"
 $CLICKHOUSE_CLIENT -q "SELECT id, data FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst ORDER BY id"
 
-# Produce second batch
-for i in $(seq 4 6); do
-    echo "{\"id\": $i, \"data\": \"batch2_$i\"}"
-done | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
+# Produce second batch. Retry the whole produce until it succeeds.
+for _ in $(seq 1 30); do
+    if seq 4 6 | while read -r i; do echo "{\"id\": $i, \"data\": \"batch2_$i\"}"; done \
+        | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
 
 # Wait for second batch
 for i in $(seq 1 120); do
