@@ -90,7 +90,7 @@ ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE tab_fully DROP INDEX IF exists idx;
-ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 0);
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), __experimental_positions = 0);
 
 SYSTEM STOP MERGES tab_fully;
 
@@ -122,7 +122,7 @@ SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
-ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 0);
+ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), __experimental_positions = 0);
 
 SYSTEM STOP MERGES tab_partially;
 
@@ -156,7 +156,7 @@ ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE tab_fully DROP INDEX IF exists idx;
-ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 1);
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), __experimental_positions = 1);
 
 SYSTEM STOP MERGES tab_fully;
 
@@ -188,7 +188,7 @@ SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
-ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 1);
+ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), __experimental_positions = 1);
 
 SYSTEM STOP MERGES tab_partially;
 

@@ -10,7 +10,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -55,7 +55,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = ngrams(3), positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = ngrams(3), __experimental_positions = 1),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -87,7 +87,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByString(['()', '\\']), positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = splitByString(['()', '\\']), __experimental_positions = 1),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -117,7 +117,7 @@ CREATE TABLE tab
 (
     id UInt32,
     text FixedString(16),
-    INDEX idx_text(text) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+    INDEX idx_text(text) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
 )
 ENGINE = MergeTree()
 ORDER BY (id);
@@ -139,7 +139,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = asciiCJK, positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = asciiCJK, __experimental_positions = 1),
 )
 ENGINE = MergeTree
 ORDER BY (id);
@@ -171,7 +171,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -240,7 +240,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -307,7 +307,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY (id)

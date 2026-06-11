@@ -16,8 +16,8 @@ SETTINGS min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activ
 
 INSERT INTO tab SELECT number, 'c1' || toString(number), 'c2' || toString(number + 1) FROM numbers(10000);
 
-ALTER TABLE tab ADD INDEX idx_c1 (c1) TYPE text (tokenizer = ngrams(3), positions = 0);
-ALTER TABLE tab ADD INDEX idx_c2 (c2) TYPE text (tokenizer = ngrams(3), positions = 0);
+ALTER TABLE tab ADD INDEX idx_c1 (c1) TYPE text (tokenizer = ngrams(3));
+ALTER TABLE tab ADD INDEX idx_c2 (c2) TYPE text (tokenizer = ngrams(3));
 
 INSERT INTO tab SELECT number, 'c1' || toString(number), 'c2' || toString(number + 1) FROM numbers(10000);
 

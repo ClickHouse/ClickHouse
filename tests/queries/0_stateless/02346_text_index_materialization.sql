@@ -19,7 +19,7 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, index_granularit
 
 INSERT INTO tab SELECT number, 'v' || toString(number) FROM numbers(100000);
 
-ALTER TABLE tab ADD INDEX idx_text (text) TYPE text(tokenizer = ngrams(3), positions = 0);
+ALTER TABLE tab ADD INDEX idx_text (text) TYPE text(tokenizer = ngrams(3));
 
 INSERT INTO tab SELECT number, 'v' || toString(number + 1000000) FROM numbers(100000);
 
