@@ -9,6 +9,10 @@ doc_type: 'reference'
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
+AI functions are experimental. Set [`allow_experimental_ai_functions`](/operations/settings/settings#allow_experimental_ai_functions) to enable them.
+:::
+
+:::note
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 :::
 
@@ -33,12 +37,13 @@ CREATE NAMED COLLECTION my_ai_credentials AS
 Select the collection with the `ai_credentials` setting, for the session or for a single query:
 ```sql
 -- For the session:
+SET allow_experimental_ai_functions = 1;
 SET ai_credentials = 'my_ai_credentials';
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
 
 -- Or for a single query:
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
-SETTINGS ai_credentials = 'my_ai_credentials';
+SETTINGS allow_experimental_ai_functions = 1, ai_credentials = 'my_ai_credentials';
 ```
 
 When `ai_credentials` is empty (the default), an exception is raised.
@@ -64,7 +69,7 @@ Which named collection to use is controlled by the [`ai_credentials`](/operation
 
 ### Use in `DEFAULT` and `MATERIALIZED` columns {#default-and-materialized-columns}
 
-The `ai_credentials` setting is read when the default expression is evaluated, not when the column is defined. The collection name is not stored in the column definition:
+The `ai_credentials` setting is read when the default expression is evaluated, NOT when the column is defined. The collection name is not stored in the column definition:
 
 ```sql
 CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
