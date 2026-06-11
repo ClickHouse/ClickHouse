@@ -29,10 +29,8 @@ public:
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
 
-    /// Not noexcept: the move operations rebuild the derived data via update(), which allocates
-    /// (make_unique, CNF construction) and can throw, e.g. MEMORY_LIMIT_EXCEEDED.
-    ConstraintsDescription(ConstraintsDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
-    ConstraintsDescription & operator=(ConstraintsDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    ConstraintsDescription(ConstraintsDescription && other) noexcept;
+    ConstraintsDescription & operator=(ConstraintsDescription && other) noexcept;
 
     bool empty() const { return constraints.empty(); }
     String toString() const;

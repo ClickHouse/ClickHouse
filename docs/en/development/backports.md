@@ -7,6 +7,8 @@ title: 'Backport System'
 doc_type: 'reference'
 ---
 
+# Backport System {#backport-system}
+
 This document describes the ClickHouse backport policy and the automated system that implements it.
 
 ## Release Model {#release-model}
@@ -62,8 +64,6 @@ An active release branch is any branch whose corresponding release PR (carrying 
 
 A release branch can be in a **rolling-out** state (its release PR carries the `rolling-out` label) during the period when a new release is being deployed. General backports are paused for rolling-out branches to avoid complicating the rollout. Version-specific labels (e.g. `v25.3-must-backport`) override this and force backporting even during a rollout.
 
-A version-specific label sets the *oldest* release the PR must reach: it is backported to that release **and to every newer active release branch**, not only to the named one. For example, `v25.3-must-backport` on a PR merged into the development branch backports to `25.3` and to every active release after it (`25.4`, `25.5`, …). If multiple version-specific labels are present, the lowest version wins, since it already covers the newer ones.
-
 ## Implementation {#implementation}
 
 ### Overview {#overview}
@@ -84,7 +84,7 @@ Labels on the original PR control whether and where backporting happens.
 | `pr-must-backport` | Backport to all active release branches (skipping branches marked `rolling-out`) |
 | `pr-must-backport-force` | Backport to all active release branches, ignoring `rolling-out` restrictions |
 | `pr-critical-bugfix` | Triggers `pr-must-backport` automatically (via `AUTO_BACKPORT` in `pr_labels_and_category.py`) |
-| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport to that release branch **and every newer active release branch** — the version marks the *oldest* release the PR must reach. With several such labels, the lowest version wins. Overrides the `rolling-out` skip for those branches |
+| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport only to that specific release branch; overrides `rolling-out` skip for that branch |
 | `pr-backports-created` | Set by the bot when all required backport PRs have been created; cleared if a cherry-pick PR is reopened |
 | `pr-cherrypick` | Applied to cherry-pick PRs created by the bot |
 | `pr-backport` | Applied to backport PRs created by the bot |
@@ -116,7 +116,7 @@ For each original PR number `N` and release branch `release/X.Y`:
 
 #### 3. Rolling-out branch handling {#rolling-out-branch-handling}
 
-When a release PR carries the `rolling-out` label, general backport labels (`pr-must-backport`, `pr-critical-bugfix`) skip that branch. The bot closes any previously created cherry-pick or backport PRs for that branch with an explanatory comment. A version-specific label (e.g. `v25.3-must-backport`) always overrides this — for the named release and for every newer active release branch it expands to. `pr-must-backport-force` bypasses the `rolling-out` check for all branches.
+When a release PR carries the `rolling-out` label, general backport labels (`pr-must-backport`, `pr-critical-bugfix`) skip that branch. The bot closes any previously created cherry-pick or backport PRs for that branch with an explanatory comment. A version-specific label (e.g. `v25.3-must-backport`) always overrides this. `pr-must-backport-force` bypasses the `rolling-out` check for all branches.
 
 #### 4. Cherry-pick stage (`ReleaseBranch.create_cherrypick`) {#cherry-pick-stage}
 

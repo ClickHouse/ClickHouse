@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNormalizedQueryHash final : public IFunction
+class FunctionNormalizedQueryHash : public IFunction
 {
 private:
     bool keep_names;
