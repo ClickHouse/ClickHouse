@@ -109,6 +109,7 @@ GlueCatalog::GlueCatalog(
     creds_config.use_environment_credentials = true;
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
+    creds_config.external_id = settings.aws_external_id;
 
     /// A Glue catalog is created by user SQL (`CREATE DATABASE ... ENGINE = DataLakeCatalog`), so it must
     /// not be able to reuse the server's own credentials.

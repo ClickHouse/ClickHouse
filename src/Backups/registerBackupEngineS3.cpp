@@ -18,6 +18,7 @@ namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
 }
 
 #endif
@@ -69,6 +70,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         String secret_access_key;
         String role_arn;
         String role_session_name;
+        String external_id;
         bool no_sign_request = false;
         /// nullopt for explicit url/key args (keep the global default); set for named collections.
         std::optional<bool> use_environment_credentials;
@@ -84,6 +86,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
+            external_id = collection->getOrDefault<String>("external_id", "");
             no_sign_request = collection->getOrDefault<bool>("no_sign_request", false);
             /// Default to 0 for named collections so a URL-only backup collection reads anonymously
             /// instead of authenticating with the server's own cloud identity (matches s3 table functions).
@@ -126,6 +129,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
+                external_id = std::move(auth_settings[S3AuthSetting::external_id]);
             }
         }
 
@@ -155,6 +159,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
                 no_sign_request,
                 use_environment_credentials,
                 http_client,
@@ -180,6 +185,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
                 no_sign_request,
                 use_environment_credentials,
                 http_client,
@@ -205,6 +211,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                     secret_access_key,
                     role_arn,
                     role_session_name,
+                    external_id,
                     no_sign_request,
                     use_environment_credentials,
                     http_client,
@@ -228,6 +235,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 std::move(role_arn),
                 std::move(role_session_name),
+                std::move(external_id),
                 no_sign_request,
                 use_environment_credentials,
                 http_client,

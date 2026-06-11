@@ -59,6 +59,7 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -111,6 +112,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
+    "external_id", /// for extra_credentials
     "http_client", /// For GCP
     "metadata_service", /// For GCP
     "service_account", /// For GCP
@@ -257,6 +259,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
+    s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
@@ -338,6 +341,8 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
             auth_settings_[S3AuthSetting::role_arn] = arg_value.safeGet<String>();
         else if (arg_name == "role_session_name")
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
+        else if (arg_name == "external_id")
+            auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
     }

@@ -414,8 +414,9 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name)
+void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
 {
+    bool external_id_present = false;
     for (const auto & [param, value] : query_params)
     {
         if (param == "Action")
@@ -424,7 +425,14 @@ void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params
             ASSERT_EQ(value, expected_role_arn);
         else if (param == "RoleSessionName")
             ASSERT_EQ(value, expected_role_session_name);
+        else if (param == "ExternalId")
+        {
+            external_id_present = true;
+            ASSERT_EQ(value, expected_external_id);
+        }
     }
+    /// ExternalId is optional and must be sent only when configured.
+    ASSERT_EQ(external_id_present, !expected_external_id.empty());
 }
 
 }
@@ -517,7 +525,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     bool use_insecure_imds_request = false;
 
 
-    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name)
+    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name, const std::string & external_id = "")
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
@@ -538,6 +546,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
                 .use_insecure_imds_request = use_insecure_imds_request,
                 .role_arn = role_arn,
                 .role_session_name = role_session_name,
+                .external_id = external_id,
                 .sts_endpoint_override = sts_http.getUrl(),
                 .forbid_implicit_credentials = false,
             }
@@ -602,6 +611,24 @@ TEST(IOTestAwsS3Client, AssumeRole)
         ASSERT_TRUE(sts_http.hasLastRequest());
         validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
+    }
+
+    {
+        SCOPED_TRACE("With role arn and external id set");
+
+        sts_http.resetLastRequest();
+
+        std::string role_arn = "arn::role/my_role";
+        std::string role_session_name = "session_name";
+        std::string external_id = "my_external_id";
+
+        read_from_s3(role_arn, role_session_name, external_id);
+
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
+
+        ASSERT_TRUE(sts_http.hasLastRequest());
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, external_id);
     }
 }
 

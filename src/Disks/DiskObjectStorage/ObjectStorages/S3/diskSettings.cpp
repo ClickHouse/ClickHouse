@@ -69,6 +69,7 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -202,6 +203,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         auth_settings[S3AuthSetting::no_sign_request],
         auth_settings[S3AuthSetting::role_arn],
         auth_settings[S3AuthSetting::role_session_name],
+        auth_settings[S3AuthSetting::external_id],
         /*sts_endpoint_override=*/""
     };
 
