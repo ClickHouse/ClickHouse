@@ -742,6 +742,10 @@ SELECT argAndMax(a, (b,a)) FROM test;
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, true); },
          documentation_argAndMax, properties});
+
+    /// SQL compatibility aliases (Presto / Spark / DuckDB): max_by(arg, val) == argMax(arg, val)
+    factory.registerAlias("min_by", "argMin");
+    factory.registerAlias("max_by", "argMax");
 }
 
 }
