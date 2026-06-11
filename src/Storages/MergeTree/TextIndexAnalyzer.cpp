@@ -33,7 +33,7 @@ void TextIndexAnalyzer::QueryBuilder::markBypassed()
 
 void TextIndexAnalyzer::QueryBuilder::addMissingToken()
 {
-    if (query->search_mode == TextSearchMode::All)
+    if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
         markFailed();
 }
 
@@ -68,7 +68,7 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     {
         rows_range = rows_range->unionWith(token_rows_range);
     }
-    else if (query->search_mode == TextSearchMode::All)
+    else if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
     {
         rows_range = rows_range->intersectWith(token_rows_range);
 
