@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/SparseGranuleAnalyzer.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -856,7 +857,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
     /// pruning runs whenever the mode isn't `Off`; granule-level pruning runs in
     /// `Planning` / `DataRead` mode.
     if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
-        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot))
+        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot)
+        || queryHasJoinedTable(query_info.query_tree))
     {
         return parts;
     }
@@ -950,7 +952,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
 
     /// `DataRead` mode defers granule analysis to scan time, so it skips this path.
     if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning
-        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot))
+        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot)
+        || queryHasJoinedTable(query_info.query_tree))
     {
         return parts;
     }

@@ -29,6 +29,10 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 /// Returns true if storage is used in tree, false otherwise
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 
+/// Returns true if `query_tree` is a `QueryNode` whose join tree introduces another
+/// table (a `JOIN` or `CROSS JOIN` node), as opposed to a single table expression.
+bool queryHasJoinedTable(const QueryTreeNodePtr & query_tree);
+
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
 

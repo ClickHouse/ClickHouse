@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Names.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -3764,15 +3765,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     MergeTreeSparsityReaderPtr sparsity_reader;
     {
         const auto & query_settings = context->getSettingsRef();
-        const bool has_join = [&]
-        {
-            if (!query_info.query_tree)
-                return false;
-            const auto & join_tree = query_info.query_tree->as<QueryNode &>().getJoinTree();
-            return join_tree
-                && (join_tree->getNodeType() == QueryTreeNodeType::JOIN
-                    || join_tree->getNodeType() == QueryTreeNodeType::CROSS_JOIN);
-        }();
         const bool read_overflow_throws =
             (query_settings[Setting::read_overflow_mode] == OverflowMode::THROW && query_settings[Setting::max_rows_to_read])
             || (query_settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && query_settings[Setting::max_rows_to_read_leaf]);
@@ -3780,7 +3772,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         if (query_settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead
             && !query_info.isFinal()
             && !context->getCurrentTransaction()
-            && !has_join
+            && !queryHasJoinedTable(query_info.query_tree)
             && !read_overflow_throws
             && !(mutations_snapshot && (mutations_snapshot->hasDataMutations()
                                         || mutations_snapshot->hasAlterMutations()

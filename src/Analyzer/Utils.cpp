@@ -122,6 +122,20 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
     return false;
 }
 
+bool queryHasJoinedTable(const QueryTreeNodePtr & query_tree)
+{
+    if (!query_tree)
+        return false;
+    auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return false;
+    const auto & join_tree = query_node->getJoinTree();
+    if (!join_tree)
+        return false;
+    auto kind = join_tree->getNodeType();
+    return kind == QueryTreeNodeType::JOIN || kind == QueryTreeNodeType::CROSS_JOIN;
+}
+
 bool isNameOfInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||
