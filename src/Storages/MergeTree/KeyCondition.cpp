@@ -5500,8 +5500,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
         if (update_partial_disjunction_result_fn)
         {
-            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
+            /// All atoms produced from one predicate leaf (combined by AND) occupy a single
+            /// position in the RPN template used by `mergePartialResultsForDisjunctions`:
+            /// the template is built with an empty key, so every predicate leaf is exactly one
+            /// `FUNCTION_UNKNOWN` element there. Report the combined result once per group, at
+            /// the group's last element, under the group's canonical (template) position.
+            const size_t raw_pos = static_cast<size_t>(&element - rpn.data());
+            const bool group_continues = raw_pos + 1 < rpn.size() && rpn[raw_pos + 1].continues_multi_atom_group;
+            if (!group_continues)
+            {
+                update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+                ++element_idx;
+            }
         }
     }
 

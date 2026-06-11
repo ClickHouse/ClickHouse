@@ -680,12 +680,23 @@ void RPNBuilder<RPNElement>::traverseTree(
     {
         for (size_t i = 0; i < atoms.size(); ++i)
         {
+            /// Mark every element that continues the group (the second and subsequent atoms
+            /// and the AND operators combining them) so that consumers relying on a
+            /// one-element-per-leaf RPN layout can treat the whole group as a single position.
+            if constexpr (requires (RPNElement & e) { e.continues_multi_atom_group = true; })
+            {
+                if (i != 0)
+                    atoms[i].continues_multi_atom_group = true;
+            }
+
             rpn_elements.emplace_back(std::move(atoms[i]));
 
             if (i != 0)
             {
                 RPNElement and_operator;
                 and_operator.function = RPNElement::FUNCTION_AND;
+                if constexpr (requires (RPNElement & e) { e.continues_multi_atom_group = true; })
+                    and_operator.continues_multi_atom_group = true;
                 rpn_elements.emplace_back(std::move(and_operator));
             }
         }

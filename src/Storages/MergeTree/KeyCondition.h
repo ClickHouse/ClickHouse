@@ -285,6 +285,16 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// One predicate leaf may produce several atoms combined by AND (see `RPNBuilder`).
+        /// This flag is set on the second and subsequent atoms of such a group and on the AND
+        /// operators combining them — i.e. on every element that continues the group opened by
+        /// a preceding element (the group's first atom does not have it). The whole group
+        /// corresponds to a single element of the one-element-per-leaf RPN built with an empty
+        /// key (`key_condition_rpn_template`), which is what the skip-index disjunction
+        /// machinery uses for positions (see `KeyCondition::checkInHyperrectangle` and
+        /// `mergePartialResultsForDisjunctions`).
+        bool continues_multi_atom_group = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
