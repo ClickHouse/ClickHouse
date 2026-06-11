@@ -744,18 +744,28 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                 if (!force_update)
                     continue;
             }
-
-            if (upsertCluster(cluster_info))
+            try
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+                if (upsertCluster(cluster_info))
+                {
+                    cluster_info.watch.restart();
+                    LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+                }
+                else
+                {
+                    all_up_to_date = false;
+                    /// no need to trigger convar, will retry after timeout in `wait`
+                    clusters_to_update->set(cluster_name);
+                    LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                }
             }
-            else
+            catch (...)
             {
                 all_up_to_date = false;
-                /// no need to trigger convar, will retry after timeout in `wait`
+                /// Register for retry so a keeper exception (e.g. missing /shards at discovery
+                /// time) does not permanently strand the cluster in clusters_info.
                 clusters_to_update->set(cluster_name);
-                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                tryLogCurrentException(log, fmt::format("Failed to insert dynamic cluster '{}', will retry", cluster_name));
             }
         }
 
@@ -768,17 +778,28 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                 continue;
             }
             auto & cluster_info = cluster_info_it->second;
-            if (upsertCluster(cluster_info))
+            try
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
+                if (upsertCluster(cluster_info))
+                {
+                    cluster_info.watch.restart();
+                    LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
+                }
+                else
+                {
+                    all_up_to_date = false;
+                    /// no need to trigger convar, will retry after timeout in `wait`
+                    clusters_to_update->set(cluster_name);
+                    LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
+                }
             }
-            else
+            catch (...)
             {
                 all_up_to_date = false;
-                /// no need to trigger convar, will retry after timeout in `wait`
+                /// Register for retry so a keeper exception (e.g. missing /shards at discovery
+                /// time) does not permanently strand the cluster in clusters_info.
                 clusters_to_update->set(cluster_name);
-                LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
+                tryLogCurrentException(log, fmt::format("Failed to insert dynamic cluster '{}', will retry", cluster_name));
             }
         }
 
