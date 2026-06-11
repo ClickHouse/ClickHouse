@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # Tag no-fasttest: Iceberg pulls in extra dependencies.
-# Tag no-parallel: deliberately spawns many concurrent clients to provoke a TOCTOU race.
+# Tag no-parallel: deliberately runs concurrent clients to provoke a TOCTOU race.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,36 +23,42 @@ ${CLICKHOUSE_CLIENT} --query "
     ORDER BY c0
 "
 
+# </dev/null: clickhouse-client reads stdin for trailing INSERT data; an inherited
+# non-EOF stdin would block the INSERT (applies to every client invocation below too).
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
-    --query "INSERT INTO ${TABLE} VALUES (1), (2), (3)"
+    --query "INSERT INTO ${TABLE} VALUES (1), (2), (3)" </dev/null
 
-THREADS=12
-ITERATIONS=10
+READERS=6
+READS_PER_CLIENT=15
+WRITES=20
+
+# Each reader/writer runs its whole loop inside ONE client connection (one process spawn),
+# instead of spawning a fresh client per query. Every statement still re-resolves the Iceberg
+# table-state snapshot independently (verified: a later SELECT in the same connection sees rows
+# the writer committed after an earlier SELECT), so the concurrent-commit TOCTOU race is fully
+# preserved while the per-query process/settings-parse overhead is removed -- on a debug build
+# with randomized settings the old per-query spawning pushed runtime over the 180s test limit.
 
 # Plain SELECT exercises iterate (via createFileIterator); SELECT ... ORDER BY exercises
-# isDataSortedBySortingKey (via requestReadingInOrder). A subshell returns non-zero as soon
-# as any client fails, so a crashed/errored background query is not silently swallowed.
-reader_loop() {
-    for _ in $(seq 1 $ITERATIONS); do
-        ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}" >>"${LOG_FILE}" 2>&1 || return 1
-        ${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM ${TABLE} ORDER BY c0 LIMIT 5" >>"${LOG_FILE}" 2>&1 || return 1
-    done
-}
+# isDataSortedBySortingKey (via requestReadingInOrder). Build the read script once.
+read_script=""
+for _ in $(seq 1 $READS_PER_CLIENT); do
+    read_script+="SELECT count() FROM ${TABLE} FORMAT Null;"
+    read_script+="SELECT c0 FROM ${TABLE} ORDER BY c0 LIMIT 5 FORMAT Null;"
+done
 
 # Single writer to avoid write-side metadata-version conflicts that would add unrelated noise.
-writer_loop() {
-    for _ in $(seq 1 $((THREADS * 2))); do
-        ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
-            --query "INSERT INTO ${TABLE} VALUES (${RANDOM})" >>"${LOG_FILE}" 2>&1 || return 1
-    done
-}
+write_script=""
+for i in $(seq 1 $WRITES); do
+    write_script+="INSERT INTO ${TABLE} VALUES (${i});"
+done
 
 declare -a PIDS=()
-for _ in $(seq 1 $THREADS); do
-    reader_loop &
+for _ in $(seq 1 $READERS); do
+    ${CLICKHOUSE_CLIENT} --query "${read_script}" >>"${LOG_FILE}" 2>&1 </dev/null &
     PIDS+=("$!")
 done
-writer_loop &
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "${write_script}" >>"${LOG_FILE}" 2>&1 </dev/null &
 PIDS+=("$!")
 
 # Wait on each PID explicitly; bare `wait` would return 0 and hide background failures.
