@@ -112,6 +112,7 @@ void Rope::advance(size_t bytes)
     /// re-served). Clamp the delta, not `cur + bytes`, to avoid overflow.
     const size_t cur = nodes.front().logical_offset + front_offset;
     const size_t new_position = cur + std::min(bytes, range().end() - cur);
+    consumed_pos = new_position;
 
     /// Drop coverage before the new position (cascades across intervals, e.g. over a gap).
     while (!intervals.empty() && intervals.front().end() <= new_position)
@@ -157,6 +158,7 @@ bool Rope::tryRewind(size_t new_position)
         else if (new_front_offset < front_offset)
             extendIntervalsFront(front_offset - new_front_offset);
         front_offset = new_front_offset;
+        consumed_pos = new_position;
         return true;
     }
 
@@ -212,21 +214,18 @@ void Rope::append(RopeNode node)
     if (node.size == 0)
         return;
 
-    /// On a partly-consumed rope, drop/trim a node behind the cursor so it can't steal the
-    /// front node's `front_offset` (an OOB `peek`) or re-cover consumed bytes. A fresh rope
-    /// (`front_offset == 0`) keeps out-of-order appends.
-    if (front_offset != 0)
+    /// Never insert behind the consumed frontier: drop a node entirely behind it, trim one
+    /// straddling it. This keeps consumed bytes from being re-covered and keeps `front_offset`
+    /// applying to the front node. A fresh rope has `consumed_pos == 0`, so out-of-order
+    /// appends are unaffected.
+    if (node.logical_offset + node.size <= consumed_pos)
+        return;
+    if (node.logical_offset < consumed_pos)
     {
-        const size_t cursor = nodes.front().logical_offset + front_offset;
-        if (node.logical_offset + node.size <= cursor)
-            return;
-        if (node.logical_offset < cursor)
-        {
-            const size_t trim = cursor - node.logical_offset;
-            node.buffer_offset += trim;
-            node.size -= trim;
-            node.logical_offset = cursor;
-        }
+        const size_t trim = consumed_pos - node.logical_offset;
+        node.buffer_offset += trim;
+        node.size -= trim;
+        node.logical_offset = consumed_pos;
     }
 
     /// Insert into `nodes` keeping the sort by logical_offset (stable on tie:
@@ -269,9 +268,9 @@ void Rope::append(Rope && other)
 Rope Rope::slice(ByteRange req) const
 {
     Rope result;
-    /// Bytes before the cursor are consumed; clamp every node to it (with overlap a later
-    /// node can start before the cursor too, not just the front).
-    const size_t cursor = nodes.empty() ? 0 : nodes.front().logical_offset + front_offset;
+    /// Bytes before the consumed frontier are not slice-able; clamp every node to it (with
+    /// overlap a later node can start before it too, not just the front).
+    const size_t cursor = consumed_pos;
     for (const auto & node : nodes)
     {
         size_t effective_buffer_offset = node.buffer_offset;

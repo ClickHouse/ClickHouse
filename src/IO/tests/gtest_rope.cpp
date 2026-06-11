@@ -894,3 +894,24 @@ TEST(Rope, AppendRopeToConsumedDestinationTrims)
     EXPECT_EQ(dst.peek().logical_offset, 150u);
     EXPECT_EQ(dst.peek().size, 50u);         /// front node still [150, 200), no OOB peek
 }
+
+TEST(Rope, AppendBeforeFrontAfterBoundaryAdvanceIsDropped)
+{
+    /// advance can drop the front node and reset front_offset to 0 while the consumed
+    /// frontier has moved past it; an append before the new front must still be dropped
+    /// (the `consumed_pos` check, not a `front_offset != 0` one).
+    auto buf = std::make_shared<OwnedRopeBuffer>(400);
+    std::memset(buf->data(), 'A', 400);
+    Rope rope;
+    rope.append(RopeNode{buf, 100, 100, 100});  /// [100, 200)
+    rope.append(RopeNode{buf, 300, 100, 300});  /// [300, 400), gap [200, 300)
+    rope.advance(100);                            /// consume [100, 200); front node dropped
+    ASSERT_EQ(rope.peek().logical_offset, 300u);  /// gap skipped; cursor lands at 300
+    ASSERT_EQ(rope.frontOffsetForTest(), 0u);     /// ...with front_offset back to 0
+
+    auto b = std::make_shared<OwnedRopeBuffer>(10);
+    std::memset(b->data(), 'B', 10);
+    rope.append(RopeNode{b, 0, 10, 150});  /// [150, 160): behind the consumed frontier (200)
+    EXPECT_EQ(rope.peek().logical_offset, 300u);  /// not resurrected to 150
+    EXPECT_EQ(rope.range().offset, 300u);
+}
