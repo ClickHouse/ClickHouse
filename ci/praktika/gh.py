@@ -832,13 +832,14 @@ class GH:
         return output == "CONFLICTING"
 
     @classmethod
-    def ensure_labels_exist(cls, labels: List[str], repo="", verbose=False):
+    def check_labels_exist(cls, labels: List[str], repo="", verbose=False):
         """
-        Create any of `labels` that do not yet exist in `repo`.
+        Raise a clear error if any of `labels` does not exist in `repo`.
 
-        `gh issue create` rejects the entire request if a label is unknown, and
-        label sets differ between the public and private repositories, so create
-        the missing ones up front.
+        `gh issue create` rejects the entire request with an opaque
+        `could not add label: '<name>' not found` message if a label is
+        unknown, and label sets differ between the public and private
+        repositories. Surface a precise, actionable error instead.
         """
         if not labels:
             return
@@ -849,13 +850,11 @@ class GH:
             verbose=verbose,
         )
         existing = {line.strip() for line in (existing_raw or "").splitlines()}
-        for label in labels:
-            if label in existing:
-                continue
-            print(f"Label '{label}' not found in {repo}, creating it")
-            Shell.check(
-                f"gh label create {shlex.quote(label)} --repo {shlex.quote(repo)}",
-                verbose=verbose,
+        missing = [label for label in labels if label not in existing]
+        if missing:
+            raise RuntimeError(
+                f"Cannot create issue in {repo}: label(s) {missing} do not exist there. "
+                f"Create them in the repository first (e.g. `gh label create '{missing[0]}' --repo {repo}`)."
             )
 
     @classmethod
@@ -885,11 +884,10 @@ class GH:
             truncation_note = "\n\n... (truncated due to GitHub body size limit)"
             body = body[: max_body_length - len(truncation_note)] + truncation_note
 
-        # `gh issue create` fails the whole call if any label is missing in the
-        # target repo (labels differ between the public and private repos).
-        # Create missing labels first so a single categorization tag does not
-        # cost us the whole issue.
-        cls.ensure_labels_exist(labels, repo=repo, verbose=verbose)
+        # `gh issue create` fails the whole call with an opaque error if any
+        # label is missing in the target repo (labels differ between the public
+        # and private repos). Check up front and surface a precise error.
+        cls.check_labels_exist(labels, repo=repo, verbose=verbose)
 
         temp_file_path = None
         try:
