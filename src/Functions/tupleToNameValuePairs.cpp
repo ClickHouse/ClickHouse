@@ -28,7 +28,7 @@ namespace
   * of the pair corresponds to the tuple field name and the second one to the
   * tuple value.
   */
-class FunctionTupleToNameValuePairs final : public IFunction
+class FunctionTupleToNameValuePairs : public IFunction
 {
 public:
     static constexpr auto name = "tupleToNameValuePairs";

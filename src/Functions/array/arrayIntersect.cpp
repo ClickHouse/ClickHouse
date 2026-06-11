@@ -38,7 +38,7 @@ namespace ErrorCodes
 
 enum class ArraySetMode { Intersect, Union, SymmetricDifference };
 
-class FunctionArrayIntersect final : public IFunction
+class FunctionArrayIntersect : public IFunction
 {
 public:
     FunctionArrayIntersect(const char * name_, ArraySetMode mode_, ContextPtr context)

@@ -846,7 +846,7 @@ ColumnPtr fillColumnWithRandomData(
 namespace
 {
 
-class GenerateSource final : public ISource
+class GenerateSource : public ISource
 {
 public:
     GenerateSource(

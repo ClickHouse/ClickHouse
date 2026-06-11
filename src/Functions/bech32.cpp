@@ -104,7 +104,7 @@ namespace ErrorCodes
 }
 
 /// Encode string to Bech32 or Bech32m address
-class EncodeToBech32Representation final : public IFunction
+class EncodeToBech32Representation : public IFunction
 {
 public:
     static constexpr auto name = "bech32Encode";
@@ -422,7 +422,7 @@ private:
 };
 
 /// Decode original address from string containing Bech32 or Bech32m address
-class DecodeFromBech32Representation final : public IFunction
+class DecodeFromBech32Representation : public IFunction
 {
 public:
     static constexpr auto name = "bech32Decode";

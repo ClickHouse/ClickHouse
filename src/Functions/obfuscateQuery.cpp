@@ -222,7 +222,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
     return col_res;
 }
 
-class ObfuscateQueryFunctionAdaptor final : public IFunction
+class ObfuscateQueryFunctionAdaptor : public IFunction
 {
 private:
     ObfuscateQueryFunction::Mode getMode(size_t num_args) const

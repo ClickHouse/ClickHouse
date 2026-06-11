@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class SourceFromSingleChunk final : public ISource
+class SourceFromSingleChunk : public ISource
 {
 /// If the source consists of multiple chunks you can instead use SourceFromChunks.
 public:

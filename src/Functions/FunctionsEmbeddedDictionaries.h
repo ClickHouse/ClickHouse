@@ -545,7 +545,7 @@ struct FunctionRegionHierarchy :
 
 
 /// Converts a region's numeric identifier to a name in the specified language using a dictionary.
-class FunctionRegionToName final : public IFunction
+class FunctionRegionToName : public IFunction
 {
 public:
     static constexpr auto name = "regionToName";

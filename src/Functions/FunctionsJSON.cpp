@@ -531,7 +531,7 @@ constexpr bool functionForcesTheReturnType()
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class ExecutableFunctionJSON final : public IExecutableFunction
+class ExecutableFunctionJSON : public IExecutableFunction
 {
 
 public:
@@ -619,7 +619,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class FunctionBaseFunctionJSON final : public IFunctionBase
+class FunctionBaseFunctionJSON : public IFunctionBase
 {
 public:
     explicit FunctionBaseFunctionJSON(
@@ -669,7 +669,7 @@ private:
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver final : public IFunctionOverloadResolver
+class JSONOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;

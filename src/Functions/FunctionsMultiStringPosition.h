@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionsMultiStringPosition final : public IFunction
+class FunctionsMultiStringPosition : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

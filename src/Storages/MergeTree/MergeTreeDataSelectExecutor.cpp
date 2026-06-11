@@ -118,7 +118,7 @@ namespace ErrorCodes
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
     : data(data_)
-    , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
+    , data_settings(data.getSettings(projection))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }

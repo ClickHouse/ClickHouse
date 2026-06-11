@@ -11,7 +11,7 @@ namespace
 {
 
 /// Returns size on disk for *columns* (without taking into account compression).
-class FunctionBlockSerializedSize final : public IFunction
+class FunctionBlockSerializedSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSerializedSize";
