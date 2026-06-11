@@ -363,8 +363,7 @@ private:
         MergeIndexUDF,
         MergeProjectionUDF,
         MergeTextIndexUDF,
-        MergeIndexAnalyzeUDF,
-        FilesystemUDF
+        MergeIndexAnalyzeUDF
     };
 
     ProbabilityGenerator SQLGen;
@@ -857,7 +856,7 @@ private:
                       }
                       else
                       {
-                          next->set_value(getTableStructure(rg, b, false));
+                          next->set_value(getTableStructure(rg, b, true));
                       }
                       added_structure++;
                   }}});
@@ -888,11 +887,8 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
-    const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
-        = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
-    const std::function<bool(const SQLView &)> attached_views_to_compare_content
-        = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
-    bool rowPolicyForOracle(const SQLPolicy & p) const;
+    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle
+        = [](const SQLPolicy & p) -> bool { return p.is_row && p.where_expr.has_value() && p.targets_oracle_role; };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };

@@ -179,7 +179,7 @@ namespace DB
 {
 
 template <typename Point, typename FunctionToCalculate>
-class FunctionGeometry final : public IFunction
+class FunctionGeometry : public IFunction
 {
 public:
     static const char * name;

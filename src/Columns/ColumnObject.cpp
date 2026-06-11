@@ -833,20 +833,55 @@ void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_da
 
 void ColumnObject::insertDefault()
 {
-    for (auto & [_, column] : typed_paths)
-        column->insertDefault();
-    for (auto & [_, column] : dynamic_paths_ptrs)
-        column->insertDefault();
-    shared_data->insertDefault();
+    /// Exception-safe: if some sub-column's insertDefault throws (e.g. on a memory limit),
+    /// roll back the sub-columns that were already modified, otherwise the object is left
+    /// with sub-columns of different sizes and popBack would over-pop the shorter ones.
+    size_t prev_size = size();
+    try
+    {
+        for (auto & [_, column] : typed_paths)
+            column->insertDefault();
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            column->insertDefault();
+        shared_data->insertDefault();
+    }
+    catch (...)
+    {
+        for (auto & [_, column] : typed_paths)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        if (shared_data->size() > prev_size)
+            shared_data->popBack(shared_data->size() - prev_size);
+        throw;
+    }
 }
 
 void ColumnObject::insertManyDefaults(size_t length)
 {
-    for (auto & [_, column] : typed_paths)
-        column->insertManyDefaults(length);
-    for (auto & [_, column] : dynamic_paths_ptrs)
-        column->insertManyDefaults(length);
-    shared_data->insertManyDefaults(length);
+    size_t prev_size = size();
+    try
+    {
+        for (auto & [_, column] : typed_paths)
+            column->insertManyDefaults(length);
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            column->insertManyDefaults(length);
+        shared_data->insertManyDefaults(length);
+    }
+    catch (...)
+    {
+        for (auto & [_, column] : typed_paths)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        if (shared_data->size() > prev_size)
+            shared_data->popBack(shared_data->size() - prev_size);
+        throw;
+    }
 }
 
 void ColumnObject::popBack(size_t n)
@@ -2329,38 +2364,7 @@ void ColumnObject::validateDynamicPathsSizes() const
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
-}
 
-bool ColumnObject::isEmptyAt(size_t n) const
-{
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
-        return false;
-
-    /// Check if all dynamic paths have NULL at this row
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        if (!column->isNullAt(n))
-            return false;
-    }
-
-    /// Check if there is no paths in shared data.
-    return shared_data->isDefaultAt(n);
-}
-
-bool ColumnObject::hasNonEmptyRows() const
-{
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
-        return true;
-
-    for (size_t i = 0; i != size(); ++i)
-    {
-        if (!isEmptyAt(i))
-            return true;
-    }
-
-    return false;
 }
 
 }

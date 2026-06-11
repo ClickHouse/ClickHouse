@@ -447,12 +447,6 @@ If the `needle` argument is of type [Array(String)](../../sql-reference/data-typ
 
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
-
-:::note
-When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](../../sql-reference/data-types/string.md), to `needles` before tokenization. When `needles` is an [Array(String)](../../sql-reference/data-types/array.md), its elements are passed through as-is and the preprocessor is not applied to them.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
-:::
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
 hasAnyTokens(input, needles)
@@ -588,12 +582,6 @@ If the `needle` argument is of type [Array(String)](../../sql-reference/data-typ
 
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
-
-:::note
-When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](../../sql-reference/data-types/string.md), to `needles` before tokenization. When `needles` is an [Array(String)](../../sql-reference/data-types/array.md), its elements are passed through as-is and the preprocessor is not applied to them.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
-:::
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
 hasAllTokens(input, needles)

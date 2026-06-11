@@ -131,6 +131,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
+class HistogramMetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
@@ -138,7 +139,6 @@ class ZooKeeperConnectionLog;
 class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
-class PredicateStatisticsLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -367,7 +367,6 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
-    bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -572,17 +571,6 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
-    /// True when this context belongs to the inner query of an expanded view.
-    /// Positional arguments inside views must be resolved even on remote/secondary nodes where
-    /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
-    /// not on the initiator).
-    bool is_view_inner_query = false;
-    /// True when positional arguments in the outer query have already been resolved by the
-    /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
-    /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
-    /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
-    /// so view-inner queries on the same node are unaffected.
-    bool positional_arguments_already_resolved = false;
 
     inline static ContextPtr global_context_instance;
     inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
@@ -616,7 +604,7 @@ protected:
 
         static size_t shardIndex(const StorageID & id)
         {
-            return StorageID::DatabaseAndTableNameHash{}(id) % NumShards;
+            return StorageID::DatabaseAndTableNameHash{}(id) & (NumShards - 1);
         }
     };
 
@@ -765,8 +753,6 @@ public:
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-        LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
-        LINUX_MDRAID_IS_DEGRADED,
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
@@ -801,7 +787,6 @@ public:
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
-    void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
     void removeAllWarnings() const;
@@ -1047,23 +1032,6 @@ public:
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
-
-    /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
-    /// Use it in introspection paths (e.g. reading system.functions) where instantiating
-    /// every function — and the helper functions they construct internally — must not
-    /// pollute query_log.used_functions for the user's query.
-    class SuppressQueryFactoriesInfoScope
-    {
-    public:
-        SuppressQueryFactoriesInfoScope();
-        ~SuppressQueryFactoriesInfoScope();
-
-        SuppressQueryFactoriesInfoScope(const SuppressQueryFactoriesInfoScope &) = delete;
-        SuppressQueryFactoriesInfoScope & operator=(const SuppressQueryFactoriesInfoScope &) = delete;
-
-    private:
-        bool prev;
-    };
 
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
@@ -1453,8 +1421,6 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
-    bool getCanUseQueryResultCache() const;
-    void setCanUseQueryResultCache(bool can_use_query_result_cache_);
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
@@ -1467,10 +1433,6 @@ public:
     void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
-    /// Same as `getParquetMetadataCache`, but returns nullptr if the cache has not been
-    /// initialised (e.g. on the client side of `INSERT ... FROM INFILE`) instead of throwing.
-    /// Use this from code paths that can run in such contexts.
-    std::shared_ptr<ParquetMetadataCache> tryGetParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
 #endif
 
@@ -1555,6 +1517,7 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
+    std::shared_ptr<HistogramMetricLog> getHistogramMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
@@ -1574,7 +1537,6 @@ public:
     std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
     std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
-    std::shared_ptr<PredicateStatisticsLog> getPredicateStatisticsLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1653,11 +1615,6 @@ public:
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
-    bool isViewInnerQuery() const { return is_view_inner_query; }
-    void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
-
-    bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
-    void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1764,9 +1721,6 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
     bool areBackgroundExecutorsInitialized() const;
-
-    /// True if the low-memory auto-tuning heuristic lowered background_pool_size at startup.
-    bool wasBackgroundPoolAutoLowered() const;
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

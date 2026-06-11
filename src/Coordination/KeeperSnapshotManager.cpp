@@ -679,34 +679,6 @@ KeeperStorageSnapshot<Storage>::~KeeperStorageSnapshot()
 }
 
 template<typename Storage>
-SnapshotFileInfoPtr
-KeeperSnapshotManager<Storage>::makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const
-{
-    return std::shared_ptr<SnapshotFileInfo>(
-        new SnapshotFileInfo{std::move(path), std::move(disk)},
-        [logger = log, log_idx](SnapshotFileInfo * p) noexcept
-        {
-            try
-            {
-                /// Unlink only snapshots explicitly retired by `removeSnapshot`
-                /// or corruption recovery. Manager destruction keeps files.
-                if (p->retired_for_removal.load(std::memory_order_acquire))
-                {
-                    p->disk->removeFileIfExists(p->path);
-                    LOG_DEBUG(logger, "Removed outdated snapshot {} at path {}", log_idx, p->path);
-                }
-            }
-            catch (...)
-            {
-                /// Log failed unlinks; constructor scan handles leftover files.
-                LOG_ERROR(logger, "Failed to remove snapshot file {} via deleter: {}",
-                          p->path, getCurrentExceptionMessage(/*with_stacktrace=*/true));
-            }
-            delete p;
-        });
-}
-
-template<typename Storage>
 KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
@@ -762,8 +734,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
 
             LOG_TRACE(log, "Found {} on {}", snapshot_file, disk->getName());
             size_t snapshot_up_to = getSnapshotPathUpToLogIdx(snapshot_file);
-            auto [_, inserted] = existing_snapshots.insert_or_assign(snapshot_up_to,
-                makeManagedSnapshotFileInfo(snapshot_file, disk, snapshot_up_to));
+            auto [_, inserted] = existing_snapshots.insert_or_assign(snapshot_up_to, std::make_shared<SnapshotFileInfo>(snapshot_file, disk));
 
             if (!inserted)
                 LOG_WARNING(
@@ -828,7 +799,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
 
     disk->removeFile(tmp_snapshot_file_name);
 
-    auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
+    auto snapshot_file_info = std::make_shared<SnapshotFileInfo>(snapshot_file_name, disk);
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
     removeOutdatedSnapshotsIfNeeded();
     moveSnapshotsIfNeeded();
@@ -870,7 +841,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
     ctx.write_buf.reset();
     ctx.disk->removeFile("tmp_" + ctx.snapshot_file_name);
 
-    auto snapshot_file_info = makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx);
+    auto snapshot_file_info = std::make_shared<SnapshotFileInfo>(ctx.snapshot_file_name, ctx.disk);
     existing_snapshots.emplace(ctx.log_idx, snapshot_file_info);
     try
     {
@@ -898,11 +869,8 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSna
         }
         catch (const DB::Exception &)
         {
-            /// Retire unreadable snapshots through the managed deleter.
-            auto retired_info = latest_itr->second;
-            retired_info->retired_for_removal.store(true, std::memory_order_release);
-            LOG_WARNING(log, "Removing corrupt snapshot {} at path {}",
-                        latest_itr->first, retired_info->path);
+            const auto & [path, disk] = *latest_itr->second;
+            disk->removeFile(path);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -914,9 +882,9 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSna
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
-    const auto & snapshot_info = *existing_snapshots.at(up_to_log_idx);
+    const auto & [snapshot_path, snapshot_disk] = *existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    auto reader = snapshot_info.disk->readFile(snapshot_info.path, getReadSettings());
+    auto reader = snapshot_disk->readFile(snapshot_path, getReadSettings());
     copyData(*reader, writer);
     return writer.getBuffer();
 }
@@ -1004,32 +972,32 @@ void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded()
 template<typename Storage>
 void KeeperSnapshotManager<Storage>::moveSnapshotsIfNeeded()
 {
-    /// Move snapshots to their configured disks when no outside holder pins them.
+    /// move snapshots to correct disks
+
     auto disk = getDisk();
     auto latest_snapshot_disk = getLatestSnapshotDisk();
     auto latest_snapshot_idx = getLatestSnapshotIndex();
 
     for (auto & [idx, file_info] : existing_snapshots)
     {
-        DiskPtr target_disk = (idx == latest_snapshot_idx) ? latest_snapshot_disk : disk;
-
-        if (file_info->disk == target_disk)
-            continue;
-
-        /// `use_count > 1` means a transfer, S3 upload, or caller still
-        /// holds the file. Retry the move on the next snapshot-manager update.
-        const int64_t count = file_info.use_count();
-        if (count > 1)
+        if (idx == latest_snapshot_idx)
         {
-            LOG_DEBUG(log,
-                "Deferring move of snapshot {} - has {} outside references",
-                idx, count - 1);
-            continue;
+            if (file_info->disk != latest_snapshot_disk)
+            {
+                moveSnapshotBetweenDisks(file_info->disk, file_info->path, latest_snapshot_disk, file_info->path, keeper_context);
+                file_info->disk = latest_snapshot_disk;
+            }
         }
-
-        moveSnapshotBetweenDisks(file_info->disk, file_info->path, target_disk, file_info->path, keeper_context);
-        file_info->disk = target_disk;
+        else
+        {
+            if (file_info->disk != disk)
+            {
+                moveSnapshotBetweenDisks(file_info->disk, file_info->path, disk, file_info->path, keeper_context);
+                file_info->disk = disk;
+            }
+        }
     }
+
 }
 
 template<typename Storage>
@@ -1038,9 +1006,8 @@ void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-
-    /// Mark before erasing so the deleter unlinks after the last pin is released.
-    itr->second->retired_for_removal.store(true, std::memory_order_release);
+    const auto & [path, disk] = *itr->second;
+    disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);
 }
 
@@ -1079,7 +1046,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
 
     disk->removeFile(tmp_snapshot_file_name);
 
-    auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
+    auto snapshot_file_info = std::make_shared<SnapshotFileInfo>(snapshot_file_name, disk);
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
 
     try
@@ -1106,32 +1073,21 @@ size_t KeeperSnapshotManager<Storage>::getLatestSnapshotIndex() const
 template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() const
 {
-    if (existing_snapshots.empty())
-        return nullptr;
-    auto it = existing_snapshots.find(getLatestSnapshotIndex());
-    if (it == existing_snapshots.end())
-        return nullptr;
+    if (!existing_snapshots.empty())
+    {
+        const auto & [path, disk] = *existing_snapshots.at(getLatestSnapshotIndex());
 
-    /// Return the map entry so callers pin the same file and deleter state.
-    try
-    {
-        if (it->second->disk->existsFile(it->second->path))
-            return it->second;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
+        try
+        {
+            if (disk->existsFile(path))
+                return std::make_shared<SnapshotFileInfo>(path, disk);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
     }
     return nullptr;
-}
-
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getSnapshotPin(uint64_t log_idx) const
-{
-    auto it = existing_snapshots.find(log_idx);
-    if (it == existing_snapshots.end())
-        return nullptr;
-    return it->second;
 }
 
 template struct KeeperStorageSnapshot<KeeperMemoryStorage>;
