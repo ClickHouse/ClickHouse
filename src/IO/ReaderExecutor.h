@@ -4,9 +4,12 @@
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
+#include <Common/Stopwatch.h>
 #include <base/types.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 
@@ -61,6 +64,56 @@ public:
     String getFileName() const { return log_file_path; }
 
 private:
+    /// Per-instance read-path counters. `add` is the only mutator and the single place a
+    /// counter maps to its ProfileEvent (and modeled-cost contribution), so they never
+    /// drift and every update is instantly observable. The cache / connection counters
+    /// have no caller in this minimal slice, so they stay 0 until their features land.
+    struct Stats
+    {
+        enum Counter : size_t
+        {
+            SourceRequests,         /// chunks opened and read from the source
+            BytesFromSource,        /// physical bytes read from the source
+            RequestedBytes,         /// useful bytes delivered to the caller (KPI denominator)
+            IncompleteConnections,
+            CacheGetRequests,
+            CachePopulateRequests,
+            WorkMicroseconds,
+            NumCounters,
+        };
+
+        void add(Counter c, UInt64 value = 1);
+        UInt64 get(Counter c) const { return values[c]; }
+
+        /// Roll a future transient sub-executor's tally into the parent without re-emitting
+        /// (each counter was already emitted at its `add`).
+        Stats & operator+=(const Stats & o)
+        {
+            for (size_t i = 0; i < NumCounters; ++i)
+                values[i] += o.values[i];
+            return *this;
+        }
+
+    private:
+        std::array<UInt64, NumCounters> values{};
+    };
+
+    /// RAII timer: on scope exit adds its lifetime to a `Stats` timing counter via `add`.
+    class StatTimer
+    {
+    public:
+        StatTimer(Stats & target_, Stats::Counter counter_) : target(target_), counter(counter_) {}
+        ~StatTimer() { target.add(counter, watch.elapsedMicroseconds()); }
+
+        StatTimer(const StatTimer &) = delete;
+        StatTimer & operator=(const StatTimer &) = delete;
+
+    private:
+        Stats & target;
+        Stats::Counter counter;
+        Stopwatch watch;
+    };
+
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
     /// source read latches `reached_eof`; a backward `seek` clears it. A
     /// `read_until` bound caps EOF earlier.
@@ -82,6 +135,9 @@ private:
 
     /// Backs the bytes returned by the latest `readNextChunk`.
     Memory<> block;
+
+    Stats stats;
+    CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };
