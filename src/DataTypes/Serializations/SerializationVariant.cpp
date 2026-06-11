@@ -775,6 +775,15 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
                 return {variant_rows_offsets, variant_limits};
 
             readDiscriminatorsGranuleStart(state, stream);
+
+            /// Instrumentation: catch stream/state desync at the source — a garbage discriminator
+            /// here means we read a granule header at a non-boundary offset.
+            if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT
+                && state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR
+                && state.compact_discr >= variant_serializations.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "DESYNC: invalid compact discriminator {} (num variants {}), granule_size {}, continuous_reading {}",
+                    UInt32(state.compact_discr), variant_serializations.size(), state.remaining_rows_in_granule, continuous_reading);
         }
 
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
@@ -836,6 +845,11 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
     readBinaryLittleEndian(granule_format, *stream);
     if (granule_format != CompactDiscriminatorsGranuleFormat::COMPACT && granule_format != CompactDiscriminatorsGranuleFormat::PLAIN)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected format of compact discriminators granule: {}", UInt32(granule_format));
+
+    /// Instrumentation: a stream/state desync makes us read a granule header at a non-boundary,
+    /// yielding a garbage granule_size. A real granule never exceeds the index granularity.
+    if (granule_size > 100'000'000)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "DESYNC: implausible granule_size {}", granule_size);
 
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
