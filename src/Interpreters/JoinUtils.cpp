@@ -337,6 +337,20 @@ Columns materializeColumns(const Block & block, const Names & names)
     return materialized;
 }
 
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names)
+{
+    Columns materialized;
+    materialized.reserve(names.size());
+
+    for (const auto & column_name : names)
+    {
+        const auto & column = block.getByName(column_name).column;
+        materialized.emplace_back(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
+    }
+
+    return materialized;
+}
+
 ColumnRawPtrs getRawPointers(const Columns & columns)
 {
     ColumnRawPtrs ptrs;
