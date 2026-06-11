@@ -94,7 +94,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.get(Stats::RequestedBytes), stats.get(Stats::WorkMicroseconds));
 }
 
-ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
+Rope ReaderExecutor::readNextWindow()
 {
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
@@ -111,7 +111,7 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 
     const size_t object_offset = position - object_logical_start_offset;
 
-    /// Clamp the block to the object boundary so a chunk never straddles two
+    /// Clamp the block to the object boundary so a window never straddles two
     /// objects; the next call continues in the next object. Unknown total size
     /// means stream a full block and let a short read mark EOF.
     size_t want = block_size;
@@ -133,7 +133,7 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 
     auto buffer = source->open(*object);
 
-    /// Bound the request to the chunk so a remote source fetches exactly `want`
+    /// Bound the request to the window so a remote source fetches exactly `want`
     /// bytes rather than an open-ended tail that is then cancelled. Set before
     /// the seek so the bound applies to the connection opened on the first read.
     if (buffer->supportsRightBoundedReads())
@@ -142,10 +142,10 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
     if (object_offset > 0)
         buffer->seek(static_cast<off_t>(object_offset), SEEK_SET);
 
-    block.resize(want);
-    const size_t got = buffer->read(block.data(), want);
+    auto block = std::make_shared<OwnedRopeBuffer>(want);
+    const size_t got = buffer->read(block->data(), want);
 
-    /// One open+read per chunk; requested bytes equal source bytes until caches/over-read land.
+    /// One open+read per window; requested bytes equal source bytes until caches/over-read land.
     stats.add(Stats::SourceRequests);
     stats.add(Stats::BytesFromSource, got);
     stats.add(Stats::RequestedBytes, got);
@@ -167,9 +167,10 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
             got, want, position, object->remote_path, object->bytes_size);
     }
 
-    Chunk chunk{block.data(), got, position};
+    Rope rope;
+    rope.append(RopeNode{std::move(block), 0, got, position});
     position += got;
-    return chunk;
+    return rope;
 }
 
 void ReaderExecutor::seek(size_t new_position)

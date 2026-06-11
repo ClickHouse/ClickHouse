@@ -2,7 +2,7 @@
 
 #include <IO/OffsetMap.h>
 #include <IO/IFileBasedSourceReader.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/Rope.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -19,7 +19,7 @@ namespace DB
 class ReadBufferFromFileBase;
 
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves
-/// bytes from an `IFileBasedSourceReader`, one block at a time, into an owned buffer.
+/// bytes from an `IFileBasedSourceReader` as a `Rope`, one block at a time.
 /// Drives the experimental `use_reader_executor` read path. One instance per
 /// column-stream; not thread-safe.
 class ReaderExecutor
@@ -34,19 +34,10 @@ public:
 
     ~ReaderExecutor();
 
-    /// A contiguous run of bytes starting at the current position. `data` points
-    /// into the executor's own block buffer and stays valid only until the next
-    /// `readNextChunk` / `seek`. `size == 0` means EOF.
-    struct Chunk
-    {
-        const char * data = nullptr;
-        size_t size = 0;
-        size_t logical_offset = 0;
-    };
-
-    /// Read the next block (<= `block_size`, clamped to the current object's end
-    /// for known-size objects), advancing the position by the bytes read.
-    Chunk readNextChunk();
+    /// Read the next block (<= `block_size`, clamped to the current object's end for
+    /// known-size objects) into a fresh rope buffer and advance the position by the bytes
+    /// read. Returns a single-node `Rope` at the current position; an empty `Rope` is EOF.
+    Rope readNextWindow();
 
     void seek(size_t new_position);
 
@@ -132,9 +123,6 @@ private:
     bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
-
-    /// Backs the bytes returned by the latest `readNextChunk`.
-    Memory<> block;
 
     Stats stats;
     CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime

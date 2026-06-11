@@ -86,16 +86,21 @@ protected:
         return obj;
     }
 
-    /// Drain the executor and return all bytes it serves.
+    /// Drain the executor and return all bytes it serves, streaming each window's rope.
     static std::vector<char> drain(ReaderExecutor & ex)
     {
         std::vector<char> out;
         while (true)
         {
-            auto chunk = ex.readNextChunk();
-            if (chunk.size == 0)
+            Rope w = ex.readNextWindow();
+            if (w.atEnd())
                 break;
-            out.insert(out.end(), chunk.data, chunk.data + chunk.size);
+            while (!w.atEnd())
+            {
+                auto span = w.peek();
+                out.insert(out.end(), span.data, span.data + span.size);
+                w.advance(span.size);
+            }
         }
         return out;
     }
@@ -116,25 +121,25 @@ TEST_F(ReaderExecutorTest, SequentialReadSingleObject)
     EXPECT_EQ(ex.getPosition(), 1024u);
 }
 
-TEST_F(ReaderExecutorTest, ChunkNeverExceedsBlockSize)
+TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 {
     StoredObjects objects{makeFile("a.bin", 1000)};
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/100);
 
     size_t total = 0;
-    size_t chunks = 0;
+    size_t windows = 0;
     while (true)
     {
-        auto chunk = ex.readNextChunk();
-        if (chunk.size == 0)
+        Rope w = ex.readNextWindow();
+        if (w.atEnd())
             break;
-        EXPECT_LE(chunk.size, 100u);
-        EXPECT_EQ(chunk.logical_offset, total);
-        total += chunk.size;
-        ++chunks;
+        EXPECT_LE(w.totalBytes(), 100u);
+        EXPECT_EQ(w.peek().logical_offset, total);
+        total += w.totalBytes();
+        ++windows;
     }
     EXPECT_EQ(total, 1000u);
-    EXPECT_EQ(chunks, 10u);
+    EXPECT_EQ(windows, 10u);
 }
 
 TEST_F(ReaderExecutorTest, SeekThenRead)
@@ -145,17 +150,19 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ex.seek(500);
     EXPECT_EQ(ex.getPosition(), 500u);
 
-    auto chunk = ex.readNextChunk();
-    ASSERT_GT(chunk.size, 0u);
-    EXPECT_EQ(chunk.logical_offset, 500u);
-    EXPECT_EQ(static_cast<unsigned char>(chunk.data[0]), patternByte(500));
+    Rope w = ex.readNextWindow();
+    ASSERT_FALSE(w.atEnd());
+    auto span = w.peek();
+    EXPECT_EQ(span.logical_offset, 500u);
+    EXPECT_EQ(static_cast<unsigned char>(span.data[0]), patternByte(500));
 
     /// Seek backward and re-read.
     ex.seek(10);
-    auto chunk2 = ex.readNextChunk();
-    ASSERT_GT(chunk2.size, 0u);
-    EXPECT_EQ(chunk2.logical_offset, 10u);
-    EXPECT_EQ(static_cast<unsigned char>(chunk2.data[0]), patternByte(10));
+    Rope w2 = ex.readNextWindow();
+    ASSERT_FALSE(w2.atEnd());
+    auto span2 = w2.peek();
+    EXPECT_EQ(span2.logical_offset, 10u);
+    EXPECT_EQ(static_cast<unsigned char>(span2.data[0]), patternByte(10));
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
@@ -165,15 +172,15 @@ TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
 
     EXPECT_EQ(ex.totalSize(), 500u);
 
-    /// A chunk must never straddle the object boundary at 300.
+    /// A window must never straddle the object boundary at 300.
     while (true)
     {
         size_t pos = ex.getPosition();
-        auto chunk = ex.readNextChunk();
-        if (chunk.size == 0)
+        Rope w = ex.readNextWindow();
+        if (w.atEnd())
             break;
         if (pos < 300)
-            EXPECT_LE(chunk.logical_offset + chunk.size, 300u) << "chunk from " << pos << " crossed boundary";
+            EXPECT_LE(w.peek().logical_offset + w.totalBytes(), 300u) << "window from " << pos << " crossed boundary";
     }
     EXPECT_EQ(ex.getPosition(), 500u);
 }
@@ -198,8 +205,7 @@ TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256);
 
     EXPECT_EQ(ex.totalSize(), 0u);
-    auto chunk = ex.readNextChunk();
-    EXPECT_EQ(chunk.size, 0u);
+    EXPECT_TRUE(ex.readNextWindow().atEnd());
 }
 
 TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
@@ -212,7 +218,7 @@ TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
     missing.bytes_size = StoredObject::UnknownSize;
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {missing}, /*block_size=*/256);
 
-    EXPECT_ANY_THROW(ex.readNextChunk());
+    EXPECT_ANY_THROW(ex.readNextWindow());
 }
 
 TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
@@ -223,7 +229,7 @@ TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
     obj.bytes_size = 1000;  // pretend the object is larger than the file on disk
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, /*block_size=*/256);
 
-    EXPECT_ANY_THROW(ex.readNextChunk());
+    EXPECT_ANY_THROW(ex.readNextWindow());
 }
 
 /// The metrics tests read the executor's ProfileEvents from a fresh per-test ThreadGroup

@@ -28,30 +28,37 @@ bool PipelineReadBuffer::nextImpl()
     if (profile_callback)
         watch.emplace(clock_type);
 
-    auto chunk = executor->readNextChunk();
-    if (chunk.size == 0)
+    /// Consume what the previous span exposed, then refill from the executor when the
+    /// current window's rope is exhausted. An empty window means EOF.
+    rope.advance(working_buffer.size());
+    if (rope.atEnd())
     {
-        LOG_TRACE(log, "nextImpl: EOF at {}", read_position);
-        return false;
+        rope = executor->readNextWindow();
+        if (rope.atEnd())
+        {
+            LOG_TRACE(log, "nextImpl: EOF at {}", read_position);
+            return false;
+        }
     }
+
+    auto span = rope.peek();
 
     /// Report the read so `MergeTreeReadPool`'s slow-read backoff still sees it.
     if (profile_callback)
     {
         ProfileInfo info{};
-        info.bytes_requested = chunk.size;
-        info.bytes_read = chunk.size;
+        info.bytes_requested = span.size;
+        info.bytes_read = span.size;
         info.nanoseconds = watch->elapsed();
         profile_callback(info);
     }
 
-    /// `chunk.data` is read-only and owned by the executor; we only expose it,
+    /// The span points into a rope buffer kept alive by `rope`; we only expose it,
     /// never write through it, so dropping const is safe.
-    char * data = const_cast<char *>(chunk.data);
-    internal_buffer = Buffer(data, data + chunk.size);
+    internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
-    read_position = chunk.logical_offset + chunk.size;
+    read_position = span.logical_offset + span.size;
     return true;
 }
 
@@ -80,6 +87,7 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
     LOG_DEBUG(log, "seek to {}", new_pos);
 
     resetWorkingBuffer();
+    rope = Rope{};
     executor->seek(new_pos);
     read_position = new_pos;
     return new_pos;
@@ -102,6 +110,7 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
     {
         const size_t current = read_position - available();
         resetWorkingBuffer();
+        rope = Rope{};
         executor->seek(current);
         read_position = current;
     }
