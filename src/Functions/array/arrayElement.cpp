@@ -2327,17 +2327,9 @@ ColumnPtr FunctionArrayElement<mode>::perform(
 }
 
 
-/** arrayElementOrDefault(arr, n, default) returns the array element at index `n`,
-  * or `default` if the index is out of range.
-  * arrayElementOrDefault(map, key, default) returns the value associated with `key`,
-  * or `default` if the key is not present in the map.
-  *
-  * The result type is the least common supertype of the array element (or map value) type
-  * and the default value type.
-  *
-  * It is implemented on top of arrayElementOrNull: that function returns a Nullable column
-  * whose NULLs mark the positions where the index is out of range or the key is missing, and
-  * those positions are then replaced with the provided default value.
+/** arrayElementOrDefault(arr, n, default) - same as arrayElement, but returns the third argument
+  * when the index is out of range (or the key is missing, for maps).
+  * Built on top of arrayElementOrNull: take its result and replace NULLs with the default.
   */
 class FunctionArrayElementOrDefault : public IFunction
 {
@@ -2378,8 +2370,7 @@ public:
                 arguments[0]->getName());
         }
 
-        /// The implementation relies on arrayElementOrNull to detect absent elements, which requires
-        /// the element type to be representable inside Nullable.
+        /// We detect absent elements via arrayElementOrNull, so the element type must fit into Nullable.
         const DataTypePtr element_not_null = removeNullable(element_type);
         if (!element_not_null->canBeInsideNullable())
             throw Exception(
@@ -2393,13 +2384,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        /// arrayElementOrNull(container, n) yields a Nullable column whose NULLs mark an
-        /// out-of-range index (for arrays) or a missing key (for maps).
+        /// arrayElementOrNull returns NULL where the index is out of range or the key is missing.
         const FunctionArrayElement<ArrayElementExceptionMode::Null> array_element_or_null;
         const DataTypePtr nullable_type = array_element_or_null.getReturnTypeImpl({arguments[0].type, arguments[1].type});
 
-        /// The inner implementation does not handle constant columns on its own (it relies on the
-        /// function framework to materialize them), so materialize them here before calling it directly.
+        /// arrayElement doesn't materialize const columns by itself, so do it before calling it directly.
         const ColumnsWithTypeAndName element_arguments{
             {arguments[0].column->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name},
             {arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name}};
@@ -2410,7 +2399,7 @@ public:
         const auto & column_nullable = assert_cast<const ColumnNullable &>(*nullable_column);
         const auto & null_map = column_nullable.getNullMapData();
 
-        /// Cast both the looked-up elements and the default value to the common result type.
+        /// Bring both the elements and the default to the common result type.
         const ColumnPtr elements = castColumn({column_nullable.getNestedColumnPtr(), removeNullable(nullable_type), ""}, result_type);
         const ColumnPtr defaults = castColumn({arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, ""}, result_type);
 
