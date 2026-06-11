@@ -53,3 +53,7 @@ SELECT arrayElementOrDefault(5, 1, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT
 SELECT arrayElementOrDefault([1, 2, 3], 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT arrayElementOrDefault([[1], [2]], 5, [9]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayElementOrDefault([1, 2], 9, 'x'); -- { serverError NO_COMMON_TYPE }
+
+-- The function must show up in system.functions (reading it also checks the docs are valid).
+SELECT 'system.functions';
+SELECT name, origin FROM system.functions WHERE name = 'arrayElementOrDefault';
