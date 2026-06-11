@@ -1,5 +1,6 @@
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/Access/parseAccessEntityName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -32,17 +33,6 @@ namespace
             return ParserKeyword{Keyword::ON}.ignore(pos, expected)
                 && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
-    }
-
-    /// True if pos is at a trailing query-output clause owned by ParserQueryWithOutput.
-    /// The optional policy short name is a bare identifier, so without this guard it would
-    /// swallow these keywords (e.g. FORMAT) instead of leaving them for the outer parser.
-    bool atQueryOutputTail(IParserBase::Pos & pos, Expected & expected)
-    {
-        return ParserKeyword{Keyword::FORMAT}.checkWithoutMoving(pos, expected)
-            || ParserKeyword{Keyword::SETTINGS}.checkWithoutMoving(pos, expected)
-            || ParserKeyword{Keyword::INTO_OUTFILE}.checkWithoutMoving(pos, expected)
-            || ParserKeyword{Keyword::PARALLEL_WITH}.checkWithoutMoving(pos, expected);
     }
 }
 
