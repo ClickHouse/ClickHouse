@@ -93,7 +93,7 @@ namespace
 }
 
 
-class ColumnsSource final : public ISource
+class ColumnsSource : public ISource
 {
 public:
     ColumnsSource(

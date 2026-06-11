@@ -34,7 +34,7 @@ extern const int NOT_IMPLEMENTED;
 
 bool Bin::convertImpl(String & out, IParser::Pos & pos)
 {
-    double bin_size = 0;
+    double bin_size;
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
@@ -148,7 +148,7 @@ bool Bin::convertImpl(String & out, IParser::Pos & pos)
 
 bool BinAt::convertImpl(String & out, IParser::Pos & pos)
 {
-    double bin_size = 0;
+    double bin_size;
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;

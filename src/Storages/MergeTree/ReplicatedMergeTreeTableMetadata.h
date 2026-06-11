@@ -22,9 +22,9 @@ struct ReplicatedMergeTreeTableMetadata
 
     String date_column;
     String sampling_expression;
-    UInt64 index_granularity{};
+    UInt64 index_granularity;
     /// Merging related params
-    int merging_params_mode{};
+    int merging_params_mode;
     int merge_params_version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String sign_column;
     String version_column;
@@ -39,7 +39,7 @@ struct ReplicatedMergeTreeTableMetadata
     String projections;
     String constraints;
     String ttl_table;
-    UInt64 index_granularity_bytes{};
+    UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);

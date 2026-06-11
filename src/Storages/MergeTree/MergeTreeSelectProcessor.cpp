@@ -205,6 +205,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = row_level_filter->do_remove_column,
             .need_filter = true,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
@@ -233,6 +234,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = prewhere_info->remove_prewhere_column,
             .need_filter = prewhere_info->need_filter,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
@@ -277,13 +279,6 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
                 data_part->index_granularity->getMarksCount(),
                 data_part->index_granularity->hasFinalMark(),
                 res.read_mark_ranges));
-
-            /// Some rows survived PREWHERE, but individual granules within this batch may
-            /// still have been fully filtered out. Record those granules immediately so that
-            /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty()
-                && !current_task.readersChainCanSkipMarksBeforePrewhere())
-                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
 
         return ChunkAndProgress{
