@@ -229,6 +229,7 @@ struct FormatSettings
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
+        bool quote_date_time_types = true;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
         bool arrays_as_nested_csv = false;

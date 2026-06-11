@@ -229,9 +229,11 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 
 void SerializationDateTime64::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('"', ostr);
+    if (settings.csv.quote_date_time_types)
+        writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    writeChar('"', ostr);
+    if (settings.csv.quote_date_time_types)
+        writeChar('"', ostr);
 }
 
 void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

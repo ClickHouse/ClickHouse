@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"wait_for_part_commit_in_dependent_materialized_views", false, false, "New setting"},
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},
+            {"output_format_csv_quote_date_time_types", true, true, "New setting to allow writing date and time values without surrounding double quotes in CSV output"},
             {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
