@@ -4,9 +4,10 @@
 #
 #  Issue A — arithmetic overflow in checkArrowBuffer: a crafted row count near
 #  2^62 makes elem_size * (offset + length) wrap to 0 mod 2^64, bypassing the
-#  buffer-size guard.  The fixed build uses __builtin_mul_overflow and throws
-#  INCORRECT_DATA.  On an unpatched build the subsequent reserve(2^62) catches
-#  it with error 173 (no OOB read occurs in practice, but the check is wrong).
+#  buffer-size guard.  The fixed build validates the data buffer (with
+#  __builtin_mul_overflow) before reserving the column, so it rejects the file with
+#  INCORRECT_DATA ("buffer size overflow") rather than reaching reserve(2^62) (which
+#  on a build that skipped the checked arithmetic throws CANNOT_ALLOCATE_MEMORY).
 #
 #  Issue B — validity bitmap (buffers[0]) not validated: a file with a valid
 #  data buffer but a 1-byte bitmap for 64 rows lets IsNull() read past the
@@ -77,25 +78,11 @@ check_incorrect_data() {
     fi
 }
 
-check_rejected() {
-    # Accepts any non-zero exit code or exception — used for cases where the
-    # vulnerability is unreachable via OOB read but the file must still be rejected.
-    local label="$1"; shift
-    local actual
-    actual=$("$@" 2>&1)
-    local exit_code=$?
-    # Success (exit=0 with data output) means the file was silently accepted — bad.
-    if [ "$exit_code" -ne 0 ] || echo "$actual" | grep -qE 'Exception|INCORRECT_DATA|Error'; then
-        echo 'REJECTED'
-    else
-        echo "FAIL [$label] expected rejection, got silent success: $(echo "$actual" | head -1 | cut -c1-100)"
-    fi
-}
-
-# Issue A: overflow — with standard IPC the row count is also huge, so reserve() rejects
-# the file before __builtin_mul_overflow fires (Code: 173, not Code: 117).  The important
-# property is that the file is REJECTED — no OOB read ever reaches raw pointer arithmetic.
-check_rejected overflow $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/overflow.arrow', Arrow)"
+# Issue A: overflow — checkArrowBuffer validates the data buffer before the column is reserved,
+# so __builtin_mul_overflow fires and rejects the file as INCORRECT_DATA ("buffer size overflow")
+# rather than reaching reserve(2^62).  Asserting INCORRECT_DATA proves the checked-arithmetic path
+# (a build that skipped it would instead throw CANNOT_ALLOCATE_MEMORY and fail this assertion).
+check_incorrect_data overflow $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/overflow.arrow', Arrow)"
 
 # Issue B: bitmap — checkValidityBitmap must produce INCORRECT_DATA before IsNull reads.
 # Use sum() to force column materialisation; count(*) is optimised away and skips data reads.

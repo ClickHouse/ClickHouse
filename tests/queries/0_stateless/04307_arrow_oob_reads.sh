@@ -72,11 +72,14 @@ open(f'{out}/int128.arrow', 'wb').write(inflate_row_count(d, 1))
 d = write_arrow(pa.array([100], type=pa.date32()))
 open(f'{out}/date32.arrow', 'wb').write(inflate_row_count(d, 1))
 
-# 6. Dictionary indexes: integer-valued dictionary isolates the index-buffer path.
-#    2 rows → 8-byte index body, inflated to 16384 rows.
+# 6. Dictionary indexes: isolate the index-buffer path in readColumnWithIndexesDataImpl.
+#    2 indices (8-byte index body, inflated to 16384) over 3 dictionary values. The value
+#    count (3) differs from the index count (2), so inflate_row_count(d, 2) only patches the
+#    index FieldNode/RecordBatch length and leaves the dictionary-values batch valid; the
+#    rejection therefore comes from the index buffer, not the values buffer.
 d = write_arrow(pa.DictionaryArray.from_arrays(
     pa.array([0, 1], type=pa.int32()),
-    pa.array([100, 200], type=pa.int32())))
+    pa.array([100, 200, 300], type=pa.int32())))
 open(f'{out}/dict_indexes.arrow', 'wb').write(inflate_row_count(d, 2))
 
 # 7. IPv4: Arrow Int32, 1 row → 4-byte body, inflated to 16384 rows

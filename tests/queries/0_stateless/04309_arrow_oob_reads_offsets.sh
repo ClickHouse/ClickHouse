@@ -115,9 +115,14 @@ open(f'{out}/view_dlen.arrow', 'wb').write(d)
 
 # 24. JSON data-buffer: checkBinaryOffsetsBuffer guards the offsets buffer but the
 #     per-row value_offset+value_length is not checked against value_data()->size().
-#     1 row of 96 'A' bytes: offsets = [0, 96]. Patch the last offset to ~512 MB.
+#     1 row of 96 'A' bytes: offsets = [0, 96]. Patch the final offset (offset[1]) to
+#     ~512 MB so offset[0]=0 stays valid but value_length overruns the 96-byte data buffer.
+#     This exercises the "safe_length > data_buf_size - safe_offset" half of the per-row
+#     guard (patching offset[0] instead would only test the offset half).
 d = write_arrow(pa.array([b'A'*96], type=pa.binary()))
-d = patch_last_i32(d, struct.pack('<ii', 0, 96), 0x20000000)
+i = d.rfind(struct.pack('<ii', 0, 96))   # the [0, 96] offsets pair
+assert i >= 0
+d[i+4:i+8] = struct.pack('<i', 0x20000000)  # offsets -> [0, ~512 MB]
 open(f'{out}/json_dlen.arrow', 'wb').write(d)
 
 # 25. readColumnWithBigNumberFromBinaryData: value_length(i) reads the offsets buffer
