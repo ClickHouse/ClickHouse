@@ -2,7 +2,6 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -80,13 +79,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             if (!allow_uuid_macro)
                 info.table_id.uuid = UUIDHelpers::Nil;
 
-            {
-                /// Some fields (e.g.: level) in MacroExpansionInfo are modified during macro expansion.
-                /// Let's make a copy, so the next call won't interfere with this one.
-                auto info_copy = info;
-                /// Make sure that {uuid} macro is allowed, if present.
-                args.getContext()->getMacros()->expand(path, info_copy);
-            }
+            /// Make sure that {uuid} macro is allowed, if present.
+            args.getContext()->getMacros()->expand(path, info);
 
             /// Actually expand all the macros except {uuid} macro.
             info.expand_special_macros_only = true;
@@ -136,7 +130,6 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 }
 
 #if USE_AWS_S3
-void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -155,7 +148,6 @@ void registerStorageS3Queue(StorageFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
     factory.registerStorage(
