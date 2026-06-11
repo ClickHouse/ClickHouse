@@ -38,7 +38,6 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
-    ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -72,7 +71,6 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
-    PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
@@ -157,7 +155,6 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
-    PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
@@ -190,8 +187,7 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
-    PAUSEABLE(transaction_after_commit_pause) \
-    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc)
+    PAUSEABLE(transaction_after_commit_pause)
 
 namespace FailPoints
 {
@@ -212,6 +208,9 @@ struct FailPointChannel
 
     /// Condition variable for target threads to wait for resume notification
     std::condition_variable resume_cv;
+
+    /// Number of threads currently paused at this failpoint
+    size_t pause_count = 0;
 
     /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
     /// Threads record the epoch when they start waiting, and only wake up
@@ -308,6 +307,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     size_t my_resume_epoch = channel->resume_epoch;
 
     /// Signal that a thread has reached and paused at this failpoint
+    ++channel->pause_count;
     ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
@@ -315,6 +315,9 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
+
+    --channel->pause_count;
+
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -327,6 +330,9 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     auto channel = iter->second;
 
     /// Wait until a thread has paused at this failpoint after the most recent resume.
+    /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
+    /// after NOTIFY, the task thread may not have decremented pause_count yet,
+    /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
         return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });

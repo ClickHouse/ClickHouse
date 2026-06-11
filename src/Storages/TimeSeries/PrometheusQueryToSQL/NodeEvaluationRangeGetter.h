@@ -32,8 +32,8 @@ private:
     std::shared_ptr<const PrometheusQueryTree> promql_tree;
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
-    DurationType instant_selector_window{};
-    DurationType default_subquery_step{};
+    DurationType instant_selector_window;
+    DurationType default_subquery_step;
     std::unordered_map<const Node *, NodeEvaluationRange> map;
 };
 

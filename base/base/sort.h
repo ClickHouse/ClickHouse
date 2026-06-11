@@ -5,7 +5,6 @@
 #ifndef NDEBUG
 
 #include <pcg_random.hpp>
-#include <base/defines.h>
 #include <base/getThreadId.h>
 
 /** Same as libcxx std::__debug_less. Just without dependency on private part of standard library.
@@ -24,7 +23,7 @@ public:
     {
         bool lhs_less_than_rhs = cmp(lhs, rhs);
         if (lhs_less_than_rhs)
-            chassert(!cmp(rhs, lhs));
+            assert(!cmp(rhs, lhs));
 
         return lhs_less_than_rhs;
     }
@@ -34,7 +33,7 @@ public:
     {
         bool lhs_less_than_rhs = cmp(lhs, rhs);
         if (lhs_less_than_rhs)
-            chassert(!cmp(rhs, lhs));
+            assert(!cmp(rhs, lhs));
 
         return lhs_less_than_rhs;
     }
