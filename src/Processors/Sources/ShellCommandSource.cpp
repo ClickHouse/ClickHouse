@@ -274,7 +274,13 @@ public:
                 {
                     bytes_read += res;
                     if (sampler)
+                    {
                         sampler->recordOutputBytes(static_cast<size_t>(res));
+                        /// The child produced this output, so it was running; sample its subtree VmHWM.
+                        /// It may have already exited (short-lived UDF) — then the read finds no VmHWM
+                        /// and this is a harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                        sampler->sampleExecutablePeak();
+                    }
                 }
             }
         }
@@ -286,6 +292,22 @@ public:
         }
         else
         {
+            /// Concluding best-effort tail sample. The function has closed stdout, so
+            /// this is the last point it is typically still alive; take one final
+            /// subtree sample (bypassing the throttle) to catch a peak reached after
+            /// the last IO sample but before EOF. Fired once; a no-op on the pool path
+            /// and harmless if the child has already exited. This is a single tail
+            /// attempt, not continuous sampling during the post-output reap.
+            /// This concluding sample is best-effort and is intentionally NOT covered
+            /// by a deterministic test — whether the child is still resident when EOF
+            /// is detected is timing-dependent, so any assertion on it would be
+            /// flaky; the deterministic guarantees (output-phase capture, max-not-sum,
+            /// parent-independence) are covered by the integration tests.
+            if (sampler && !final_sample_taken)
+            {
+                final_sample_taken = true;
+                sampler->sampleExecutablePeak(/*is_final=*/true);
+            }
             return false;
         }
 
@@ -340,6 +362,7 @@ private:
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
     UDFProcessSubtreeSampler * sampler;
+    bool final_sample_taken = false;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
@@ -380,7 +403,13 @@ public:
             {
                 bytes_written += res;
                 if (sampler)
+                {
                     sampler->recordInputBytes(static_cast<size_t>(res));
+                    /// The child's stdin is still open (this write succeeded), so it was
+                    /// running; sample its subtree VmHWM. It may exit before we sample — a
+                    /// harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                    sampler->sampleExecutablePeak();
+                }
             }
         }
     }
@@ -542,22 +571,65 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            /// Resource accounting must observe the borrow's resident set before
-            /// the worker is torn down or the slot is handed back to the pool —
-            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
-            /// would then read zero CPU and zero `VmHWM`.
-            /// `recordReleased` reads procfs and may throw, but `cleanup` is
-            /// called from the destructor — swallow any exception so the
-            /// destructor stays noexcept.
+            /// Record this borrow's resource usage before the child is gone. The two
+            /// executable UDF types measure it differently.
             if (configuration.sampler)
             {
-                try
+                if (process_pool)
                 {
-                    configuration.sampler->recordReleased();
+                    /// Resource accounting must observe the borrow's resident set before
+                    /// the worker is torn down or the slot is handed back to the pool —
+                    /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+                    /// would then read zero CPU and zero `VmHWM`.
+                    /// `recordReleased` reads procfs and may throw, but `cleanup` is
+                    /// called from the destructor — swallow any exception so the
+                    /// destructor stays noexcept.
+                    try
+                    {
+                        configuration.sampler->recordReleased();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ShellCommandSource");
+                    }
                 }
-                catch (...)
+                else if (command)
                 {
-                    tryLogCurrentException("ShellCommandSource");
+                    /// Peak memory was sampled from /proc VmHWM during IO, while the child
+                    /// was provably alive; by cleanup the child has closed stdout and is
+                    /// exiting, so its `/proc` mm fields are gone — no useful sample here.
+                    ///
+                    /// Attempt a non-blocking reap to capture wait4 rusage for CPU.
+                    /// When `prepare` already reaped the child via its blocking `wait`
+                    /// (`check_exit_code=true`, normal completion), `isWaitCalled()` is
+                    /// true and `tryReapWithoutStatusCheck` is skipped.
+                    ///
+                    /// Non-blocking: a child that closed stdout but keeps running is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM,
+                    /// so profiling cannot turn cleanup into a query hang.
+                    /// No status check: a non-zero exit must not raise
+                    /// CHILD_WAS_NOT_EXITED_NORMALLY when `check_exit_code=false`.
+                    if (!command->isWaitCalled())
+                    {
+                        try
+                        {
+                            command->tryReapWithoutStatusCheck();
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException("ShellCommandSource");
+                        }
+                    }
+
+                    /// Peak memory is independent of the reap: it comes from /proc VmHWM
+                    /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
+                    /// the wait4 rusage and is recorded only when the reap succeeded.
+                    configuration.sampler->recordExecutableElapsed();
+
+                    if (command->wasChildResourceUsageCaptured())
+                        configuration.sampler->recordExecutableFinished(
+                            command->getChildUserTimeMicroseconds(),
+                            command->getChildSystemTimeMicroseconds());
                 }
             }
 
@@ -817,10 +889,16 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     }
     else
     {
+        command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);
         else
             process = ShellCommand::execute(command_config);
+
+        /// Record the child pid so sampleExecutablePeak can walk the subtree
+        /// during IO. No-op when sampler is null.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
     std::vector<ShellCommandSource::SendDataTask> tasks;
