@@ -154,8 +154,28 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
+<<<<<<< HEAD
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+=======
+    }
+
+private:
+    mutable StorageURLSource::DisclosedGlobIterator iterator;
+};
+
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
+{
+    auto callback = std::make_shared<UrlTaskIterator>(
+        uri,
+        context->getSettingsRef()[Setting::glob_expansion_max_elements],
+        predicate,
+        getVirtualsList(),
+        getHivePartitionColumnsWithoutVirtuals(),
+        context
+    );
+>>>>>>> e884b9beef0 (Merge pull request #1863 from Altinity/bugfix/antalya-26.3/1855_s3cluster_hive)
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

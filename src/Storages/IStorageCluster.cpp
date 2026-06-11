@@ -713,6 +713,20 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
+NamesAndTypesList IStorageCluster::getHivePartitionColumnsWithoutVirtuals() const
+{
+    // Virtual columns can contain hive columns, so we remove these hive coulmns to avoid duplicates.
+    // In non-cluster case these columns are filtered in DB::prepareReadingFromFormat function.
+    auto virtual_columns = getVirtualsList();
+    NamesAndTypesList hive_partition_filtered;
+    for (const auto & hive_name_and_type : hive_partition_columns_to_read_from_file_path)
+    {
+        if (!virtual_columns.contains(hive_name_and_type.name))
+            hive_partition_filtered.emplace_back(hive_name_and_type);
+    }
+    return hive_partition_filtered;
+}
+
 ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 {
     Settings new_settings{settings};

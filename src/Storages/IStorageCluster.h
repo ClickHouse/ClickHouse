@@ -107,6 +107,10 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method writeFallBackToPure is not supported by storage {}", getName());
     }
 
+    NamesAndTypesList getHivePartitionColumnsWithoutVirtuals() const;
+
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+
 private:
     static ClusterPtr getClusterImpl(ContextPtr context, const String & cluster_name_, size_t max_hosts = 0);
 

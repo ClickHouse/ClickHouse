@@ -214,7 +214,6 @@ private:
     const String engine_name;
     StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     bool cluster_name_in_settings;
 
     /// non-clustered storage to fall back on pure realisation if needed
