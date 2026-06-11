@@ -13,7 +13,10 @@
 #include <Common/SignalHandlers.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Cache/QueryPlanCache.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/InterpreterSelectQueryFromPlan.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -115,6 +118,9 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event QueryPlanCacheHits;
+    extern const Event QueryPlanCacheValidationMisses;
+    extern const Event QueryPlanCacheStaleMisses;
 }
 
 namespace DB
@@ -123,6 +129,11 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool allow_experimental_query_plan_cache;
+    extern const SettingsBool enable_query_plan_cache;
+    extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
+    extern const SettingsUInt64 query_plan_cache_size_in_bytes_quota;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -222,6 +233,8 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -1083,6 +1096,120 @@ private:
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
 
+/// Query plan cache integration. Returns an interpreter when the query went through the
+/// plan cache machinery (either a hit, or a miss that built and possibly stored a logical
+/// plan), or nullptr when the query is ineligible and must use the regular interpreter.
+///
+/// Unlike the query result cache, a cache hit still executes the query: the cached object
+/// is the *logical plan* whose leaf reads are storage-agnostic `ReadFromTable` placeholders.
+/// `resolveStorages` rebinds them to current data snapshots on every run, so hits always see
+/// fresh data; only parsing, analysis and logical planning are skipped.
+static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
+    const ASTPtr & ast,
+    ContextMutablePtr context,
+    const SelectQueryOptions & select_query_options,
+    QueryPlanCachePtr query_plan_cache)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Non-deterministic function results may be captured into the plan as constants during
+    /// analysis; refuse early and cheaply. Expanded view bodies are checked later, during
+    /// dependency collection.
+    if (astContainsFunctionsUnsafeForQueryPlanCache(ast, context))
+        return nullptr;
+
+    auto key = tryBuildQueryPlanCacheKey(ast, context, SemanticSettings::computeHash(settings));
+    if (!key)
+        return nullptr;
+
+    if (auto cached_entry = query_plan_cache->get(*key))
+    {
+        try
+        {
+            if (validateQueryPlanCacheEntry(*cached_entry, context))
+            {
+                /// Revalidate access rights: permissions may have been revoked after the plan
+                /// was cached. Throws ACCESS_DENIED, which propagates to the user without
+                /// falling through to normal planning.
+                checkAccessForQueryPlanCacheHit(*cached_entry, context);
+
+                auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context);
+
+                /// The planner normally records query access info; on a hit it is skipped,
+                /// so restore the info to keep system.query_log populated.
+                addQueryAccessInfoForQueryPlanCacheHit(*cached_entry, context);
+
+                ProfileEvents::increment(ProfileEvents::QueryPlanCacheHits);
+                return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+            }
+
+            ProfileEvents::increment(ProfileEvents::QueryPlanCacheValidationMisses);
+        }
+        catch (const Exception & e)
+        {
+            /// Only stale cache state is silently recovered by re-planning. Anything else
+            /// (access denial, logical error, cancellation, OOM, ...) must propagate so that
+            /// incidents stay observable.
+            if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
+                throw;
+            ProfileEvents::increment(ProfileEvents::QueryPlanCacheStaleMisses);
+            tryLogCurrentException("QueryPlanCache", "Stale or corrupt cached plan, falling back to normal planning");
+        }
+    }
+
+    /// Miss: build the logical plan (leaf reads are `ReadFromTable` placeholders).
+    SelectQueryOptions logical_plan_options = select_query_options;
+    logical_plan_options.build_logical_plan = true;
+    logical_plan_options.cacheable_logical_plan = true;
+
+    /// Lambda capture expressions are JIT-compiled at planning time; compiled (fused)
+    /// function nodes cannot be serialized. Build the cacheable plan without expression
+    /// compilation - the JIT still applies when the (materialized) plan builds its
+    /// pipelines, so execution performance is unaffected.
+    auto planning_context = Context::createCopy(context);
+    planning_context->setSetting("compile_expressions", Field(false));
+
+    auto analyzer_interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(ast, planning_context, logical_plan_options);
+    auto & logical_plan = analyzer_interpreter->getQueryPlan();
+
+    /// Store the plan if nothing about the query makes reuse unsafe.
+    if (!queryTreeIsEligibleForPlanCache(
+            analyzer_interpreter->getQueryTree(), context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: query uses non-deterministic functions or scalar subqueries (see query_plan_cache_allow_scalar_subqueries)");
+    }
+    else
+    {
+        if (auto dependencies = collectQueryPlanCacheDependencies(
+                logical_plan, ast, context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
+        {
+            try
+            {
+                QueryPlanCacheEntry entry;
+                entry.serialized_plan = serializeQueryPlanForCache(logical_plan);
+                entry.dependencies = std::move(*dependencies);
+                entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
+                query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]);
+            }
+            catch (const Exception & e)
+            {
+                /// Only swallow failures that mean "this plan cannot be cached but is still
+                /// executable" (a step type that does not implement serialization yet).
+                if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
+                    throw;
+                tryLogCurrentException("QueryPlanCache", "Failed to serialize plan for the cache");
+            }
+        }
+    }
+
+    /// Execute the logical plan by resolving storage reads against current snapshots -
+    /// the same path a cache hit takes, so hit and miss behave identically.
+    auto plan = std::move(*analyzer_interpreter).extractQueryPlan();
+    plan.resolveStorages(context);
+    return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+}
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -1669,6 +1796,20 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// Query plan cache: skip for internal queries, non-SELECT, queries using parallel
+        /// replicas, and when the analyzer is off.
+        QueryPlanCachePtr query_plan_cache = context->getQueryPlanCache();
+        const bool can_use_query_plan_cache = query_plan_cache != nullptr
+            && settings[Setting::allow_experimental_query_plan_cache]
+            && settings[Setting::enable_query_plan_cache]
+            && !internal
+            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            && out_ast && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+            && settings[Setting::allow_experimental_analyzer]
+            /// The parallel replicas coordinator operates on storage-bound read steps which are
+            /// absent from logical (cached) plans.
+            && settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
@@ -1746,7 +1887,10 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (out_ast)
+                if (out_ast && can_use_query_plan_cache)
+                    interpreter = tryInterpretWithQueryPlanCache(out_ast, context, SelectQueryOptions(stage).setInternal(internal), query_plan_cache);
+
+                if (!interpreter && out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();

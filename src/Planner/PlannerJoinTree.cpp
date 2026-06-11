@@ -1066,11 +1066,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
 
-                if (!select_query_options.build_logical_plan)
+                /// In logical plan mode views are still expanded at plan time: a `ReadFromTable`
+                /// placeholder for a view would defer the expensive view-body analysis to plan
+                /// materialization, defeating the query plan cache. The expansion itself recurses
+                /// in logical mode (see `SelectQueryInfo::build_logical_plan`), so leaf reads of
+                /// the expanded sub-plan stay storage-agnostic.
+                const bool expand_view_in_logical_plan = select_query_options.build_logical_plan
+                    && select_query_options.cacheable_logical_plan
+                    && table_node && typeid_cast<const StorageView *>(storage.get());
+
+                if (expand_view_in_logical_plan)
+                    table_expression_query_info.build_logical_plan = true;
+
+                if (!select_query_options.build_logical_plan || expand_view_in_logical_plan)
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
-                if (select_query_options.build_logical_plan)
+                if (select_query_options.build_logical_plan && !expand_view_in_logical_plan)
                 {
                     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
 
@@ -1796,7 +1808,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         planner_context);
 
     PreparedJoinStorage prepared_join;
-    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+    /// Key-value lookup joins (`JoinStepLogicalLookup`) bind a live storage into the plan, so a
+    /// cacheable logical plan must not use them: a regular join over a `ReadFromTable` leaf is
+    /// produced instead and the physical join algorithm is chosen at materialization.
+    bool allow_storage_join = !planner_context->isBuildingCacheableLogicalPlan()
+        && right_join_tree_query_plan.used_row_policies.empty()
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
@@ -1808,7 +1824,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         right_join_tree_query_plan.query_plan = {};
         right_join_tree_query_plan.query_plan.addStep(std::move(join_lookup_step));
     }
-    else
+    else if (!planner_context->isBuildingCacheableLogicalPlan())
     {
         tryMakeDirectJoinWithMergeTree(join_step_logical->getJoinOperator(), right_join_tree_query_plan.query_plan, prepared_join, planner_context);
     }

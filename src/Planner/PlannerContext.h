@@ -200,6 +200,10 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    /// True when the planner builds a logical plan for the query plan cache (see
+    /// `SelectQueryOptions::cacheable_logical_plan`).
+    bool isBuildingCacheableLogicalPlan() const { return is_building_cacheable_logical_plan; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -213,6 +217,8 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     bool is_ast_level_optimization_allowed;
+
+    bool is_building_cacheable_logical_plan = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;

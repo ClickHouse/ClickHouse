@@ -5486,6 +5486,33 @@ Minimum time of delay between 2 background compaction operations.
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
 The time after which the data will be deleted.
 )", 0) \
+    DECLARE(Bool, allow_experimental_query_plan_cache, false, R"(
+Allows using the experimental query plan cache. Actual cache usage is controlled by `enable_query_plan_cache`.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_query_plan_cache, false, R"(
+If turned on together with `allow_experimental_query_plan_cache`, `SELECT` queries (including queries over views, joins and subqueries) may cache their query plan to skip repeated query analysis and planning on subsequent identical queries. Unlike the query result cache, a plan cache hit still executes the query against current data.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, query_plan_cache_allow_scalar_subqueries, false, R"(
+Allow caching plans of queries that contain scalar subqueries. Scalar subqueries are evaluated once during query analysis and their results are baked into the cached plan as constants, so a cache hit reuses the value computed at plan time instead of re-reading the underlying tables. Enable only when tables referenced by scalar subqueries are immutable or when stale scalar values are acceptable.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(UInt64, query_plan_cache_size_in_bytes_quota, 0, R"(
+Maximum number of bytes a single user may store in the query plan cache. 0 means no quota.
+)", 0) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.

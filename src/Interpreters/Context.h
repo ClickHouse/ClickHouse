@@ -120,6 +120,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryResultCache;
+class QueryPlanCache;
 class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
@@ -1463,6 +1464,11 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
+
+    void setQueryPlanCache(size_t max_size_in_bytes, size_t max_entries);
+    void updateQueryPlanCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<QueryPlanCache> getQueryPlanCache() const;
+    void clearQueryPlanCache() const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
 

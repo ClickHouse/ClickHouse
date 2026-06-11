@@ -201,6 +201,12 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+
+    /// Set when the planner builds a logical plan (leaf reads are storage-agnostic
+    /// `ReadFromTable` steps). Views expand their inner query at plan time and must
+    /// propagate the mode into the inner interpreter so that the expanded sub-plan
+    /// is logical too (used by the query plan cache).
+    bool build_logical_plan = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 

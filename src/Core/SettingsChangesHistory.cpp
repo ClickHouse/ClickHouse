@@ -42,6 +42,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
+            {"allow_experimental_query_plan_cache", false, false, "New experimental setting for the query plan cache"},
+            {"enable_query_plan_cache", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
