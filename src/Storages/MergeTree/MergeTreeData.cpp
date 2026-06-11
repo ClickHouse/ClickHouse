@@ -376,6 +376,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char mergetree_load_outdated_parts_inject_retryable_exception[];
+    extern const char mergetree_load_outdated_parts_inject_schedule_failure[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2912,7 +2913,7 @@ try
         }
 
         /// num_loaded_parts will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &retryable_error_while_loading, is_async, replicated]()
+        auto load_outdated_part = [this, my_part = part, &num_loaded_parts, &retryable_error_while_loading, is_async, replicated]()
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
@@ -2951,7 +2952,30 @@ try
                 outdated_unloaded_data_parts.push_back(my_part);
                 retryable_error_while_loading = true;
             }
-        }, Priority{});
+        };
+
+        try
+        {
+            fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_schedule_failure,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected scheduling failure while loading outdated part {}", part->name);
+            });
+
+            runner.enqueueAndKeepTrack(std::move(load_outdated_part), Priority{});
+        }
+        catch (...)
+        {
+            /// Scheduling the part (ThreadPool::scheduleOrThrow) can itself throw, e.g. a retryable
+            /// CANNOT_SCHEDULE_TASK. The worker never ran, so requeue the part we just popped: dropping it
+            /// would leave that outdated directory untracked and never removed once loading is marked finished.
+            if (!is_async || !isRetryableException(std::current_exception()))
+                throw;
+
+            std::lock_guard lock(outdated_data_parts_mutex);
+            outdated_unloaded_data_parts.push_back(part);
+            retryable_error_while_loading = true;
+            break;
+        }
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

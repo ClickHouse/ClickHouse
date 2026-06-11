@@ -191,7 +191,8 @@ static struct InitFiu
     REGULAR(transaction_force_unknown_state_after_commit) \
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
-    REGULAR(mergetree_load_outdated_parts_inject_retryable_exception)
+    REGULAR(mergetree_load_outdated_parts_inject_retryable_exception) \
+    REGULAR(mergetree_load_outdated_parts_inject_schedule_failure)
 
 namespace FailPoints
 {

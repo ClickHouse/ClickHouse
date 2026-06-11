@@ -6,7 +6,12 @@ from helpers.test_tools import assert_logs_contain_with_retry
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
 
-FAILPOINT = "mergetree_load_outdated_parts_inject_retryable_exception"
+# Two ways a retryable error can interrupt background loading of outdated parts:
+#   - thrown by the worker while loading the part (loadDataPartWithRetries)
+#   - thrown by the runner while scheduling the worker (ThreadPool::scheduleOrThrow)
+# Both must reschedule the task and keep the failed part in the queue, not drop it.
+WORKER_FAILPOINT = "mergetree_load_outdated_parts_inject_retryable_exception"
+SCHEDULE_FAILPOINT = "mergetree_load_outdated_parts_inject_schedule_failure"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -18,9 +23,10 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
-    # A transient retryable error (MEMORY_LIMIT_EXCEEDED, network, ...) thrown while loading
-    # outdated parts in the background must not take down the whole server: the catch(...) in
+@pytest.mark.parametrize("failpoint", [WORKER_FAILPOINT, SCHEDULE_FAILPOINT])
+def test_retryable_exception_while_loading_outdated_parts_does_not_terminate(failpoint):
+    # A transient retryable error (MEMORY_LIMIT_EXCEEDED, CANNOT_SCHEDULE_TASK, ...) thrown while
+    # loading outdated parts in the background must not take down the whole server: the catch(...) in
     # MergeTreeData::loadOutdatedDataParts used to call std::terminate() unconditionally. It must
     # also not drop the failed parts from the queue, otherwise they stay untracked and never removed.
     node.query("DROP TABLE IF EXISTS t_outdated SYNC")
@@ -42,7 +48,7 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
     assert outdated_before > 0
 
     # Inject a retryable failure into the outdated-parts loader, then force the loader to run.
-    node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     node.query("DETACH TABLE t_outdated")
     node.query("ATTACH TABLE t_outdated")
 
@@ -64,7 +70,7 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
     # Clear the transient condition and wait for the SAME background task to finish (no second
     # DETACH/ATTACH). If the failed parts had been dropped from the queue, the loader would mark
     # loading finished without ever processing them, leaving those outdated parts untracked.
-    node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
     node.query("SYSTEM WAIT LOADING PARTS t_outdated", timeout=60)
 
     # All the outdated parts were retried and are tracked again (none were leaked by the
