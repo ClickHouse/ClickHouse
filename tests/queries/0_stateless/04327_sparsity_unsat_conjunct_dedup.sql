@@ -7,14 +7,30 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparse_unsat;
 
+-- Both `x` and `n` must actually end up sparse-serialized so the analyzer
+-- inspects them: `x` needs enough zero rows to clear the sparse threshold, and
+-- `Nullable` columns need `nullable_serialization_version = 'allow_sparse'` to
+-- be eligible at all.
 CREATE TABLE t_sparse_unsat (x UInt32, n Nullable(UInt32))
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9,
          compute_exact_num_defaults_for_sparse_columns = 1,
          serialization_info_version = 'with_types',
+         nullable_serialization_version = 'allow_sparse',
          min_bytes_for_wide_part = 0;
 
-INSERT INTO t_sparse_unsat SELECT number, if(number % 3 = 0, NULL, number) FROM numbers(5000);
+-- 95% defaults / NULLs so both columns clear the 0.9 sparse threshold.
+INSERT INTO t_sparse_unsat
+SELECT
+    if(number % 20 = 0, number, 0)::UInt32,
+    if(number % 20 = 0, number, NULL)
+FROM numbers(5000);
+
+SELECT 'kinds',
+       countIf(column = 'x' AND serialization_kind = 'Sparse'),
+       countIf(column = 'n' AND serialization_kind = 'Sparse')
+FROM system.parts_columns
+WHERE table = 't_sparse_unsat' AND database = currentDatabase() AND active;
 
 -- Unsatisfiable; result is 0 either way, but the analyzer must not double-insert.
 SELECT 'unsat_eq', count() FROM t_sparse_unsat WHERE x = 0 AND x != 0
