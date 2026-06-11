@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentThread.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -47,6 +48,12 @@ namespace DB::ServerSetting
 {
     extern const ServerSettingsUInt64 s3_max_redirects;
     extern const ServerSettingsUInt64 s3_retry_attempts;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DataLakeRestCatalogDropTable;
+    extern const Event DataLakeRestCatalogDropTableMicroseconds;
 }
 
 namespace DataLake
@@ -225,6 +232,8 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogDropTable);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogDropTableMicroseconds);
         sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
     }
     catch (const DB::HTTPException & ex)

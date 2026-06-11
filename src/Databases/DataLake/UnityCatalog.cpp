@@ -8,12 +8,27 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/checkStackSize.h>
+#include <Common/CurrentThread.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <fmt/ranges.h>
+
+namespace ProfileEvents
+{
+    extern const Event DataLakeUnityCatalogGetTables;
+    extern const Event DataLakeUnityCatalogGetTablesMicroseconds;
+    extern const Event DataLakeUnityCatalogGetTable;
+    extern const Event DataLakeUnityCatalogGetTableMicroseconds;
+    extern const Event DataLakeUnityCatalogGetTableMetadata;
+    extern const Event DataLakeUnityCatalogGetTableMetadataMicroseconds;
+    extern const Event DataLakeUnityCatalogGetCredentials;
+    extern const Event DataLakeUnityCatalogGetCredentialsMicroseconds;
+    extern const Event DataLakeUnityCatalogGetSchemas;
+    extern const Event DataLakeUnityCatalogGetSchemasMicroseconds;
+}
 
 namespace DB::ErrorCodes
 {
@@ -144,6 +159,7 @@ void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metad
     std::shared_ptr<IStorageCredentials> creds;
     switch (storage_type)
     {
+<<<<<<< HEAD
     case StorageType::S3:
         creds = parseS3Credentials(response);
         break;
@@ -152,6 +168,70 @@ void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metad
         break;
     default:
         break;
+=======
+        case StorageType::S3:
+        {
+            auto callback = [table_id] (std::ostream & os)
+            {
+                Poco::JSON::Object obj;
+                obj.set("table_id", table_id);
+                obj.set("operation", "READ");
+                obj.stringify(os);
+            };
+
+            Poco::Dynamic::Var json;
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetCredentials);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetCredentialsMicroseconds);
+                std::string _;
+                std::tie(json, _) = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
+            }
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+            if (hasValueAndItsNotNone("aws_temp_credentials", object))
+            {
+                const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
+                std::string access_key_id = creds_object->get("access_key_id").extract<String>();
+                std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
+                std::string session_token = creds_object->get("session_token").extract<String>();
+
+                auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
+                metadata.setStorageCredentials(creds);
+            }
+            break;
+        }
+        case StorageType::Azure:
+        {
+            auto callback = [table_id] (std::ostream & os)
+            {
+                Poco::JSON::Object obj;
+                obj.set("table_id", table_id);
+                obj.set("operation", "READ");
+                obj.stringify(os);
+            };
+
+            Poco::Dynamic::Var json;
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetCredentials);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetCredentialsMicroseconds);
+                std::string _;
+                std::tie(json, _) = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
+            }
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+            if (hasValueAndItsNotNone("azure_user_delegation_sas", object))
+            {
+                const Poco::JSON::Object::Ptr & creds_object = object->getObject("azure_user_delegation_sas");
+                std::string sas_token = creds_object->get("sas_token").extract<String>();
+
+                auto creds = std::make_shared<AzureCredentials>(sas_token);
+                metadata.setStorageCredentials(creds);
+            }
+            break;
+        }
+        default:
+            break;
+>>>>>>> 383c8d11e60 (Merge pull request #1868 from Altinity/fix/datalake-rest-catalog-profile-events)
     }
     if (creds)
         metadata.setStorageCredentials(creds);
@@ -167,7 +247,11 @@ bool UnityCatalog::tryGetTableMetadata(
     std::string json_str;
     try
     {
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetTableMetadata);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetTableMetadataMicroseconds);
+            std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        }
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
         {
@@ -288,7 +372,11 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     Poco::Dynamic::Var json;
     try
     {
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetTable);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetTableMicroseconds);
+            std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
+        }
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
             return true;
@@ -316,7 +404,11 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
 
         try
         {
-            std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetTables);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetTablesMicroseconds);
+                std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
+            }
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             if (!hasValueAndItsNotNone("tables", object))
@@ -380,7 +472,11 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 
         try
         {
-            std::tie(json, json_str) = getJSONRequest(SCHEMAS_ENDPOINT, params);
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetSchemas);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetSchemasMicroseconds);
+                std::tie(json, json_str) = getJSONRequest(SCHEMAS_ENDPOINT, params);
+            }
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             auto schemas_object = object->get("schemas").extract<Poco::JSON::Array::Ptr>();
@@ -458,7 +554,30 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
     return [this, unity_table_id] () -> std::shared_ptr<IStorageCredentials>    {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
+<<<<<<< HEAD
         return parseS3Credentials(requestReadCredentials(unity_table_id));
+=======
+        Poco::Dynamic::Var json;
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetCredentials);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetCredentialsMicroseconds);
+            std::string _;
+            std::tie(json, _) = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
+        }
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+        if (hasValueAndItsNotNone("aws_temp_credentials", object))
+        {
+            const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
+            std::string access_key_id = creds_object->get("access_key_id").extract<String>();
+            std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
+            std::string session_token = creds_object->get("session_token").extract<String>();
+
+            auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
+            return creds;
+        }
+        return nullptr;
+>>>>>>> 383c8d11e60 (Merge pull request #1868 from Altinity/fix/datalake-rest-catalog-profile-events)
     };
 }
 
