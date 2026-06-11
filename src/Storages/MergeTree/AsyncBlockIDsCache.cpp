@@ -6,6 +6,7 @@
 #endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -71,7 +72,7 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait(std::chrono::milliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
+    , update_wait(saturatedMilliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
     , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))

@@ -1352,8 +1352,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     {
         while (true)
         {
-            auto timeout_ms = (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds();
-            auto timeout = std::chrono::milliseconds(timeout_ms);
+            auto timeout = saturatedMilliseconds((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds());
+            auto timeout_ms = timeout.count();
 
             if (auto memory_check = is_background_memory_usage_ok(); !memory_check.has_value())
             {
