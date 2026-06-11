@@ -990,7 +990,10 @@ These settings are sometimes mistaken for protocol-level settings, but they cont
 
 **Cancel** — a client-initiated packet (type 3) that aborts a running query. Not specified in detail on this page.
 
-**End-of-client-data marker** — an empty Data packet (0 columns, 0 rows) the client sends after the Query packet (and any external tables) to signal "no more input". The server does not begin executing the query until it receives this marker.
+**End-of-client-data marker** — an empty Data packet (0 columns, 0 rows) the client sends to close an input stream. Its position differs by query kind:
+
+- **Normal query (`SELECT`, etc.):** sent after the Query packet and any external-table Data packets to signal "no more external data". The server then begins executing.
+- **`INSERT`:** the client does **not** send a pre-schema marker. The server sends the schema block first, the client streams its row Data blocks, and only then sends the empty Data packet to terminate the row stream. Sending an empty marker before the schema block would be read as an immediate end-of-rows and lose the data.
 
 **Feature** — a wire-format change introduced in a specific protocol version. Active when the negotiated version is at or above the feature's version. See [versioning and feature gates](#versioning-and-feature-gates).
 
