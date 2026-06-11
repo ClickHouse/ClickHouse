@@ -22,7 +22,7 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
 {
     ParserIdentifier disk_name_p;
 
-    ResourceAccessMode mode = {};
+    ResourceAccessMode mode;
     ASTPtr node;
     std::optional<String> disk;
 

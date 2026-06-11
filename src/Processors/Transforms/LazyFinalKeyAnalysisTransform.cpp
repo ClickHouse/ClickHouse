@@ -1,5 +1,4 @@
 #include <Analyzer/TableExpressionModifiers.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
@@ -170,8 +169,9 @@ void LazyFinalKeyAnalysisTransform::work()
         ActionsDAG filter_dag = primary_key.expression->getActionsDAG().clone();
         filter_dag.getOutputs() = filter_dag.findInOutputs(primary_key.column_names);
 
-        auto set_type = std::make_shared<DataTypeSet>();
-        ColumnConst::Ptr set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
+        ColumnWithTypeAndName column_set;
+        column_set.type = std::make_shared<DataTypeSet>();
+        column_set.column = ColumnSet::create(0, future_set);
 
         const auto * key_node = filter_dag.getOutputs().at(0);
         if (filter_dag.getOutputs().size() > 1)
@@ -179,7 +179,7 @@ void LazyFinalKeyAnalysisTransform::work()
             auto function_tuple = FunctionFactory::instance().get("tuple", query_context);
             key_node = &filter_dag.addFunction(function_tuple, filter_dag.getOutputs(), {});
         }
-        const auto * set_node = &filter_dag.addColumn(std::move(set_column), std::move(set_type), "");
+        const auto * set_node = &filter_dag.addColumn(std::move(column_set));
         auto function_in = FunctionFactory::instance().get("in", query_context);
         const auto * in_func = &filter_dag.addFunction(function_in, {key_node, set_node}, {});
         filter_dag.getOutputs().push_back(in_func);

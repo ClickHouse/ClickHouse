@@ -139,7 +139,6 @@ void MySQLOutputFormat::flushImpl()
     packet_endpoint->out->next();
 }
 
-void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(

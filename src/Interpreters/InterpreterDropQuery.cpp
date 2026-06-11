@@ -24,9 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
@@ -126,20 +124,18 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
     if (uuid_to_wait == UUIDHelpers::Nil)
         return;
 
-    QueryStatusPtr query_status = context_->getProcessListElementSafe();
-    auto throw_if_cancelled = [&]()
-    {
-        if (query_status)
-            query_status->throwIfKilled();
-    };
-
     if (query.kind == ASTDropQuery::Kind::Drop)
     {
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, throw_if_cancelled);
+        QueryStatusPtr query_status = context_->getProcessListElementSafe();
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]()
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+        });
     }
     else if (query.kind == ASTDropQuery::Kind::Detach)
     {
-        db->waitDetachedTableNotInUse(uuid_to_wait, throw_if_cancelled);
+        db->waitDetachedTableNotInUse(uuid_to_wait);
     }
 }
 
@@ -219,7 +215,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// dependency checks), leaving orphaned tables that prevent server restart.
         if (!secondary_query && !is_refreshable_view && !is_drop_or_detach_database
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
-            && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
+            && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
         {
             ast_drop_query.sync = false;
             if (table->storesDataOnDisk())
@@ -374,14 +370,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
-    /// The guard in `executeToTableImpl` only catches the explicit
-    /// `DETACH TEMPORARY TABLE` form (`query.isTemporary()` is true). When a user
-    /// writes `DETACH TABLE tmp` without the `TEMPORARY` keyword and `tmp`
-    /// resolves to a temporary table via `Context::ResolveExternal`, we end up
-    /// here and must reject the operation the same way. See issue #103475.
-    if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
-
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)
@@ -398,6 +386,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
         else if (kind == ASTDropQuery::Kind::Drop)
         {
             context_handle->removeExternalTable(table_name);
+        }
+        else if (kind == ASTDropQuery::Kind::Detach)
+        {
+            table->is_detached = true;
         }
     }
 
@@ -432,7 +424,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     return res;
 }
 
-static bool matchesLikePattern(const String & haystack,
+bool matchesLikePattern(const String & haystack,
                         const String & like_pattern,
                         bool case_insensitive)
 {
@@ -528,12 +520,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
-
-                    /// Skip tables that don't support truncation (e.g. views)
-                    /// when doing TRUNCATE ALL TABLES.
-                    if (truncate && query.has_tables && !table_ptr->supportsTruncate())
-                        continue;
-
                     StorageID storage_id = table_ptr->getStorageID();
                     tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
                     /// If the database doesn't support table UUIDs, we might call
@@ -677,11 +663,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
-
-            /// Skip tables that don't support truncation (e.g. views).
-            if (!table_ptr->supportsTruncate())
-                continue;
-
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
@@ -765,13 +746,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate && query.sync)
     {
         /// Avoid "some tables are still in use" when sync mode is enabled
-        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
         for (const auto & table_uuid : uuids_to_wait)
-            database->waitDetachedTableNotInUse(table_uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
+            database->waitDetachedTableNotInUse(table_uuid);
     }
 
     /// Allow tests to pause here: all tables have been processed but the database has not yet
@@ -905,7 +881,6 @@ bool InterpreterDropQuery::supportsTransactions() const
             && drop.table;
 }
 
-void registerInterpreterDropQuery(InterpreterFactory & factory);
 void registerInterpreterDropQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
