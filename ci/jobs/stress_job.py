@@ -138,6 +138,12 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
+    if any(san in check_name for san in ("asan", "msan", "tsan", "ubsan")):
+        result.append("IS_SANITIZER_BUILD=1")
+
+    if "debug" in check_name:
+        result.append("IS_DEBUG_BUILD=1")
+
     if "serverfuzz" in info.job_name:
         result.append("ENABLE_SERVER_FUZZER=1")
 
@@ -302,11 +308,41 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"{result_path}/dmesg.log"
         )
 
-    # Check for OOM (signal 9) in server logs
+    # Check for OOM (signal 9) in server logs, excluding intentional kills
+    # from the RandomServerRestarter chaos thread.
+    # stress_runner.sh renames clickhouse-server.log: .initial.log (dataset setup),
+    # .stress.log (stress phase), .final.log (post-stress restart).
+    # Shared-catalog replicas log to clickhouse-server-sc{1,2}.log.
+    # Intentional kills only happen during the stress phase (.stress.log);
+    # signal-9 in any other log is always an unintentional OOM.
     if server_log_path.exists():
-        server_log_oom = Shell.check(
-            f"rg -Fqa ' <Fatal> Application: Child process was terminated by signal 9' "
-            f"{server_log_path}/clickhouse-server*.log"
+        signal9_pattern = " <Fatal> Application: Child process was terminated by signal 9"
+        stress_signal9_count = int(
+            Shell.get_output(
+                f"rg -Fa '{signal9_pattern}' "
+                f"{server_log_path}/clickhouse-server.stress.log 2>/dev/null | wc -l"
+            )
+            .strip()
+            or "0"
+        )
+        other_signal9_count = int(
+            Shell.get_output(
+                f"rg -Fa '{signal9_pattern}' "
+                f"{server_log_path}/clickhouse-server.initial.log "
+                f"{server_log_path}/clickhouse-server.final.log "
+                f"{server_log_path}/clickhouse-server-sc*.log 2>/dev/null | wc -l"
+            )
+            .strip()
+            or "0"
+        )
+        intentional_kills_file = result_path / "stress_intentional_server_kills.log"
+        intentional_kill_count = 0
+        if intentional_kills_file.is_file():
+            intentional_kill_count = sum(
+                1 for line in intentional_kills_file.read_text().splitlines() if line.strip()
+            )
+        server_log_oom = (
+            stress_signal9_count > intentional_kill_count or other_signal9_count > 0
         )
         is_oom = is_oom or server_log_oom
 

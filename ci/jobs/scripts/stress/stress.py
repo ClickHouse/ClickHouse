@@ -15,6 +15,9 @@ from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
 
 
+CLICKHOUSE_PID_FILE = "/var/run/clickhouse-server/clickhouse-server.pid"
+
+
 class ServerDied(Exception):
     pass
 
@@ -36,22 +39,601 @@ def escape_tsv_info(text: str) -> str:
     )
 
 
-class RandomQueryKiller:
-    """Background thread that randomly kills queries and client processes during stress tests.
+class ChaosThread:
+    """Base class for background chaos threads.
+
+    Subclasses implement _loop_body with their specific chaos logic.
+    The base class handles the threading, interval jitter, exception
+    resilience, and clean shutdown.
+    """
+
+    NAME = "ChaosThread"
+
+    def __init__(self, min_interval: float, max_interval: float):
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._min_interval = min_interval
+        self._max_interval = max_interval
+
+    def _loop_body(self) -> None:
+        raise NotImplementedError
+
+    def _run(self) -> None:
+        logging.info(
+            "%s started (interval: %.0f-%.0fs)",
+            self.NAME,
+            self._min_interval,
+            self._max_interval,
+        )
+        while not self._stop_event.is_set():
+            delay = random.uniform(self._min_interval, self._max_interval)
+            if self._stop_event.wait(delay):
+                break
+            if self._stop_event.is_set():
+                break
+            try:
+                self._loop_body()
+            except Exception as e:
+                logging.error("%s: cycle failed: %s", self.NAME, e)
+        logging.info("%s stopped", self.NAME)
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=10)
+        self._thread = None
+
+
+class RandomRestarter(ChaosThread):
+    """Base for chaos threads that periodically restart a service.
+
+    Subclasses implement _stop_hard, _stop_graceful, and _start_and_wait.
+    The base class handles the hard/graceful coin flip and ensures stop()
+    waits for any in-progress restart to finish.
+    """
+
+    NAME = "RandomRestarter"
+
+    def __init__(self, min_interval: float = 120.0, max_interval: float = 300.0):
+        super().__init__(min_interval, max_interval)
+        # Held while a restart cycle is in progress so stop() can wait for the
+        # service to be back up before returning.
+        self._restart_lock = threading.Lock()
+        self._recovery_failures = 0
+
+    def _stop_hard(self) -> None:
+        raise NotImplementedError
+
+    def _stop_graceful(self) -> None:
+        raise NotImplementedError
+
+    def _start_and_wait(self) -> None:
+        raise NotImplementedError
+
+    def _loop_body(self) -> None:
+        with self._restart_lock:
+            if random.random() < 0.5:
+                self._stop_hard()
+            else:
+                self._stop_graceful()
+            self._start_and_wait()
+
+    def _run(self) -> None:
+        logging.info(
+            "%s started (interval: %.0f-%.0fs)",
+            self.NAME,
+            self._min_interval,
+            self._max_interval,
+        )
+        while not self._stop_event.is_set():
+            delay = random.uniform(self._min_interval, self._max_interval)
+            if self._stop_event.wait(delay):
+                break
+            if self._stop_event.is_set():
+                break
+            try:
+                self._loop_body()
+            except Exception as e:
+                self._recovery_failures += 1
+                logging.error("%s: cycle failed: %s", self.NAME, e)
+        logging.info("%s stopped", self.NAME)
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=10)
+        with self._restart_lock:
+            pass
+        self._thread = None
+
+    @staticmethod
+    def _wait_port_free(port: int, timeout: float = 60.0) -> None:
+        """Wait until no process is listening on *port*."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ret = subprocess.run(
+                f"ss -tanH state listening 'sport = :{port}' | grep -q .",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                return
+            time.sleep(1)
+        logging.warning("port %d still in use after %.0fs", port, timeout)
+
+
+class RandomServerRestarter(RandomRestarter):
+    """Periodically stops and restarts clickhouse-server.
+
+    Today the server only goes down at the start/end of the stress run, so
+    recovery and shutdown code paths under heavy load are never exercised.
+    This thread randomly alternates between hard crashes (SIGKILL) and
+    graceful stops once every few minutes so that WAL replay, mark-cache
+    rebuilds, merge recovery, flush paths, and distributed send draining
+    all get coverage during stress.
+
+    Each SIGKILL is recorded in a marker file so that stress_job.py can
+    distinguish intentional kills from real OOM events.
+    """
+
+    NAME = "RandomServerRestarter"
+    INTENTIONAL_KILLS_FILE = "/test_output/stress_intentional_server_kills.log"
+    RESTART_MARKER_FILE = "/test_output/stress_server_restarting"
+
+    def __init__(
+        self,
+        min_interval: float = 120.0,
+        max_interval: float = 300.0,
+        server_start_timeout: float = 120.0,
+    ):
+        super().__init__(min_interval, max_interval)
+        self._server_start_timeout = server_start_timeout
+
+    def _read_pid(self) -> Optional[int]:
+        try:
+            with open(CLICKHOUSE_PID_FILE, "r") as f:
+                return int(f.read().strip())
+        except (FileNotFoundError, ValueError):
+            return None
+
+    def _wait_server_up(self, timeout: float = 0) -> bool:
+        if timeout <= 0:
+            timeout = self._server_start_timeout
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    "clickhouse client --receive_timeout=5 -q 'SELECT 1'",
+                    shell=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                time.sleep(1)
+        return False
+
+    def _stop_hard(self, saved_pid: Optional[int] = None) -> None:
+        pid = saved_pid or self._read_pid()
+        if pid is None:
+            logging.warning("%s: no PID file, server may already be down", self.NAME)
+            return
+        logging.info("%s: sending SIGKILL to server (pid %d)", self.NAME, pid)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            logging.info("%s: server already dead", self.NAME)
+            return
+        for _ in range(120):
+            try:
+                os.kill(pid, 0)
+                time.sleep(0.5)
+            except OSError:
+                break
+        with open(self.INTENTIONAL_KILLS_FILE, "a") as f:
+            f.write(f"{pid}\n")
+
+    def _stop_graceful(self) -> None:
+        pid = self._read_pid()
+        logging.info("%s: graceful stop via clickhouse stop", self.NAME)
+        ret = subprocess.run(
+            "clickhouse stop --do-not-kill --max-tries 60",
+            shell=True,
+            capture_output=True,
+            timeout=90,
+        )
+        if ret.returncode != 0:
+            if pid is None:
+                logging.error(
+                    "%s: graceful stop failed (rc=%d) and no PID was saved; "
+                    "skipping start attempt",
+                    self.NAME,
+                    ret.returncode,
+                )
+                self._recovery_failures += 1
+                raise RuntimeError("graceful stop failed without saved PID")
+            logging.warning(
+                "%s: graceful stop failed (rc=%d), sending SIGKILL to saved pid %d",
+                self.NAME,
+                ret.returncode,
+                pid,
+            )
+            self._stop_hard(pid)
+
+    def _loop_body(self) -> None:
+        with self._restart_lock:
+            try:
+                open(self.RESTART_MARKER_FILE, "w").close()
+            except OSError:
+                pass
+            try:
+                if random.random() < 0.5:
+                    self._stop_hard()
+                else:
+                    self._stop_graceful()
+                self._restart_deadline = time.monotonic() + self._server_start_timeout
+                self._start_and_wait()
+            finally:
+                try:
+                    os.unlink(self.RESTART_MARKER_FILE)
+                except OSError:
+                    pass
+
+    _PORTS = (
+        8123,  # HTTP
+        8443,  # HTTPS
+        9000,  # Native TCP
+        9004,  # MySQL compatibility
+        9005,  # PostgreSQL compatibility
+        9009,  # Interserver HTTP
+        9010,  # TCP with proxy protocol
+        9022,  # SSH
+        9100,  # gRPC
+        9181,  # Keeper
+        9234,  # Keeper Raft
+        9440,  # Native TCP TLS
+        9988,  # Prometheus
+    )
+
+    def _start_and_wait(self) -> None:
+        deadline = self._restart_deadline
+
+        ports_deadline = time.monotonic() + min(
+            60, max(0, deadline - time.monotonic()) / 2
+        )
+        sport_filter = " or ".join(f"sport = :{p}" for p in self._PORTS)
+        while time.monotonic() < ports_deadline:
+            ret = subprocess.run(
+                f"ss -tanH state listening '{sport_filter}' | grep -q .",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                break
+            time.sleep(1)
+        else:
+            ret = subprocess.run(
+                f"ss -tanH state listening '{sport_filter}'",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.stdout:
+                logging.warning(
+                    "ports still in use after deadline: %s",
+                    ret.stdout.decode().strip(),
+                )
+
+        remaining = max(0, deadline - time.monotonic())
+        logging.info(
+            "%s: starting server (%.0fs remaining in restart budget)",
+            self.NAME,
+            remaining,
+        )
+
+        started = False
+        while time.monotonic() < deadline:
+            subprocess.run(
+                "clickhouse start --user root "
+                ">>/var/log/clickhouse-server/stdout.log "
+                "2>>/var/log/clickhouse-server/stderr.log",
+                shell=True,
+                timeout=30,
+            )
+            remaining = max(0, deadline - time.monotonic())
+            if self._wait_server_up(min(remaining, 20)):
+                started = True
+                break
+            logging.warning(
+                "%s: server not up yet, retrying clickhouse start (%.0fs left)",
+                self.NAME,
+                max(0, deadline - time.monotonic()),
+            )
+
+        if started:
+            logging.info("%s: server back up", self.NAME)
+        else:
+            logging.error(
+                "%s: server did not come back within %.0fs timeout",
+                self.NAME,
+                self._server_start_timeout,
+            )
+            self._recovery_failures += 1
+
+
+class RandomMinIORestarter(RandomRestarter):
+    """Periodically kills and restarts MinIO.
+
+    S3 storage policies route through MinIO in the stress test environment.
+    Killing MinIO mid-operation exercises object storage retry logic,
+    reconnection handling, and partial-upload recovery in ClickHouse.
+
+    Note: Keeper restarts are not needed separately because the stress test
+    uses embedded Keeper (same process as clickhouse-server), which is already
+    covered by RandomServerRestarter.
+    """
+
+    NAME = "RandomMinIORestarter"
+    MINIO_PORT = 11111
+
+    def __init__(self, minio_data_dir: str, min_interval: float = 120.0, max_interval: float = 300.0):
+        super().__init__(min_interval, max_interval)
+        self._minio_data_dir = minio_data_dir
+
+    def _wait_minio_up(self, timeout: float = 30.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    "/mc ls clickminio/test",
+                    shell=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                time.sleep(1)
+        return False
+
+    def _stop_hard(self) -> None:
+        logging.info("%s: hard-killing MinIO (SIGKILL)", self.NAME)
+        subprocess.run(
+            "pkill -9 -f 'minio server'",
+            shell=True,
+            capture_output=True,
+        )
+
+    def _stop_graceful(self) -> None:
+        logging.info("%s: graceful stop MinIO (SIGTERM)", self.NAME)
+        subprocess.run(
+            "pkill -f 'minio server'",
+            shell=True,
+            capture_output=True,
+        )
+        for _ in range(30):
+            ret = subprocess.run(
+                ["pgrep", "-f", "minio server"],
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                return
+            time.sleep(1)
+        logging.warning(
+            "%s: MinIO still alive after grace period, escalating to SIGKILL",
+            self.NAME,
+        )
+        self._stop_hard()
+
+    _SETUP_SCRIPT = "/repo/ci/jobs/scripts/functional_tests/setup_minio.sh"
+
+    def _start_and_wait(self) -> None:
+        self._wait_port_free(self.MINIO_PORT)
+
+        logging.info("%s: starting MinIO via setup_minio.sh", self.NAME)
+        env = os.environ.copy()
+        env["TEMP_DIR"] = os.path.dirname(self._minio_data_dir)
+        log_file = os.path.join(
+            os.path.dirname(self._minio_data_dir), "setup_minio_restart.log"
+        )
+        with open(log_file, "a") as log:
+            ret = subprocess.run(
+                [self._SETUP_SCRIPT, "stateless"],
+                stdout=log,
+                stderr=log,
+                timeout=120,
+                env=env,
+            )
+        if ret.returncode != 0:
+            logging.error(
+                "%s: setup_minio.sh failed (rc=%d), see %s",
+                self.NAME, ret.returncode, log_file,
+            )
+
+        if self._wait_minio_up():
+            logging.info("%s: MinIO back up", self.NAME)
+        else:
+            logging.error("%s: MinIO did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
+
+
+class RandomAzuriteRestarter(RandomRestarter):
+    """Periodically kills and restarts Azurite (Azure Blob Storage emulator).
+
+    Azure storage policies route through Azurite in the stress test environment.
+    Killing Azurite mid-operation exercises Azure retry logic, reconnection
+    handling, and partial-upload recovery in ClickHouse.
+    """
+
+    NAME = "RandomAzuriteRestarter"
+    AZURITE_PORT = 10000
+
+    def _wait_azurite_up(self, timeout: float = 30.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    f"curl -s -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{self.AZURITE_PORT}/ "
+                    "| grep -qE '400|200'",
+                    shell=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                time.sleep(1)
+        return False
+
+    def _stop_hard(self) -> None:
+        logging.info("%s: hard-killing Azurite (SIGKILL)", self.NAME)
+        subprocess.run(
+            "pkill -9 -f 'azurite-rs'",
+            shell=True,
+            capture_output=True,
+        )
+
+    def _stop_graceful(self) -> None:
+        logging.info("%s: graceful stop Azurite (SIGTERM)", self.NAME)
+        subprocess.run(
+            "pkill -f 'azurite-rs'",
+            shell=True,
+            capture_output=True,
+        )
+        for _ in range(30):
+            ret = subprocess.run(
+                ["pgrep", "-f", "azurite-rs"],
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                return
+            time.sleep(1)
+        logging.warning(
+            "%s: Azurite still alive after grace period, escalating to SIGKILL",
+            self.NAME,
+        )
+        self._stop_hard()
+
+    def _start_and_wait(self) -> None:
+        self._wait_port_free(self.AZURITE_PORT)
+
+        logging.info("%s: starting Azurite", self.NAME)
+        subprocess.Popen(
+            "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
+            f"nohup azurite-rs --host 0.0.0.0 --blob-port {self.AZURITE_PORT} --silent --in-memory "
+            ">/dev/null 2>&1 &",
+            shell=True,
+        )
+
+        if self._wait_azurite_up():
+            logging.info("%s: Azurite back up", self.NAME)
+        else:
+            logging.error("%s: Azurite did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
+
+
+class RandomRedpandaRestarter(RandomRestarter):
+    """Periodically kills and restarts Redpanda (Kafka-compatible broker).
+
+    Kafka engines and table functions route through Redpanda in the stress test
+    environment. Killing Redpanda mid-operation exercises consumer group
+    recovery, offset management, producer retry logic, and reconnection
+    handling in ClickHouse.
+    """
+
+    NAME = "RandomRedpandaRestarter"
+    KAFKA_PORT = 9092
+    SCHEMA_REGISTRY_PORT = 8081
+    RPC_PORT = 19092
+
+    def _wait_redpanda_up(self, timeout: float = 60.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    f"rpk topic list --brokers 127.0.0.1:{self.KAFKA_PORT} >/dev/null 2>&1 "
+                    f"&& curl -sf http://127.0.0.1:{self.SCHEMA_REGISTRY_PORT}/subjects >/dev/null 2>&1",
+                    shell=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                time.sleep(1)
+        return False
+
+    def _stop_hard(self) -> None:
+        logging.info("%s: hard-killing Redpanda (SIGKILL)", self.NAME)
+        subprocess.run("pkill -9 -f 'rpk redpanda start'", shell=True, capture_output=True)
+        subprocess.run("pkill -9 -f '/opt/redpanda/'", shell=True, capture_output=True)
+
+    def _stop_graceful(self) -> None:
+        logging.info("%s: graceful stop Redpanda (SIGTERM)", self.NAME)
+        subprocess.run("pkill -f 'rpk redpanda start'", shell=True, capture_output=True)
+        subprocess.run("pkill -f '/opt/redpanda/'", shell=True, capture_output=True)
+        for _ in range(30):
+            ret = subprocess.run(
+                ["pgrep", "-f", "/opt/redpanda/"],
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                return
+            time.sleep(1)
+        logging.warning(
+            "%s: Redpanda still alive after grace period, escalating to SIGKILL",
+            self.NAME,
+        )
+        self._stop_hard()
+
+    def _start_and_wait(self) -> None:
+        self._wait_port_free(self.KAFKA_PORT)
+        self._wait_port_free(self.SCHEMA_REGISTRY_PORT)
+        self._wait_port_free(self.RPC_PORT)
+
+        logging.info("%s: starting Redpanda", self.NAME)
+        subprocess.Popen(
+            "nohup rpk redpanda start "
+            "--mode dev-container --smp 1 --memory 256M --reserve-memory 0M --overprovisioned "
+            f"--kafka-addr 127.0.0.1:{self.KAFKA_PORT} --advertise-kafka-addr 127.0.0.1:{self.KAFKA_PORT} "
+            f"--rpc-addr 127.0.0.1:{self.RPC_PORT} --advertise-rpc-addr 127.0.0.1:{self.RPC_PORT} "
+            f"--schema-registry-addr 127.0.0.1:{self.SCHEMA_REGISTRY_PORT} "
+            "--set redpanda.auto_create_topics_enabled=false "
+            "--set redpanda.log_segment_size=16777216 "
+            ">/dev/null 2>&1 &",
+            shell=True,
+        )
+
+        if self._wait_redpanda_up():
+            logging.info("%s: Redpanda back up", self.NAME)
+        else:
+            logging.error("%s: Redpanda did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
+
+
+class RandomQueryKiller(ChaosThread):
+    """Randomly kills queries and client processes during stress tests.
 
     This helps test that queries are cancelled correctly and handles scenarios
     where the client unexpectedly disconnects (issue #39803).
     """
 
+    NAME = "RandomQueryKiller"
+
     def __init__(self, interval: float = 3.0):
-        self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._interval = interval
+        super().__init__(min_interval=interval, max_interval=interval)
 
     def _kill_random_query(self) -> None:
-        """Select a random query from system.processes and kill it."""
         try:
-            # Get a random query_id, excluding our own queries and system queries
             result = check_output(
                 "clickhouse client --receive_timeout=5 -q \""
                 "SELECT query_id FROM system.processes "
@@ -71,13 +653,10 @@ class RandomQueryKiller:
                     timeout=5,
                 )
         except Exception as e:
-            # Errors are expected (server busy, no queries, etc.)
             logging.debug("Random query killer got exception (expected): %s", e)
 
     def _kill_random_client(self) -> None:
-        """Kill a random clickhouse-client process."""
         try:
-            # Get list of clickhouse-test child processes (clickhouse client)
             result = check_output(
                 "pgrep -f 'clickhouse-client|clickhouse client' 2>/dev/null || true",
                 shell=True,
@@ -85,43 +664,47 @@ class RandomQueryKiller:
             )
             pids = [p.strip() for p in result.decode("utf-8").strip().split("\n") if p.strip()]
             if pids:
-                # Pick a random pid and kill it
                 pid = random.choice(pids)
                 logging.info("Killing random client process: %s", pid)
                 try:
                     os.kill(int(pid), signal.SIGTERM)
                 except (ProcessLookupError, ValueError):
-                    pass  # Process already gone
+                    pass
         except Exception as e:
             logging.debug("Random client killer got exception (expected): %s", e)
 
-    def _run(self) -> None:
-        """Main loop that runs in the background thread."""
-        logging.info("Random query/client killer started (interval: %.1fs)", self._interval)
-        while not self._stop_event.is_set():
-            # Randomly choose to kill a query or a client process
-            if random.random() < 0.7:
-                self._kill_random_query()
-            else:
-                self._kill_random_client()
-            self._stop_event.wait(self._interval)
-        logging.info("Random query/client killer stopped")
+    def _kill_random_mutation(self) -> None:
+        try:
+            result = check_output(
+                "clickhouse client --receive_timeout=5 -q \""
+                "SELECT mutation_id, database, table "
+                "FROM system.mutations "
+                "WHERE NOT is_done AND NOT is_killed "
+                "ORDER BY rand() LIMIT 1\" 2>/dev/null",
+                shell=True,
+                timeout=5,
+            )
+            line = result.decode("utf-8").strip()
+            if line:
+                mutation_id, db, table = line.split("\t")
+                logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
+                call(
+                    f"clickhouse client --receive_timeout=10 -q \"KILL MUTATION WHERE database = '{db}' "
+                    f"AND table = '{table}' AND mutation_id = '{mutation_id}'\" 2>/dev/null",
+                    shell=True,
+                    timeout=5,
+                )
+        except Exception as e:
+            logging.debug("Random mutation killer got exception (expected): %s", e)
 
-    def start(self) -> None:
-        """Start the background killer thread."""
-        if self._thread is not None:
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        """Stop the background killer thread."""
-        if self._thread is None:
-            return
-        self._stop_event.set()
-        self._thread.join(timeout=10)
-        self._thread = None
+    def _loop_body(self) -> None:
+        r = random.random()
+        if r < 0.6:
+            self._kill_random_query()
+        elif r < 0.8:
+            self._kill_random_client()
+        else:
+            self._kill_random_mutation()
 
 
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
@@ -257,7 +840,7 @@ def run_func_test(
     global_time_limit: int,
     upgrade_check: bool,
     encrypted_storage: bool,
-    query_killer: Optional["RandomQueryKiller"] = None,
+    chaos_threads: Optional[List["ChaosThread"]] = None,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
@@ -324,9 +907,9 @@ def run_func_test(
                 f"stderr:\n{e.stderr}"
             ) from e
 
-    # Start the query killer after smoke check completes, before actual stress test
-    if query_killer is not None:
-        query_killer.start()
+    # Start chaos threads after smoke check completes, before actual stress test
+    for ct in chaos_threads or []:
+        ct.start()
 
     logging.info("Run stress tests")
     for i, path in enumerate(output_paths):
@@ -334,7 +917,9 @@ def run_func_test(
             command = commands[i]
             logging.info("Run func tests '%s'", command)
             # pylint:disable-next=consider-using-with
-            pipes.append(Popen(command, shell=True, stdout=op, stderr=op))
+            pipes.append(
+                Popen(command, shell=True, stdout=op, stderr=op, start_new_session=True)
+            )
             time.sleep(0.5)
 
     logging.info("Will wait functests to finish")
@@ -423,7 +1008,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Ensure that process exists
     if (
         call(
-            "kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)",
+            f"kill -0 $(cat {CLICKHOUSE_PID_FILE})",
             shell=True,
         )
         != 0
@@ -431,7 +1016,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
+        f"kill -CONT $(cat {CLICKHOUSE_PID_FILE}) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -568,6 +1153,35 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Disable random query/client killer during stress test",
     )
+    parser.add_argument(
+        "--no-random-server-restart",
+        action="store_true",
+        default=False,
+        help="Disable random kill -9 / restart of clickhouse-server during stress test",
+    )
+    parser.add_argument(
+        "--no-random-minio-restart",
+        action="store_true",
+        default=False,
+        help="Disable random kill -9 / restart of MinIO during stress test",
+    )
+    parser.add_argument(
+        "--no-random-azurite-restart",
+        action="store_true",
+        default=False,
+        help="Disable random kill -9 / restart of Azurite during stress test",
+    )
+    parser.add_argument(
+        "--no-random-redpanda-restart",
+        action="store_true",
+        default=False,
+        help="Disable random kill -9 / restart of Redpanda during stress test",
+    )
+    parser.add_argument(
+        "--minio-data-dir",
+        default="",
+        help="MinIO data directory (required for random MinIO restarts)",
+    )
     return parser.parse_args()
 
 
@@ -582,13 +1196,29 @@ def main():
 
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
-    # Create random query/client killer unless disabled or in upgrade check mode
-    # (upgrade check mode should not have random kills as it may interfere with
-    # the upgrade process itself)
-    # Note: the killer is started inside run_func_test after the smoke check completes
-    query_killer = None
+    is_slow_build = os.environ.get("IS_SANITIZER_BUILD") == "1" or os.environ.get("IS_DEBUG_BUILD") == "1"
+    min_server_start_interval = 540.0 if is_slow_build else 420.0
+    max_server_start_interval = 720.0 if is_slow_build else 600.0
+    server_start_timeout = 250.0 if is_slow_build else 180.0
+    # Build chaos threads list — started inside run_func_test after smoke check.
+    # Order matters: stop runs in reverse so services come down before the
+    # query killer, and the server stops last (hung check needs it alive).
+    chaos_threads: List[ChaosThread] = []
     if not args.no_random_query_killer and not args.upgrade_check:
-        query_killer = RandomQueryKiller(interval=3.0)
+        chaos_threads.append(RandomQueryKiller(interval=3.0))
+    # Azurite runs --in-memory; a restart wipes all blobs. Any table or
+    # object that references Azure storage (MergeTree default policy, explicit
+    # Azure disks, table functions) loses its data — testing data loss, not
+    # retry/reconnect resilience. Disabled until Azurite runs with persistent
+    # storage.
+    if not args.no_random_azurite_restart and not args.upgrade_check:
+        logging.info("Skipping RandomAzuriteRestarter: Azurite --in-memory restart wipes all blobs")
+    if not args.no_random_minio_restart and not args.upgrade_check and args.minio_data_dir:
+        chaos_threads.append(RandomMinIORestarter(args.minio_data_dir, min_interval=min_server_start_interval, max_interval=max_server_start_interval))
+    if not args.no_random_redpanda_restart and not args.upgrade_check:
+        chaos_threads.append(RandomRedpandaRestarter(min_interval=min_server_start_interval, max_interval=max_server_start_interval))
+    if not args.no_random_server_restart and not args.upgrade_check:
+        chaos_threads.append(RandomServerRestarter(min_interval=min_server_start_interval, max_interval=max_server_start_interval, server_start_timeout=server_start_timeout))
 
     try:
         func_pipes = run_func_test(
@@ -599,12 +1229,11 @@ def main():
             args.global_time_limit,
             args.upgrade_check,
             args.encrypted_storage,
-            query_killer,
+            chaos_threads,
         )
     finally:
-        # Stop the query killer when tests are done
-        if query_killer is not None:
-            query_killer.stop()
+        for ct in reversed(chaos_threads):
+            ct.stop()
 
     logging.info("All processes finished")
 
@@ -724,6 +1353,25 @@ def main():
                 # to work with — see ClickHouse/ClickHouse#100941.
             else:
                 logging.info("No queries hung")
+
+    failed_chaos = [
+        ct
+        for ct in chaos_threads
+        if isinstance(ct, RandomRestarter) and ct._recovery_failures > 0
+    ]
+    if failed_chaos:
+        with open(
+            args.output_folder / "test_results.tsv", "a+", encoding="utf-8"
+        ) as results:
+            for ct in failed_chaos:
+                results.write(
+                    f"{ct.NAME} recovery failed {ct._recovery_failures} time(s)"
+                    "\tFAIL\t\\N\t\n"
+                )
+        logging.error(
+            "Chaos thread recovery failures: %s",
+            ", ".join(f"{ct.NAME}={ct._recovery_failures}" for ct in failed_chaos),
+        )
 
     logging.info("Stress test finished")
 

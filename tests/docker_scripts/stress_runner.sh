@@ -18,27 +18,38 @@ install_packages package_folder
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.01
-export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
+# Probabilities are randomized per CI run so that different runs explore
+# different regions of the scheduling space.
+pick_random() {
+    local choices=("$@")
+    echo "${choices[$((RANDOM % ${#choices[@]}))]}"
+}
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_CPU_TIME_PERIOD_US=$(pick_random 500 1000 2000 5000)
+export THREAD_FUZZER_SLEEP_PROBABILITY=$(pick_random 0.001 0.005 0.01 0.05 0.1)
+export THREAD_FUZZER_SLEEP_TIME_US_MAX=$(pick_random 10000 50000 100000 200000 500000)
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=10000
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
 
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
+MUTEX_SLEEP_PROB=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
 
-export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.001
+MUTEX_SLEEP_TIME=$(pick_random 1000 5000 10000 50000 100000)
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
+
+export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
+export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
+
+echo "Thread Fuzzer config: CPU_PERIOD=${THREAD_FUZZER_CPU_TIME_PERIOD_US}us SLEEP_PROB=${THREAD_FUZZER_SLEEP_PROBABILITY} SLEEP_MAX=${THREAD_FUZZER_SLEEP_TIME_US_MAX}us MUTEX_SLEEP_PROB=${MUTEX_SLEEP_PROB} MUTEX_SLEEP_TIME=${MUTEX_SLEEP_TIME}us"
 
 export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
 
@@ -283,12 +294,16 @@ if [ $((RANDOM % 2)) -eq 1 ]; then
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server 10 || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" --minio-data-dir /repo/ci/tmp/minio_data \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
+
+# Stop ThreadFuzzer before shutdown to avoid injected sleeps making
+# SystemLog flush so slow that stop_server declares a false deadlock.
+clickhouse-client --receive_timeout 30 --query "SYSTEM STOP THREAD FUZZER" ||:
 
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -304,7 +319,7 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 10 || { echo "Failed to start server"; exit 1; }
+start_server 30 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
