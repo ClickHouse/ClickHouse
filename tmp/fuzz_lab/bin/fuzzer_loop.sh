@@ -153,13 +153,35 @@ while true; do
         BLOCK=$(grep -aB 2 -A 40 "Code: 905" "$OUT" | head -200)
         # Known-family tagging keeps the persistent log triage-able.
         FAMILY="UNCLASSIFIED"
-        echo "$BLOCK" | grep -aq "WITH TOTALS" && FAMILY="known-totals-leak (tmp/totals_leak_repro)"
-        echo "$BLOCK" | grep -aq "remove_redundant_distinct\|WITH CUBE\|WITH ROLLUP\|GROUPING SETS" && FAMILY="known-distinct-cube (tmp/distinct_cube_repro)"
-        echo "$BLOCK" | grep -aq "hasToken\|hasAllTokens\|hasAnyTokens\|hasPhrase\|searchAny\|searchAll" && FAMILY="known-hastoken-textindex (tmp/hastoken_null_repro)"
-        echo "$BLOCK" | grep -aqw "nan\|t_minmax_float\|negate_nan" && FAMILY="known-nan-minmax (tmp/nan_minmax_repro)"
-        echo "$BLOCK" | grep -aq "map_test_index\|bf_tokenbf_map\|mapKeys\|mapValues" && FAMILY="known-mapbloom (tmp/mapkeys_bloom_repro)"
-        echo "$BLOCK" | grep -aq "RIGHT JOIN.*SELECT 3 AS y\|RIGHT JOIN (SELECT" && FAMILY="known-rightjoin-const (tmp/rightjoin_const_repro)"
-        echo "$BLOCK" | grep -aq "QUALIFY" && echo "$BLOCK" | grep -aq "RIGHT JOIN" && FAMILY="known-joinengine-qualify (tmp/joinengine_qualify_repro)"
+        # Classify ONLY against the actual oracle query lines, not the whole
+        # 200-line block: the block includes ~40 trailing lines of stack trace
+        # and the next query's trace, whose stray keywords (FINAL, system.,
+        # WITH FILL, ...) otherwise mis-tag an unrelated real mismatch as a
+        # "known" family and hide it. These labels bound the compared queries.
+        QLINES=$(echo "$BLOCK" | grep -aE '(Reference|Partitioned|Wrapped|Optimized|Unoptimized|Metamorphic|Default|With|variant) ')
+        echo "$QLINES" | grep -aq "WITH TOTALS" && FAMILY="known-totals-leak (tmp/totals_leak_repro)"
+        echo "$QLINES" | grep -aq "remove_redundant_distinct\|WITH CUBE\|WITH ROLLUP\|GROUPING SETS" && FAMILY="known-distinct-cube (tmp/distinct_cube_repro)"
+        echo "$QLINES" | grep -aq "hasToken\|hasAllTokens\|hasAnyTokens\|hasPhrase\|searchAny\|searchAll" && FAMILY="known-hastoken-textindex (tmp/hastoken_null_repro)"
+        echo "$QLINES" | grep -aqE "\bnan\b|t_minmax_float|negate_nan|_r_minmax" && FAMILY="known-nan-minmax (tmp/nan_minmax_repro)"
+        echo "$QLINES" | grep -aq "map_test_index\|bf_tokenbf_map\|mapKeys\|mapValues" && FAMILY="known-mapbloom (tmp/mapkeys_bloom_repro)"
+        echo "$QLINES" | grep -aqE "(RIGHT|LEFT|FULL) JOIN" && echo "$QLINES" | grep -aq "AS y) AS b ON y = x\|SELECT 1, \*" && FAMILY="known-outerjoin-const (tmp/rightjoin_const_repro #106923)"
+        echo "$QLINES" | grep -aq "QUALIFY" && echo "$QLINES" | grep -aq "RIGHT JOIN" && FAMILY="known-joinengine-qualify (tmp/joinengine_qualify_repro)"
+        echo "$QLINES" | grep -aq "timeSeries" && FAMILY="known-timeseries-aggregate (oracle gate, fixed in source)"
+        echo "$QLINES" | grep -aq "WITH FILL" && FAMILY="known-withfill (oracle gate, fixed in source)"
+        echo "$QLINES" | grep -aq "REPLACE (" && FAMILY="known-replace-alias (oracle gate, fixed in source)"
+        echo "$QLINES" | grep -aqE " FINAL( |$|\))" && FAMILY="known-final-nondistributive (oracle gate, fixed in source)"
+        echo "$QLINES" | grep -aqE "mannWhitneyUTest|studentTTest|welchTTest|meanZTest|kolmogorovSmirnovTest|rankCorr|theilsU|cramersV|contingency|categoricalInformationValue" && FAMILY="known-stat-test-aggregate (oracle gate, fixed in source)"
+        echo "$QLINES" | grep -aqE "system\.|INFORMATION_SCHEMA\." && FAMILY="known-systemtable-cte (oracle gate, fixed in source)"
+        echo "$QLINES" | grep -aq "dist_\|Distributed" && FAMILY="known-distributed (oracle gate, fixed in source)"
+        # A batch can produce several distinct mismatches; the single FAMILY
+        # above is last-match-wins, so a NEW family co-occurring with a known
+        # one would be hidden. Guard against that: if any reference/optimized
+        # mismatch query matches NONE of the known family keywords, force
+        # UNCLASSIFIED so the batch is always investigated.
+        KNOWN_RE='WITH TOTALS|remove_redundant_distinct|WITH CUBE|WITH ROLLUP|GROUPING SETS|hasToken|hasAllTokens|hasAnyTokens|hasPhrase|searchAny|searchAll|nan|t_minmax_float|negate_nan|_r_minmax|map_test_index|bf_tokenbf_map|mapKeys|mapValues|(RIGHT|LEFT|FULL) JOIN|QUALIFY|timeSeries|WITH FILL|REPLACE \(| FINAL|mannWhitneyUTest|studentTTest|welchTTest|meanZTest|kolmogorovSmirnovTest|rankCorr|theilsU|cramersV|contingency|categoricalInformationValue|system\.|INFORMATION_SCHEMA\.|dist_|Distributed'
+        if echo "$QLINES" | grep -aE '(Reference|Optimized|Unoptimized) query' | grep -avqE "$KNOWN_RE"; then
+            FAMILY="UNCLASSIFIED (mixed: had $FAMILY + an unrecognized mismatch)"
+        fi
         {
             echo "=== MISMATCH inst=$(basename "$INST_DIR") run=$RUN time=$(date +%Y-%m-%dT%H:%M:%S) count=$MISM_COUNT family=$FAMILY knobs=[$KNOBS] ==="
             echo "$BLOCK"

@@ -517,6 +517,13 @@ const std::unordered_set<String> truncating_settings = {
     "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
     "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
     "max_estimated_execution_time",
+    /// The `limit` / `offset` SETTINGS (distinct from LIMIT/OFFSET clauses)
+    /// apply a final LIMIT/OFFSET to every query result. That truncation is
+    /// not distributive over the oracle rewrites — the reference and the
+    /// partitioned UNION are limited/offset over differently-ordered results,
+    /// so they keep different row subsets (observed: `SET offset = 10` made a
+    /// single batch produce 174 TLP mismatches).
+    "limit", "offset",
     /// Not truncation per se, but the same "results depend on which granules
     /// the predicate prunes" effect: with exact mode off, skip indexes under
     /// FINAL may keep stale row versions whose newer version lives in a
@@ -985,7 +992,10 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
                              "max_rows_in_distinct", "max_bytes_in_distinct",
                              "max_rows_to_transfer", "max_bytes_to_transfer",
                              "max_rows_in_join", "max_bytes_in_join",
-                             "max_rows_in_set", "max_bytes_in_set"})
+                             "max_rows_in_set", "max_bytes_in_set",
+                             /// `limit`/`offset` settings: a final LIMIT/OFFSET
+                             /// on every result, non-distributive over rewrites.
+                             "limit", "offset"})
         oracle_context->setSetting(cap, Field(UInt64(0)));
     for (const auto * mode : {"read_overflow_mode", "read_overflow_mode_leaf",
                               "group_by_overflow_mode", "sort_overflow_mode",
