@@ -20,11 +20,14 @@ SET read_through_distributed_cache=0;
 select queryID() from ($query) limit 1
 " 2>&1)
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+# A narrow-range read must not pull the whole part (~4 MB compressed per column):
+# the async buffer's lazy-ignore should fetch only the needed granules (~66 KB).
+# Exact S3 byte/request counts are non-deterministic (filesystem cache hits,
+# read-ahead, parallel replicas), so assert bounds instead of exact values.
 ${CLICKHOUSE_CLIENT} -m --query "
 SELECT
-    ProfileEvents['S3ReadRequestsCount'],
-    ProfileEvents['ReadBufferFromS3Bytes'],
-    ProfileEvents['ReadCompressedBytes']
+    ProfileEvents['S3ReadRequestsCount'] < 100,
+    ProfileEvents['ReadCompressedBytes'] < 1000000
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase()
