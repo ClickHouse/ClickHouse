@@ -38,9 +38,13 @@ A read-only first pass over a CI failure: turn a single URL into a per-test verd
 issue links. If `$0` is `.../issues/NNNNN`, read the issue body and extract the report URL first:
 
 ```bash
-mkdir -p tmp/investigate
-gh issue view <NNNNN> --repo ClickHouse/ClickHouse --json title,body > tmp/investigate/issue.json
+gh issue view <NNNNN> --repo ClickHouse/ClickHouse --json title,body
 ```
+
+Read the issue from the command output — do **not** redirect to a file. A
+`gh issue view … > tmp/investigate/issue.json` redirect is a file write that rides the wildcard
+`Bash(gh issue view:*)` allow (not the hook), so a symlinked `tmp`/`tmp/investigate` could land it
+outside the scratch dir without a prompt. (Step 1 creates `tmp/investigate`.)
 
 Bot-generated `flaky test` issues use this body format:
 
@@ -337,7 +341,8 @@ selected failure (or per shared-cause group) in parallel. Give each subagent:
 
 - the failure output from step 1,
 - the path(s) to any artifacts downloaded in step 4 (omit if none were needed),
-- the PR diff for cross-referencing (`gh pr diff <PR> > tmp/investigate/pr.diff`),
+- the PR diff for cross-referencing — run `gh pr diff <PR>` and pass its output (or have the
+  subagent run it); do **not** redirect to a file (same symlink-write reason as step 0),
 - the report `SHA`, instructing it to read source at that commit (`git show <sha>:<path>`) for
   accurate `file:line`, per step 4.
 
