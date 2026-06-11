@@ -5,6 +5,7 @@ Array(Variant(Decimal(18, 2), Float64))
 Variant(Decimal(18, 2), Float64)
 Variant(Decimal(18, 2), Float64)
 Map(String, Variant(Decimal(18, 2), Float64))
+Map(Variant(Decimal(18, 2), Float64), UInt8)
 Float64
 Float64
 Array(Float64)
@@ -12,6 +13,9 @@ Float64
 Float64
 Map(String, Float64)
 Nullable(Float64)
+Map(Variant(Decimal(18, 2), Float64), UInt8)
+{1:1,0:2}
+Map(Float64, String)
 1
 1
 0.5	3

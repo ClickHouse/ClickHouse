@@ -103,7 +103,13 @@ public:
         DataTypes tmp;
         if (use_variant_as_common_type)
         {
-            tmp.emplace_back(getLeastSupertypeOrVariant(keys, allow_lossy_numeric_supertype));
+            /// A Map key cannot be Nullable, but the lossy numeric fallback preserves nullability.
+            /// Keep the plain Variant key (which drops the Nullable wrapper) when the lossy key type
+            /// would be an invalid Map key. Map values have no such restriction.
+            auto key_type = getLeastSupertypeOrVariant(keys, allow_lossy_numeric_supertype);
+            if (!DataTypeMap::isValidKeyType(key_type))
+                key_type = getLeastSupertypeOrVariant(keys);
+            tmp.emplace_back(std::move(key_type));
             tmp.emplace_back(getLeastSupertypeOrVariant(values, allow_lossy_numeric_supertype));
         }
         else
