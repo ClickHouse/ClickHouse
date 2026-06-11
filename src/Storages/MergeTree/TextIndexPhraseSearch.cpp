@@ -95,31 +95,6 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
         }
     }
 
-    /// Handle remaining LHS entries for boundary phase.
-    while (lhs_idx < lhs.size() && rhs_idx < rhs.size())
-    {
-        UInt32 overflow_positions_bitmap = lhs[lhs_idx].bitmap >> (RoaringishEntry::BITMAP_BITS - shift);
-        if (overflow_positions_bitmap && lhs[lhs_idx].group < std::numeric_limits<UInt32>::max())
-        {
-            UInt64 boundary_key = lhs[lhs_idx].key() + 1;
-
-            while (rhs_idx < rhs.size() && rhs[rhs_idx].key() < boundary_key)
-                ++rhs_idx;
-
-            if (rhs_idx < rhs.size() && rhs[rhs_idx].key() == boundary_key)
-            {
-                UInt32 boundary_match = overflow_positions_bitmap & rhs[rhs_idx].bitmap;
-                if (boundary_match)
-                {
-                    RoaringishEntry entry = rhs[rhs_idx];
-                    entry.bitmap = boundary_match;
-                    result.push_back(entry);
-                }
-            }
-        }
-        ++lhs_idx;
-    }
-
     return result;
 }
 

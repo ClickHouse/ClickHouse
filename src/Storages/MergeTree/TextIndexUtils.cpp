@@ -17,6 +17,8 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -24,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
@@ -334,7 +337,14 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     size_t part_index = segments[source_num].part_index;
 
     for (auto & offset : offsets)
-        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
+    {
+        UInt64 new_offset = (*merged_part_offsets)[part_index, offset];
+        if (new_offset > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                new_offset, std::numeric_limits<UInt32>::max());
+        offset = static_cast<UInt32>(new_offset);
+    }
 
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
@@ -491,8 +501,12 @@ bool MergeTextIndexesTask::executeStep()
                     size_t part_index = segments[current->order].part_index;
                     for (auto & entry : position_entries)
                     {
-                        UInt32 new_doc_id = static_cast<UInt32>((*merged_part_offsets)[part_index, entry.doc_id]);
-                        entry = entry.withDocId(new_doc_id);
+                        UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
+                        if (new_doc_id > std::numeric_limits<UInt32>::max())
+                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                                new_doc_id, std::numeric_limits<UInt32>::max());
+                        entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
                     }
                 }
 

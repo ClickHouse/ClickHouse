@@ -108,6 +108,8 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
 {
     chassert(index_granule);
     granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
+    /// Phrase search results are cached per granule; drop them when the granule changes.
+    phrase_search_doc_ids.clear();
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
 
     /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
