@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
@@ -345,6 +346,12 @@ public:
                     path = std::move(case_insensitive_matches.front());
             }
 
+            /// Typed paths are always present in a JSON column, even when the key was missing
+            /// from the inserted JSON (they get the type's default value). For non-typed paths
+            /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            /// Computed after case-insensitive resolution so it reflects the resolved stored path.
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+
             auto read_merged_for_path = [&](const String & p)
             {
                 String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + p + "`";
@@ -355,16 +362,9 @@ public:
 
             auto serialize_raw = [&](const IColumn & merged, const ISerialization & serialization, size_t row, ColumnString & out)
             {
-                if (merged.isDefaultAt(row))
-                {
-                    out.insertDefault();
-                }
-                else
-                {
-                    WriteBufferFromOwnString buf;
-                    serialization.serializeTextJSON(merged, row, buf, format_settings);
-                    out.insert(buf.str());
-                }
+                WriteBufferFromOwnString buf;
+                serialization.serializeTextJSON(merged, row, buf, format_settings);
+                out.insert(buf.str());
             };
 
             /// Multiple paths match case-insensitively: resolve per row so each row picks the first
@@ -379,6 +379,17 @@ public:
                     for (size_t k = 0; k < num_paths; ++k)
                         std::tie(per_path_merged[k], per_path_merged_type[k]) = read_merged_for_path(case_insensitive_matches[k]);
 
+                    /// Typed paths are always present even when the value equals the type's default,
+                    /// so presence must not be checked with `isDefaultAt` (see #101721). For non-typed
+                    /// paths the combined subcolumn is Dynamic where NULL means absent.
+                    VectorWithMemoryTracking<UInt8> path_is_typed(num_paths);
+                    for (size_t k = 0; k < num_paths; ++k)
+                        path_is_typed[k] = data_type_object.getTypedPaths().contains(case_insensitive_matches[k]);
+                    auto path_has_value_at = [&](size_t k, size_t i)
+                    {
+                        return path_is_typed[k] || !per_path_merged[k]->isNullAt(i);
+                    };
+
                     if constexpr (is_extract_raw)
                     {
                         VectorWithMemoryTracking<SerializationPtr> serializations(num_paths);
@@ -391,7 +402,7 @@ public:
                             size_t pick = num_paths;
                             for (size_t k = 0; k < num_paths; ++k)
                             {
-                                if (!per_path_merged[k]->isDefaultAt(i))
+                                if (path_has_value_at(k, i))
                                 {
                                     pick = k;
                                     break;
@@ -426,7 +437,7 @@ public:
                             size_t pick = num_paths;
                             for (size_t k = 0; k < num_paths; ++k)
                             {
-                                if (!per_path_merged[k]->isDefaultAt(i))
+                                if (path_has_value_at(k, i))
                                 {
                                     pick = k;
                                     break;
@@ -449,10 +460,13 @@ public:
 
             if constexpr (is_has)
             {
+                if (is_typed_path)
+                    return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
+
                 auto result = ColumnVector<UInt8>::create(input_rows_count);
                 auto & data = result->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    data[i] = merged->isDefaultAt(i) ? 0 : 1;
+                    data[i] = merged->isNullAt(i) ? 0 : 1;
                 return result;
             }
             else if constexpr (is_extract_bool)
@@ -465,7 +479,12 @@ public:
                 auto raw_col = ColumnString::create();
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    serialize_raw(*merged, *serialization, i, *raw_col);
+                {
+                    if (!is_typed_path && merged->isNullAt(i))
+                        raw_col->insertDefault();
+                    else
+                        serialize_raw(*merged, *serialization, i, *raw_col);
+                }
                 return raw_col;
             }
             else
