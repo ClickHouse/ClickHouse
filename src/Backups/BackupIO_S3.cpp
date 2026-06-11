@@ -13,6 +13,7 @@
 #include <IO/S3/deleteFileFromS3.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Disks/IDisk.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -75,7 +76,6 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-    extern const int S3_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -202,16 +202,9 @@ private:
             });
     }
 
-    Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
+    String getS3BackupObjectKey(const S3::URI & s3_uri, const String & file_name)
     {
-        S3::ListObjectsRequest request;
-        request.SetBucket(s3_uri.bucket);
-        request.SetPrefix(fs::path{s3_uri.key} / file_name);
-        request.SetMaxKeys(1);
-        auto outcome = client.ListObjects(request);
-        if (!outcome.IsSuccess())
-            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-        return outcome.GetResult().GetContents();
+        return fs::path{s3_uri.key} / file_name;
     }
 }
 
@@ -277,15 +270,12 @@ BackupReaderS3::~BackupReaderS3() = default;
 
 bool BackupReaderS3::fileExists(const String & file_name)
 {
-    return !listObjects(*client, s3_uri, file_name).empty();
+    return S3::objectExists(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
-    auto objects = listObjects(*client, s3_uri, file_name);
-    if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
-    return objects[0].GetSize();
+    return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
@@ -459,15 +449,12 @@ BackupWriterS3::~BackupWriterS3() = default;
 
 bool BackupWriterS3::fileExists(const String & file_name)
 {
-    return !listObjects(*client, s3_uri, file_name).empty();
+    return S3::objectExists(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
-    auto objects = listObjects(*client, s3_uri, file_name);
-    if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
-    return objects[0].GetSize();
+    return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterS3::readFile(const String & file_name, size_t expected_file_size)
