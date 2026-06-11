@@ -21,7 +21,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class ConcatWithSeparatorImpl final : public IFunction
+class ConcatWithSeparatorImpl : public IFunction
 {
 public:
     ConcatWithSeparatorImpl(ContextPtr context_, const char * name_, bool is_injective_)
@@ -147,10 +147,10 @@ public:
 
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, input_rows_count);
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t row = 0; row < input_rows_count; ++row)
+                for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.finishRow();

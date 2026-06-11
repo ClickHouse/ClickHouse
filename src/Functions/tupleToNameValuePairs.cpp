@@ -28,7 +28,7 @@ namespace
   * of the pair corresponds to the tuple field name and the second one to the
   * tuple value.
   */
-class FunctionTupleToNameValuePairs final : public IFunction
+class FunctionTupleToNameValuePairs : public IFunction
 {
 public:
     static constexpr auto name = "tupleToNameValuePairs";
@@ -40,7 +40,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -76,54 +76,39 @@ public:
                             getName());
         }
 
-        DataTypes item_data_types = {std::make_shared<DataTypeString>(), col->isNullable() ? makeNullableSafe(first_element_type) : first_element_type};
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(item_data_types));
+        DataTypePtr tuple_name_type = std::make_shared<DataTypeString>();
+        DataTypes item_data_types = {tuple_name_type,
+                                     first_element_type};
+
+        auto item_data_type = std::make_shared<DataTypeTuple>(item_data_types);
+
+        return std::make_shared<DataTypeArray>(item_data_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const DataTypeTuple * tuple_type = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
 
-        const auto * source_nullable_column = checkAndGetColumn<ColumnNullable>(arguments[0].column.get());
-        const IColumn * source_tuple_column
-            = source_nullable_column ? &source_nullable_column->getNestedColumn() : arguments[0].column.get();
-        const auto * source_tuple_column_concrete = assert_cast<const ColumnTuple *>(source_tuple_column);
-        const NullMap * source_null_map = source_nullable_column ? &source_nullable_column->getNullMapData() : nullptr;
+        const IColumn * tuple_col = removeNullable(arguments[0].column).get();
+        const auto * tuple_col_concrete = assert_cast<const ColumnTuple *>(tuple_col);
 
-        const auto & result_tuple_type
-            = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*result_type).getNestedType());
-        auto keys_column = ColumnString::create();
-        MutableColumnPtr values_column = result_tuple_type.getElements()[1]->createColumn();
-        auto * nullable_values_column = typeid_cast<ColumnNullable *>(values_column.get());
-
+        auto keys = ColumnString::create();
+        MutableColumnPtr values = tuple_col_concrete->getColumn(0).cloneEmpty();
         auto offsets = ColumnVector<UInt64>::create();
-        UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            bool row_is_null = source_null_map && (*source_null_map)[row];
-            for (size_t col = 0; col < source_tuple_column_concrete->tupleSize(); ++col)
+            for (size_t col = 0; col < tuple_col_concrete->tupleSize(); ++col)
             {
                 const std::string & key = tuple_type->getElementNames()[col];
-                keys_column->insertData(key.data(), key.size());
+                const IColumn & value_column = tuple_col_concrete->getColumn(col);
 
-                if (row_is_null)
-                {
-                    values_column->insertDefault();
-                }
-                else
-                {
-                    const IColumn & source_value_column = source_tuple_column_concrete->getColumn(col);
-                    if (nullable_values_column && !source_value_column.isNullable())
-                        nullable_values_column->insertFromNotNullable(source_value_column, row);
-                    else
-                        values_column->insertFrom(source_value_column, row);
-                }
+                values->insertFrom(value_column, row);
+                keys->insertData(key.data(), key.size());
             }
-            current_offset += source_tuple_column_concrete->tupleSize();
-            offsets->insertValue(current_offset);
+            offsets->insertValue(tuple_col_concrete->tupleSize() * (row + 1));
         }
 
-        std::vector<ColumnPtr> tuple_columns = { std::move(keys_column), std::move(values_column) };
+        std::vector<ColumnPtr> tuple_columns = { std::move(keys), std::move(values) };
         auto tuple_column = ColumnTuple::create(std::move(tuple_columns));
         return ColumnArray::create(std::move(tuple_column), std::move(offsets));
     }

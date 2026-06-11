@@ -13,6 +13,8 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/PODArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>

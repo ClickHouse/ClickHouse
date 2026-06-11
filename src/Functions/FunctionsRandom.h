@@ -5,6 +5,7 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -87,7 +88,7 @@ public:
 };
 
 template <typename ToType, typename Name>
-class FunctionRandom final : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
+class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
 {
 public:
     explicit FunctionRandom(ContextPtr context) : selector(context)

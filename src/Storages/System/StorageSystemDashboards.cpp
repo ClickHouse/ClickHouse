@@ -1,7 +1,4 @@
 #include <string_view>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
