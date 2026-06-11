@@ -1134,7 +1134,7 @@ Type string: `JSON`.
   [N bytes: String column encoding for num_rows JSON text values]
 ```
 
-The state prefix value is `1` (`JSONStringSerializationVersion`); other values (`0`, `3`, `4`) indicate FLATTENED / V3 formats. It is read at the start of every block with rows > 0, and the values stream is a standard [String](#string-type) column for `num_rows` rows.
+The state prefix value is `1` for this String fallback. The other values denote different `JSON`/`Object` encodings: `0` = V1, `2` = V2 (the default over the native TCP protocol), `3` = FLATTENED, `4` = V3 (see [the serialization version reference](#serialization-version-reference)). A decoder that sees a value other than `1` here is not looking at the String fallback. The prefix is read at the start of every block with rows > 0, and the values stream is a standard [String](#string-type) column for `num_rows` rows.
 
 `JSON` value `'{"a":1}'` (one row):
 
