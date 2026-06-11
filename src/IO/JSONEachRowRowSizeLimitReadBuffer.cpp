@@ -12,6 +12,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+void throwJSONEachRowObjectTooLarge(size_t position, size_t max_bytes, size_t current_bytes)
+{
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA,
+        "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is "
+        "{} bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
+        "most likely JSON is malformed",
+        position, max_bytes, current_bytes);
+}
+
 namespace
 {
     /// Expose at most this many bytes of the nested buffer per refill. Keeps the working
@@ -50,12 +60,7 @@ bool JSONEachRowRowSizeLimitReadBuffer::nextImpl()
     counted_bytes += offset();
 
     if (max_bytes_per_row != 0 && counted_bytes > max_bytes_per_row)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is "
-            "{} bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
-            "most likely JSON is malformed",
-            in.count(), max_bytes_per_row, counted_bytes);
+        throwJSONEachRowObjectTooLarge(in.count(), max_bytes_per_row, counted_bytes);
 
     /// The nested buffer may still have data in its current working buffer (when we only
     /// exposed a bounded window of it); pull more only if it is actually exhausted.

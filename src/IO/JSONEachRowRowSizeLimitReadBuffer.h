@@ -5,6 +5,12 @@
 namespace DB
 {
 
+/// Throws INCORRECT_DATA with the same "Size of JSON object ... is extremely large" message the
+/// parallel-parsing segmentation engine uses, so every JSONEachRow-family read path reports an
+/// oversized row the same way. position is the byte offset in the input, max_bytes is the cap,
+/// current_bytes is the size of the offending row.
+[[noreturn]] void throwJSONEachRowObjectTooLarge(size_t position, size_t max_bytes, size_t current_bytes);
+
 /// A zero-copy pass-through ReadBuffer that bounds the number of bytes a single
 /// JSONEachRow row may consume. It shares the working buffer of the nested buffer
 /// (no extra allocation or copying), but never exposes more than max_bytes_per_row

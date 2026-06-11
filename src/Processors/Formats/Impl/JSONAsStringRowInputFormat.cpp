@@ -5,7 +5,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
+#include <IO/JSONEachRowRowSizeLimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -96,6 +98,15 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     if (*buf->position() != '{')
         throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{{'.");
 
+    /// Cap the size of a single object so a huge value cannot be buffered until OOM, matching the
+    /// cap the parallel-parsing segmentation engine enforces. The window passed to find_first_symbols
+    /// is clamped so the check fires even when the whole input is in one working buffer (e.g. a
+    /// mmapped file), not only at refill boundaries. 0 disables the cap.
+    const size_t max_object_size = applyRowSizeLimit() && format_settings.json.max_row_size_for_json_each_row != 0
+        ? 10 * format_settings.json.max_row_size_for_json_each_row
+        : 0;
+    const size_t start_count = buf->count();
+
     ++buf->position();
     ++balance;
 
@@ -106,11 +117,24 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing JSON object.");
 
+        char * scan_end = buf->buffer().end();
+        if (max_object_size != 0)
+        {
+            const size_t object_size = buf->count() - start_count;
+            if (object_size > max_object_size)
+                throwJSONEachRowObjectTooLarge(buf->count(), max_object_size, object_size);
+            /// +1 so an object of exactly max_object_size still finds its closing brace, and only a
+            /// strictly larger one runs the window out and throws on the next iteration.
+            const size_t remaining = max_object_size - object_size + 1;
+            if (remaining < static_cast<size_t>(scan_end - buf->position()))
+                scan_end = buf->position() + remaining;
+        }
+
         if (quotes)
         {
-            pos = find_first_symbols<'"', '\\'>(buf->position(), buf->buffer().end());
+            pos = find_first_symbols<'"', '\\'>(buf->position(), scan_end);
             buf->position() = pos;
-            if (buf->position() == buf->buffer().end())
+            if (buf->position() == scan_end)
                 continue;
             if (*buf->position() == '"')
             {
@@ -128,9 +152,9 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
         }
         else
         {
-            pos = find_first_symbols<'"', '{', '}', '\\'>(buf->position(), buf->buffer().end());
+            pos = find_first_symbols<'"', '{', '}', '\\'>(buf->position(), scan_end);
             buf->position() = pos;
-            if (buf->position() == buf->buffer().end())
+            if (buf->position() == scan_end)
                 continue;
             if (*buf->position() == '{')
             {
@@ -178,6 +202,19 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
 
 void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
 {
+    /// Bound the size of a single object the same way as the other JSONEachRow read paths, so a
+    /// huge value cannot be buffered into the column until OOM. Wrap only the deserialization, then
+    /// the buffer pointer is restored for the row separators handled by JSONAsRowInputFormat::readRow.
+    if (applyRowSizeLimit() && format_settings.json.max_row_size_for_json_each_row != 0)
+    {
+        ReadBuffer * saved_in = in;
+        JSONEachRowRowSizeLimitReadBuffer limited_buf(*in, 10 * format_settings.json.max_row_size_for_json_each_row);
+        in = &limited_buf;
+        SCOPE_EXIT_SAFE({ in = saved_in; });
+        serializations[0]->deserializeTextJSON(column, *in, format_settings);
+        return;
+    }
+
     serializations[0]->deserializeTextJSON(column, *in, format_settings);
 }
 

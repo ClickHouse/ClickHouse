@@ -43,3 +43,35 @@ for i in range(20):
 " 2>/dev/null \
     | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
         --input-format=JSONEachRow -q "SELECT count(), sum(n) FROM table"
+
+# JSONAsString reads the whole object into a single String column through its own readJSONObject,
+# bypassing the JSONEachRow row reader, so it needs the cap on its own scan loop too.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSONAsString --structure="json String" -q "SELECT length(json) FROM table" 2>&1 \
+    | grep -q "min_chunk_bytes_for_parallel_parsing" && echo "Ok." || echo "FAIL"
+
+# Normal-sized objects read as JSONAsString must still parse (per-row cap resets each object).
+python3 -c "
+import sys
+for _ in range(20):
+    sys.stdout.buffer.write(b'{\"a\":\"' + b'y' * (1024 * 1024) + b'\"}\n')
+" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSONAsString --structure="json String" -q "SELECT count() FROM table"
+
+# JSONAsObject reads the whole object into a single JSON column through its own readJSONObject,
+# so it must be capped the same way.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSONAsObject --structure="json JSON" -q "SELECT 1 FROM table" 2>&1 \
+    | grep -q "min_chunk_bytes_for_parallel_parsing" && echo "Ok." || echo "FAIL"
+
+# Normal-sized objects read as JSONAsObject must still parse.
+python3 -c "
+import sys
+for i in range(20):
+    sys.stdout.buffer.write(b'{\"a\":%d}\n' % i)
+" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSONAsObject --structure="json JSON" -q "SELECT count() FROM table"

@@ -57,11 +57,6 @@ private:
     virtual void readRowStart(MutableColumns &) {}
     virtual void skipRowStart() {}
 
-    /// Whether to enforce the per-row size cap (see max_row_size_for_json_each_row).
-    /// Disabled for subclasses whose row framing is not a single self-delimited object
-    /// scannable by the JSONEachRow segmentation engine (JSON-with-metadata, JSONObjectEachRow).
-    virtual bool applyRowSizeLimit() const { return true; }
-
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     /// Also, if processing of Nested data is in progress, it holds the common prefix
     /// of the nested column names (so that appending the field name to it produces
@@ -88,6 +83,11 @@ private:
 
 protected:
     virtual bool checkEndOfData(bool is_first_row);
+
+    /// Whether to enforce the per-row size cap (see max_row_size_for_json_each_row).
+    /// Disabled for subclasses whose row framing is not a single self-delimited object
+    /// scannable by the JSONEachRow segmentation engine (JSON-with-metadata, JSONObjectEachRow).
+    virtual bool applyRowSizeLimit() const { return true; }
 
     const FormatSettings format_settings;
 
