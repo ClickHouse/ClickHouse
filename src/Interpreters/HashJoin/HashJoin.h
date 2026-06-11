@@ -238,14 +238,22 @@ public:
         M(range17_key64)               \
         M(range18_key64)
 
-    /// Used for reading from StorageJoin and applying joinGet function
+    /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
+    /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
+    /// they are read back the same way (the output key column is the parent LowCardinality type).
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
         M(key32)                               \
         M(key64)                               \
         M(key_string)                          \
-        M(key_fixed_string)
+        M(key_fixed_string)                    \
+        M(low_cardinality_key8)                \
+        M(low_cardinality_key16)               \
+        M(low_cardinality_key32)               \
+        M(low_cardinality_key64)               \
+        M(low_cardinality_key_string)          \
+        M(low_cardinality_key_fixed_string)
 
     /// Used in ConcurrentHashJoin
     #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
