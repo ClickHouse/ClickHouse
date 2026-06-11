@@ -1284,16 +1284,16 @@ In FLATTENED mode there is **no shared-data column** (that overflow store belong
 
 Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
 
-`JSON` value `{"a": 1, "b": "hi"}` (one row, both paths dynamic):
+`JSON` value `{"a": 42, "b": "hi"}` (one row, both paths dynamic). A JSON integer is inferred as `Int64`:
 
 ```text
 03 00 00 00 00 00 00 00      version = 3 (Object)
 02                           num_dynamic_paths = 2
 01 61                        path "a"
 01 62                        path "b"
-03 00 00 00 00 00 00 00 01 06 55 49 6E 74 36 34   "a" Dynamic prefix: version 3, 1 type, "UInt64"
+03 00 00 00 00 00 00 00 01 05 49 6E 74 36 34      "a" Dynamic prefix: version 3, 1 type, "Int64"
 03 00 00 00 00 00 00 00 01 06 53 74 72 69 6E 67   "b" Dynamic prefix: version 3, 1 type, "String"
-00 2A 00 00 00 00 00 00 00   "a" data: discriminator 0, UInt64 42
+00 2A 00 00 00 00 00 00 00   "a" data: discriminator 0, Int64 42
 00 02 68 69                  "b" data: discriminator 0, String "hi"
 ```
 
