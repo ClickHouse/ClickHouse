@@ -27,6 +27,7 @@ NC_BACKUP_ROLE="s3_backup_role_${DB}"
 NC_BACKUP_ENV="s3_backup_env_${DB}"
 NC_BACKUP_NOSIGN="s3_backup_nosign_${DB}"
 NC_BACKUP_NOCREDS="s3_backup_nocreds_${DB}"
+NC_BACKUP_GCP_ADC="s3_backup_gcp_adc_${DB}"
 NC_GCP_OAUTH="s3_gcp_oauth_${DB}"
 NC_GCP_OAUTH_NOSIGN="s3_gcp_oauth_nosign_${DB}"
 NC_GCP_OAUTH_CASE="s3_gcp_oauth_case_${DB}"
@@ -53,6 +54,7 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ENV};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOCREDS};
+        DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_GCP_ADC};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_CASE};
@@ -421,6 +423,25 @@ else
     echo "backup_url_only: pass"
 fi
 
+# A backup named collection with `http_client = gcp_oauth` and a complete explicit Google ADC triple is a
+# user-supplied credential, so the backup must be allowed (it then fails minting the token from the bogus
+# triple, but is not rejected with ACCESS_DENIED).
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_BACKUP_GCP_ADC} AS
+        url = 'http://localhost:11111/test/${DB}_backup_gcp_adc/',
+        http_client = 'gcp_oauth',
+        google_adc_client_id = 'id',
+        google_adc_client_secret = 'secret',
+        google_adc_refresh_token = 'token';
+" > /dev/null
+$CLICKHOUSE_CLIENT -q "CREATE TABLE IF NOT EXISTS ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple();"
+backup_gcp_adc_out="$($CLICKHOUSE_CLIENT -q "BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_GCP_ADC})" 2>&1)"
+if echo "${backup_gcp_adc_out}" | grep -q "ACCESS_DENIED"; then
+    echo "backup_gcp_adc: fail (${backup_gcp_adc_out//$'\n'/ })"
+else
+    echo "backup_gcp_adc: pass"
+fi
+
 # `gcp_oauth` with a complete explicit Google ADC triple is a user-supplied credential, so it must be
 # allowed (it then fails minting the token from the bogus triple, but is not rejected with ACCESS_DENIED).
 $CLICKHOUSE_CLIENT -m -q "
@@ -472,3 +493,22 @@ else
     echo "disk_anonymous: pass"
 fi
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE}_anon SYNC" > /dev/null 2>&1
+
+# The Google ADC secret keys, when supplied as named-collection overrides, must be masked in formatted
+# queries the same way `secret_access_key` is, so they do not leak into logs. `EXPLAIN SYNTAX` formats the
+# query with secret masking applied.
+adc_mask_out="$($CLICKHOUSE_CLIENT -q "
+    EXPLAIN SYNTAX
+    SELECT * FROM s3(${NC_NOCREDS},
+        http_client = 'gcp_oauth',
+        google_adc_client_id = 'adc_id',
+        google_adc_client_secret = 'ADC_SECRET_LEAK_CHECK',
+        google_adc_refresh_token = 'ADC_TOKEN_LEAK_CHECK',
+        format = 'TSV', structure = 'x UInt8')" 2>&1)"
+if echo "${adc_mask_out}" | grep -qE "ADC_SECRET_LEAK_CHECK|ADC_TOKEN_LEAK_CHECK"; then
+    echo "adc_masking: fail (secret leaked: ${adc_mask_out//$'\n'/ })"
+elif echo "${adc_mask_out}" | grep -q "HIDDEN"; then
+    echo "adc_masking: pass"
+else
+    echo "adc_masking: fail (not masked: ${adc_mask_out//$'\n'/ })"
+fi

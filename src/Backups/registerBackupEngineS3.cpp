@@ -72,6 +72,10 @@ void registerBackupEngineS3(BackupFactory & factory)
         bool no_sign_request = false;
         /// nullopt for explicit url/key args (keep the global default); set for named collections.
         std::optional<bool> use_environment_credentials;
+        String http_client;
+        String google_adc_client_id;
+        String google_adc_client_secret;
+        String google_adc_refresh_token;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -84,6 +88,12 @@ void registerBackupEngineS3(BackupFactory & factory)
             /// Default to 0 for named collections so a URL-only backup collection reads anonymously
             /// instead of authenticating with the server's own cloud identity (matches s3 table functions).
             use_environment_credentials = collection->getOrDefault<bool>("use_environment_credentials", false);
+            /// Carry `http_client = gcp_oauth` and the explicit Google ADC triple from the collection so a
+            /// backup can authenticate with a user-supplied ADC rather than the server's GCP metadata service.
+            http_client = collection->getOrDefault<String>("http_client", "");
+            google_adc_client_id = collection->getOrDefault<String>("google_adc_client_id", "");
+            google_adc_client_secret = collection->getOrDefault<String>("google_adc_client_secret", "");
+            google_adc_refresh_token = collection->getOrDefault<String>("google_adc_refresh_token", "");
 
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
@@ -147,6 +157,10 @@ void registerBackupEngineS3(BackupFactory & factory)
                 role_session_name,
                 no_sign_request,
                 use_environment_credentials,
+                http_client,
+                google_adc_client_id,
+                google_adc_client_secret,
+                google_adc_refresh_token,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -168,6 +182,10 @@ void registerBackupEngineS3(BackupFactory & factory)
                 role_session_name,
                 no_sign_request,
                 use_environment_credentials,
+                http_client,
+                google_adc_client_id,
+                google_adc_client_secret,
+                google_adc_refresh_token,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -189,6 +207,10 @@ void registerBackupEngineS3(BackupFactory & factory)
                     role_session_name,
                     no_sign_request,
                     use_environment_credentials,
+                    http_client,
+                    google_adc_client_id,
+                    google_adc_client_secret,
+                    google_adc_refresh_token,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -208,6 +230,10 @@ void registerBackupEngineS3(BackupFactory & factory)
                 std::move(role_session_name),
                 no_sign_request,
                 use_environment_credentials,
+                http_client,
+                google_adc_client_id,
+                google_adc_client_secret,
+                google_adc_refresh_token,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,

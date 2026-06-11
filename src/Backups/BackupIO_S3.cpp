@@ -263,6 +263,10 @@ BackupReaderS3::BackupReaderS3(
     const String & role_session_name,
     bool no_sign_request,
     std::optional<bool> use_environment_credentials,
+    const String & http_client,
+    const String & google_adc_client_id,
+    const String & google_adc_client_secret,
+    const String & google_adc_refresh_token,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -290,6 +294,18 @@ BackupReaderS3::BackupReaderS3(
     /// explicit url/key form leaves this unset and keeps the server `<s3>` config default.
     if (use_environment_credentials.has_value())
         s3_settings.auth_settings[S3AuthSetting::use_environment_credentials] = *use_environment_credentials;
+
+    /// Carry `http_client = gcp_oauth` and the explicit Google ADC triple from the named collection so the
+    /// backup authenticates with the user-supplied ADC instead of the server's GCP metadata service. The
+    /// explicit url/key form leaves these empty and keeps the server `<s3>` config values.
+    if (!http_client.empty())
+        s3_settings.auth_settings[S3AuthSetting::http_client] = http_client;
+    if (!google_adc_client_id.empty())
+        s3_settings.auth_settings[S3AuthSetting::google_adc_client_id] = google_adc_client_id;
+    if (!google_adc_client_secret.empty())
+        s3_settings.auth_settings[S3AuthSetting::google_adc_client_secret] = google_adc_client_secret;
+    if (!google_adc_refresh_token.empty())
+        s3_settings.auth_settings[S3AuthSetting::google_adc_refresh_token] = google_adc_refresh_token;
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -374,6 +390,10 @@ BackupWriterS3::BackupWriterS3(
     const String & role_session_name,
     bool no_sign_request,
     std::optional<bool> use_environment_credentials,
+    const String & http_client,
+    const String & google_adc_client_id,
+    const String & google_adc_client_secret,
+    const String & google_adc_refresh_token,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -403,6 +423,18 @@ BackupWriterS3::BackupWriterS3(
     /// explicit url/key form leaves this unset and keeps the server `<s3>` config default.
     if (use_environment_credentials.has_value())
         s3_settings.auth_settings[S3AuthSetting::use_environment_credentials] = *use_environment_credentials;
+
+    /// Carry `http_client = gcp_oauth` and the explicit Google ADC triple from the named collection so the
+    /// backup authenticates with the user-supplied ADC instead of the server's GCP metadata service. The
+    /// explicit url/key form leaves these empty and keeps the server `<s3>` config values.
+    if (!http_client.empty())
+        s3_settings.auth_settings[S3AuthSetting::http_client] = http_client;
+    if (!google_adc_client_id.empty())
+        s3_settings.auth_settings[S3AuthSetting::google_adc_client_id] = google_adc_client_id;
+    if (!google_adc_client_secret.empty())
+        s3_settings.auth_settings[S3AuthSetting::google_adc_client_secret] = google_adc_client_secret;
+    if (!google_adc_refresh_token.empty())
+        s3_settings.auth_settings[S3AuthSetting::google_adc_refresh_token] = google_adc_refresh_token;
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;

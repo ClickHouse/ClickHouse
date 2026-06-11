@@ -351,7 +351,7 @@ protected:
         if (!is_cluster_function && isNamedCollectionName(0))
         {
             /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
-            findSecretNamedArgument("secret_access_key", 1);
+            findS3NamedCollectionSecretArguments(1);
             return;
         }
 
@@ -703,7 +703,7 @@ protected:
         if (isNamedCollectionName(0))
         {
             /// S3(named_collection, ..., secret_access_key = 'secret_access_key')
-            findSecretNamedArgument("secret_access_key", 1);
+            findS3NamedCollectionSecretArguments(1);
             return;
         }
 
@@ -829,7 +829,7 @@ protected:
         if (isNamedCollectionName(0))
         {
             /// S3(named_collection, ..., secret_access_key = 'password', ...)
-            findSecretNamedArgument("secret_access_key", 1);
+            findS3NamedCollectionSecretArguments(1);
         }
         else
         {
@@ -897,7 +897,7 @@ protected:
             if (isNamedCollectionName(0))
             {
                 /// BACKUP ... TO S3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
-                findSecretNamedArgument("secret_access_key", 1);
+                findS3NamedCollectionSecretArguments(1);
                 return;
             }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
@@ -957,6 +957,34 @@ protected:
             return true;
         }
         return false;
+    }
+
+    /// Masks the secret-bearing named arguments of an S3 named collection: `secret_access_key` and the
+    /// Google ADC secrets (`google_adc_client_secret`, `google_adc_refresh_token`). They can be supplied as
+    /// overrides in any order, so this hides the whole span covering every secret key that is present; a
+    /// non-secret named argument in between is hidden too, which is safe (it never leaves a secret visible).
+    /// Mirrors the "hide all named arguments" handling used for ambiguous XDBC collections.
+    void findS3NamedCollectionSecretArguments(size_t start = 0)
+    {
+        static constexpr std::string_view secret_keys[]
+            = {"secret_access_key", "google_adc_client_secret", "google_adc_refresh_token"};
+        ssize_t min_idx = -1;
+        ssize_t max_idx = -1;
+        for (const auto & key : secret_keys)
+        {
+            ssize_t arg_idx = findNamedArgument(nullptr, key, start);
+            if (arg_idx < 0)
+                continue;
+            if (min_idx < 0 || arg_idx < min_idx)
+                min_idx = arg_idx;
+            if (arg_idx > max_idx)
+                max_idx = arg_idx;
+        }
+        if (min_idx < 0)
+            return;
+        result.start = static_cast<size_t>(min_idx);
+        result.count = static_cast<size_t>(max_idx - min_idx + 1);
+        result.are_named = true;
     }
 };
 
