@@ -216,6 +216,12 @@ public:
     CacheTier tier() const override { return CacheTier::PageCache; }
     bool populatesOnMiss() const override { return !bypass_if_missing; }
 
+    /// A page-cache block is written whole (first-writer-wins, no later completion), so
+    /// both edges round to `block_size`: the head fills the block this read starts in,
+    /// the tail completes the block it ends in.
+    size_t fetchHeadAlignment() const override { return block_size; }
+    size_t fetchTailAlignment() const override { return block_size; }
+
     /// Read-only residency probe: hit read buffers + cache-aligned writer-null misses
     /// (writers come from `openWriteBuffers`). `lookupView` is left as the throwing
     /// default - the executor uses `planResidencyView` + `openWriteBuffers`, and a

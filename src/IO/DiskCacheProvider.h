@@ -309,6 +309,11 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
+    /// A miss segment is created at the `boundary_alignment` floor of the read and its
+    /// write buffer appends from that floor, so the fetch head must reach it. The tail
+    /// fills incrementally (the next window continues the segment), so no tail rounding.
+    size_t fetchHeadAlignment() const override { return cache->getBoundaryAlignment(); }
+
     /// Read-only residency probe for the new per-range buffer API. Builds a
     /// `DiskCacheView` over a single `cache->get` (no segment creation): each
     /// resident sub-range becomes a `HitEntry` with a shared-holder-backed

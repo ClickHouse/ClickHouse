@@ -245,6 +245,21 @@ public:
     /// Default: write-through.
     virtual bool populatesOnMiss() const { return true; }
 
+    /// Granularity the foreground rounds the HEAD of a fetch DOWN to, so a read that
+    /// starts mid-cell fills that cell's aligned prefix (the segment/block this read
+    /// lands inside is created at the aligned floor, and its write buffer appends from
+    /// `cwo` = the aligned floor - a fetch that skipped the prefix would land nothing).
+    /// The aligned-prefix slack outside the requested window is counted as over-read.
+    /// `1` disables head over-read. Disk: `boundary_alignment`. Page: `block_size`.
+    virtual size_t fetchHeadAlignment() const { return 1; }
+
+    /// Granularity the foreground rounds the TAIL of a fetch UP to. Only tiers that
+    /// require WHOLE-cell writes need this (a page-cache block is first-writer-wins, so
+    /// a partially-written block can never be completed later). `1` disables tail
+    /// over-read - the right choice for incrementally-fillable tiers (a disk segment
+    /// appends at `cwo` and is continued by the next window). Page: `block_size`.
+    virtual size_t fetchTailAlignment() const { return 1; }
+
     virtual String name() const = 0;
 
     /// ── NEW per-range buffer API (see CacheView above; coexists with `lookup`) ──

@@ -193,9 +193,6 @@ public:
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
 private:
-    /// The write side of one physical window (defined with `ReadPlan` below).
-    struct WritePlan;
-
     /// Per-executor accumulating stats (defined below). Forward-declared so the
     /// read-path methods can take a `Stats &` accumulator they write into - the
     /// foreground passes `this->stats`, a prefetch worker passes its own job-local
@@ -214,15 +211,10 @@ private:
     /// conn-touching method signatures can take a `ConnState &`.
     struct ConnState;
 
-    /// The immutable look-ahead residency snapshot (co-owned with a prefetch worker)
-    /// and its foreground-private mutable handles (both defined below). Forward-declared
-    /// so the read-path signatures can take a `const ReadPlanGeometry &` / `ReadPlanHandles *`.
+    /// The immutable look-ahead residency snapshot (co-owned with a prefetch worker;
+    /// defined below). Forward-declared so the read-path signatures can take a
+    /// `const ReadPlanGeometry &`.
     struct ReadPlanGeometry;
-    struct ReadPlanHandles;
-
-    /// One (tier, object-piece) plan entry (defined below). Forward-declared so
-    /// `ensureWriteHandle` can take it.
-    struct HandleEntry;
 
     /// Foreground assembler for `physical_window`: resident bytes from the plan, the
     /// rest from the source, then the cache backfill + the Strategy-A pin. Reached by
@@ -236,108 +228,121 @@ private:
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
     /// Append every byte the `geometry` snapshot reports resident in `physical_window`
-    /// to `result` (recording it in `covered`), reading it from the matching
-    /// `read_handles` entry's pinning cache handle. FOREGROUND-only (a worker serves no
-    /// resident bytes - its window is a pure gap). Fastest-tier-first is preserved by
-    /// the `covered` guard (geometry is in tier order). Does NOT re-plan: an uncovered
-    /// remainder is left for `backfillBytes` (the residency-truth path).
+    /// to `result` (recording it in `covered`), reading it from the matching `read_plan`
+    /// `BufEntry`'s held hit read buffer. FOREGROUND-only (a worker serves no resident
+    /// bytes - its window is a pure gap). Fastest-tier-first is preserved by the
+    /// `covered` guard (geometry is in tier order). Also serves a grown committed prefix
+    /// of a frozen miss from its held write buffer's `read` (`[CF-partial-prefix]`) and a
+    /// self-populated complete page block (`[CF-reusable]`). Does NOT re-plan: an
+    /// uncovered remainder is left for the source backfill.
     void serveResidentFromPlan(
         ByteRange physical_window, Rope & result, IntervalSet & covered,
         const ReadPlanGeometry & geometry, Stats & out_stats);
 
-    /// Walk the cache tiers fastest-first over the gaps in `window`: serve any byte
-    /// resident in a tier into `result`/`covered`, keep each tier's `getOrSet` handle in
-    /// `write_plan` for the later `put`, and propagate the misses down to the next tier.
-    /// Returns the ranges still missing after the slowest tier - the bytes a source fetch
-    /// must supply. A byte cached by another reader since the plan was built surfaces as a
-    /// hit here and is served. Shared by `fetchAndBackfillGaps` (synchronous foreground
-    /// gap read) and `backfillBytes` (prefetch consume).
-    VectorWithMemoryTracking<ByteRange> serveCacheTiersCollectingMisses(
-        ByteRange window, Rope & result, IntervalSet & covered, WritePlan & write_plan, Stats & out_stats);
+    /// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
+    /// buffers, clamping each read to the buffer's live `readable()` (so a partial prefix
+    /// is never over-read) and recording it on the view for the deferred LRU bump. Returns
+    /// the assembled (possibly short) Rope; the caller checks `covers`.
+    static Rope readHitFromView(CacheView & view, ByteRange clamped);
+
+    /// A read-only multi-tier, priority-ordered, single-`covered` sweep over the ranges
+    /// in `window` still uncovered after the plan's held buffers: a sibling reader /
+    /// promotion may have populated a gap between plan-build and consume. Issues a fresh
+    /// `planResidencyView` per still-uncovered piece, serves its hits fastest-tier-first
+    /// under the SAME `covered`, and moves each view into `read_plan.late_hit_views` so
+    /// its deferred LRU-bump lands after the held write buffers' writes (`[CF-lru]`). Its
+    /// writers are ignored (we already have, or are about to fetch, the source bytes).
+    /// Run BEFORE the source backfill.
+    void serveLateHits(ByteRange window, Rope & result, IntervalSet & covered, Stats & out_stats);
 
     /// Synchronous foreground gap read + backfill in one pass: serve any late cache hit
-    /// (`serveCacheTiersCollectingMisses`), read the still-missing ranges from the source,
-    /// append them, and write them back. Used by the foreground (`readBigAt`, the sync gap
-    /// reads, the header); the prefetch path instead pre-aligns at submit (`alignToCaches`)
-    /// and splits this into the worker's `fetchGapsFromSource` + the consume's
-    /// `backfillBytes`. Returns true if any source read happened (the caller's
-    /// live-connection keep/drop signal).
+    /// (`serveLateHits`), re-credit any grown committed prefix of the plan's misses, read
+    /// the still-missing ranges from the source, append them from the source Rope, and
+    /// push them into the plan's held write buffers. Used by the foreground (`readBigAt`,
+    /// the sync gap reads, the header); the prefetch path instead splits this into the
+    /// worker's `fetchGapsFromSource` + the consume's `backfillBytes`. Returns true if any
+    /// source read happened (the caller's live-connection keep/drop signal).
+    ///
+    /// `fetch_window` is the cache-ALIGNED window to read and cache (the aligned prefix/suffix
+    /// fills whole cells); `requested_window` is what the caller actually asked for. They
+    /// differ by the alignment slack, which is counted as over-read and split into its own
+    /// rope buffer. When no alignment applies the two are equal.
     bool fetchAndBackfillGaps(
-        ByteRange physical_window,
+        ByteRange fetch_window,
+        ByteRange requested_window,
         Rope & result,
         IntervalSet & covered,
-        WritePlan & write_plan,
         ConnState & conn,
         bool & eof_latch,
         MemoryPressureLevel pressure_level,
         Stats & out_stats);
 
-    /// Expand `requested` to the boundaries the cache tiers need to align their writes,
-    /// so a narrow prefetch worker fetches enough for the foreground's consume `put` to
-    /// land aligned: page-cache misses are whole blocks (taken whole), disk-cache misses
-    /// are head-aligned to the segment frontier. The bounding box of every tier's miss
-    /// ranges; a fully-resident window is returned unchanged. Read-only probe.
-    ByteRange alignToCaches(ByteRange requested) const;
-
     /// PURE source fetch: read the WHOLE `physical_window` from the source as one
     /// contiguous physical Rope (short at EOF), no cache/plan/pin. This is ALL a
     /// prefetch worker runs (it cannot touch shared state). `from_prefetch` routes the
     /// issued-source counter into the worker's job-local `Stats`. `eof_latch` is set on
-    /// a size-unknown short read. The window is pre-aligned by `alignToCaches` at submit.
+    /// a size-unknown short read. The window is the plan gap the foreground bounded at
+    /// submit (the aligned miss ranges already live in the plan geometry).
     Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
         bool & eof_latch, MemoryPressureLevel pressure_level, Stats & out_stats);
 
     /// Backfill the cache for `physical_window` from `source_bytes` (the whole window
-    /// already fetched from the source). FOREGROUND-only: walk the tiers (`getOrSet`),
-    /// serve any late-hit from cache into `result`/`covered`, append the still-missing
-    /// ranges from `source_bytes` (clamped to what it actually delivered), and write the
-    /// misses back synchronously (`flushWritePlan`). `write_plan` collects the populate
-    /// handles, kept alive by the caller so their deferred LRU-bump runs after the writes
-    /// and the in-flight segment can be pinned from them.
+    /// already fetched from the source). FOREGROUND-only: serve any late-hit from cache
+    /// (`serveLateHits`), append the still-missing ranges from `source_bytes` (clamped to
+    /// what it actually delivered) into `result` through `covered` (assembly truth is the
+    /// SOURCE Rope), then push the assembled misses into the plan's held write buffers
+    /// (`pushAssembledToWriteBuffers`, fire-and-forget). The plan's held write buffers
+    /// (not a per-window collection) take the writes, so their deferred LRU-bump runs
+    /// after the writes and the in-flight segment can be pinned from them.
     void backfillBytes(
         ByteRange physical_window, const Rope & source_bytes,
-        Rope & result, IntervalSet & covered, WritePlan & write_plan, Stats & out_stats);
+        Rope & result, IntervalSet & covered, Stats & out_stats);
 
     /// Shared tail of an assembled window: re-point the Strategy-A pin to the partial
     /// segment under `pin_frontier` - the frontier the live connection actually reached,
     /// which (with page-block alignment) can sit past `slice_window.end()` - cleared at
-    /// EOF / no live connection; release a never-opened slot; then slice `result` to
-    /// `slice_window` and enforce the single-contiguous-run-from-the-window-start
-    /// guarantee. Used by both `readPhysicalWindow` (foreground sync) and the prefetch
-    /// consume path.
+    /// EOF / no live connection; then slice `result` to `slice_window` and enforce the
+    /// single-contiguous-run-from-the-window-start guarantee. Used by both
+    /// `readPhysicalWindow` (foreground sync) and the prefetch consume path. The pin is
+    /// taken from the plan's held write buffers (`writerPinAt`).
     Rope finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, Rope & result,
-        const WritePlan & write_plan, ConnState & conn, bool eof_latch) const;
+        ConnState & conn, bool eof_latch) const;
 
-    /// Write every fetched miss range collected in `write_plan` into its tier (`put`),
-    /// synchronously (a prefetch worker does no cache work, so the consume backfill runs
-    /// on the foreground). The write side of an assembled window - the seam a
-    /// lower->upper promotion rule and a dedicated async write pool will attach to.
-    void flushWritePlan(WritePlan & write_plan, const Rope & result, Stats & out_stats) const;
+    /// Push the assembled `result`'s miss bytes into the plan's held write buffers
+    /// (`writer->write(result.slice(miss))`), fire-and-forget: a short/zero landing
+    /// affects only `BytesPushedToCacheSync`, never `result` (`[CF-contiguity]`). Writes
+    /// only into the plan's authoritative `BufEntry::writers` (`chassert(writer)`); never
+    /// the planResidency view's null-writer misses (`[CF-mutate]`). The write side of an
+    /// assembled window.
+    void pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats);
 
-    /// Promote a range just served from `from_tier` up into every populatable
-    /// cache faster than it (those all miss it, since `from_tier` was the fastest
-    /// hit). Driven by the prepare-stage plan: the faster tier's gaps were recorded
-    /// in `PlannedHandle::missing` at plan-build, and the write goes through the
-    /// plan's lazily-acquired, cached `write_handle` — so no per-serve `lookup`
-    /// runs here, and a fully-resident faster tier (no recorded gap) is skipped for
-    /// free. A no-op when nothing faster is populatable (single tier, served from
-    /// the fastest tier, or the faster tiers are in read-only/bypass mode). `bytes`
-    /// carries file-level (physical) node offsets, the same space as `range`.
+    /// Promote a range just served from `from_tier` up into every populatable cache
+    /// faster than it (those all miss it, since `from_tier` was the fastest hit). Walks
+    /// the plan's held write buffers (`read_plan.bufs`) in chain order and BREAKS at the
+    /// first `BufEntry` whose `provider->tier() == from_tier` (tier-equality, so a slower
+    /// fs hit is never promoted to a faster fs - `[CF-promote]`), writing served bytes
+    /// into faster populatable tiers' write buffers via `writer->write`. The committed-set
+    /// makes out-of-order/sub-block promote slices idempotent; `chassert(writer)`. A no-op
+    /// when nothing faster is populatable. `bytes`/`range` are file-level (physical),
+    /// pre-decryption.
     void maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats);
 
-    /// Open (once, then reuse for the plan's life) `ph`'s writable handle over the span
-    /// of its recorded gaps - the cache segment the backfill and `maybePromote` both
-    /// `put` through, so neither runs a per-serve `lookup`. Returns null when `ph`
-    /// records no gap (nothing to write).
-    ICacheHandle * ensureWriteHandle(HandleEntry & ph);
+    /// Re-credit, BEFORE the source fetch, any committed prefix of a frozen miss that a
+    /// concurrent (or this plan's own) writer has grown since plan-build: for each held
+    /// write buffer, serve `[range.offset, committed-frontier)` ∩ `window` from the
+    /// buffer's own `read`, marking it `covered` so only the truly-uncommitted tail drives
+    /// the fetch + `setReadUntilPosition` (`[CF-partial-prefix]`). Served at the buffer's
+    /// tier; under the SAME shared `covered`.
+    void recreditCommittedPrefixes(ByteRange window, Rope & result, IntervalSet & covered, Stats & out_stats);
 
     /// Query cache residency ONCE over `[physical_start, physical_start +
     /// plan_look_ahead_window)` (clamped to the file end / read extent) via the
-    /// read-only `ICacheProvider::planResidency`, and stash the resident segments
-    /// + their held (pinning) handles in `read_plan`. While the plan is held,
-    /// `serveResidentFromPlan` streams resident bytes straight from these handles
-    /// — no per-window `lookup`/`getOrSet`. Rebuilt lazily whenever the cursor
-    /// leaves the planned span.
+    /// read-only `ICacheProvider::planResidencyView`, stash the resident ranges in the
+    /// immutable geometry and the hit read buffers + opened write buffers in the
+    /// foreground-private `read_plan.bufs`. While the plan is held, `serveResidentFromPlan`
+    /// streams resident bytes straight from the held read buffers — no per-window
+    /// `getOrSet`. Rebuilt lazily whenever the cursor leaves the planned span. Resets the
+    /// in-flight pin before discarding the old plan (`[CF-plan-rebuild]`).
     void planResidencyWindow(size_t physical_start);
 
     /// TRIM phase of the plan: the look-ahead span starting at physical `physical_start`,
@@ -499,14 +504,25 @@ private:
     size_t position = 0;
 
     /// One cache tier's RESIDENT geometry over the look-ahead window, for ONE
-    /// object-piece: the file-level (physical-coordinate) ranges this tier holds.
-    /// Holds NO cache handle - that lives in the parallel `HandleEntry` - so the
-    /// geometry is immutable and safe to publish as `shared_ptr<const
-    /// ReadPlanGeometry>` and co-own with a prefetch worker.
+    /// object-piece: the file-level (physical-coordinate) ranges this tier holds
+    /// resident, plus the cache-ALIGNED miss ranges this populatable tier lacks
+    /// (`aligned_miss`, the gap-fetch + write targets). Holds NO cache buffer - those
+    /// live in the parallel foreground-private `ReadPlan::BufEntry` - so the geometry is
+    /// immutable and safe to publish as `shared_ptr<const ReadPlanGeometry>` and co-own
+    /// with a prefetch worker. `aligned_miss` is NOT clamped to the plan span /
+    /// `read_extent_end`; it may extend past them, clamped only to object end so the
+    /// cache segment/block is fully populated and the over-read bound is the aligned
+    /// extent (`[CF-overread]`).
     struct GeometryEntry
     {
         CacheTier tier{};
+        /// Grid the fetch rounds to at each edge of a miss run, filling the aligned
+        /// prefix/suffix of the cache cell this read starts/ends in (`ICacheProvider::
+        /// fetch{Head,Tail}Alignment`). `1` = no over-read. See `alignedFetchWindow`.
+        size_t head_align = 1;
+        size_t tail_align = 1;
         VectorWithMemoryTracking<ByteRange> resident;
+        VectorWithMemoryTracking<ByteRange> aligned_miss;
     };
 
     /// The IMMUTABLE geometry of one look-ahead plan: the resident layout + span,
@@ -514,9 +530,9 @@ private:
     /// run vs GAP) and by a prefetch worker that co-owns its own snapshot. Built
     /// once by `planResidencyWindow` and never mutated after publish. `entries` is
     /// in cache-tier priority order (same order as `caches`), 1:1 POSITIONAL with
-    /// `ReadPlanHandles::entries`, so `residentAt` returns the index of the
-    /// fastest-tier entry holding a byte and the caller maps it to that entry's
-    /// streaming handle. Empty / `plan_end == plan_start` means no valid plan.
+    /// `ReadPlan::bufs`, so `residentAt` returns the index of the fastest-tier entry
+    /// holding a byte and the caller maps it to that entry's held read buffers. Empty /
+    /// `plan_end == plan_start` means no valid plan.
     struct ReadPlanGeometry
     {
         static constexpr size_t npos = static_cast<size_t>(-1);
@@ -539,8 +555,8 @@ private:
 
         /// What the plan holds at file-level `offset`: the index of the entry whose
         /// resident range covers it (`npos` = gap), its tier, and the end of that
-        /// contiguous resident run. The caller maps `entry` to the streaming handle
-        /// in `ReadPlanHandles::entries[entry]`.
+        /// contiguous resident run. The caller maps `entry` to the held read buffers
+        /// in `ReadPlan::bufs[entry]`.
         struct Resident
         {
             size_t entry = npos;
@@ -584,6 +600,50 @@ private:
             return end;
         }
 
+        /// Expand the requested gap `req` outward to the union of every tier's
+        /// cache-ALIGNED miss range that overlaps it, so a fetch covers the whole aligned
+        /// extent (the disk-segment/boundary head below `req.offset`, the page-block/
+        /// segment tail past `req.end()`) so the cache cell at each edge is populated from
+        /// its aligned floor. This replaces the old `alignToCaches` probe with a pure read
+        /// of the immutable geometry. A `req` with no overlapping aligned miss (fully
+        /// resident) is returned unchanged.
+        ///
+        /// The widening is BOUNDED by each tier's alignment grid (`head_align`/`tail_align`),
+        /// NOT the length of the coalesced miss run: a cold scan's miss run can span the whole
+        /// file, and unioning it would fetch the entire file in one request. Only the cell the
+        /// read STARTS in (head, rounded down) and - for whole-block-write tiers - the cell it
+        /// ENDS in (tail, rounded up) are pulled in, each clamped into the miss run so the
+        /// extension never reaches into resident bytes. The head slack below `req` that the
+        /// foreground already covered from earlier windows is dropped by `covered`; only the
+        /// genuinely-missing aligned prefix is fetched and counted as over-read (`[CF-overread]`).
+        ByteRange alignedFetchWindow(ByteRange req) const
+        {
+            if (req.size == 0)
+                return req;
+            size_t lo = req.offset;
+            size_t hi = req.end();
+            for (const auto & entry : entries)
+                for (const auto & m : entry.aligned_miss)
+                {
+                    /// Head: `req` starts inside this miss run -> round its offset down to
+                    /// the tier's grid, clamped to the run start (bounded by `head_align`).
+                    if (entry.head_align > 1 && m.offset <= req.offset && req.offset < m.end())
+                    {
+                        size_t floored = (req.offset / entry.head_align) * entry.head_align;
+                        lo = std::min(lo, std::max(m.offset, floored));
+                    }
+                    /// Tail: `req` ends inside this miss run -> round its end up to the
+                    /// tier's grid, clamped to the run end (bounded by `tail_align`). `1`
+                    /// (incremental tiers) never extends.
+                    if (entry.tail_align > 1 && m.offset < req.end() && req.end() <= m.end())
+                    {
+                        size_t ceiled = ((req.end() + entry.tail_align - 1) / entry.tail_align) * entry.tail_align;
+                        hi = std::max(hi, std::min(m.end(), ceiled));
+                    }
+                }
+            return ByteRange{lo, hi - lo};
+        }
+
         /// How far a live connection opened at `from` would stream before it must reopen:
         /// it reads gaps and bridges resident (cached) runs no larger than `min_gap` (the
         /// `min_bytes_for_seek` skip-forward), stopping at the first resident run too large
@@ -616,69 +676,65 @@ private:
         }
     };
 
-    /// The MUTABLE, FOREGROUND-PRIVATE half of a look-ahead plan: per (object-piece,
-    /// tier), the pinning `planResidency` streaming read `handle` (null when the tier
-    /// holds nothing resident in this piece), the `missing` ranges this populatable
-    /// tier lacks (recorded for free from the same probe), and the lazily-acquired
-    /// `write_handle` a promotion `put` targets (`provider`/`object`/`object_file_offset`
-    /// let that acquisition re-issue the `getOrSet`). 1:1 POSITIONAL with
-    /// `ReadPlanGeometry::entries`. A prefetch worker NEVER indexes this (over its
-    /// pure-gap window it reads only geometry), so the handles are never shared across
-    /// threads - which is what lets the `readPhysicalWindow` handoff `chassert` retire.
-    struct HandleEntry
+    /// One (object-piece, tier) entry of the FOREGROUND-PRIVATE half of a look-ahead
+    /// plan: the `provider`/`object`/`object_file_offset` identity, the read-only
+    /// `planResidencyView` `view` (its `hits()` own the held pinning read buffers; its
+    /// `misses()` carry NULL writers and are NEVER dereferenced - they only fed
+    /// `GeometryEntry::aligned_miss`), and the AUTHORITATIVE `writers` opened by
+    /// `openWriteBuffers` over those aligned miss ranges (`[CF-mutate]`). 1:1 POSITIONAL
+    /// with `ReadPlanGeometry::entries`, provider-grouped fastest-first (so the first
+    /// same-tier `BufEntry` is the fastest sibling, which `maybePromote`'s tier-equality
+    /// break relies on). A prefetch worker NEVER indexes this (over its pure-gap window
+    /// it reads only geometry), so the buffers are never shared across threads.
+    struct BufEntry
     {
         ICacheProvider * provider = nullptr;
         StoredObject object;
         size_t object_file_offset = 0;
-        std::unique_ptr<ICacheHandle> handle;
-        VectorWithMemoryTracking<ByteRange> missing;
-        std::unique_ptr<ICacheHandle> write_handle;
+        CacheViewPtr view;
+        std::vector<MissEntry> writers;
     };
-    struct ReadPlanHandles
+
+    /// The MUTABLE, FOREGROUND-PRIVATE half of a look-ahead plan: the held hit read
+    /// buffers + opened write buffers (`bufs`, 1:1 positional with
+    /// `ReadPlanGeometry::entries`), plus the plan-lifetime late-hit views. Held across
+    /// many windows; destroyed (write buffers finalize, deferred LRU-bumps run) at the
+    /// next `planResidencyWindow` / on seek - after every write into the held buffers
+    /// (`[CF-lru]`). The late-hit views carry their own held read buffers whose deferred
+    /// bump must outlive the write buffers' writes, so they are kept here, off the
+    /// 1:1-positional path; their writers are ignored.
+    struct ReadPlan
     {
-        VectorWithMemoryTracking<HandleEntry> entries;
+        /// `late_hit_views` is declared BEFORE `bufs` so it is destroyed LAST (members
+        /// destruct in reverse declaration order): the late-hit views' deferred LRU
+        /// bumps must run AFTER the held write buffers in `bufs` are finalized, matching
+        /// the blueprint's finalize-then-bump order (`[CF-lru]`).
+        std::vector<CacheViewPtr> late_hit_views;
+        VectorWithMemoryTracking<BufEntry> bufs;
     };
 
     /// The current look-ahead plan, split into an immutable co-ownable geometry
-    /// snapshot (`read_geometry`, a prefetch worker captures its own ref at submit)
-    /// and the foreground-private mutable handles (`read_handles`, 1:1 positional with
-    /// `read_geometry->entries`). `read_geometry` is null until the first plan is
-    /// built; the query methods' callers guard for that.
+    /// snapshot (`read_geometry`, a prefetch worker captures its own ref at submit;
+    /// holds resident + aligned-miss ranges only, no buffers) and the foreground-private
+    /// held buffers (`read_plan.bufs`, 1:1 positional with `read_geometry->entries`).
+    /// `read_geometry` is null until the first plan is built; the query methods' callers
+    /// guard for that.
     std::shared_ptr<const ReadPlanGeometry> read_geometry;
-    ReadPlanHandles read_handles;
+    ReadPlan read_plan;
 
-    /// The write side of one physical window: the cache populate-handles `put` into
-    /// by `readPhysicalWindow`/`flushWritePlan`. A per-window local, held to the end
-    /// of the read so the deferred LRU-bump in `~ICacheHandle` lands after the writes.
-    /// Holds page-cache handles itself (`owned`, per-window), and borrows the
-    /// plan-owned disk segment handle (held across the plan) via `addBorrowed` so it
-    /// outlives the window. `flush` lists every handle to `put`/pin, owned or borrowed.
-    struct WritePlan
+    /// Pin the partial segment under `frontier` from the first held write buffer whose
+    /// `range()` contains it and whose `pin(frontier)` is non-null (the full 3-part
+    /// guard lives in the write buffer). Empty when nothing partial is there - the
+    /// frontier landed in a hit region or past the last open writer (`[CF-pin]`).
+    CacheWriteBuffer::CacheSegmentPin writerPinAt(size_t frontier) const
     {
-        VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> owned;
-        VectorWithMemoryTracking<ICacheHandle *> flush;
-
-        /// Take ownership of a per-window handle (e.g. a page-cache lookup).
-        void addOwned(std::unique_ptr<ICacheHandle> handle)
-        {
-            flush.push_back(handle.get());
-            owned.push_back(std::move(handle));
-        }
-        /// Borrow a handle owned elsewhere (the plan's held disk segment), to `put`
-        /// into / pin without taking ownership.
-        void addBorrowed(ICacheHandle * handle) { flush.push_back(handle); }
-
-        /// Pin the partial segment under `frontier` from the first handle that has
-        /// one, so a mid-read eviction can't drop the segment the live connection
-        /// streams into. Empty when nothing is partial there.
-        ICacheHandle::CacheSegmentPin pinFrontier(size_t frontier) const
-        {
-            for (auto * handle : flush)
-                if (auto pin = handle->pinSegmentAt(frontier))
-                    return pin;
-            return {};
-        }
-    };
+        for (const auto & buf : read_plan.bufs)
+            for (const auto & w : buf.writers)
+                if (w.writer && frontier >= w.writer->range().offset && frontier < w.writer->range().end())
+                    if (auto pin = w.writer->pin(frontier))
+                        return pin;
+        return {};
+    }
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     /// Single source of truth for "is there a prefetch scheduled":
@@ -687,9 +743,10 @@ private:
     std::shared_ptr<PrefetchHandle> prefetch_handle;
     /// `prefetch_range` is the LOGICAL requested read-ahead range (the space `position`,
     /// seek and the consume slice work in). `prefetch_physical_window` is the PHYSICAL,
-    /// cache-aligned window the worker actually fetched (`alignToCaches` widened it to
-    /// whole page blocks / the disk-segment frontier) - the consume path backfills the
-    /// caches over it and pins at its frontier. Both meaningful only while the handle is set.
+    /// cache-aligned window the worker actually fetched (`ReadPlanGeometry::alignedFetchWindow`
+    /// widened it to whole page blocks / the disk-segment boundary) - the consume path
+    /// backfills the caches over it and pins at its frontier. Both meaningful only while
+    /// the handle is set.
     ByteRange prefetch_range;
     ByteRange prefetch_physical_window;
     /// The in-flight prefetch worker's job, co-owned with the worker lambda. Holds
@@ -803,8 +860,9 @@ private:
         /// a bare ref to that segment so a mid-read eviction can't snap the next
         /// miss head back to the segment start and force a connection reset + a
         /// re-read of bytes already delivered. Re-pointed each window to the
-        /// segment under the live frontier; dropped on seek/EOF/connection reset.
-        ICacheHandle::CacheSegmentPin inflight_segment_pin;
+        /// segment under the live frontier (from the plan's held write buffer's
+        /// `pin`); dropped on seek/EOF/connection reset / plan rebuild.
+        CacheWriteBuffer::CacheSegmentPin inflight_segment_pin;
     };
 
     /// The foreground's connection cluster. EMPTY while a prefetch is in flight —
