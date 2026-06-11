@@ -12,35 +12,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void PostingListCodecBitpackingImpl::insert(uint32_t row_id, size_t max_rowids_in_segment)
+void PostingListCodecBitpackingImpl::startSegment(uint32_t row_id)
 {
-    if (row_ids_in_current_segment == 0)
-    {
-        segment_descriptors.emplace_back();
-        segment_descriptors.back().row_id_begin = row_id;
-        segment_descriptors.back().compressed_data_offset = compressed_data.size();
-        segment_block_metas.emplace_back();
+    segment_descriptors.emplace_back();
+    segment_descriptors.back().row_id_begin = row_id;
+    segment_descriptors.back().compressed_data_offset = compressed_data.size();
+    segment_block_metas.emplace_back();
 
-        prev_row_id = row_id;
-        current_segment.emplace_back(row_id - prev_row_id);
-        ++row_ids_in_current_segment;
-        ++total_row_ids;
-        return;
-    }
+    /// One-time for the accumulator: the buffer is reused for every block of every segment.
+    current_segment.reserve(BLOCK_SIZE);
 
-    current_segment.emplace_back(row_id - prev_row_id);
+    /// The first row id of a segment is stored as a zero delta; the base value is written
+    /// into the segment header (`first_row_id`) on serialization.
     prev_row_id = row_id;
+    current_segment.emplace_back(0);
     ++row_ids_in_current_segment;
     ++total_row_ids;
-
-    if (current_segment.size() == BLOCK_SIZE)
-    {
-        encodeBlock(current_segment);
-        current_segment.clear();
-    }
-
-    if (row_ids_in_current_segment == max_rowids_in_segment)
-        flushCurrentSegment();
 }
 
 void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & postings)
@@ -139,8 +126,9 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     size_t needed_bytes_with_header = needed_bytes_without_header + 1;
     if (remaining_memory < needed_bytes_with_header)
     {
-        size_t min_need = needed_bytes_with_header - remaining_memory;
-        compressed_data.reserve(compressed_data.size() + 2 * min_need);
+        /// Grow geometrically: reserving only the shortfall would reallocate (and copy) the whole
+        /// buffer every couple of blocks, making the build quadratic in the posting list size.
+        compressed_data.reserve(std::max(compressed_data.capacity() * 2, compressed_data.size() + needed_bytes_with_header));
     }
     /// Block Layout: [1byte(max_bits)][payload]
     size_t offset = compressed_data.size();

@@ -4,7 +4,10 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
+
+#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
@@ -97,10 +100,12 @@ class PostingListCodecBitpackingImpl
         uint64_t relative_offset;   /// Offset within segment payload (from segment data start)
     };
 
-    /// Per-segment list of packed block metadata.
+    /// Per-segment list of packed block metadata. Tokens with up to 128 rows (the majority of
+    /// promoted tokens) have exactly one packed block, stored inline at no size cost
+    /// (the inline element fits in the heap representation's footprint).
     struct SegmentBlockMetas
     {
-        std::vector<PackedBlockMeta> metas;
+        absl::InlinedVector<PackedBlockMeta, 1> metas;
     };
 
 public:
@@ -112,7 +117,30 @@ public:
     /// then compress the full block into `compressed_data`.
     /// When the segment reaches `max_rowids_in_segment`, flush it. The segment size is passed in
     /// (rather than stored) because it is a per-index constant, the same for every token.
-    void insert(uint32_t row_id, size_t max_rowids_in_segment);
+    /// Inline because this is the per-row hot path of the text index build; everything it touches
+    /// per row sits on the first cache line of this object (see the field order below).
+    ALWAYS_INLINE void insert(uint32_t row_id, size_t max_rowids_in_segment)
+    {
+        if (row_ids_in_current_segment == 0)
+        {
+            startSegment(row_id);
+            return;
+        }
+
+        current_segment.emplace_back(row_id - prev_row_id);
+        prev_row_id = row_id;
+        ++row_ids_in_current_segment;
+        ++total_row_ids;
+
+        if (current_segment.size() == BLOCK_SIZE)
+        {
+            encodeBlock(current_segment);
+            current_segment.clear();
+        }
+
+        if (row_ids_in_current_segment == max_rowids_in_segment)
+            flushCurrentSegment();
+    }
 
     /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
     ///
@@ -148,6 +176,10 @@ public:
     }
 
 private:
+    /// Starts a new segment with its first row id: appends a fresh segment descriptor and
+    /// block-metas entry and reserves the block buffer. Cold path (once per segment).
+    void startSegment(uint32_t row_id);
+
     void reset()
     {
         total_row_ids = 0;
@@ -200,20 +232,24 @@ private:
     /// - Updates prev_row_id to the last decoded row id
     static void decodeBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment);
 
-    /// All segments
-    std::string compressed_data;
+    /// Fields read and written by `insert` on every row come first, so the per-row hot path
+    /// touches a single cache line of this object.
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
-    /// Row ids in the current segment
-    std::vector<uint32_t> current_segment;
-    /// Each segment has an in-memory descriptor
-    std::vector<SegmentDescriptor> segment_descriptors;
-    /// Per-segment packed block metadata for V2 Index Section
-    std::vector<SegmentBlockMetas> segment_block_metas;
-    /// Total number of postings added across all segments.
-    size_t total_row_ids = 0;
     /// Number of values added in the current segment.
     size_t row_ids_in_current_segment = 0;
+    /// Total number of postings added across all segments.
+    size_t total_row_ids = 0;
+    /// Deltas of the current partially filled block (also reused as the decode buffer)
+    std::vector<uint32_t> current_segment;
+    /// All segments
+    std::string compressed_data;
+    /// Each segment has an in-memory descriptor. With the default `posting_list_block_size`
+    /// almost every token has exactly one segment, so one element is stored inline: no heap
+    /// allocation, and `back()` in `encodeBlock` reads this object instead of chasing a pointer.
+    absl::InlinedVector<SegmentDescriptor, 1> segment_descriptors;
+    /// Per-segment packed block metadata for V2 Index Section (one element inline, see above)
+    absl::InlinedVector<SegmentBlockMetas, 1> segment_block_metas;
 };
 
 /// Streaming accumulator for the Bitpacking codec.
@@ -232,7 +268,7 @@ public:
     {
     };
 
-    void insert(UInt32 row_id, size_t posting_list_block_size, InsertState &) { impl.insert(row_id, posting_list_block_size); }
+    ALWAYS_INLINE void insert(UInt32 row_id, size_t posting_list_block_size, InsertState &) { impl.insert(row_id, posting_list_block_size); }
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     UInt32 cardinality() const override { return static_cast<UInt32>(impl.cardinality()); }
