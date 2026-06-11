@@ -1,0 +1,71 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
+-- { echo }
+
+DROP TABLE IF EXISTS test_relax;
+DROP TABLE IF EXISTS test_tuple_dedup;
+
+CREATE TABLE test_relax (ts DateTime('UTC')) ENGINE = MergeTree
+ORDER BY toDate(ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+-- 3 days x 4 rows per day.
+INSERT INTO test_relax SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(12);
+
+-- Negated equality through a non-injective key transform is relaxed: it must not prune
+-- granules where toDate(ts) equals toDate(constant) but ts differs.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC');
+SELECT count() FROM test_relax WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE ts NOT IN (toDateTime('2026-03-02 06:00:00', 'UTC'), toDateTime('2026-03-03 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE ts NOT IN (toDateTime('2026-03-02 06:00:00', 'UTC'), toDateTime('2026-03-03 12:00:00', 'UTC'));
+SELECT count() FROM test_relax WHERE ts NOT IN (toDateTime('2026-03-02 06:00:00', 'UTC'), toDateTime('2026-03-03 12:00:00', 'UTC')) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE NOT has([toDateTime('2026-03-02 06:00:00', 'UTC')], ts)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE NOT has([toDateTime('2026-03-02 06:00:00', 'UTC')], ts);
+SELECT count() FROM test_relax WHERE NOT has([toDateTime('2026-03-02 06:00:00', 'UTC')], ts) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- Strict bounds are weakened to non-strict on the transformed constant; rows sharing
+-- the boundary date must be classified exactly by the filter.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE ts > toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE ts > toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT count() FROM test_relax WHERE ts > toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE ts < toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE ts < toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT count() FROM test_relax WHERE ts < toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- Negation against the key expression itself stays exact.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02') SETTINGS force_primary_key = 1;
+SELECT count() FROM test_relax WHERE toDate(ts) != toDate('2026-03-02') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- Tuple set deduplication: tuple(i, i) collapses to a single key column in the set
+-- index, making the check inexact; negation must not over-prune.
+CREATE TABLE test_tuple_dedup (i UInt32, j UInt32) ENGINE = MergeTree
+ORDER BY i
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_tuple_dedup SELECT number + 1, number + 2 FROM numbers(5);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tuple_dedup WHERE (i, i) NOT IN ((1, 2))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_tuple_dedup WHERE (i, i) NOT IN ((1, 2));
+SELECT count() FROM test_tuple_dedup WHERE (i, i) NOT IN ((1, 2)) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tuple_dedup WHERE (i, i) IN ((1, 1))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_tuple_dedup WHERE (i, i) IN ((1, 1));
+SELECT count() FROM test_tuple_dedup WHERE (i, i) IN ((1, 1)) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- Only one tuple element is a key column: the mapping shrinks and the atom is relaxed.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tuple_dedup WHERE (i, j) IN ((1, 2))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_tuple_dedup WHERE (i, j) IN ((1, 2));
+SELECT count() FROM test_tuple_dedup WHERE (i, j) IN ((1, 2)) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tuple_dedup WHERE (i, j) NOT IN ((1, 2))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_tuple_dedup WHERE (i, j) NOT IN ((1, 2));
+SELECT count() FROM test_tuple_dedup WHERE (i, j) NOT IN ((1, 2)) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_relax;
+DROP TABLE test_tuple_dedup;

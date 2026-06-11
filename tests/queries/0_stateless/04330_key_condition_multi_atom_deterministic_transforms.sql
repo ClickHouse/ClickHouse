@@ -1,0 +1,119 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
+-- { echo }
+
+DROP TABLE IF EXISTS test_det_multi;
+DROP TABLE IF EXISTS test_det_injective;
+DROP TABLE IF EXISTS test_det_throwing;
+DROP TABLE IF EXISTS test_det_nan;
+DROP TABLE IF EXISTS test_det_intdiv;
+DROP TABLE IF EXISTS test_det_alias;
+DROP TABLE IF EXISTS test_det_modulo_legacy;
+
+-- Both key columns are non-injective deterministic transforms of ts.
+-- For `=`, the monotonic toDate candidate wins and the deterministic path is not
+-- consulted (it only runs when no other candidate exists); for `!=`, the monotonic
+-- transform is not applicable, so the deterministic path produces atoms on both
+-- key columns (relaxed, must not prune).
+CREATE TABLE test_det_multi (ts DateTime('UTC')) ENGINE = MergeTree
+ORDER BY (toDate(ts), cityHash64(ts))
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_det_multi SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(12);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_multi WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_multi WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_multi WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_multi WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC');
+SELECT count() FROM test_det_multi WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- Injective transform: negated equality stays exact and can prune.
+CREATE TABLE test_det_injective (s String) ENGINE = MergeTree
+ORDER BY concat(s, '_x')
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_det_injective VALUES ('a'), ('b'), ('c');
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_injective WHERE s = 'a') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_injective WHERE s = 'a' SETTINGS force_primary_key = 1;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_injective WHERE s != 'a') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_injective WHERE s != 'a' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_det_injective WHERE s != 'a' SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The key transform throws for the constant: no atom, full scan, no exception.
+CREATE TABLE test_det_throwing (s String) ENGINE = MergeTree
+ORDER BY toUUID(s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_det_throwing VALUES ('00000000-0000-0000-0000-000000000001'), ('00000000-0000-0000-0000-000000000002');
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_throwing WHERE s = '00000000-0000-0000-0000-000000000001') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_throwing WHERE s = '00000000-0000-0000-0000-000000000001' SETTINGS force_primary_key = 1;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_throwing WHERE s = 'not-a-uuid') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_throwing WHERE s = 'not-a-uuid';
+SELECT count() FROM test_det_throwing WHERE s = 'not-a-uuid' SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The transform produces NaN for the constant: the sqrt(c0) candidate is skipped,
+-- but the direct c0 key column still prunes.
+CREATE TABLE test_det_nan (c0 Int32) ENGINE = MergeTree
+ORDER BY (sqrt(c0), c0)
+SETTINGS allow_suspicious_indices = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_det_nan SELECT number - 50 FROM numbers(100);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_nan WHERE c0 = -30) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_nan WHERE c0 = -30 SETTINGS force_primary_key = 1;
+SELECT count() FROM test_det_nan WHERE c0 = -30 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_nan WHERE c0 = 25) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_nan WHERE c0 = 25 SETTINGS force_primary_key = 1;
+SELECT count() FROM test_det_nan WHERE c0 = 25 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- intDiv key: equality prunes, negated equality is relaxed.
+CREATE TABLE test_det_intdiv (x UInt32) ENGINE = MergeTree
+ORDER BY intDiv(x, 10)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_det_intdiv SELECT number FROM numbers(100);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_intdiv WHERE x = 55) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_intdiv WHERE x = 55 SETTINGS force_primary_key = 1;
+SELECT count() FROM test_det_intdiv WHERE x = 55 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_intdiv WHERE x != 55) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_intdiv WHERE x != 55;
+SELECT count() FROM test_det_intdiv WHERE x != 55 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- ALIAS node inside the key expression chain.
+CREATE TABLE test_det_alias (ts DateTime('UTC')) ENGINE = MergeTree
+ORDER BY (toDate(ts) AS d, ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_det_alias SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(12);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_alias WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_alias WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
+
+-- Tables created with moduloLegacy in the partition key accept modulo predicates.
+CREATE TABLE test_det_modulo_legacy (k UInt64) ENGINE = MergeTree
+PARTITION BY moduloLegacy(k, 16)
+ORDER BY k
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_det_modulo_legacy SELECT number FROM numbers(32);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3;
+SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_det_multi;
+DROP TABLE test_det_injective;
+DROP TABLE test_det_throwing;
+DROP TABLE test_det_nan;
+DROP TABLE test_det_intdiv;
+DROP TABLE test_det_alias;
+DROP TABLE test_det_modulo_legacy;
