@@ -46,7 +46,11 @@ $CLICKHOUSE_CLIENT -q "system drop mark cache"
 # reading column b must now raise the typed error mentioning the missing marks file.
 # column b's marks are listed in the part's checksums, so the message must say "listed".
 echo "--- query read path ---"
-$CLICKHOUSE_CLIENT -q "select sum(b) from t_missing_marks" 2>&1 | grep -oF -e "NO_FILE_IN_DATA_PART" -e "does not exist on disk in part" -e "is listed in the part's checksums" | sort -u
+err=$($CLICKHOUSE_CLIENT -q "select sum(b) from t_missing_marks" 2>&1)
+# emit each expected phrase in a fixed order; do not pipe through `sort` (its collation is locale-dependent).
+echo "$err" | grep -qF "NO_FILE_IN_DATA_PART" && echo "NO_FILE_IN_DATA_PART"
+echo "$err" | grep -qF "does not exist on disk in part" && echo "does not exist on disk in part"
+echo "$err" | grep -qF "is listed in the part's checksums" && echo "is listed in the part's checksums"
 
 $CLICKHOUSE_CLIENT -q "drop table t_missing_marks sync;"
 
