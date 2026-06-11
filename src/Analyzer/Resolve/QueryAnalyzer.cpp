@@ -1759,12 +1759,42 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     const auto & qualify_matched_column_nodes_scope = nearest_query_scope ? *nearest_query_scope : scope;
     qualifyColumnNodesWithProjectionNames(matched_column_nodes, table_expression_node, qualify_matched_column_nodes_scope);
 
+    /// If the matched table expression is a subquery whose duplicate output column names were made
+    /// internally unique (see `disambiguateDuplicateProjectionColumnNames`), restore the original
+    /// display names here so the user-visible header is unchanged. The internal (unique) name stays
+    /// on the column node so the planner resolves each duplicate to a distinct column identifier.
+    std::unordered_map<std::string_view, std::string_view> internal_name_to_display_name;
+    if (const auto * subquery_node = table_expression_node->as<QueryNode>())
+    {
+        const auto & display_names = subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+        {
+            const auto & subquery_projection_columns = subquery_node->getProjectionColumns();
+            for (size_t i = 0; i < subquery_projection_columns.size() && i < display_names.size(); ++i)
+                if (subquery_projection_columns[i].name != display_names[i])
+                    internal_name_to_display_name.emplace(subquery_projection_columns[i].name, display_names[i]);
+        }
+    }
+
     QueryAnalyzer::QueryTreeNodesWithNames matched_column_nodes_with_names;
     matched_column_nodes_with_names.reserve(matched_column_nodes.size());
 
     for (auto && matched_column_node : matched_column_nodes)
     {
         auto column_name = matched_column_node->as<ColumnNode &>().getColumnName();
+
+        if (!internal_name_to_display_name.empty())
+        {
+            auto display_name_it = internal_name_to_display_name.find(column_name);
+            if (display_name_it != internal_name_to_display_name.end())
+            {
+                std::string display_name(display_name_it->second);
+                /// Override the projection (display) name set by `qualifyColumnNodesWithProjectionNames`.
+                node_to_projection_name.insert_or_assign(matched_column_node, display_name);
+                column_name = std::move(display_name);
+            }
+        }
+
         matched_column_nodes_with_names.emplace_back(std::move(matched_column_node), std::move(column_name));
     }
 
@@ -5972,6 +6002,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       */
     query_node_typed.getWindow().getNodes().clear();
 
+    /// Record which projection positions carry an explicit alias (`expr AS name`) BEFORE the
+    /// aliases are stripped below. An explicit alias that appears AFTER a same-named column
+    /// produced by `*` redefines/shadows it (e.g. `SELECT *, 'x' AS c`) and must NOT be
+    /// disambiguated (see `disambiguateDuplicateProjectionColumnNames`).
+    std::vector<bool> projection_has_explicit_alias;
+    {
+        const auto & projection_list_nodes = query_node_typed.getProjection().getNodes();
+        projection_has_explicit_alias.reserve(projection_list_nodes.size());
+        for (const auto & projection_node : projection_list_nodes)
+            projection_has_explicit_alias.push_back(!projection_node->getAlias().empty());
+    }
+
     /// Remove aliases from expression and lambda nodes.
     ///
     /// `node_to_remove_aliases` holds nodes that were registered during identifier
@@ -5989,7 +6031,78 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (auto & [_, node] : scope.aliases.alias_name_to_lambda_node)
         node->removeAlias();
 
+    disambiguateDuplicateProjectionColumnNames(query_node_typed, projection_columns, projection_has_explicit_alias);
+
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
+}
+
+void QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
+    QueryNode & query_node, NamesAndTypes & projection_columns, const std::vector<bool> & projection_has_explicit_alias)
+{
+    /// A column identifier in the planner is `source_alias + "." + column_name`, with no positional
+    /// discriminator. So two output columns of one subquery that share a name but are backed by
+    /// different expressions collapse to a single identifier, and an outer `SELECT *` over the
+    /// subquery loses one of the values (it picks whichever expression registered the identifier
+    /// first). Give the later duplicates unique internal names so the planner addresses them
+    /// distinctly, and keep the original names so the user-visible display header is unchanged.
+    if (!query_node.isSubquery())
+        return;
+
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    if (projection_columns.size() != projection_nodes.size() || projection_has_explicit_alias.size() != projection_columns.size())
+        return;
+
+    /// All names currently in use, so a generated unique name does not collide with an existing
+    /// column (including one that appears later in the projection).
+    NameSet used_names;
+    used_names.reserve(projection_columns.size());
+    for (const auto & column : projection_columns)
+        used_names.insert(column.name);
+
+    std::unordered_map<std::string, size_t> name_to_first_index;
+    Names display_names;
+    bool disambiguated = false;
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        auto [it, inserted] = name_to_first_index.emplace(projection_columns[i].name, i);
+        if (inserted)
+            continue;
+
+        /// Equal expressions with the same name (e.g. `SELECT number, number`) produce the same
+        /// value, so collapsing them is harmless. Only disambiguate genuinely different expressions.
+        if (projection_nodes[i]->isEqual(*projection_nodes[it->second]))
+            continue;
+
+        /// A later explicit alias `expr AS name` redefines an earlier same-named column produced by
+        /// `*` (e.g. `SELECT *, 'x' AS c`). That is intentional shadowing, so leave it to the
+        /// existing name-based resolution. An explicit alias that comes BEFORE the `*`-expanded
+        /// duplicate (e.g. `SELECT 'x' AS c, *`) is a genuine independent column and is disambiguated.
+        if (projection_has_explicit_alias[i])
+            continue;
+
+        if (display_names.empty())
+        {
+            display_names.reserve(projection_columns.size());
+            for (const auto & column : projection_columns)
+                display_names.push_back(column.name);
+        }
+
+        std::string unique_name;
+        size_t suffix = 1;
+        do
+        {
+            unique_name = projection_columns[i].name + "_" + std::to_string(suffix);
+            ++suffix;
+        } while (!used_names.insert(unique_name).second);
+
+        name_to_first_index.emplace(unique_name, i);
+        projection_columns[i].name = unique_name;
+        disambiguated = true;
+    }
+
+    if (disambiguated)
+        query_node.setProjectionColumnDisplayNames(std::move(display_names));
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)

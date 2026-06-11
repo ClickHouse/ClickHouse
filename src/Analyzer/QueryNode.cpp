@@ -441,6 +441,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
+    result_query_node->projection_column_display_names = projection_column_display_names;
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 

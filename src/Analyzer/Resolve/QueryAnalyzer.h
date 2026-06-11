@@ -271,6 +271,9 @@ private:
 
     NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
 
+    static void disambiguateDuplicateProjectionColumnNames(
+        QueryNode & query_node, NamesAndTypes & projection_columns, const std::vector<bool> & projection_has_explicit_alias);
+
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
     void initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
