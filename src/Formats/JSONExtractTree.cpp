@@ -721,7 +721,17 @@ public:
                 return false;
             }
 
-            value = element.isInt64() ? element.getInt64() : element.getUInt64();
+            if (element.isInt64())
+            {
+                value = element.getInt64();
+            }
+            else
+            {
+                /// Clamp in the unsigned domain before narrowing to time_t,
+                /// because values above INT64_MAX would wrap to negative on cast.
+                UInt64 raw = element.getUInt64();
+                value = static_cast<time_t>(std::min(raw, UInt64(0xFFFFFFFF)));
+            }
         }
         else
         {
@@ -729,7 +739,7 @@ public:
             return false;
         }
 
-        assert_cast<ColumnDateTime &>(column).insert(value);
+        assert_cast<ColumnDateTime &>(column).insert(std::clamp<time_t>(value, 0, static_cast<time_t>(0xFFFFFFFF)));
         return true;
     }
 
