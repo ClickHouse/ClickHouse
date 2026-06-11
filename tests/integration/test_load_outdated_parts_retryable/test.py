@@ -21,7 +21,8 @@ def started_cluster():
 def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
     # A transient retryable error (MEMORY_LIMIT_EXCEEDED, network, ...) thrown while loading
     # outdated parts in the background must not take down the whole server: the catch(...) in
-    # MergeTreeData::loadOutdatedDataParts used to call std::terminate() unconditionally.
+    # MergeTreeData::loadOutdatedDataParts used to call std::terminate() unconditionally. It must
+    # also not drop the failed parts from the queue, otherwise they stay untracked and never removed.
     node.query("DROP TABLE IF EXISTS t_outdated SYNC")
     node.query(
         """
@@ -35,7 +36,10 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
     node.query("INSERT INTO t_outdated SELECT number, toString(number) FROM numbers(1000, 1000)")
     node.query("INSERT INTO t_outdated SELECT number, toString(number) FROM numbers(2000, 1000)")
     node.query("OPTIMIZE TABLE t_outdated FINAL")
-    assert int(node.query("SELECT count() FROM system.parts WHERE table = 't_outdated' AND active = 0")) > 0
+    outdated_before = int(
+        node.query("SELECT count() FROM system.parts WHERE table = 't_outdated' AND active = 0")
+    )
+    assert outdated_before > 0
 
     # Inject a retryable failure into the outdated-parts loader, then force the loader to run.
     node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
@@ -48,13 +52,27 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
         node, "Loading of outdated parts was interrupted by a retryable error"
     )
 
-    # The server must still be alive and serving queries.
+    # The server must still be alive and serving queries (active parts load synchronously at ATTACH).
     assert node.query("SELECT count() FROM t_outdated").strip() == "3000"
 
-    # Once the transient condition clears, outdated-parts loading completes normally.
+    # While the failpoint fires the parts stay unloaded, so they are not in system.parts yet.
+    assert (
+        int(node.query("SELECT count() FROM system.parts WHERE table = 't_outdated' AND active = 0"))
+        == 0
+    )
+
+    # Clear the transient condition and wait for the SAME background task to finish (no second
+    # DETACH/ATTACH). If the failed parts had been dropped from the queue, the loader would mark
+    # loading finished without ever processing them, leaving those outdated parts untracked.
     node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
-    node.query("DETACH TABLE t_outdated")
-    node.query("ATTACH TABLE t_outdated")
+    node.query("SYSTEM WAIT LOADING PARTS t_outdated", timeout=60)
+
+    # All the outdated parts were retried and are tracked again (none were leaked by the
+    # interrupted run). They are kept as Outdated until old_parts_lifetime expires.
+    outdated_after = int(
+        node.query("SELECT count() FROM system.parts WHERE table = 't_outdated' AND active = 0")
+    )
+    assert outdated_after == outdated_before
     assert node.query("SELECT count() FROM t_outdated").strip() == "3000"
 
     node.query("DROP TABLE t_outdated SYNC")

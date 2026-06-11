@@ -1967,6 +1967,14 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     }
     catch (...)
     {
+        /// Same as loadDataPart: a retryable error (not enough memory, network) does not mean the part is
+        /// broken. Drop any partially built part and rethrow so the caller can retry instead of detaching it.
+        if (isRetryableException(std::current_exception()))
+        {
+            state.part.reset();
+            throw;
+        }
+
         LOG_DEBUG(log, "Failed to load unexpected data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         if (!state.part)
         {
@@ -2862,6 +2870,10 @@ try
 
     std::atomic_size_t num_loaded_parts = 0;
 
+    /// Set by a worker that hit a retryable error: the failed part is put back into the queue and the
+    /// background task is rescheduled to retry it (see the catch below). Only meaningful when is_async.
+    std::atomic_bool retryable_error_while_loading = false;
+
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
@@ -2887,6 +2899,11 @@ try
                 return;
             }
 
+            /// A part was requeued after a retryable error. Stop dispatching new parts: the failed and the
+            /// not-yet-dispatched parts stay in the queue and are retried by the rescheduled task below.
+            if (retryable_error_while_loading)
+                break;
+
             if (outdated_unloaded_data_parts.empty())
                 break;
 
@@ -2895,34 +2912,59 @@ try
         }
 
         /// num_loaded_parts will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, replicated]()
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &retryable_error_while_loading, is_async, replicated]()
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-            fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_retryable_exception,
+            try
             {
-                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while loading outdated part {}", my_part->name);
-            });
+                fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_retryable_exception,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while loading outdated part {}", my_part->name);
+                });
 
-            auto res = loadDataPartWithRetries(
-                my_part->info, my_part->name, my_part->disk,
-                DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                loading_parts_max_backoff_ms, loading_parts_max_tries);
+                auto res = loadDataPartWithRetries(
+                    my_part->info, my_part->name, my_part->disk,
+                    DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
+                    loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-            ++num_loaded_parts;
-            if (res.is_broken)
-            {
-                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                ++num_loaded_parts;
+                if (res.is_broken)
+                {
+                    forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                }
+                else if (res.part->is_duplicate)
+                    res.part->remove();
+                else
+                    preparePartForRemoval(res.part);
             }
-            else if (res.part->is_duplicate)
-                res.part->remove();
-            else
-                preparePartForRemoval(res.part);
+            catch (...)
+            {
+                /// A non-retryable error (or the synchronous path, whose caller terminates) means the on-disk
+                /// set of parts is inconsistent: rethrow so the server fails fast. A retryable error is
+                /// transient, so put the part back and let the rescheduled task retry it instead of dropping it.
+                if (!is_async || !isRetryableException(std::current_exception()))
+                    throw;
+
+                std::lock_guard lock(outdated_data_parts_mutex);
+                outdated_unloaded_data_parts.push_back(my_part);
+                retryable_error_while_loading = true;
+            }
         }, Priority{});
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    if (retryable_error_while_loading)
+    {
+        /// At least one part failed with a retryable error and was put back into the queue. Reschedule the
+        /// task to retry the remaining parts instead of marking loading finished (which would leave those
+        /// outdated parts untracked and never removed).
+        LOG_WARNING(log, "Loading of outdated parts was interrupted by a retryable error, will retry.");
+        outdated_data_parts_loading_task->scheduleAfter(loading_parts_initial_backoff_ms);
+        return;
+    }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
