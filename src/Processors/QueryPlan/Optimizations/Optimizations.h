@@ -64,13 +64,6 @@ struct Optimization
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
-
-        /// Top-K optimizations rely on a runtime `TopKThresholdTracker` shared between
-        /// `SortingStep` and `ReadFromMergeTree`, and the dynamic-filtering path adds
-        /// an internal `__topKFilter` function that is not registered in `FunctionFactory`.
-        /// Neither can survive serialization to remote workers, so we suppress the
-        /// optimization when the plan is going to be distributed.
-        bool make_distributed_plan = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -211,6 +204,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);

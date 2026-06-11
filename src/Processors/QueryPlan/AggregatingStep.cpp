@@ -351,6 +351,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         ? std::min(params.max_threads, pipeline.getNumStreams())
         : params.max_threads;
 
+    /// Clear after use so it does not leak into downstream JOIN/UNION pipeline compositions.
+    pipeline.setReadStreamCountWasReduced(false);
+
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
