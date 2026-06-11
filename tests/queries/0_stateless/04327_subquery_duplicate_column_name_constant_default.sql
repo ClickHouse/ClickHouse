@@ -121,3 +121,24 @@ SELECT m FROM (SELECT number, (number + 7, materialize(0)) NOT IN (SELECT 7, * F
 -- After the rewrite the disambiguated subquery is still addressable normally: the generated internal
 -- name `7_1` must remain non-bindable on the direct-identifier path.
 SELECT `7_1` FROM (SELECT 7, * FROM (SELECT materialize(0) AS `7`)) SETTINGS rewrite_in_to_join = 1; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- The unqualified `COLUMNS(name)` list matcher resolves each listed identifier as a direct reference
+-- (one column per name, like `SELECT name`), not as a name-pattern expansion like `COLUMNS('regexp')`
+-- or `t.COLUMNS(name)`. This list-vs-pattern difference is independent of duplicate-name
+-- disambiguation: a plain cross join with two same-named columns already shows `COLUMNS(a)` returning
+-- the single first-bound column while the pattern form returns both.
+SELECT COLUMNS(a) FROM (SELECT 1 AS a) t1, (SELECT 2 AS a) t2;
+SELECT COLUMNS('^a$') FROM (SELECT 1 AS a) t1, (SELECT 2 AS a) t2;
+-- For a disambiguated subquery the list matcher therefore binds the original name to the first
+-- occurrence (value-correct, matching plain `SELECT q`), while the pattern and qualified forms select
+-- both display-named columns. The generated internal name is not addressable through the list matcher
+-- either, on any of the plain / union / materialized-CTE surfaces.
+SELECT q FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q));
+SELECT COLUMNS(q) FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q));
+SELECT COLUMNS('^q$') FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q));
+SELECT s.COLUMNS(q) FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q)) AS s;
+SELECT COLUMNS(q_1) FROM (SELECT materialize(7) AS q, * FROM (SELECT materialize(0) AS q)); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT COLUMNS(`7`) FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1;
+SELECT COLUMNS(`7_1`) FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT COLUMNS(`7`) FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
+SELECT COLUMNS(`7_1`) FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1; -- { serverError UNKNOWN_IDENTIFIER }
