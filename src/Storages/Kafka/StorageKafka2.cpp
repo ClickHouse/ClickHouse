@@ -1477,6 +1477,12 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
 
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
 
+    if (isConsumeCancelRequested())
+    {
+        block_io.onCancelOrConnectionLoss();
+        return std::nullopt;
+    }
+
     if (!maybe_blocks_and_guard.has_value() || maybe_blocks_and_guard->blocks.empty())
     {
         if (maybe_blocks_and_guard.has_value())

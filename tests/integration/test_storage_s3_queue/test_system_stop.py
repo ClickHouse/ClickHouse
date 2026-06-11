@@ -23,6 +23,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             main_configs=["configs/zookeeper.xml", "configs/s3queue_log.xml"],
             with_minio=True,
+            with_azurite=True,
             with_zookeeper=True,
             stay_alive=True,
         )
@@ -73,6 +74,35 @@ def test_system_stop_start_consuming(started_cluster):
     # STOP halts polling: files added meanwhile are not processed.
     node.query(f"SYSTEM STOP {table}")
     generate_random_files(started_cluster, files_path, count=5, start_ind=5)
+    assert_dst_count_stable(node, table, 5 * ROWS_PER_FILE)
+
+    # START resumes polling and the new files are processed.
+    node.query(f"SYSTEM START {table}")
+    wait_dst_count(node, table, 10 * ROWS_PER_FILE)
+
+
+def test_azure_queue_system_stop_start(started_cluster):
+    # `AzureQueue` and `S3Queue` are the very same `StorageObjectStorageQueue`; only the object
+    # storage backend differs. This test drives that shared path through the `AzureQueue` engine to
+    # prove the engine-name dispatch wires up for it too.
+    node = started_cluster.instances["instance"]
+    table = f"azurequeue_stop_{generate_random_string()}"
+    files_path = f"{table}_data"
+    create_table(
+        started_cluster, node, table, "unordered", files_path, engine_name="AzureQueue"
+    )
+    create_mv(node, table, f"{table}_dst")
+
+    generate_random_files(
+        started_cluster, files_path, count=5, start_ind=0, storage="azure"
+    )
+    wait_dst_count(node, table, 5 * ROWS_PER_FILE)
+
+    # STOP halts polling: files added meanwhile are not processed.
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(
+        started_cluster, files_path, count=5, start_ind=5, storage="azure"
+    )
     assert_dst_count_stable(node, table, 5 * ROWS_PER_FILE)
 
     # START resumes polling and the new files are processed.
@@ -287,8 +317,16 @@ def test_system_stop_requires_grant(started_cluster):
             f"SYSTEM {verb} {table}", user=user
         )
 
-    # Once granted, every verb succeeds.
-    node.query(f"GRANT SYSTEM ON *.* TO {user}")
+    # SYSTEM VIEWS (the privilege behind the refreshable-view path) is deliberately not enough:
+    # streaming engines are guarded by SYSTEM BACKGROUND specifically.
+    node.query(f"GRANT SYSTEM VIEWS ON default.{table} TO {user}")
+    for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
+        assert "ACCESS_DENIED" in node.query_and_get_error(
+            f"SYSTEM {verb} {table}", user=user
+        )
+
+    # SYSTEM BACKGROUND on the table is exactly the required privilege; every verb now succeeds.
+    node.query(f"GRANT SYSTEM BACKGROUND ON default.{table} TO {user}")
     for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
         node.query(f"SYSTEM {verb} {table}", user=user)
 

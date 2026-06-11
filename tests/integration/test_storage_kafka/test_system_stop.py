@@ -51,7 +51,15 @@ def kafka_setup_teardown():
     yield
 
 
-def setup_consuming_table(table, topic):
+def setup_consuming_table(table, topic, keeper=False):
+    # `keeper=True` stores offsets in Keeper, which selects the separate `StorageKafka2`
+    # implementation (its own background task and abort path) instead of `StorageKafka`.
+    keeper_settings = (
+        f",\n                     kafka_keeper_path = '/clickhouse/kafka2/{table}',"
+        f"\n                     kafka_replica_name = 'r1'"
+        if keeper
+        else ""
+    )
     instance.query(
         f"""
         CREATE TABLE test.{table} (key UInt64, value UInt64)
@@ -60,14 +68,17 @@ def setup_consuming_table(table, topic):
                      kafka_topic_list = '{topic}',
                      kafka_group_name = '{topic}',
                      kafka_format = 'JSONEachRow',
-                     kafka_flush_interval_ms = 500;
+                     kafka_flush_interval_ms = 500{keeper_settings};
 
         CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
             ENGINE = MergeTree ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
             SELECT key, value FROM test.{table};
-        """
+        """,
+        settings=(
+            {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+        ),
     )
 
 
@@ -100,6 +111,27 @@ def test_system_stop_start_consuming(kafka_cluster):
     table = f"kafka_stop_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):
         setup_consuming_table(table, table)
+
+        produce(kafka_cluster, table, 0, 10)
+        wait_dst_count(table, 10)
+
+        # STOP halts consumption: new messages stay in the topic, unread.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce(kafka_cluster, table, 10, 10)
+        assert_dst_count_stable(table, 10)
+
+        # START resumes consumption and the backlog is drained.
+        instance.query(f"SYSTEM START test.{table}")
+        wait_dst_count(table, 20)
+
+
+def test_kafka2_system_stop_start_consuming(kafka_cluster):
+    # `StorageKafka2` (offsets in Keeper) is a separate class from `StorageKafka` with its own
+    # background task and action lock, so it needs its own coverage.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka2_stop_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table):
+        setup_consuming_table(table, table, keeper=True)
 
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
@@ -238,6 +270,55 @@ def test_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
                 wait_dst_count(table, 5)
 
 
+def test_kafka2_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
+    # Same in-flight STOP-vs-PAUSE distinction as the v1 test, but for `StorageKafka2`, whose durable
+    # boundary is an uncommitted Keeper `offset_guard` (rolled back on abort) rather than v1's
+    # `markDirty`+rewind.
+    admin_client = k.get_admin_client(kafka_cluster)
+
+    for verb in ["PAUSE", "STOP"]:
+        table = f"kafka2_inflight_{verb.lower()}_{k.random_string(6)}"
+        with k.kafka_topic(admin_client, table):
+            instance.query(
+                f"""
+                CREATE TABLE test.{table} (key UInt64, value UInt64)
+                    ENGINE = Kafka
+                    SETTINGS kafka_broker_list = 'kafka1:19092',
+                             kafka_topic_list = '{table}',
+                             kafka_group_name = '{table}',
+                             kafka_format = 'JSONEachRow',
+                             kafka_flush_interval_ms = 5000,
+                             kafka_poll_timeout_ms = 1000,
+                             kafka_max_block_size = 1000,
+                             kafka_keeper_path = '/clickhouse/kafka2/{table}',
+                             kafka_replica_name = 'r1';
+                CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+                CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                    SELECT key, value FROM test.{table};
+                """,
+                settings={"allow_experimental_kafka_offsets_storage_in_keeper": 1},
+            )
+
+            # Pre-load the topic while halted, then resume so a fresh cycle opens a block over the 5
+            # rows and holds it for ~kafka_flush_interval_ms (the offset guard does not commit yet).
+            instance.query(f"SYSTEM STOP test.{table}")
+            produce(kafka_cluster, table, 0, 5)
+            instance.query(f"SYSTEM START test.{table}")
+
+            time.sleep(2)  # the block is open: rows polled but the offset guard is not yet committed
+            instance.query(f"SYSTEM {verb} test.{table}")
+
+            if verb == "PAUSE":
+                # The in-flight block finishes and commits the offset guard on its own, without START.
+                wait_dst_count(table, 5)
+            else:
+                # The in-flight block is aborted before the offset guard commits (and future cycles
+                # are blocked), so the rows stay invisible until START redelivers them.
+                assert_dst_count_stable(table, 0, seconds=8)
+                instance.query(f"SYSTEM START test.{table}")
+                wait_dst_count(table, 5)
+
+
 def test_system_stop_all_background(kafka_cluster):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_allbg_{k.random_string(6)}"
@@ -321,8 +402,16 @@ def test_system_stop_requires_grant(kafka_cluster):
                 f"SYSTEM {verb} test.{table}", user=user
             )
 
-        # Once granted, every verb succeeds.
-        instance.query(f"GRANT SYSTEM ON *.* TO {user}")
+        # SYSTEM VIEWS (the privilege behind the refreshable-view path) is deliberately not enough:
+        # streaming engines are guarded by SYSTEM BACKGROUND specifically.
+        instance.query(f"GRANT SYSTEM VIEWS ON test.{table} TO {user}")
+        for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
+            assert "ACCESS_DENIED" in instance.query_and_get_error(
+                f"SYSTEM {verb} test.{table}", user=user
+            )
+
+        # SYSTEM BACKGROUND on the table is exactly the required privilege; every verb now succeeds.
+        instance.query(f"GRANT SYSTEM BACKGROUND ON test.{table} TO {user}")
         for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
             instance.query(f"SYSTEM {verb} test.{table}", user=user)
 
