@@ -421,14 +421,14 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
         return stats;
     }
 
-    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
-        transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
-
 #if CLICKHOUSE_CLOUD
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
 #endif
+
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
+        transform && transform->getTransformTraits().preserves_number_of_rows)
+        return estimateReadRowsCount(*node.children.front(), filter);
 
     return {};
 }
