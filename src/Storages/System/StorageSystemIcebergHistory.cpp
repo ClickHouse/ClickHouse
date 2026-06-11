@@ -62,6 +62,9 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
             return;
 
+        if (!object_storage->isIcebergStorage())
+            return;
+
         /// Unfortunately this try/catch is unavoidable. Iceberg tables can be broken in arbitrary way, it's impossible
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try

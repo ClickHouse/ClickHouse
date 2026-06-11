@@ -956,11 +956,11 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-                LOG_TRACE(
+                LOG_DEBUG(
                     log,
-                    "Predownload failed because of space limit. "
+                    "Predownload failed because of space limit ({}). "
                     "Will read from remote filesystem starting from offset: {}",
-                    offset);
+                    failure_reason, offset);
 
                 return false;
             }
@@ -1378,7 +1378,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
             }
             else
-                LOG_TRACE(log, "No space left in cache to reserve {} bytes, reason: {}, "
+                LOG_DEBUG(log, "No space left in cache to reserve {} bytes, reason: {}, "
                           "will continue without cache download", size, failure_reason);
 
             if (!success)
