@@ -140,6 +140,7 @@ This produces a new snapshot (a `replace` operation) that references the same da
 - The feature is experimental and gated behind the `allow_experimental_iceberg_compaction` setting. The statement throws an exception if the setting is not enabled.
 - Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `30`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
 - `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg tables. Running it against any other table engine throws an exception.
+- `OPTIMIZE TABLE ... MANIFEST` currently supports Iceberg format-version 2 tables only. Running it against a format-version 3 table throws an exception, because the v3 row-lineage `first_row_id` metadata is not yet round-tripped through the manifest rewrite.
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
