@@ -177,12 +177,16 @@ A Column appears `num_columns` times within a Block.
 | # | Field                    | Type    | Condition                | Description |
 |---|--------------------------|---------|--------------------------|-------------|
 | 1 | name                     | String  | always                   | Column name |
-| 2 | type                     | String  | always                   | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) |
+| 2 | type                     | String *or* binary type encoding | always | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) by default; a binary type encoding when `output_format_native_encode_types_in_binary_format = 1` (see note below) |
 | 3 | has_custom_serialization | UInt8   | feature `CUSTOM_SERIALIZATION` (v54454) | `0` = default, `1` = custom (kind_stack follows) |
 | 4 | kind_stack               | bytes   | when field 3 = `1`       | One UInt8 enum byte (see below) describing the non-default serialization (sparse, etc.). For the `COMBINATION` value, followed by a VarUInt count plus that many additional kind bytes. For a `Tuple` (and other composites with element-level serialization info) the payload is recursive — see below. |
 | 5 | data                     | bytes   | always                   | Column values for all `num_rows` rows. Layout per type — see [data types](#data-types). For sparse columns, see below. |
 
 A decoder dispatches on the `type` string. Type strings often carry parameters in parentheses; the decoder strips the `(...)` suffix to find the base type and then parses the parameters for size, scale, or inner-type decisions. Parsing a parameter list with nested types (a `Tuple` inside an `Array`, say) needs a depth-aware comma splitter that tracks parenthesis nesting rather than a naive split on `,`.
+
+:::note Binary type encoding
+The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/sql-reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
+:::
 
 ```mermaid
 flowchart TD
