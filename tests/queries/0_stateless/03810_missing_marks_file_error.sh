@@ -40,7 +40,8 @@ rm -f "$mark_file"
 # drop the mark cache so the marks are loaded from disk (and not served from cache)
 $CLICKHOUSE_CLIENT -q "system drop mark cache"
 
-# reading column b must now raise the typed error mentioning the missing marks file
-$CLICKHOUSE_CLIENT -q "select sum(b) from t_missing_marks" 2>&1 | grep -oF -e "NO_FILE_IN_DATA_PART" -e "does not exist in part" | sort -u
+# reading column b must now raise the typed error mentioning the missing marks file.
+# column b's marks are listed in the part's checksums, so the message must say "listed".
+$CLICKHOUSE_CLIENT -q "select sum(b) from t_missing_marks" 2>&1 | grep -oF -e "NO_FILE_IN_DATA_PART" -e "does not exist on disk in part" -e "is listed in the part's checksums" | sort -u
 
 $CLICKHOUSE_CLIENT -q "drop table t_missing_marks sync;"

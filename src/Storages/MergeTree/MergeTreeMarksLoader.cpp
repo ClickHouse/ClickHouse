@@ -151,11 +151,17 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         return res;
     }
 
-    /// The marks file name comes from the part's own checksums (see getStreamNameForColumn), so it
-    /// must exist on disk. If it is missing, throw a typed error with the part's ground truth rather
-    /// than the opaque std::filesystem_error that getFileSize below would produce.
-    if (!data_part_storage->existsFile(mrk_path))
+    /// Called from the error path of the file access below (not as a precheck), so it also catches the
+    /// file disappearing mid-operation. The "listed" flag must branch on the checksums: not every caller
+    /// derives mrk_path from the checksums (index streams do not), so claiming "listed" unconditionally
+    /// could be false.
+    auto throwIfMarksFileMissing = [&]
     {
+        if (data_part_storage->existsFile(mrk_path))
+            return;
+
+        const bool listed_in_checksums = data_part_reader->getChecksums().files.contains(mrk_path);
+
         WriteBufferFromOwnString checksums_files;
         for (const auto & [name, _] : data_part_reader->getChecksums().files)
         {
@@ -181,17 +187,28 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
-            "Marks file '{}' does not exist in part '{}' at '{}', although it is listed in the part's checksums. "
+            "Marks file '{}' does not exist on disk in part '{}' at '{}'. The file is {} in the part's checksums. "
             "Part columns: [{}]. Checksums files: [{}]. Files on disk: [{}].",
             mrk_path,
             data_part_reader->getPartName(),
             data_part_storage->getFullPath(),
+            listed_in_checksums ? "listed" : "NOT listed",
             data_part_reader->getColumns().toString(),
             checksums_files.str(),
             on_disk_files.str());
+    };
+
+    size_t file_size;
+    try
+    {
+        file_size = data_part_storage->getFileSize(mrk_path);
+    }
+    catch (...)
+    {
+        throwIfMarksFileMissing();
+        throw;
     }
 
-    size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(num_columns_in_mark);
     size_t expected_uncompressed_size = mark_size * marks_count;
 
@@ -217,12 +234,20 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             file_size,
             expected_uncompressed_size);
 
-    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
     std::unique_ptr<ReadBuffer> reader;
-    if (!index_granularity_info.mark_type.compressed)
-        reader = std::move(buffer);
-    else
-        reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    try
+    {
+        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
+        if (!index_granularity_info.mark_type.compressed)
+            reader = std::move(buffer);
+        else
+            reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    }
+    catch (...)
+    {
+        throwIfMarksFileMissing();
+        throw;
+    }
 
     if (!index_granularity_info.mark_type.adaptive)
     {
