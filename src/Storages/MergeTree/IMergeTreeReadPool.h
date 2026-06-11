@@ -17,6 +17,7 @@ public:
     virtual ~IMergeTreeReadPool() = default;
     virtual String getName() const = 0;
     virtual Block getHeader() const = 0;
+    virtual MergeTreeReadTask::Extras getReaderExtras() const = 0;
 
     /// Returns true if tasks are returned in the same order as the order of ranges passed to pool
     virtual bool preservesOrderOfRanges() const = 0;

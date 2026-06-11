@@ -118,6 +118,45 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     chassert(index_reader_pool);
 }
 
+bool MergeTreeIndexBuildContext::partHasSelectedGranules(
+    size_t part_index_in_query,
+    const StorageMetadataPtr & metadata,
+    const NameSet & all_updated_columns) const
+{
+    {
+        std::lock_guard lock(part_selection_cache_mutex);
+        if (auto it = part_selection_cache.find(part_index_in_query); it != part_selection_cache.end())
+            return it->second;
+    }
+
+    const auto & part_ranges = read_ranges.at(part_index_in_query);
+    auto projection_it = projection_read_ranges.find(part_index_in_query);
+    static const RangesInDataParts empty_projection_ranges;
+    const auto & projection_parts_ranges = projection_it != projection_read_ranges.end() ? projection_it->second : empty_projection_ranges;
+
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
+        part_ranges, projection_parts_ranges, metadata, all_updated_columns);
+
+    const bool has_selected_granules = !index_read_result || index_read_result->has_selected_granules;
+
+    if (!has_selected_granules)
+        markPartFullySkipped(part_index_in_query);
+
+    {
+        std::lock_guard lock(part_selection_cache_mutex);
+        part_selection_cache[part_index_in_query] = has_selected_granules;
+    }
+
+    return has_selected_granules;
+}
+
+void MergeTreeIndexBuildContext::markPartFullySkipped(size_t part_index_in_query) const
+{
+    const auto & part_ranges = read_ranges.at(part_index_in_query);
+    part_remaining_marks.at(part_index_in_query).value.store(0, std::memory_order_relaxed);
+    index_reader_pool->clear(part_ranges.data_part);
+}
+
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
     const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
@@ -246,7 +285,12 @@ ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows, read_steps_performance_counters);
+        current_task.initializeReadersChain(
+            prewhere_actions,
+            merge_tree_index_build_context,
+            lazy_materializing_rows,
+            read_steps_performance_counters,
+            pool->getReaderExtras());
 
     auto res = task_algorithm.readFromTask(current_task);
 

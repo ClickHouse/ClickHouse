@@ -387,6 +387,17 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     auto extras = getExtras();
     MergeTreeReadTask::Readers task_readers;
 
+    if (pool_settings.defer_reader_creation)
+    {
+        if (previous_task && previous_task->hasReaders() && get_part_name(previous_task->getInfo()) == get_part_name(*read_info))
+        {
+            task_readers = previous_task->releaseReaders();
+            task_readers.updateAllMarkRanges(ranges);
+        }
+
+        return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
+    }
+
     if (!previous_task)
     {
         task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);

@@ -291,10 +291,18 @@ void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
     LazyMaterializingRowsPtr lazy_materializing_rows,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters,
+    const Extras & reader_extras)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
+
+    if (!createColumnReadersIfNeeded(reader_extras, index_build_context))
+    {
+        mark_ranges.clear();
+        patches_mark_ranges.clear();
+        return;
+    }
 
     PrewhereExprInfo all_prewhere_actions;
 
@@ -308,6 +316,25 @@ void MergeTreeReadTask::initializeReadersChain(
         all_prewhere_actions.steps.push_back(step);
 
     readers_chain = createReadersChain(readers, all_prewhere_actions, read_steps_performance_counters);
+}
+
+bool MergeTreeReadTask::createColumnReadersIfNeeded(
+    const Extras & reader_extras, MergeTreeIndexBuildContextPtr index_build_context)
+{
+    if (readers.main)
+        return true;
+
+    if (index_build_context)
+    {
+        if (!index_build_context->partHasSelectedGranules(
+                info->part_index_in_query,
+                reader_extras.storage_snapshot->metadata,
+                info->alter_conversions->getAllUpdatedColumns()))
+            return false;
+    }
+
+    readers = createReaders(info, reader_extras, mark_ranges, patches_mark_ranges);
+    return true;
 }
 
 void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)
@@ -387,6 +414,9 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeReadTask::read");
+    if (!readers.main)
+        return {};
+
     if (size_predictor)
         size_predictor->startBlock();
 

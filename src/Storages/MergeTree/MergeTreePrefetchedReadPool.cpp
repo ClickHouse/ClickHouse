@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -167,6 +168,16 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 {
     if (task.isValidReadersFuture())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
+
+    if (pool_settings.defer_reader_creation)
+    {
+        const auto & read_info = *task.read_info;
+        if (!pool_settings.deferred_index_build_context->partHasSelectedGranules(
+                read_info.part_index_in_query,
+                storage_snapshot->metadata,
+                read_info.alter_conversions->getAllUpdatedColumns()))
+            return;
+    }
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);

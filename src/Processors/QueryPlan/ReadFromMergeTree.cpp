@@ -496,6 +496,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     Names required_columns,
     PoolSettings pool_settings)
 {
+    pool_settings.defer_reader_creation = static_cast<bool>(index_build_context);
+    pool_settings.deferred_index_build_context = index_build_context;
+
     const auto & client_info = context->getClientInfo();
 
     auto extension = ParallelReadingExtension{
@@ -552,6 +555,9 @@ Pipe ReadFromMergeTree::readFromPool(
     Names required_columns,
     PoolSettings pool_settings)
 {
+    pool_settings.defer_reader_creation = static_cast<bool>(index_build_context);
+    pool_settings.deferred_index_build_context = index_build_context;
+
     size_t total_rows = parts_with_range.getRowsCountAllParts();
 
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -670,6 +676,9 @@ Pipe ReadFromMergeTree::readInOrder(
     ReadType read_type,
     UInt64 read_limit)
 {
+    pool_settings.defer_reader_creation = static_cast<bool>(index_build_context);
+    pool_settings.deferred_index_build_context = index_build_context;
+
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
@@ -870,6 +879,7 @@ Pipe ReadFromMergeTree::read(
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+        .deferred_index_build_context = {},
         .total_query_nodes = total_query_nodes,
     };
 
@@ -1344,6 +1354,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = info.use_uncompressed_cache,
+        .deferred_index_build_context = {},
         .total_query_nodes = total_query_nodes,
     };
 
@@ -3715,6 +3726,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             .preferred_block_size_bytes = query_settings[Setting::preferred_block_size_bytes],
             .use_uncompressed_cache = info.use_uncompressed_cache,
             .use_const_size_tasks_for_remote_reading = query_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+            .deferred_index_build_context = {},
             .total_query_nodes = 1,
         };
 
