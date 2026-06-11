@@ -4,7 +4,6 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, with_zookeeper=True)
@@ -22,6 +21,27 @@ POST_LOAD_FAILPOINT = "mergetree_load_outdated_parts_inject_post_load_retryable_
 UNEXPECTED_POST_LOAD_FAILPOINT = (
     "mergetree_load_unexpected_parts_inject_post_load_retryable_exception"
 )
+
+# Every retryable interrupt in loadOutdatedDataParts logs this single line, regardless of which of the
+# three failpoints fired. loadUnexpectedDataParts logs its own line.
+OUTDATED_INTERRUPT_LOG = "Loading of outdated parts was interrupted by a retryable error"
+UNEXPECTED_INTERRUPT_LOG = "Loading of unexpected parts was interrupted by a retryable error"
+
+
+def wait_for_log_count_above(node, substring, baseline, timeout=30):
+    # The cases run on one shared server log, so a presence check (contains_in_log) for a later case can be
+    # satisfied by the identical line an earlier case already wrote. Count instead, against a baseline taken
+    # right before the failpoint was enabled, so each case proves its OWN retry path fired.
+    deadline = time.time() + timeout
+    count = baseline
+    while time.time() < deadline:
+        count = int(node.count_in_log(substring))
+        if count > baseline:
+            return count
+        time.sleep(0.5)
+    raise AssertionError(
+        f"'{substring}' count did not increase above {baseline} within {timeout}s (last seen {count})"
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -59,6 +79,11 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate(fai
     )
     assert outdated_before > 0
 
+    # All three parametrized cases share one module-scoped server, so the interrupt line from an earlier
+    # case is already in the log. Snapshot the count before enabling THIS failpoint and require it to grow,
+    # so the assertion proves this case's own retry path fired (and times out if the failpoint never does).
+    interrupts_before = int(node.count_in_log(OUTDATED_INTERRUPT_LOG))
+
     # Inject a retryable failure into the outdated-parts loader, then force the loader to run.
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     node.query("DETACH TABLE t_outdated")
@@ -66,9 +91,7 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate(fai
 
     # The injected exception is caught and the loading task is rescheduled instead of terminating.
     # The loader runs on a background scheduling-pool thread, so poll the log instead of checking once.
-    assert_logs_contain_with_retry(
-        node, "Loading of outdated parts was interrupted by a retryable error"
-    )
+    wait_for_log_count_above(node, OUTDATED_INTERRUPT_LOG, interrupts_before)
 
     # The server must still be alive and serving queries (active parts load synchronously at ATTACH).
     assert node.query("SELECT count() FROM t_outdated").strip() == "3000"
@@ -140,29 +163,23 @@ def test_retryable_exception_while_loading_unexpected_parts_does_not_terminate()
         ["bash", "-c", f"mv {data_path}/all_0_0_0/columns.txt {data_path}/all_0_0_0/columns.txt.bak"]
     )
 
+    # Snapshot the interrupt count before enabling the failpoint so the assertion below counts only the
+    # retries triggered by THIS failpoint, not any line left by an earlier run of the module.
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
     node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_POST_LOAD_FAILPOINT}")
     node.query(f"DETACH TABLE {table}")
     # The replicated attach thread waits for the unexpected parts to be loaded, so ATTACH blocks while
     # the failpoint keeps firing. Run it asynchronously and clear the failpoint once retries are seen.
     attach = node.get_query_request(f"ATTACH TABLE {table}")
 
-    # The injected exception is caught and the unexpected-parts loading task is rescheduled instead of
-    # terminating the server.
-    assert_logs_contain_with_retry(
-        node, "Loading of unexpected parts was interrupted by a retryable error"
-    )
-
     # While the failpoint keeps firing the loader must KEEP retrying the same part (it backs off and
     # reschedules every ~100ms). The done-marker is `finished`, so the part is re-attempted every pass.
     # With the pre-fix `load_state.part` marker the retry would skip the part and mark loading finished
-    # after a single failure, so the interrupt log would stop at one occurrence. Require several retries.
+    # after a single failure, so only one new interrupt line would appear. Require several NEW retries.
     retries = 0
     for _ in range(60):
-        retries = int(
-            node.count_in_log(
-                "Loading of unexpected parts was interrupted by a retryable error"
-            )
-        )
+        retries = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) - interrupts_before
         if retries >= 3:
             break
         time.sleep(0.5)
