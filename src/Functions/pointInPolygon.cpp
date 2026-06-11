@@ -42,6 +42,7 @@ namespace CurrentMetrics
 {
     extern const Metric PointInPolygonCacheBytes;
     extern const Metric PointInPolygonCacheCells;
+    extern const Metric PointInPolygonCacheSizeLimit;
 }
 
 namespace DB
@@ -872,6 +873,8 @@ private:
 void setPointInPolygonCacheMaxSizeInBytes(size_t max_size_in_bytes)
 {
     preprocessedPolygonsCache<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>().setMaxSizeInBytes(max_size_in_bytes);
+
+    CurrentMetrics::set(CurrentMetrics::PointInPolygonCacheSizeLimit, max_size_in_bytes);
 }
 
 REGISTER_FUNCTION(PointInPolygon)
