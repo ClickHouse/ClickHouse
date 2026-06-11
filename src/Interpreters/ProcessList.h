@@ -109,6 +109,10 @@ protected:
     /// Protected by ProcessList::mutex.
     bool holds_admission_slot = false;
 
+    /// Whether the admission slot was released early (before `ProcessListEntry` destruction);
+    /// used to maintain `ProcessList::admission_pending_teardowns`. Protected by ProcessList::mutex.
+    bool admission_slot_released_early = false;
+
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
 
@@ -436,6 +440,12 @@ protected:
 
     size_t admission_running = 0;
     std::deque<AdmissionWaiter *> admission_queue;
+
+    /// Number of queries that released their admission slot early (via `releaseAdmissionSlot`)
+    /// but whose `ProcessListEntry` is not destroyed yet, so they still count toward
+    /// `non_internal_processes` / `query_kind_amounts` / the per-user counters. The secondary-limit
+    /// checks in `insert` wait for this to drain before trusting those counters.
+    size_t admission_pending_teardowns = 0;
 
     /// When disabled, falls back to legacy `non_internal_processes` counting.
     /// Set once at server startup; not reloadable to avoid mode-transition races.

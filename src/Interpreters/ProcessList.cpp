@@ -296,6 +296,28 @@ ProcessList::EntryPtr ProcessList::insert(
             }
         });
 
+        /// Secondary-limit checks vs the admission early-release window: a finishing query releases
+        /// its admission slot early (in `executeQuery`), before its `ProcessListEntry` destructor
+        /// decrements `non_internal_processes` / `query_kind_amounts` / the per-user counters. A query
+        /// admitted on that freed slot — transferred from the finishing query, or acquired on the fast
+        /// path right after the release — can therefore observe the finishing query as still counted.
+        /// Rejecting on such a transient overcount would fail a query holding a valid admission slot,
+        /// so when we hold one, wait on `query_finished` until either the limit clears or no
+        /// early-released teardown is in flight (`admission_pending_teardowns == 0`), bounded by the
+        /// remaining admission budget (`admission_deadline`). If the limit is still full once the
+        /// teardowns have drained, it is genuinely full of running queries — throw instead of parking
+        /// here: a long wait would hoard the global admission slot while this query is not executing,
+        /// forcing queries of other kinds/users into the queue while an execution slot is actually
+        /// idle. On throw, the rollback guard above hands the slot to the next waiter. Without an
+        /// admission slot (admission queue disabled) the checks keep their legacy behavior.
+        auto passes_secondary_limit = [&](auto && under_limit)
+        {
+            if (got_admission_slot)
+                query_finished.wait_until(lock, admission_deadline,
+                    [&] { return under_limit() || admission_pending_teardowns == 0; });
+            return under_limit();
+        };
+
         if (!is_unlimited_query && max_size && !admission_queue_enabled)
         {
             /// Legacy path: broadcast condvar (admission queue disabled).
@@ -313,20 +335,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!is_unlimited_query)
         {
-            /// Same early-release window as the secondary all-users / per-user limits below: a finishing
-            /// query that already handed us its admission slot still counts toward `query_kind_amounts`
-            /// until its `ProcessListEntry` destructor runs (the admission slot is released earlier, in
-            /// `executeQuery`). Rejecting here would fail a waiter that just left the admission queue,
-            /// whereas legacy admission keeps such a query waiting on the `max_size` gate until the
-            /// counter drops. When we hold an admission slot, wait on `query_finished` for the in-flight
-            /// teardown to drain, bounded by the remaining admission budget (`admission_deadline`).
-            /// Without an admission slot (admission queue disabled) the check stays immediate.
+            /// See the comment at `passes_secondary_limit` above: wait out in-flight early-release
+            /// teardowns (a finishing query that already freed its admission slot still counts toward
+            /// `query_kind_amounts` until its `ProcessListEntry` destructor runs), then reject if the
+            /// limit is genuinely full.
             if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
             {
                 auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_insert_queries_amount; };
-                if (got_admission_slot
-                    ? !query_finished.wait_until(lock, admission_deadline, under_limit)
-                    : !under_limit())
+                if (!passes_secondary_limit(under_limit))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous insert queries. Maximum: {}, current: {}",
                                     max_insert_queries_amount, getQueryKindAmount(query_kind));
@@ -334,9 +350,7 @@ ProcessList::EntryPtr ProcessList::insert(
             if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
             {
                 auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_select_queries_amount; };
-                if (got_admission_slot
-                    ? !query_finished.wait_until(lock, admission_deadline, under_limit)
-                    : !under_limit())
+                if (!passes_secondary_limit(under_limit))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous select queries. Maximum: {}, current: {}",
                                     max_select_queries_amount, getQueryKindAmount(query_kind));
@@ -367,23 +381,18 @@ ProcessList::EntryPtr ProcessList::insert(
                 && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
             {
                 const size_t limit = settings[Setting::max_concurrent_queries_for_all_users];
+                auto under_limit = [&] { return non_internal_processes < limit; };
 
-                /// When we hold an admission slot, it may have been transferred to us by a finishing
-                /// query whose `ProcessListEntry` is not yet destroyed (the slot is released early in
-                /// `executeQuery`, before `non_internal_processes` is decremented in the destructor).
-                /// Rejecting here would fail a waiter that just left the admission queue, whereas the
-                /// legacy `max_size` path keeps such a query waiting until the counter drops. Wait on
-                /// `query_finished` (notified by the destructor) for the in-flight teardown to drain,
-                /// bounded by the remaining admission budget (`admission_deadline`), instead of throwing
-                /// immediately. The deadline is shared with the admission wait above, so the default
-                /// `queue_max_wait_ms = 0` path (which falls back to `max_execution_time` / 300s) waits
-                /// here too instead of failing a just-admitted waiter.
+                /// See the comment at `passes_secondary_limit` above: when we hold an admission slot,
+                /// wait out in-flight early-release teardowns (a finishing query that already freed
+                /// its slot still counts toward `non_internal_processes` until its destructor runs),
+                /// then reject if the limit is genuinely full. Without a slot (admission queue
+                /// disabled), keep the legacy `queue_max_wait_ms`-bounded wait.
                 if (got_admission_slot
-                    ? !query_finished.wait_until(lock, admission_deadline,
-                          [&] { return non_internal_processes < limit; })
+                    ? !passes_secondary_limit(under_limit)
                     : (!queue_max_wait_ms
                        || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                              [&] { return non_internal_processes < limit; })))
+                              under_limit)))
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                         "Too many simultaneous queries for all users. "
@@ -413,19 +422,15 @@ ProcessList::EntryPtr ProcessList::insert(
                 {
                     const size_t limit = settings[Setting::max_concurrent_queries_for_user];
                     auto & user_queries = user_process_list->second.non_internal_queries;
+                    auto under_limit = [&] { return user_queries < limit; };
 
-                    /// Same early-release window as `max_concurrent_queries_for_all_users` above: a
-                    /// finishing query that already handed us its admission slot still counts toward
-                    /// the per-user counter until its destructor runs. Wait for it to drain instead of
-                    /// rejecting a waiter that just left the admission queue, bounded by the remaining
-                    /// admission budget (`admission_deadline`) so the default `queue_max_wait_ms = 0`
-                    /// path waits here too.
+                    /// Same as `max_concurrent_queries_for_all_users` above: wait out in-flight
+                    /// early-release teardowns, then reject if the per-user limit is genuinely full.
                     if (got_admission_slot
-                        ? !query_finished.wait_until(lock, admission_deadline,
-                              [&] { return user_queries < limit; })
+                        ? !passes_secondary_limit(under_limit)
                         : (!queue_max_wait_ms
                            || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                                  [&] { return user_queries < limit; })))
+                                  under_limit)))
                         throw Exception(
                             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                             "Too many simultaneous queries for user {}. "
@@ -679,6 +684,14 @@ ProcessListEntry::~ProcessListEntry()
     {
         process_list_element_ptr->holds_admission_slot = false;
         parent.releaseAdmissionSlotLocked(lock.getUnderlyingLock());
+    }
+
+    /// The early-released slot's teardown is complete: the counters decremented above no longer
+    /// include this query, so the secondary-limit waiters in `insert` may stop waiting for it.
+    if (process_list_element_ptr->admission_slot_released_early)
+    {
+        chassert(parent.admission_pending_teardowns > 0);
+        --parent.admission_pending_teardowns;
     }
 
     /// Broadcast to `replace_running_query` waiters (they use `query_finished`).
@@ -1270,6 +1283,8 @@ void QueryStatus::releaseAdmissionSlot()
             return; /// Double-check under lock.
 
         holds_admission_slot = false;
+        admission_slot_released_early = true;
+        ++process_list.admission_pending_teardowns;
         process_list.releaseAdmissionSlotLocked(lock);
     }
 }

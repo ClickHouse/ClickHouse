@@ -942,3 +942,110 @@ def test_secondary_limit_not_rejected_on_early_release_default_wait(started_clus
             f"were rejected by the secondary concurrency limit while holding an admission "
             f"slot; first error: {offending[0]}"
         )
+
+
+def test_fast_path_slot_not_hoarded_at_secondary_limit(started_cluster):
+    """
+    Regression test for admission-slot hoarding at the secondary concurrency limits.
+
+    The secondary-limit checks used to park a slot-holding query on `query_finished`
+    until the shared admission deadline whenever the limit was full: a query that hit
+    a full `max_concurrent_queries_for_user` (or query-kind) limit waited for up to
+    the whole admission budget while still holding a global admission slot — so a
+    query of a different user (or kind) arriving meanwhile had to queue even though
+    a global execution slot was actually idle.
+
+    The fix bounds that wait by the early-release teardown drain
+    (`admission_pending_teardowns`): once no finishing query is still counted toward
+    the secondary counters, a full limit is genuinely full of running queries, and
+    the query is rejected immediately instead of parking; the rollback guard then
+    hands its slot to the next waiter.
+
+    Scenario (server config: max_concurrent_queries = 2):
+    1. A (user `default`) runs a long query — 1 of 2 global slots used.
+    2. B (user `default`, `max_concurrent_queries_for_user = 1`) arrives: takes the
+       fast path, hits the per-user limit, which is full of genuinely running
+       queries (no teardown in flight). It must be rejected immediately, releasing
+       its slot — not park until the admission deadline.
+    3. C (a different user) arrives: it must run immediately on the free global
+       slot, not queue behind B.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    a_id = f"hoard_a_{prefix}"
+    other_user = f"admission_other_{prefix}"
+
+    node.query(f"CREATE USER {other_user} IDENTIFIED WITH no_password")
+    pool = Pool(2)
+
+    try:
+        # A: occupies one global slot and the whole per-user budget used by B.
+        def run_blocker():
+            node.query(
+                "SELECT sleep(30) FORMAT Null",
+                settings={"function_sleep_max_microseconds_per_block": 0},
+                query_id=a_id,
+            )
+
+        a_future = pool.apply_async(run_blocker)
+        wait_for_query_start(node, a_id)
+
+        # B: fast path (1 of 2 slots used), then the per-user limit is full because
+        # of A. Without the fix it parks here for up to max_execution_time (60s)
+        # holding the second global slot; with the fix it fails immediately.
+        b_result = {}
+
+        def run_secondary_limited():
+            start = time.monotonic()
+            try:
+                node.query(
+                    "SELECT 1 FORMAT Null",
+                    settings={
+                        "max_concurrent_queries_for_user": 1,
+                        "max_execution_time": 60,
+                    },
+                    query_id=f"hoard_b_{prefix}",
+                )
+                b_result["error"] = None
+            except Exception as e:
+                b_result["error"] = str(e)
+            b_result["elapsed"] = time.monotonic() - start
+
+        b_future = pool.apply_async(run_secondary_limited)
+        # Give B time to reach the per-user limit (without the fix: to park there).
+        time.sleep(2)
+
+        # C: different user, different per-user budget. Must run on the free global
+        # slot right away. Without the fix, B holds that slot, so C queues in
+        # admission and times out after its effective budget (max_execution_time).
+        c_start = time.monotonic()
+        node.query(
+            "SELECT 1 FORMAT Null",
+            settings={"max_execution_time": 10},
+            query_id=f"hoard_c_{prefix}",
+            user=other_user,
+        )
+        c_elapsed = time.monotonic() - c_start
+
+        # A must still be running — C ran concurrently, not after A's teardown.
+        assert node.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{a_id}'"
+        ).strip() == "1", "Blocker query finished too early, the test is inconclusive"
+
+        assert c_elapsed < 8, (
+            f"Query of another user took {c_elapsed:.1f}s — it queued behind the "
+            f"secondary-limit waiter that hoarded a fast-path admission slot"
+        )
+
+        b_future.get(timeout=70)
+        assert b_result["error"] is not None and "Too many simultaneous queries for user" in b_result["error"], (
+            f"Expected the fast-path query to be rejected at the per-user limit, got: {b_result['error']}"
+        )
+        assert b_result["elapsed"] < 8, (
+            f"Fast-path query waited {b_result['elapsed']:.1f}s at the per-user limit "
+            f"instead of failing immediately (legacy behavior)"
+        )
+    finally:
+        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC")
+        pool.close()
+        pool.join()
+        node.query(f"DROP USER IF EXISTS {other_user}")
