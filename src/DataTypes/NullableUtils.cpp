@@ -131,13 +131,8 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
-    /// `prev` already carries its own nulls (e.g. extracting `Nullable(Decimal)` or
-    /// `LowCardinality(Nullable(String))` from `Nullable(Tuple(..., <that element>, ...))`).
-    /// We cannot wrap it in another `Nullable`, but the outer null map must still be propagated
-    /// into the element's own nulls. Otherwise rows whose outer tuple is `NULL` but whose inner
-    /// element has a non-`NULL` value on disk (as `generateRandom` produces) would expose that
-    /// inner value here, which breaks the sort key materialized on write (the on-disk sort key
-    /// combined both masks).
+    /// `prev` already carries its own nulls and cannot be wrapped again, but the outer null map
+    /// must still be folded into the element's own nulls (see commit message for the symptom).
     if (null_map)
     {
         const auto & outer_null_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
@@ -155,17 +150,15 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
             return ColumnNullable::create(prev_nullable->getNestedColumnPtr(), std::move(combined_null_map));
         }
 
-        /// A `LowCardinality(...)` element carries nullability via its dictionary, not an
-        /// `IColumn::isNullable`/`ColumnNullable` wrapper, so it reaches here unchanged. The type
-        /// creator promotes it to `LowCardinality(Nullable(T))`; mirror that here and fold in the
-        /// outer mask by repointing the outer-`NULL` rows at the dictionary's null index.
+        /// A `LowCardinality(...)` element carries nullability in its dictionary, not a
+        /// `ColumnNullable` wrapper, so it reaches here unchanged. Mirror what `create(DataTypePtr)`
+        /// returns: fold the outer mask in by repointing outer-`NULL` rows at the dictionary's null
+        /// index, promoting a non-nullable dictionary to `Nullable` first so it has a null index.
         if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
         {
             if (prev_lc->nestedIsNullable())
                 return prev_lc->applyExternalNullMap(outer_null_data);
 
-            /// Non-nullable `LowCardinality(T)`: promote to `LowCardinality(Nullable(T))` first so it
-            /// can carry the outer NULLs, matching the type `create(DataTypePtr)` returns above.
             auto lc_nullable = prev_lc->cloneNullable();
             return assert_cast<const ColumnLowCardinality &>(*lc_nullable).applyExternalNullMap(outer_null_data);
         }
