@@ -26,3 +26,20 @@ for _ in range(20):
 " 2>/dev/null \
     | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
         --input-format=JSONEachRow --structure="a String" -q "SELECT count(), sum(length(a)) FROM table"
+
+# The same cap must apply during schema inference, i.e. when no structure is given (the issue's
+# actual reproducer is file(..., 'JSONEachRow') without a structure). Otherwise the schema reader
+# buffers the whole huge object while inferring the first row and OOMs before the read path is reached.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSONEachRow -q "DESC table" 2>&1 \
+    | grep -q "min_chunk_bytes_for_parallel_parsing" && echo "Ok." || echo "FAIL"
+
+# Schema inference of normal-sized rows without a structure must still work.
+python3 -c "
+import sys
+for i in range(20):
+    sys.stdout.buffer.write(b'{\"a\":\"y\",\"n\":%d}\n' % i)
+" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSONEachRow -q "SELECT count(), sum(n) FROM table"

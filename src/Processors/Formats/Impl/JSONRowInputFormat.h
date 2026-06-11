@@ -56,6 +56,10 @@ public:
 private:
     JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
 
+    /// Reads through a PeekableReadBuffer with metadata/array framing; the per-row segmentation
+    /// cap is not applied (matches the input-format side, which also excludes this format).
+    bool applyRowSizeLimit() const override { return false; }
+
     std::unique_ptr<PeekableReadBuffer> peekable_buf;
     bool fallback_to_json_each_row;
 };

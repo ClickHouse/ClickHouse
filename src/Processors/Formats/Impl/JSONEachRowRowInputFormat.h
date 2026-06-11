@@ -109,6 +109,12 @@ class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 public:
     JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
+protected:
+    /// Whether to bound per-row size during inference (see max_row_size_for_json_each_row).
+    /// Mirrors JSONEachRowRowInputFormat::applyRowSizeLimit; disabled for the JSON-with-metadata
+    /// subclass whose rows are not single self-delimited objects on this path.
+    virtual bool applyRowSizeLimit() const { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

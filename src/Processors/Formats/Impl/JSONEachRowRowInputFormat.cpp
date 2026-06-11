@@ -395,6 +395,15 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
+    /// Schema inference (used for file(..., 'JSONEachRow') without an explicit structure) reads the
+    /// first rows directly into temporary values to infer types, so a single huge object would buffer
+    /// in full and OOM before the read path's cap is ever reached. Bound one row the same way here.
+    if (applyRowSizeLimit() && format_settings.json.max_row_size_for_json_each_row != 0)
+    {
+        JSONEachRowRowSizeLimitReadBuffer limited_buf(in, 10 * format_settings.json.max_row_size_for_json_each_row);
+        return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(limited_buf, format_settings, &inference_info);
+    }
+
     return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
 }
 
