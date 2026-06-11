@@ -135,6 +135,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
     addConvertingActions(*query_plan, header, context);
 
+    // TODO: fix view with UNION case for enabled serialize_query_plan separately (use findReadingSteps() instead)
     auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
     if (node)
         typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
