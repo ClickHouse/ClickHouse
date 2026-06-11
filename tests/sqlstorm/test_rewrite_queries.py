@@ -152,6 +152,24 @@ class TestProtectedSpans(unittest.TestCase):
             "SELECT toTimezone(ts, 'UTC') FROM t",
         )
 
+    def test_dollar_quoted_literal_left_untouched(self):
+        # PostgreSQL dollar-quoted literals are protected spans too; the syntax
+        # rewrite must only fire on the real FETCH clause outside the literal.
+        self.assertEqual(
+            rewrite_query("SELECT $$FETCH FIRST 5 ROWS ONLY$$ AS s FETCH FIRST 1 ROW ONLY"),
+            "SELECT $$FETCH FIRST 5 ROWS ONLY$$ AS s LIMIT 1",
+        )
+
+    def test_tagged_dollar_quoted_literal_left_untouched(self):
+        sql = "SELECT $tag$STRING_TO_ARRAY(x, y)$tag$ AS s"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_dollar_quoted_literal_containing_single_quote(self):
+        # A dollar-quoted literal may contain an unpaired single quote; it must
+        # be masked as one span, not break the quote scanner.
+        sql = "SELECT $$it's OFFSET 1 LIMIT 2$$ AS s"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 class TestUnnestJoinRewrite(unittest.TestCase):
     def test_unnest_with_function_operand_balanced_parens(self):
@@ -173,6 +191,51 @@ class TestUnnestJoinRewrite(unittest.TestCase):
         # `unnest(expr)` outside JOIN/FROM position is resolved by the native
         # alias and must not be rewritten.
         sql = "SELECT unnest(arr) FROM t"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_lateral_subquery_with_nested_parens(self):
+        # The unnest operand gains nested parentheses after the function
+        # rewrites run; the subquery form must capture it with a balanced scan
+        # instead of leaving a correlated subquery behind.
+        self.assertEqual(
+            rewrite_query(
+                "SELECT * FROM t CROSS JOIN LATERAL (SELECT unnest(string_to_array(tags, ',')) AS tag) u ON TRUE"
+            ),
+            "SELECT * FROM t ARRAY JOIN splitByString(',', assumeNotNull(tags)) AS tag",
+        )
+
+    def test_left_join_lateral_subquery_with_nested_parens(self):
+        self.assertEqual(
+            rewrite_query(
+                "SELECT * FROM t LEFT JOIN LATERAL (SELECT unnest(string_to_array(tags, ',')) AS tag) u ON TRUE WHERE id = 1"
+            ),
+            "SELECT * FROM t LEFT ARRAY JOIN splitByString(',', assumeNotNull(tags)) AS tag WHERE id = 1",
+        )
+
+    def test_join_subquery_simple_operand_still_rewritten(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN (SELECT unnest(arr) AS a) u ON TRUE"),
+            "SELECT * FROM t ARRAY JOIN arr AS a",
+        )
+
+    def test_join_subquery_alias_column_list(self):
+        # `u(tag)` renames the unnest column; the rename must win and the
+        # column list must not leak into the output.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN (SELECT unnest(arr) AS a) u(tag) ON TRUE"),
+            "SELECT * FROM t ARRAY JOIN arr AS tag",
+        )
+
+    def test_join_subquery_with_real_condition_left_untouched(self):
+        # A genuine join condition cannot be expressed as ARRAY JOIN; the
+        # construct must be left alone rather than dropping the predicate.
+        sql = "SELECT * FROM t JOIN (SELECT unnest(arr) AS a) u ON u.a = t.id"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_join_subquery_with_from_clause_left_untouched(self):
+        # The subquery is more than a bare `SELECT unnest(expr) AS col`; it must
+        # not be collapsed into an ARRAY JOIN.
+        sql = "SELECT * FROM t CROSS JOIN (SELECT unnest(arr) AS a FROM u) v ON TRUE"
         self.assertEqual(rewrite_query(sql), sql)
 
 

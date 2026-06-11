@@ -29,6 +29,11 @@ _PROTECTED_RE = re.compile(
       '(?:[^'\\]|\\.|'')*'        # single-quoted string literal
     | "(?:[^"\\]|\\.|"")*"        # double-quoted identifier
     | `(?:[^`\\]|\\.|``)*`        # backtick-quoted identifier
+    | \$(?P<dqtag>(?:[A-Za-z_]\w*)?)\$.*?\$(?P=dqtag)\$
+                                  # PostgreSQL dollar-quoted literal:
+                                  # $$...$$ or $tag$...$tag$. The tag group is
+                                  # always-participating (possibly empty) so the
+                                  # backreference also works for the bare $$ form.
     | --[^\n]*                    # line comment
     | /\*.*?\*/                   # block comment
     """,
@@ -292,22 +297,89 @@ def rewrite_unnest_lateral(sql):
     # Remove LATERAL keyword (not supported in ClickHouse)
     sql = re.sub(r'\bLATERAL\s+', '', sql, flags=re.IGNORECASE)
 
-    # Pattern: JOIN (SELECT unnest(expr) AS col) alias ON TRUE
-    # -> ARRAY JOIN expr AS col
-    sql = re.sub(
-        r'\b(?:CROSS\s+)?JOIN\s+\(\s*SELECT\s+[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+(\w+)\s*\)\s*\w*\s*ON\s+TRUE',
-        r'ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
-    sql = re.sub(
-        r'\bLEFT\s+JOIN\s+\(\s*SELECT\s+[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+(\w+)\s*\)\s*\w*\s*ON\s+TRUE',
-        r'LEFT ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
+    # Pattern: [LEFT|CROSS|INNER] JOIN (SELECT unnest(expr) AS col) [AS] [alias] [ON TRUE]
+    # -> [LEFT] ARRAY JOIN expr AS col
+    # The unnest operand is captured with a balanced-parentheses scan so nested
+    # function calls such as `unnest(splitByString(',', tags))` (produced by the
+    # earlier function rewrites) are taken in full; a `([^)]+)`-style regex would
+    # stop at the first `)` and leave behind a correlated subquery that
+    # ClickHouse cannot execute.
+    join_pat = re.compile(r'\b(LEFT\s+(?:OUTER\s+)?|CROSS\s+|INNER\s+)?JOIN\s*\(', re.IGNORECASE)
+    # Words that can follow the subquery's closing parenthesis but are clause
+    # keywords, not a table alias.
+    not_an_alias = {
+        'ON', 'WHERE', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'UNION',
+        'INTERSECT', 'EXCEPT', 'WINDOW', 'QUALIFY', 'SETTINGS', 'FORMAT',
+        'JOIN', 'LEFT', 'RIGHT', 'CROSS', 'INNER', 'FULL',
+    }
+    result = []
+    i = 0
+    while i < len(sql):
+        m = join_pat.search(sql, i)
+        if not m:
+            result.append(sql[i:])
+            break
+        paren_start = m.end() - 1
+        paren_end = find_balanced_parens(sql, paren_start)
+        if paren_end == -1:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        subquery = sql[paren_start + 1:paren_end]
+        sub_m = re.match(r'\s*SELECT\s+unnest\s*\(', subquery, re.IGNORECASE)
+        if not sub_m:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        inner_paren = sub_m.end() - 1
+        inner_end = find_balanced_parens(subquery, inner_paren)
+        if inner_end == -1:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        expr = subquery[inner_paren + 1:inner_end]
+        # The subquery must consist of nothing but `SELECT unnest(expr) AS col`;
+        # anything else (a FROM clause, extra select items, ...) disqualifies it.
+        tail_m = re.match(r'\s+AS\s+(\w+)\s*$', subquery[inner_end + 1:], re.IGNORECASE)
+        if not tail_m:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        col = tail_m.group(1)
+        # Consume an optional `[AS] alias` (with optional single-column list,
+        # `u(tag)`, which renames the unnest column) after the closing
+        # parenthesis.
+        after = sql[paren_end + 1:]
+        pos = 0
+        alias_m = re.match(r'\s*(?:AS\s+)?(\w+)(?:\s*\(\s*(\w+)\s*\))?', after, re.IGNORECASE)
+        if alias_m and alias_m.group(1).upper() not in not_an_alias:
+            pos = alias_m.end()
+            if alias_m.group(2):
+                col = alias_m.group(2)
+        # Consume `ON TRUE`; a genuine join condition cannot be expressed as
+        # ARRAY JOIN, so leave the whole construct untouched in that case.
+        on_m = re.match(r'\s*ON\b', after[pos:], re.IGNORECASE)
+        if on_m:
+            on_true_m = re.match(r'\s*ON\s+TRUE\b', after[pos:], re.IGNORECASE)
+            if not on_true_m:
+                result.append(sql[i:m.end()])
+                i = m.end()
+                continue
+            pos += on_true_m.end()
+        elif re.match(r'\s*[,(]', after[pos:]):
+            # Without `ON TRUE`, a following comma would merge the next FROM
+            # item into the ARRAY JOIN expression list, and a leftover `(`
+            # means the alias tail was not fully parsed; be conservative.
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        join_kw = (m.group(1) or '').upper()
+        join_type = 'LEFT ARRAY JOIN' if join_kw.startswith('LEFT') else 'ARRAY JOIN'
+        result.append(sql[i:m.start()])
+        result.append(f"{join_type} {expr} AS {col}")
+        i = paren_end + 1 + pos
 
-    return sql
+    return ''.join(result)
 
 
 def rewrite_pg_cast(sql):
