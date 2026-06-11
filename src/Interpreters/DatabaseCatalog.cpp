@@ -944,11 +944,8 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
         return;
     }
 
-    /// We are trying to replace existing mapping (prev_database != nullptr), it's logical error
-    if (database || table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", uuid);
-    /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
-    /// so it's not LOGICAL_ERROR
+    /// The UUID is already mapped to a live table. This is reachable from user-controlled on-disk state
+    /// (two table metadata files sharing an explicit UUID), so it is a user error, not a LOGICAL_ERROR.
     throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists. It happened due to UUID collision, "
                     "most likely because some not random UUIDs were manually specified in CREATE queries.", uuid);
 }
