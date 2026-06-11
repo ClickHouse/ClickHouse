@@ -9,6 +9,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <base/scope_guard.h>
+
 #include <unistd.h> /// for ::getpid
 
 #include <atomic>
@@ -121,6 +123,13 @@ TEST(PaimonLatestHint, ConcurrentHintRewriteDoesNotCrash)
             while (!stop.load(std::memory_order_relaxed))
                 writeFile(hint, vals[(i++) & 1u]);
         });
+    /// Join on every exit path (failed ASSERT_* returns early, or the code under test throws):
+    /// a still-joinable std::thread destructor would call std::terminate and turn a plain test
+    /// failure into a process abort, which is the crash this test must distinguish from.
+    SCOPE_EXIT({
+        stop.store(true);
+        writer.join();
+    });
 
     for (int i = 0; i < 4000; ++i)
     {
@@ -130,9 +139,6 @@ TEST(PaimonLatestHint, ConcurrentHintRewriteDoesNotCrash)
         ASSERT_TRUE(info.has_value());
         EXPECT_TRUE(fs::exists(info->second)) << info->second;
     }
-
-    stop.store(true);
-    writer.join();
 }
 
 #endif
