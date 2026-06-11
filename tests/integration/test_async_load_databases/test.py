@@ -6,7 +6,7 @@ from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
+from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -407,21 +407,25 @@ def test_materialized_views_replicated(started_cluster):
     # start INSERTS when CH is not started yet
     for i in range(100, 130):
         try:
+            # timeout: a connect to a half-restarted server can otherwise block ~600s
             node1.query(
-                f"INSERT INTO test_mv.test_table_H VALUES({i})"
+                f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
             )
             logging.debug(f"{i} inserted")
-        except QueryRuntimeException as e:
+        except (QueryRuntimeException, QueryTimeoutExceedException) as e:
             # CH is not started yet
             logging.debug(f"{i} is not inserted - skip")
             time.sleep(0.2)
 
 
-    disconnect_event.wait(90)
+    # assert: a bare wait(90) ignored its timeout, racing the loop below against a
+    # still-restarting server on slow builds
+    assert disconnect_event.wait(180), "restart_clickhouse() did not finish within 180s"
 
     for i in range(2000, 2100):
+        # timeout: bound a hung insert so it can't exhaust the 900s session timeout
         node1.query(
-            f"INSERT INTO test_mv.test_table_H VALUES({i})"
+            f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
         )
 
     src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
