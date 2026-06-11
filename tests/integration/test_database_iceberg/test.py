@@ -837,6 +837,63 @@ def test_cluster_select(started_cluster):
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
 
+
+def test_used_storages_in_query_log(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_query_log_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node1, root_namespace, table_name, "(x String)"
+    )
+    node1.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('test_log');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    query_id_non_cluster = uuid.uuid4().hex
+    node1.query(
+        f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+        query_id=query_id_non_cluster,
+    )
+
+    query_id_cluster = uuid.uuid4().hex
+    node1.query(
+        f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`"
+        f" SETTINGS parallel_replicas_for_cluster_engines=1,"
+        f" enable_parallel_replicas=2,"
+        f" cluster_for_parallel_replicas='cluster_simple'",
+        query_id=query_id_cluster,
+    )
+
+    node1.query("SYSTEM FLUSH LOGS")
+
+    result_non_cluster = node1.query(
+        f"SELECT used_storages FROM system.query_log"
+        f" WHERE query_id = '{query_id_non_cluster}' AND type = 'QueryFinish'"
+    ).strip()
+    assert (
+        "'IcebergS3'" in result_non_cluster
+    ), f"Non-cluster: expected IcebergS3 in used_storages, got {result_non_cluster}"
+
+    result_cluster = node1.query(
+        f"SELECT used_storages FROM system.query_log"
+        f" WHERE query_id = '{query_id_cluster}' AND type = 'QueryFinish'"
+    ).strip()
+    assert (
+        "'IcebergS3'" in result_cluster
+    ), f"Cluster: expected IcebergS3 in used_storages, got {result_cluster}"
+
+
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]
     settings = {
@@ -1096,6 +1153,69 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def test_writes_mutate_update(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_mutate_update_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('999', 3);", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\t1\n456\t2\n999\t3\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = '777' WHERE x = '123';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\t2\n777\t1\n999\t3\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = 'goshan dr' WHERE x = '777';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\t2\n999\t3\ngoshan dr\t1\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = 'pudge1000-7' WHERE y = 2;", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "999\t3\ngoshan dr\t1\npudge1000-7\t2\n"
+
+
+def test_writes_mutate_delete(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_mutate_delete_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    # DELETE on empty table is a no-op.
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'pudge1000-7';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == ""
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('789'), ('890'), ('999');", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n890\n999\n"
+
+    # No-match DELETE keeps the table intact.
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'pudge1000-7';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n890\n999\n"
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '789';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n890\n999\n"
+
+    # Lightweight DELETE syntax should work identically against catalog tables.
+    node.query(f"DELETE FROM {table_ref} WHERE x = '123';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n999\n"
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '999';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n"
 
 
 def test_iceberg_file_progress_callback(started_cluster):
