@@ -2505,10 +2505,10 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Syntax syntax_or_default = "arrayElementOrDefault(arr, n, default)";
     FunctionDocumentation::Arguments arguments_or_default
         = {{"arr", "The array or map to search.", {"Array(T)", "Map(K, V)"}},
-           {"n", "The index of the array element, or the key of the map value, to get.", {"(U)Int*", "K"}},
-           {"default", "The value to return when the index is out of bounds or the key is not found.", {"T"}}};
+           {"n", "The index of the array element, or the key of the map value, to get.", {"(U)Int*", "Any"}},
+           {"default", "The value to return when the index is out of bounds or the key is not found.", {"Any"}}};
     FunctionDocumentation::ReturnedValue returned_value_or_default
-        = {"Returns the element at index `n` (or the value for key `n`), or `default` if it is absent.", {"T"}};
+        = {"Returns the element at index `n` (or the value for key `n`), or `default` if it is absent.", {"Any"}};
     FunctionDocumentation::Examples examples_or_default
         = {{"Index in bounds", "SELECT arrayElementOrDefault([1, 2, 3], 2, 10)", "2"},
            {"Index out of bounds", "SELECT arrayElementOrDefault([1, 2, 3], 4, 10)", "10"},
