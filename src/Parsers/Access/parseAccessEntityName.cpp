@@ -3,6 +3,8 @@
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -21,8 +23,7 @@ String backQuoteAccessEntityNameIfNeed(const String & name)
     /// PARALLEL WITH are two tokens and so can never be a single bare identifier.
     auto equals_keyword = [&](Keyword keyword)
     {
-        const auto text = toStringView(keyword);
-        return name.size() == text.size() && 0 == strncasecmp(name.data(), text.data(), name.size());
+        return std::ranges::equal(name, toStringView(keyword), equalsCaseInsensitive);
     };
 
     if (equals_keyword(Keyword::FORMAT) || equals_keyword(Keyword::SETTINGS))
