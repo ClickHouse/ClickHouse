@@ -56,8 +56,10 @@ bool isAllASCII(const UInt8 * data, size_t size)
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
 /// The third returned value `is_exact` is true when the pattern contains no wildcard at all, so it is
-/// equivalent to an exact match of the (unescaped) prefix, e.g. 'a\%b' matches only the string 'a%b'.
-/// When `is_exact` is true the prefix is always returned regardless of `requires_perfect_prefix`.
+/// equivalent to an exact match of the prefix, e.g. 'a\%b' matches only the string 'a%b'. The prefix
+/// folds escapes exactly as likePatternToRegexp does, so it equals the string LIKE matches (an unknown
+/// escape like '\w' keeps the backslash). When `is_exact` is true the prefix is always returned
+/// regardless of `requires_perfect_prefix`.
 std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
@@ -96,7 +98,13 @@ std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_vie
                         return {"", false, false};
                     return {fixed_prefix, false, false};
                 }
-                [[fallthrough]];
+                /// Fold the escape exactly as likePatternToRegexp does so fixed_prefix equals the string
+                /// LIKE matches: '\%', '\_' and '\\' drop the backslash, but an unknown escape keeps it
+                /// (so '\w' matches the literal "\w", not "w").
+                if (*pos != '%' && *pos != '_' && *pos != '\\')
+                    fixed_prefix += '\\';
+                fixed_prefix += *pos;
+                break;
             }
             default:
             {

@@ -20,3 +20,11 @@ Name: idx
 A trailing escape is not optimized into an exact point range
 Condition: (value in [\'a\', \'b\'))
 LIKE / NOT LIKE with a trailing escape raise instead of being pruned away
+An unknown escape keeps the backslash, so the exact range is the literal pattern, not the unescaped char
+Condition: (value in [\'\\\\w\', \'\\\\w\'])
+LIKE with an unknown escape keeps the matching row under force_primary_key (matches equality)
+1
+1
+NOT LIKE with an unknown escape keeps the non-matching row under force_primary_key (matches inequality)
+1
+1

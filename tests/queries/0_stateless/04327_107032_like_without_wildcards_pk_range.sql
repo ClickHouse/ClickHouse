@@ -75,3 +75,29 @@ SELECT count() FROM t_like_trailing_escape WHERE value NOT LIKE 'a\\'; -- { serv
 SELECT count() FROM t_like_trailing_escape WHERE value LIKE 'a\\' SETTINGS force_primary_key = 1; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 
 DROP TABLE t_like_trailing_escape;
+
+DROP TABLE IF EXISTS t_like_unknown_escape;
+
+-- index_granularity = 1 puts 'w' and '\' + 'w' in separate granules so a wrong point range prunes the
+-- wrong one and the row count changes, not just the EXPLAIN output.
+CREATE TABLE t_like_unknown_escape (value String)
+ENGINE = MergeTree ORDER BY value SETTINGS index_granularity = 1;
+
+-- An unknown escape '\w' is kept as the literal two characters "\w" by the matcher (so '\w' LIKE '\w'),
+-- unlike '\%'/'\_'/'\\' which fold to a single literal. The fixed prefix must be the literal "\w", not "w",
+-- so the exact range must be ['\w', '\w'] and must NOT prune the 'w' granule for NOT LIKE or the '\w'
+-- granule for LIKE. '\' (0x5C) sorts before 'w' (0x77) so '\w' < 'w'.
+INSERT INTO t_like_unknown_escape VALUES ('w'), ('\\w');
+
+SELECT 'An unknown escape keeps the backslash, so the exact range is the literal pattern, not the unescaped char';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_like_unknown_escape WHERE value LIKE '\\w') WHERE explain LIKE '%Condition:%';
+
+SELECT 'LIKE with an unknown escape keeps the matching row under force_primary_key (matches equality)';
+SELECT count() FROM t_like_unknown_escape WHERE value LIKE '\\w' SETTINGS force_primary_key = 1;
+SELECT count() FROM t_like_unknown_escape WHERE value = '\\w';
+
+SELECT 'NOT LIKE with an unknown escape keeps the non-matching row under force_primary_key (matches inequality)';
+SELECT count() FROM t_like_unknown_escape WHERE value NOT LIKE '\\w' SETTINGS force_primary_key = 1;
+SELECT count() FROM t_like_unknown_escape WHERE value != '\\w';
+
+DROP TABLE t_like_unknown_escape;
