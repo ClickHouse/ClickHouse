@@ -295,6 +295,7 @@ void generateManifestFile(
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
     for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
     {
         const auto & data_file_name = data_file_names[file_idx];
@@ -388,43 +389,69 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            switch (partition_values[i].getType())
+            /// Build the Avro datum that holds the actual partition value (without
+            /// the surrounding union). Throws on an unsupported value type.
+            auto make_value_datum = [&]() -> avro::GenericDatum
             {
-                case Field::Types::Int64:
-                case Field::Types::UInt64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Int64>());
-                    break;
+                switch (partition_values[i].getType())
+                {
+                    case Field::Types::Int64:
+                    case Field::Types::UInt64:
+                        return avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                    case Field::Types::String:
+                        return avro::GenericDatum(partition_values[i].safeGet<String>());
+                    case Field::Types::Float64:
+                        return avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                    case Field::Types::Decimal32:
+                        return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                    case Field::Types::Decimal64:
+                        return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported type to write into avro file {}",
+                            partition_values[i].getType());
+                }
+            };
 
-                case Field::Types::String:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<String>());
-                    break;
+            const bool is_nullable_partition = partition_types[i]->isNullable();
+            const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
 
-                case Field::Types::Float64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Float64>());
-                    break;
-
-                case Field::Types::Decimal32:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
-                    break;
-
-                case Field::Types::Decimal64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
-                    break;
-
-                case Field::Types::Null:
-                    break;
-
-                default:
+            if (is_nullable_partition)
+            {
+                /// Nullable partition columns are encoded as Avro `["null", T]`
+                /// unions. NULL selects branch 0; a concrete value selects branch 1.
+                /// See issue #105852: before this change, NULL partition values were
+                /// silently written as 0 because the schema was non-nullable.
+                size_t field_index = 0;
+                if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
                     throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Unsupported type to write into avro file {}",
-                        partition_values[i].getType()
-                    );
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Partition field {} not found in manifest schema",
+                        partition_columns[i]);
+
+                const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+
+                avro::GenericUnion union_field(union_schema);
+                if (is_null_value)
+                {
+                    union_field.selectBranch(0);
+                }
+                else
+                {
+                    union_field.selectBranch(1);
+                    union_field.datum() = make_value_datum();
+                }
+                partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
+            }
+            else
+            {
+                if (is_null_value)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Got NULL partition value for non-nullable partition column {}",
+                        partition_columns[i]);
+                partition_record.field(partition_columns[i]) = make_value_datum();
             }
         }
 
@@ -443,8 +470,12 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots)
+    bool use_previous_snapshots,
+    const std::vector<Iceberg::FileContentType> & per_entry_content_types)
 {
+    if (!per_entry_content_types.empty() && per_entry_content_types.size() != manifest_entry_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_entry_content_types size does not match manifest entries");
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -462,12 +493,15 @@ void generateManifestList(
         avro::GenericDatum entry_datum(schema.root());
         avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
 
+        const Iceberg::FileContentType entry_content
+            = per_entry_content_types.empty() ? content_type : per_entry_content_types[entry_idx];
+
         entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
         entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
         entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         if (version > 1)
         {
-            entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
+            entry.field(Iceberg::f_content) = static_cast<Int32>(entry_content);
             entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
             entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
         }
@@ -494,6 +528,7 @@ void generateManifestList(
         };
         entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
+
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_files_count);
@@ -501,6 +536,8 @@ void generateManifestList(
             set_versioned_field(0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
                 set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
+            else
+                set_versioned_field(0, Iceberg::f_deleted_rows_count);
         }
         else
         {
@@ -508,26 +545,28 @@ void generateManifestList(
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
-
             if (summary->has(Iceberg::f_added_position_deletes))
                 entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
+            else
+                entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
 
-        if (summary->has(Iceberg::f_added_records))
+        if (entry_content == Iceberg::FileContentType::DATA)
         {
             set_versioned_field(
-                summary->getValue<Int64>(Iceberg::f_added_records),
+                summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
                 Iceberg::f_added_rows_count);
         }
         else
         {
-            set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_added_rows_count);
+            set_versioned_field(
+                summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
+                Iceberg::f_added_rows_count);
         }
         set_versioned_field(
             0,
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
-
         writer.write(entry_datum);
     }
 
@@ -629,8 +668,10 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
-    auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
+        catalog,
+        table_id.getTableName(),
         persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
@@ -638,7 +679,7 @@ IcebergStorageSink::IcebergStorageSink(
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
-        true);
+        /* ignore_explicit_metadata_file_path */ false);
 
     metadata = getMetadataJSONObject(
         metadata_path,
@@ -864,6 +905,7 @@ bool IcebergStorageSink::initializeMetadata()
 {
     const auto & resolver = persistent_table_components.path_resolver;
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+    auto hint_path = filename_generator.generateVersionHint();
 
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
@@ -879,7 +921,7 @@ bool IcebergStorageSink::initializeMetadata()
         total_data_files,
         total_rows,
         total_chunks_size,
-        total_data_files,
+        /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
         /* added_delete_files */ 0,
         /* num_deleted_rows */ 0);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
@@ -901,6 +943,7 @@ bool IcebergStorageSink::initializeMetadata()
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+
         if (retry_because_of_metadata_conflict)
         {
             /// When retrying after a metadata conflict, we must read the actual latest
@@ -908,8 +951,10 @@ bool IcebergStorageSink::initializeMetadata()
             /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
             /// loop must still discover the real latest version to advance past it.
             /// Otherwise the loop keeps regenerating the same target version and fails.
-            auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
                 object_storage,
+                catalog,
+                table_id.getTableName(),
                 persistent_table_components.table_path,
                 data_lake_settings,
                 persistent_table_components.metadata_cache,
@@ -917,7 +962,6 @@ bool IcebergStorageSink::initializeMetadata()
                 getLogger("IcebergWrites").get(),
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
-                true,
                 /* ignore_explicit_metadata_file_path */ true);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
@@ -1011,7 +1055,13 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-                    persistent_table_components.path_resolver, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_entry_sizes, *buffer_manifest_list, Iceberg::FileContentType::DATA,
+                    persistent_table_components.path_resolver,
+                    metadata, object_storage, context,
+                    manifest_entries,
+                    new_snapshot,
+                    manifest_entry_sizes,
+                    *buffer_manifest_list,
+                    Iceberg::FileContentType::DATA,
                     /* use_previous_snapshots = */ true);
                 buffer_manifest_list->finalize();
             }
@@ -1033,22 +1083,22 @@ bool IcebergStorageSink::initializeMetadata()
             });
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
-            auto hint_path = filename_generator.generateVersionHint();
-            if (!writeMetadataFileAndVersionHint(
-                    persistent_table_components.path_resolver,
-                    metadata_info,
-                    json_representation,
-                    hint_path,
-                    object_storage,
-                    context,
-                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+            if (!catalog_writes_metadata_file)
             {
-                LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
-                cleanup(true);
-                return false;
-            }
-            else
-            {
+                if (!writeMetadataFileAndVersionHint(
+                        persistent_table_components.path_resolver,
+                        metadata_info,
+                        json_representation,
+                        hint_path,
+                        object_storage,
+                        context,
+                        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+                {
+                    LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
+                    cleanup(true);
+                    return false;
+                }
                 LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
             }
 
