@@ -90,11 +90,10 @@ struct RopeNode
 /// front_offset`. `peek()` returns the unconsumed prefix of the front
 /// node (memory stays valid until the next `advance` / `tryRewind` call).
 ///
-/// Overlap: `append` tolerates overlapping / duplicate nodes — the merged `intervals`
-/// reports unique coverage, and the streaming consumers (`peek` / `advance`) work from
-/// the absolute cursor position, dropping nodes that fall entirely behind it, so they
-/// serve the coverage union exactly once regardless of overlap. `copyTo` (random flatten)
-/// still assumes a non-overlapping rope and asserts it.
+/// Overlap: `append` tolerates overlapping / duplicate nodes (the merged `intervals` is
+/// the unique coverage). Streaming (`peek` / `advance`) works by absolute position,
+/// dropping behind nodes, so it serves the union once despite overlap; `copyTo` (flatten)
+/// requires a non-overlapping rope and asserts it.
 class Rope
 {
 public:
@@ -164,10 +163,8 @@ public:
     /// Same as `slice(req)` but asserts the rope fully covers `req`.
     Rope extract(ByteRange req) const;
 
-    /// Flatten this rope's coverage of `req` into the contiguous buffer at `dst`.
-    /// Asserts `covers(req)` and (in debug) that the rope is non-overlapping — see the
-    /// overlap contract above; overlapping nodes would double-write/over-count. Returns
-    /// bytes written.
+    /// Flatten this rope's coverage of `req` into `dst`. Asserts `covers(req)` and (debug)
+    /// that the rope is non-overlapping. Returns bytes written.
     size_t copyTo(char * dst, ByteRange req) const;
 
     // ─── Diagnostics / shifting ─────────────────────────────────────────

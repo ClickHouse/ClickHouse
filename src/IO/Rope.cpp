@@ -107,18 +107,13 @@ void Rope::advance(size_t bytes)
     if (nodes.empty())
         return;
 
-    /// Move the cursor by `bytes` (clamped to EOF) and drop everything now behind it.
-    /// Working from an absolute logical position -- rather than popping the front node by
-    /// its physical size -- is what makes consumption correct for overlapping nodes: a
-    /// node that sits entirely behind the new position is released even if it overlaps a
-    /// node still ahead, so its bytes are never re-served.
+    /// Work from an absolute position, not by popping the front node's physical size: that
+    /// is what drops an overlapping node sitting entirely behind the cursor (so it is never
+    /// re-served). Clamp the delta, not `cur + bytes`, to avoid overflow.
     const size_t cur = nodes.front().logical_offset + front_offset;
-    /// Clamp the delta to EOF, not `cur + bytes` (which could overflow past EOF and wrap
-    /// below `cur`). `cur <= range().end()` by the cursor invariant.
     const size_t new_position = cur + std::min(bytes, range().end() - cur);
 
-    /// Drop coverage before the new position. Cascades across intervals (a forward
-    /// `tryRewind` can jump over a gap straight to a later node).
+    /// Drop coverage before the new position (cascades across intervals, e.g. over a gap).
     while (!intervals.empty() && intervals.front().end() <= new_position)
         intervals.erase(intervals.begin());
     if (!intervals.empty() && intervals.front().offset < new_position)
@@ -130,8 +125,6 @@ void Rope::advance(size_t bytes)
     while (!nodes.empty() && nodes.front().logical_offset + nodes.front().size <= new_position)
         nodes.pop_front();
 
-    /// Offset into the new front node: with overlap it may start before `new_position`;
-    /// for a contiguous cover it starts exactly there (front_offset 0).
     front_offset = (!nodes.empty() && new_position > nodes.front().logical_offset)
         ? new_position - nodes.front().logical_offset
         : 0;
@@ -142,12 +135,9 @@ bool Rope::tryRewind(size_t new_position)
     if (nodes.empty())
         return false;
 
-    /// Reachable from the cursor = entire held nodes (their buffers are
-    /// alive). The lowest reachable byte is the ORIGINAL start of the
-    /// front node (`logical_offset`, not `+ front_offset`), because a
-    /// backward rewind into the buffer is supported. The highest reachable byte is the
-    /// merged-coverage end, not `nodes.back()` — nodes are sorted by start, so under
-    /// overlap the last node by start can end before an earlier, longer one.
+    /// Lowest reachable byte is the ORIGINAL front start (`logical_offset`, not
+    /// `+ front_offset`) so a backward rewind into the buffer works; highest is the
+    /// merged-coverage end (`nodes` are sorted by start, so a later node can end earlier).
     const size_t reachable_lo = nodes.front().logical_offset;
     const size_t reachable_hi = range().end();
     if (new_position < reachable_lo || new_position > reachable_hi)
@@ -170,9 +160,8 @@ bool Rope::tryRewind(size_t new_position)
         return true;
     }
 
-    /// new_position is past the front node. Walk later nodes to reject positions that land
-    /// in a gap (no held node covers them — `tryRewind` must land exactly on new_position),
-    /// then let `advance` move the cursor there by logical distance.
+    /// Past the front node: reject a position landing in a gap, else let `advance` move
+    /// the cursor there by logical distance.
     const size_t cur = front.logical_offset + front_offset;
     for (size_t i = 1; i < nodes.size(); ++i)
     {
@@ -218,18 +207,14 @@ void Rope::mergeInterval(ByteRange iv)
 
 void Rope::append(RopeNode node)
 {
-    /// Drop zero-size nodes: they carry no bytes and are not merged into
-    /// `intervals` (which skips empty ranges), so keeping them would leave `nodes`
-    /// non-empty while `peek` returns an empty span -- a drain loop advancing by the
-    /// span size would never progress.
+    /// Drop zero-size nodes -- not merged into `intervals`, they would leave a non-empty
+    /// rope whose `peek` span is empty (hanging a drain loop).
     if (node.size == 0)
         return;
 
-    /// Never insert behind the cursor of a partly-consumed rope. `front_offset` applies to
-    /// `nodes.front()`, so a node inserted before it would steal that offset (an out-of-bounds
-    /// `peek`), and merging its range would re-cover already-consumed bytes. Drop a node
-    /// entirely behind the cursor; trim one straddling it to its still-reachable tail.
-    /// (A fresh rope -- `front_offset == 0` -- accepts out-of-order appends unchanged.)
+    /// On a partly-consumed rope, drop/trim a node behind the cursor so it can't steal the
+    /// front node's `front_offset` (an OOB `peek`) or re-cover consumed bytes. A fresh rope
+    /// (`front_offset == 0`) keeps out-of-order appends.
     if (front_offset != 0)
     {
         const size_t cursor = nodes.front().logical_offset + front_offset;
@@ -295,9 +280,8 @@ void Rope::append(Rope && other)
 Rope Rope::slice(ByteRange req) const
 {
     Rope result;
-    /// Bytes before the cursor are consumed and not slice-able. With overlap that applies
-    /// to ANY node, not just the front one (a later node can start before the cursor), so
-    /// clamp every node's reachable range to start at the cursor.
+    /// Bytes before the cursor are consumed; clamp every node to it (with overlap a later
+    /// node can start before the cursor too, not just the front).
     const size_t cursor = nodes.empty() ? 0 : nodes.front().logical_offset + front_offset;
     for (const auto & node : nodes)
     {
@@ -416,8 +400,7 @@ void Rope::shift(ssize_t delta)
 size_t Rope::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
-    /// Flatten assumes non-overlapping nodes (see the overlap contract). Overlap would
-    /// double-write `dst` and over-count `written`; producers must hand a disjoint rope.
+    /// Flatten assumes non-overlapping nodes; overlap would double-write `dst` / over-count.
     chassert(coveredBytes(range()) == totalBytes());
     /// Nodes are sorted by logical_offset (invariant). The first node's
     /// `front_offset` bytes are already consumed — they're not part of
