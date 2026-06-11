@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
@@ -271,7 +272,17 @@ void MergeTreeDataPartWide::loadIndexGranularity()
             "There are no files for column {} in part {}",
             columns.front().name, getDataPartStorage().getFullPath());
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
+    try
+    {
+        loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
+    }
+    catch (...)
+    {
+        /// index_granularity_info may have been adjusted inside the impl, so the path is recomputed here.
+        throwIfMarksFileMissing(
+            getDataPartStorage(), checksums, columns, name, index_granularity_info.getMarksFilePath(*any_column_filename));
+        throw;
+    }
 }
 
 void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const

@@ -82,6 +82,19 @@ using MergeTreeMarksLoaderPtr = std::shared_ptr<MergeTreeMarksLoader>;
 
 class IMergeTreeDataPart;
 struct MergeTreeSettings;
+class IDataPartStorage;
+struct MergeTreeDataPartChecksums;
+
+/// If a marks file expected by a part is missing on disk, throws a typed NO_FILE_IN_DATA_PART naming
+/// the part, the file, whether it is listed in the checksums, and the on-disk/checksums listings.
+/// Returns (no throw) when the file is actually present. Call only from the error path of a marks read
+/// so a successful load pays nothing and a file vanishing mid-read is still diagnosed.
+void throwIfMarksFileMissing(
+    const IDataPartStorage & data_part_storage,
+    const MergeTreeDataPartChecksums & checksums,
+    const NamesAndTypesList & columns,
+    const String & part_name,
+    const String & mrk_path);
 
 /// Adds computed marks for part to the marks cache.
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache);

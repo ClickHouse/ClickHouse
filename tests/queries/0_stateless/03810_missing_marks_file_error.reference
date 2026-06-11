@@ -1,3 +1,7 @@
+--- query read path ---
 NO_FILE_IN_DATA_PART
 does not exist on disk in part
 is listed in the part's checksums
+--- index granularity load path ---
+broken-on-start
+1

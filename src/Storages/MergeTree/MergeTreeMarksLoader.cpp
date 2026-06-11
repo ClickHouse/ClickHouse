@@ -151,51 +151,16 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         return res;
     }
 
-    /// Called from the error path of the file access below (not as a precheck), so it also catches the
-    /// file disappearing mid-operation. The "listed" flag must branch on the checksums: not every caller
-    /// derives mrk_path from the checksums (index streams do not), so claiming "listed" unconditionally
-    /// could be false.
-    auto throwIfMarksFileMissing = [&]
+    /// Convert a missing marks file (whether absent up front or vanished mid-read) into a diagnosable
+    /// typed error. Invoked from the error path only, so a successful load pays nothing.
+    auto throw_if_marks_file_missing = [&]
     {
-        if (data_part_storage->existsFile(mrk_path))
-            return;
-
-        const bool listed_in_checksums = data_part_reader->getChecksums().files.contains(mrk_path);
-
-        WriteBufferFromOwnString checksums_files;
-        for (const auto & [name, _] : data_part_reader->getChecksums().files)
-        {
-            if (checksums_files.count())
-                checksums_files << ", ";
-            checksums_files << name;
-        }
-
-        WriteBufferFromOwnString on_disk_files;
-        try
-        {
-            for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
-            {
-                if (on_disk_files.count())
-                    on_disk_files << ", ";
-                on_disk_files << it->name();
-            }
-        }
-        catch (...)
-        {
-            on_disk_files << "<failed to list directory: " << getCurrentExceptionMessage(false) << ">";
-        }
-
-        throw Exception(
-            ErrorCodes::NO_FILE_IN_DATA_PART,
-            "Marks file '{}' does not exist on disk in part '{}' at '{}'. The file is {} in the part's checksums. "
-            "Part columns: [{}]. Checksums files: [{}]. Files on disk: [{}].",
-            mrk_path,
+        throwIfMarksFileMissing(
+            *data_part_storage,
+            data_part_reader->getChecksums(),
+            data_part_reader->getColumns(),
             data_part_reader->getPartName(),
-            data_part_storage->getFullPath(),
-            listed_in_checksums ? "listed" : "NOT listed",
-            data_part_reader->getColumns().toString(),
-            checksums_files.str(),
-            on_disk_files.str());
+            mrk_path);
     };
 
     size_t file_size = 0;
@@ -205,7 +170,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     catch (...)
     {
-        throwIfMarksFileMissing();
+        throw_if_marks_file_missing();
         throw;
     }
 
@@ -245,7 +210,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     catch (...)
     {
-        throwIfMarksFileMissing();
+        throw_if_marks_file_missing();
         throw;
     }
 
@@ -371,6 +336,54 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         },
         *load_marks_threadpool,
         ThreadName::LOAD_MARKS);
+}
+
+void throwIfMarksFileMissing(
+    const IDataPartStorage & data_part_storage,
+    const MergeTreeDataPartChecksums & checksums,
+    const NamesAndTypesList & columns,
+    const String & part_name,
+    const String & mrk_path)
+{
+    if (data_part_storage.existsFile(mrk_path))
+        return;
+
+    const bool listed_in_checksums = checksums.files.contains(mrk_path);
+
+    WriteBufferFromOwnString checksums_files;
+    for (const auto & [name, _] : checksums.files)
+    {
+        if (checksums_files.count())
+            checksums_files << ", ";
+        checksums_files << name;
+    }
+
+    WriteBufferFromOwnString on_disk_files;
+    try
+    {
+        for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
+        {
+            if (on_disk_files.count())
+                on_disk_files << ", ";
+            on_disk_files << it->name();
+        }
+    }
+    catch (...)
+    {
+        on_disk_files << "<failed to list directory: " << getCurrentExceptionMessage(false) << ">";
+    }
+
+    throw Exception(
+        ErrorCodes::NO_FILE_IN_DATA_PART,
+        "Marks file '{}' does not exist on disk in part '{}' at '{}'. The file is {} in the part's checksums. "
+        "Part columns: [{}]. Checksums files: [{}]. Files on disk: [{}].",
+        mrk_path,
+        part_name,
+        data_part_storage.getFullPath(),
+        listed_in_checksums ? "listed" : "NOT listed",
+        columns.toString(),
+        checksums_files.str(),
+        on_disk_files.str());
 }
 
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)

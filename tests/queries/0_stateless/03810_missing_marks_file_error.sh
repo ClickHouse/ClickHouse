@@ -12,6 +12,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # typed error (NO_FILE_IN_DATA_PART) naming the part and the file, not an opaque
 # std::filesystem "in file_size: No such file" error.
 
+# --- Case 1: query read path (MergeTreeMarksLoader::loadMarksImpl) ---
+
 $CLICKHOUSE_CLIENT -q "drop table if exists t_missing_marks sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_marks (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
@@ -43,6 +45,61 @@ $CLICKHOUSE_CLIENT -q "system drop mark cache"
 
 # reading column b must now raise the typed error mentioning the missing marks file.
 # column b's marks are listed in the part's checksums, so the message must say "listed".
+echo "--- query read path ---"
 $CLICKHOUSE_CLIENT -q "select sum(b) from t_missing_marks" 2>&1 | grep -oF -e "NO_FILE_IN_DATA_PART" -e "does not exist on disk in part" -e "is listed in the part's checksums" | sort -u
 
 $CLICKHOUSE_CLIENT -q "drop table t_missing_marks sync;"
+
+# --- Case 2: index-granularity load path (MergeTreeDataPartWide::loadIndexGranularity) ---
+# Index granularity is loaded directly from the first column's marks file when a part is
+# loaded, before any query reaches MergeTreeMarksLoader. Removing that marks file and
+# reloading the table must produce the same typed diagnostic, surfaced via the broken-part
+# handling that runs on load.
+
+$CLICKHOUSE_CLIENT -q "drop table if exists t_missing_granularity_marks sync;"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_granularity_marks (a UInt64, b UInt64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_granularity_marks SELECT number, number FROM numbers(1000)"
+
+path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database=currentDatabase() and table='t_missing_granularity_marks' and active=1 limit 1")
+$CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" > /dev/null || exit 1
+
+# detach the table so the part is unloaded, then remove the first column's (a) marks file:
+# that is the one loadIndexGranularity() reads.
+$CLICKHOUSE_CLIENT -q "detach table t_missing_granularity_marks"
+
+mark_file=""
+for ext in cmrk2 mrk2 mrk; do
+    if [ -f "${path}a.${ext}" ]; then
+        mark_file="${path}a.${ext}"
+        break
+    fi
+done
+if [ -z "$mark_file" ]; then
+    echo "NO MARKS FILE FOUND for column a in $path" >&2
+    ls "$path" >&2
+    exit 1
+fi
+rm -f "$mark_file"
+
+# reloading the table re-reads index granularity from disk; the missing marks file makes the
+# part broken-on-start instead of crashing with an opaque std::filesystem error.
+# send_logs_level=none keeps the (expected) broken-part error out of the client stderr stream.
+$CLICKHOUSE_CLIENT --send_logs_level=none -q "attach table t_missing_granularity_marks"
+
+echo "--- index granularity load path ---"
+$CLICKHOUSE_CLIENT -q "SELECT reason FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_missing_granularity_marks'"
+
+# the broken-part handler logs our typed diagnostic; confirm the enriched message reached the log
+# (without the fix this path logs only the opaque, path-only error). Filter on the storage logger to
+# avoid matching this very query's own logged text.
+$CLICKHOUSE_CLIENT -q "system flush logs text_log"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log
+WHERE event_time > now() - INTERVAL 5 MINUTE
+  AND logger_name LIKE '%t_missing_granularity_marks %'
+  AND message LIKE '%does not exist on disk in part%'
+  AND message LIKE '%listed in the part%checksums%'"
+
+$CLICKHOUSE_CLIENT -q "drop table t_missing_granularity_marks sync;"
