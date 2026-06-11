@@ -1,11 +1,10 @@
--- Tags: no-stress
--- ^ no-stress: the Stress test wraps every query with the server-side AST fuzzer.
---   The fuzzer mutates `numbers(9)` in the INSERT into a much larger argument,
---   and combined with `index_granularity = 1` plus `INDEX idx (value1) TYPE set(10)`
---   each inserted row triggers a skip-index update, so the per-row cost explodes
---   into many minutes — the `max_execution_time` cap inside `executeASTFuzzerQueries`
---   marks the query as cancelled but the writer thread never observes it, tripping
---   the post-test hung-check.
+-- The INSERT below disables the server-side AST fuzzer (`ast_fuzzer_runs = 0`):
+-- the Stress test wraps every query with it, and it mutates `numbers(9)` into a much
+-- larger argument; combined with `index_granularity = 1` plus `INDEX idx (value1) TYPE set(10)`
+-- each inserted row triggers a skip-index update, so the per-row cost explodes
+-- into many minutes — the `max_execution_time` cap inside `executeASTFuzzerQueries`
+-- marks the query as cancelled but the writer thread never observes it, tripping
+-- the post-test hung-check.
 
 DROP TABLE IF EXISTS t;
 
@@ -18,7 +17,7 @@ CREATE TABLE t
 )
 ENGINE MergeTree ORDER BY key1 SETTINGS index_granularity = 1;
 
-INSERT INTO t SELECT toDate('2019-10-01') + number % 3, toString(number), toString(number) from numbers(9);
+INSERT INTO t SETTINGS ast_fuzzer_runs = 0 SELECT toDate('2019-10-01') + number % 3, toString(number), toString(number) from numbers(9);
 
 SYSTEM STOP MERGES t;
 
