@@ -36,8 +36,8 @@ private:
     struct Instruction
     {
         std::string_view format;
-        size_t rows;
-        bool is_literal; /// format is literal string without any argument
+        size_t rows{};
+        bool is_literal{}; /// format is literal string without any argument
         ColumnWithTypeAndName input; /// Only used when is_literal is false
 
         ColumnWithTypeAndName execute() const

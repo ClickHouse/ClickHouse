@@ -14,7 +14,6 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
-#include "config.h"
 
 #include <cstddef>
 #include <memory>
@@ -425,7 +424,19 @@ public:
 
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
+
+    /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
+
+    /// Whether DataTypeAggregateFunction::getName() should print parameters with ::Type
+    /// suffixes so the type name round-trips losslessly. Default false.
+    virtual bool shouldPrintParametersWithTypes() const
+    {
+        /// Combinators propagate the wrapped function's answer.
+        if (auto nested = getNestedFunction())
+            return nested->shouldPrintParametersWithTypes();
+        return false;
+    }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.

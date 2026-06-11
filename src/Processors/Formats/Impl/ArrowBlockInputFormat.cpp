@@ -93,6 +93,11 @@ Chunk ArrowBlockInputFormat::read()
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch_result);
+
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -153,7 +158,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 
     if (in.available() >= sizeof(int32_t))
     {
-        int32_t first_int;
+        int32_t first_int = 0;
         memcpy(&first_int, in.position(), sizeof(int32_t));
         /// Arrow IPC uses little-endian byte order on the wire.
         first_int = DB::fromLittleEndian(first_int);
@@ -287,6 +292,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
     return *rows;
 }
 
+void registerInputFormatArrow(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -310,6 +316,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         });
 }
 
+void registerArrowSchemaReader(FormatFactory & factory);
 void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -342,6 +349,8 @@ void registerArrowSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatArrow(FormatFactory &);
+void registerArrowSchemaReader(FormatFactory &);
 void registerInputFormatArrow(FormatFactory &)
 {
 }
