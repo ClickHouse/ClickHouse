@@ -26,5 +26,16 @@ INCORRECT_DATA
 --- SQL NULL in a non-nullable column with input_format_null_as_default = 1 becomes the default ---
 
 NULL
+--- SQL NULL with input_format_null_as_default = 1 honors the table DEFAULT expression ---
+NULL
+fallback
+--- LowCardinality(Nullable) keeps SQL NULL and the textual null marker apart ---
+NULL	0
+\N	1
+--- SQL NULL in a LowCardinality non-nullable column with input_format_null_as_default = 0 is rejected ---
+INCORRECT_DATA
+--- reading works with input_format_allow_seeks = 0 (the database is buffered in memory) ---
+NULL	0
+\N	1
 --- writing to a non-file is not supported ---
 NOT_IMPLEMENTED

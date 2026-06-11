@@ -20,6 +20,7 @@
 #    include <sqlite3.h>
 
 #    include <optional>
+#    include <utility>
 
 namespace DB
 {
@@ -37,23 +38,36 @@ SQLiteInputFormat::SQLiteInputFormat(
     : IRowInputFormat(header_, in_, params_), table_name(format_settings_.sqlite.table_name), format_settings(format_settings_)
 {
     data_types = header_->getDataTypes();
+    nested_types.resize(data_types.size());
     nested_serializations.resize(data_types.size());
     for (size_t i = 0; i < data_types.size(); ++i)
-        if (data_types[i]->isNullable())
-            nested_serializations[i] = removeNullable(data_types[i])->getDefaultSerialization();
+    {
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
+        {
+            nested_types[i] = removeNullableOrLowCardinalityNullable(data_types[i]);
+            nested_serializations[i] = nested_types[i]->getDefaultSerialization();
+        }
+    }
 
     initSQLiteReadVFS();
 }
 
+void SQLiteInputFormat::rethrowSavedReadException()
+{
+    if (read_source.exception)
+        std::rethrow_exception(std::exchange(read_source.exception, nullptr));
+}
+
 void SQLiteInputFormat::prepareReader()
 {
-    /// SQLite reads its database with random access. If the input buffer is seekable and its
-    /// size is known, read directly from it; otherwise (a pipe, a stream of unknown length, ...)
-    /// load the whole database into memory and serve random access from there.
+    /// SQLite reads its database with random access. If seeks are allowed by the
+    /// input_format_allow_seeks setting and the input buffer is seekable and its size is known,
+    /// read directly from it; otherwise (a pipe, a stream of unknown length, ...) load the whole
+    /// database into memory and serve random access from there.
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(in);
     std::optional<size_t> file_size = tryGetFileSizeFromReadBuffer(*in);
 
-    if (seekable == nullptr || !seekable->checkIfActuallySeekable() || !file_size)
+    if (seekable == nullptr || !format_settings.seekable_read || !seekable->checkIfActuallySeekable() || !file_size)
     {
         String content;
         {
@@ -66,13 +80,14 @@ void SQLiteInputFormat::prepareReader()
         seekable = owned_buffer.get();
     }
 
-    read_source = SQLiteReadSource{seekable, *file_size};
+    read_source = SQLiteReadSource{seekable, *file_size, nullptr};
     std::string uri = encodeSQLiteVFSFileName(&read_source);
 
     sqlite3 * db_ptr = nullptr;
     int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, sqlite_read_vfs_name);
     if (status != SQLITE_OK)
     {
+        rethrowSavedReadException();
         throw Exception::createDeprecated(
             fmt::format("Cannot open sqlite database. Error status: {}. Message: {}", status, sqlite3_errstr(status)),
             ErrorCodes::SQLITE_ENGINE_ERROR);
@@ -98,6 +113,7 @@ std::vector<String> SQLiteInputFormat::getTablesNames()
 
     if (status != SQLITE_OK)
     {
+        rethrowSavedReadException();
         throw Exception::createDeprecated(
             fmt::format("Failed to fetch SQLite tables names. Error status: {}. Message: {}", status, sqlite3_errstr(status)),
             ErrorCodes::SQLITE_ENGINE_ERROR);
@@ -127,9 +143,12 @@ void SQLiteInputFormat::readPrefix()
     sqlite3_stmt * stmt_ptr = nullptr;
     int status = sqlite3_prepare_v2(db.get(), select_query.c_str(), static_cast<int>(select_query.size()), &stmt_ptr, nullptr);
     if (status != SQLITE_OK)
+    {
+        rethrowSavedReadException();
         throw Exception::createDeprecated(
             fmt::format("Cannot read from SQLite table {}. Error status: {}. Message: {}", table_name, status, sqlite3_errmsg(db.get())),
             ErrorCodes::SQLITE_ENGINE_ERROR);
+    }
     stmt.reset(stmt_ptr, sqlite3_finalize);
 
     /// The structure of the data must be provided explicitly, and the SQLite table is read by
@@ -144,7 +163,7 @@ void SQLiteInputFormat::readPrefix()
             table_name, sqlite_columns, serializations.size());
 }
 
-bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*ext*/)
+bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     if (!continue_read)
         return false;
@@ -161,27 +180,37 @@ bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*e
     /// truncated database, a VFS I/O error, SQLITE_BUSY, etc.) is a real error and must not be
     /// turned into a successful EOF that returns a partial result set.
     if (errcode != SQLITE_ROW)
+    {
+        rethrowSavedReadException();
         throw Exception::createDeprecated(
             fmt::format("Cannot read from SQLite table {}. Error status: {}. Message: {}",
                 table_name, errcode, sqlite3_errmsg(db.get())),
             ErrorCodes::SQLITE_ENGINE_ERROR);
+    }
+
+    ext.read_columns.assign(serializations.size(), true);
 
     for (size_t i = 0; i < serializations.size(); i++)
     {
         int column = static_cast<int>(i);
         const bool is_nullable = data_types[i]->isNullable();
+        const bool is_lc_nullable = data_types[i]->isLowCardinalityNullable();
 
         if (sqlite3_column_type(stmt.get(), column) == SQLITE_NULL)
         {
-            if (is_nullable)
+            if (is_nullable || is_lc_nullable)
             {
-                /// Inserts SQL NULL into the Nullable column.
+                /// Inserts SQL NULL: for both Nullable and LowCardinality(Nullable) columns
+                /// the default value is NULL.
                 columns[i]->insertDefault();
             }
             else if (format_settings.null_as_default)
             {
-                /// The column may carry a DEFAULT expression; insertDefault honors it.
+                /// Insert the type default and mark the column as not read in this row, so
+                /// that AddingDefaultsTransform can compute the table DEFAULT expression
+                /// for it if there is one.
                 columns[i]->insertDefault();
+                ext.read_columns[i] = false;
             }
             else
                 throw Exception(
@@ -204,6 +233,14 @@ bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*e
             auto & nullable_column = assert_cast<ColumnNullable &>(*columns[i]);
             nested_serializations[i]->deserializeWholeText(nullable_column.getNestedColumn(), string_buffer, format_settings);
             nullable_column.getNullMapColumn().insertValue(0);
+        }
+        else if (is_lc_nullable)
+        {
+            /// Deserialize as LowCardinality of the non-nullable type, then insert the value
+            /// into the LowCardinality(Nullable) column.
+            auto tmp_column = nested_types[i]->createColumn();
+            nested_serializations[i]->deserializeWholeText(*tmp_column, string_buffer, format_settings);
+            columns[i]->insertFrom(*tmp_column, 0);
         }
         else
             serializations[i]->deserializeWholeText(*columns[i], string_buffer, format_settings);

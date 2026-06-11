@@ -34,6 +34,10 @@ private:
     void prepareReader();
     std::vector<String> getTablesNames();
 
+    /// If reading from the underlying buffer threw inside a SQLite VFS callback, rethrow the
+    /// saved original exception instead of letting the caller report a generic SQLite error.
+    void rethrowSavedReadException();
+
     /// Destruction order matters and is the reverse of the declaration order: the prepared
     /// statement must be finalized first, then the connection closed (closing it may still read
     /// through the VFS), and only then the underlying buffer released. So declare them as
@@ -50,9 +54,11 @@ private:
     const FormatSettings format_settings;
     bool continue_read = true;
 
-    /// Cached from the header. For a Nullable column, nested_serializations holds the
-    /// serialization of the nested (non-nullable) type; it is empty for non-nullable columns.
+    /// Cached from the header. For a Nullable or LowCardinality(Nullable) column, nested_types
+    /// and nested_serializations hold the type with the Nullable wrapper removed and its
+    /// serialization; they are empty for other columns.
     DataTypes data_types;
+    DataTypes nested_types;
     Serializations nested_serializations;
 };
 

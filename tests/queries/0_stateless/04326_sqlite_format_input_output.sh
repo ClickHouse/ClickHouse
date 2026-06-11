@@ -61,6 +61,28 @@ ${CLICKHOUSE_LOCAL} --query "
     SELECT value FROM file('${DB_FILE}', SQLite, 'value String') ORDER BY value
     SETTINGS input_format_sqlite_table_name = 't', input_format_null_as_default = 1"
 
+echo "--- SQL NULL with input_format_null_as_default = 1 honors the table DEFAULT expression ---"
+${CLICKHOUSE_LOCAL} --query "
+    CREATE TABLE defaults_test (value String DEFAULT 'fallback') ENGINE = Memory;
+    INSERT INTO defaults_test FROM INFILE '${DB_FILE}'
+    SETTINGS input_format_sqlite_table_name = 't', input_format_null_as_default = 1 FORMAT SQLite;
+    SELECT value FROM defaults_test ORDER BY value;"
+
+echo "--- LowCardinality(Nullable) keeps SQL NULL and the textual null marker apart ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT value, value IS NULL FROM file('${DB_FILE}', SQLite, 'value LowCardinality(Nullable(String))') ORDER BY value
+    SETTINGS input_format_sqlite_table_name = 't'"
+
+echo "--- SQL NULL in a LowCardinality non-nullable column with input_format_null_as_default = 0 is rejected ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT value FROM file('${DB_FILE}', SQLite, 'value LowCardinality(String)')
+    SETTINGS input_format_sqlite_table_name = 't', input_format_null_as_default = 0" 2>&1 | grep -o "INCORRECT_DATA" | head -n 1
+
+echo "--- reading works with input_format_allow_seeks = 0 (the database is buffered in memory) ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT value, value IS NULL FROM file('${DB_FILE}', SQLite, 'value Nullable(String)') ORDER BY value
+    SETTINGS input_format_sqlite_table_name = 't', input_format_allow_seeks = 0"
+
 rm -f "$DB_FILE"
 
 echo "--- writing to a non-file is not supported ---"
