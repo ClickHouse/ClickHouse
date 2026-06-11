@@ -404,10 +404,14 @@ def test_materialized_views_replicated(started_cluster):
         )
     )
 
-    # start INSERTS when CH is not started yet
+    # Fire INSERTs while CH is restarting. Stop as soon as the restart finishes
+    # (event set) or its budget elapses, so repeated half-up-server hangs (each
+    # bounded by `timeout`) can't accumulate past the 900s pytest session timeout.
+    insert_phase_deadline = time.monotonic() + 180
     for i in range(100, 130):
+        if disconnect_event.is_set() or time.monotonic() >= insert_phase_deadline:
+            break
         try:
-            # timeout: a connect to a half-restarted server can otherwise block ~600s
             node1.query(
                 f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
             )
@@ -417,9 +421,7 @@ def test_materialized_views_replicated(started_cluster):
             logging.debug(f"{i} is not inserted - skip")
             time.sleep(0.2)
 
-
-    # assert: a bare wait(90) ignored its timeout, racing the loop below against a
-    # still-restarting server on slow builds
+    # restart must finish within budget; assert loudly instead of session-timeout
     assert disconnect_event.wait(180), "restart_clickhouse() did not finish within 180s"
 
     for i in range(2000, 2100):
