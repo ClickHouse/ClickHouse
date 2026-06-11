@@ -1,27 +1,24 @@
--- Test: exercises `FunctionActionName::useDefaultImplementationForLowCardinalityColumns`
--- override that the PR added but did not test. Without this override, a
--- LowCardinality(String) constant argument would be unwrapped to String before
--- reaching `getReturnTypeImpl`, silently bypassing the type check that is meant
--- to forbid non-String arguments.
--- Covers: src/Functions/identity.h:91 — useDefaultImplementationForLowCardinalityColumns() = false
--- Covers: src/Functions/identity.h:93-103 — getReturnTypeImpl type validation loop
+-- Test: exercises `FunctionActionName` argument type validation. The first
+-- argument (the expression whose action name is overridden) may have any type
+-- and is returned unchanged. The second argument is the name itself and must
+-- be a genuine String: `useDefaultImplementationForLowCardinalityColumns` and
+-- `useDefaultImplementationForNulls` are disabled, so a wrapper type like
+-- LowCardinality(String) or Nullable(String) is not silently unwrapped before
+-- reaching `getReturnTypeImpl` and is rejected.
+-- Covers: src/Functions/identity.h — FunctionActionName::getReturnTypeImpl
 
 SET enable_analyzer = 1;
 
--- LowCardinality(String) constant - first arg
--- Without the LowCardinality override, this would silently return 'foo'.
-SELECT __actionName(toLowCardinality('foo'), 'bar'); -- { serverError BAD_ARGUMENTS }
+-- LowCardinality(String) first arg - allowed, returned unchanged.
+SELECT __actionName(toLowCardinality('foo'), 'bar');
 
--- LowCardinality(String) constant - second arg
+-- LowCardinality(String) second arg - the name must be a genuine String.
 SELECT __actionName('foo', toLowCardinality('bar')); -- { serverError BAD_ARGUMENTS }
 
--- FixedString constant - exercises getReturnTypeImpl rejection of a
--- non-String type that does NOT depend on a wrapper-unwrap override
--- (FixedString is its own type, not a wrapper around String).
-SELECT __actionName(toFixedString('foo', 3), 'bar'); -- { serverError BAD_ARGUMENTS }
+-- FixedString first arg - allowed, returned unchanged.
+SELECT __actionName(toFixedString('foo', 3), 'bar');
 
 -- Sanity check: happy path with two DISTINCT String constants.
--- The PR's existing test uses ('aaa', 'aaa') which cannot distinguish
--- which argument is returned. This locks in that the FIRST arg is returned
+-- This locks in that the FIRST arg is returned
 -- (FunctionIdentityBase::executeImpl returns arguments.front().column).
 SELECT __actionName('foo', 'bar');
