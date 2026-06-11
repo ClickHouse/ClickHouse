@@ -1,3 +1,5 @@
+#include <Functions/pointInPolygon.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
@@ -10,9 +12,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/ObjectPool.h>
+#include <Common/CacheBase.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
@@ -30,6 +35,12 @@ namespace ProfileEvents
 {
     extern const Event PolygonsAddedToPool;
     extern const Event PolygonsInPoolAllocatedBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric PointInPolygonCacheBytes;
+    extern const Metric PointInPolygonCacheCells;
 }
 
 namespace DB
@@ -58,11 +69,49 @@ using Polygon = bg::model::polygon<Point, false>;
 using MultiPolygon = bg::model::multi_polygon<Polygon>;
 using Box = bg::model::box<Point>;
 
+/// The concrete preprocessed polygon implementations used by the registered function.
+using PointInPolygonWithGridF64 = PointInPolygonWithGrid<Float64>;
+using PointInMultiPolygonRTreeWithGrid = PointInMultiPolygonRTree<PointInPolygonWithGridF64>;
+
 template <typename G>
 concept PolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::polygon_tag>;
 
 template <typename G>
 concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::multi_polygon_tag>;
+
+/** Constant polygons are preprocessed into data structures that allow fast matching
+  * (see PointInPolygonWithGrid and PointInMultiPolygonRTree). Preprocessing can be
+  * computationally heavy and the result can take megabytes of memory, so preprocessed
+  * polygons are cached and shared, keyed by a hash of the polygon content.
+  *
+  * A preprocessed polygon is immutable after construction and matching (contains) is
+  * read-only and thread-safe, so all concurrent queries share a single instance.
+  *
+  * The cache is bounded in size to avoid unbounded memory consumption for workloads
+  * that use many distinct constant polygons; least recently used entries are evicted.
+  * The bound is configured by the server setting `point_in_polygon_cache_size`.
+  * A value larger than the entire cache capacity is still returned to the query,
+  * it is just not retained in the cache.
+  */
+template <typename Impl>
+struct PreprocessedPolygonWeightFunction
+{
+    size_t operator()(const Impl & impl) const { return impl.getAllocatedBytes(); }
+};
+
+template <typename Impl>
+using PreprocessedPolygonsCache = CacheBase<UInt128, Impl, UInt128TrivialHash, PreprocessedPolygonWeightFunction<Impl>>;
+
+/// C++11 has thread-safe function-local static.
+template <typename Impl>
+PreprocessedPolygonsCache<Impl> & preprocessedPolygonsCache()
+{
+    static PreprocessedPolygonsCache<Impl> cache(
+        CurrentMetrics::PointInPolygonCacheBytes,
+        CurrentMetrics::PointInPolygonCacheCells,
+        DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE);
+    return cache;
+}
 
 template <class Ring>
 inline void sipHashRing(SipHash & hash, const Ring & ring)
@@ -298,22 +347,19 @@ public:
                 /// Polygons are preprocessed and saved in cache.
                 /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
-                using Pool = ObjectPoolMap<PointInConstMultiPolygonImpl, UInt128>;
+                auto & known_multi_polygons = preprocessedPolygonsCache<PointInConstMultiPolygonImpl>();
 
-                /// C++11 has thread-safe function-local static.
-                static Pool known_multi_polygons;
-
-                auto factory = [&multi_polygon]()
+                auto load = [&multi_polygon]
                 {
-                    auto ptr = std::make_unique<PointInConstMultiPolygonImpl>(multi_polygon);
+                    auto ptr = std::make_shared<PointInConstMultiPolygonImpl>(multi_polygon);
 
                     ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
                     ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
 
-                    return ptr.release();
+                    return ptr;
                 };
 
-                auto impl = known_multi_polygons.get(sipHash128(multi_polygon), factory);
+                auto impl = known_multi_polygons.getOrSet(sipHash128(multi_polygon), load).first;
 
                 if (point_is_const)
                 {
@@ -328,20 +374,19 @@ public:
                 Polygon polygon;
                 parseConstPolygon(arguments, polygon);
 
-                using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-                static Pool known_polygons;
+                auto & known_polygons = preprocessedPolygonsCache<PointInConstPolygonImpl>();
 
-                auto factory = [&polygon]()
+                auto load = [&polygon]
                 {
-                    auto ptr = std::make_unique<PointInConstPolygonImpl>(polygon);
+                    auto ptr = std::make_shared<PointInConstPolygonImpl>(polygon);
 
                     ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
                     ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
 
-                    return ptr.release();
+                    return ptr;
                 };
 
-                auto impl = known_polygons.get(sipHash128(polygon), factory);
+                auto impl = known_polygons.getOrSet(sipHash128(polygon), load).first;
 
                 if (point_is_const)
                 {
@@ -806,11 +851,14 @@ private:
 
 }
 
+void setPointInPolygonCacheMaxSizeInBytes(size_t max_size_in_bytes)
+{
+    preprocessedPolygonsCache<PointInPolygonWithGridF64>().setMaxSizeInBytes(max_size_in_bytes);
+    preprocessedPolygonsCache<PointInMultiPolygonRTreeWithGrid>().setMaxSizeInBytes(max_size_in_bytes);
+}
+
 REGISTER_FUNCTION(PointInPolygon)
 {
-    using PointInPolygonWithGridF64 = PointInPolygonWithGrid<Float64>;
-    using PointInMultiPolygonRTreeWithGrid = PointInMultiPolygonRTree<PointInPolygonWithGridF64>;
-
     FunctionDocumentation::Description description = R"(
 Checks whether the point belongs to the polygon on the plane.
 
