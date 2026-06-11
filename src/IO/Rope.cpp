@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Defines.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <cstring>
@@ -16,13 +17,27 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 namespace
 {
     Allocator<false, false> rope_allocator;
+
+    /// SIMD-padded allocation size, with the same overflow check `Memory::withPadding` uses.
+    size_t paddedSize(size_t size)
+    {
+        size_t res = 0;
+        if (common::addOverflow<size_t>(size, PADDING_FOR_SIMD, res))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "OwnedRopeBuffer size {} is too big to pad", size);
+        return res;
+    }
 }
 
 OwnedRopeBuffer::OwnedRopeBuffer(size_t size)
-    : buf_data(static_cast<char *>(rope_allocator.alloc(size + PADDING_FOR_SIMD)))
+    : buf_data(static_cast<char *>(rope_allocator.alloc(paddedSize(size))))
     , buf_size(size)
 {
     CurrentMetrics::add(CurrentMetrics::ReaderExecutorRopeBytes, buf_size);
@@ -31,6 +46,7 @@ OwnedRopeBuffer::OwnedRopeBuffer(size_t size)
 OwnedRopeBuffer::~OwnedRopeBuffer()
 {
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorRopeBytes, buf_size);
+    /// `paddedSize` succeeded in the ctor, so `buf_size + PADDING_FOR_SIMD` cannot overflow.
     rope_allocator.free(buf_data, buf_size + PADDING_FOR_SIMD);
 }
 
@@ -209,6 +225,25 @@ void Rope::append(RopeNode node)
     if (node.size == 0)
         return;
 
+    /// Never insert behind the cursor of a partly-consumed rope. `front_offset` applies to
+    /// `nodes.front()`, so a node inserted before it would steal that offset (an out-of-bounds
+    /// `peek`), and merging its range would re-cover already-consumed bytes. Drop a node
+    /// entirely behind the cursor; trim one straddling it to its still-reachable tail.
+    /// (A fresh rope -- `front_offset == 0` -- accepts out-of-order appends unchanged.)
+    if (front_offset != 0)
+    {
+        const size_t cursor = nodes.front().logical_offset + front_offset;
+        if (node.logical_offset + node.size <= cursor)
+            return;
+        if (node.logical_offset < cursor)
+        {
+            const size_t trim = cursor - node.logical_offset;
+            node.buffer_offset += trim;
+            node.size -= trim;
+            node.logical_offset = cursor;
+        }
+    }
+
     /// Insert into `nodes` keeping the sort by logical_offset (stable on tie:
     /// equal-offset nodes keep insertion order).
     ByteRange node_range = node.range();
@@ -260,21 +295,23 @@ void Rope::append(Rope && other)
 Rope Rope::slice(ByteRange req) const
 {
     Rope result;
-    /// Nodes are sorted by `logical_offset`, so we can stop early. The
-    /// first node has `front_offset` bytes already consumed by the cursor
-    /// — those bytes are not slice-able. Subsequent nodes are unaffected.
-    bool first = true;
+    /// Bytes before the cursor are consumed and not slice-able. With overlap that applies
+    /// to ANY node, not just the front one (a later node can start before the cursor), so
+    /// clamp every node's reachable range to start at the cursor.
+    const size_t cursor = nodes.empty() ? 0 : nodes.front().logical_offset + front_offset;
     for (const auto & node : nodes)
     {
         size_t effective_buffer_offset = node.buffer_offset;
         size_t effective_size = node.size;
         size_t effective_logical = node.logical_offset;
-        if (first)
+        if (effective_logical < cursor)
         {
-            effective_buffer_offset += front_offset;
-            effective_size -= front_offset;
-            effective_logical += front_offset;
-            first = false;
+            const size_t skip = cursor - effective_logical;
+            if (skip >= effective_size)
+                continue;  /// node entirely consumed
+            effective_buffer_offset += skip;
+            effective_size -= skip;
+            effective_logical = cursor;
         }
 
         size_t node_start = effective_logical;

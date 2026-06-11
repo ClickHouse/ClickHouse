@@ -806,3 +806,69 @@ TEST(Rope, TryRewindIntoFrontNodeUnderOverlap)
     EXPECT_EQ(s.logical_offset, 500u);
     EXPECT_EQ(static_cast<unsigned char>(s.data[0]), static_cast<unsigned char>('A' + (500 % 26)));
 }
+
+TEST(Rope, AppendBehindCursorAfterAdvanceIsTrimmed)
+{
+    /// Appending to a partly-consumed rope must not re-cover consumed bytes nor steal the
+    /// front node's `front_offset`: a node behind the cursor is dropped, one straddling it
+    /// is trimmed to its reachable tail.
+    auto a = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(a->data(), 'A', 100);
+    Rope rope;
+    rope.append(RopeNode{a, 0, 100, 100});  /// [100, 200)
+    rope.advance(50);                        /// consume [100, 150); cursor at 150
+    ASSERT_EQ(rope.peek().logical_offset, 150u);
+    ASSERT_EQ(rope.peek().size, 50u);
+
+    /// Entirely behind the cursor -> dropped (no OOB peek, no coverage resurrection).
+    auto b = std::make_shared<OwnedRopeBuffer>(60);
+    std::memset(b->data(), 'B', 60);
+    rope.append(RopeNode{b, 0, 60, 50});  /// [50, 110), end <= 150
+    EXPECT_EQ(rope.range().offset, 150u);
+    EXPECT_EQ(rope.peek().logical_offset, 150u);
+    EXPECT_EQ(rope.peek().size, 50u);
+
+    /// Straddles the cursor -> trimmed to [150, 210).
+    auto c = std::make_shared<OwnedRopeBuffer>(160);
+    std::memset(c->data(), 'C', 160);
+    rope.append(RopeNode{c, 0, 160, 50});  /// [50, 210)
+    EXPECT_EQ(rope.range().offset, 150u);
+    EXPECT_EQ(rope.range().end(), 210u);
+
+    std::string out;
+    while (!rope.atEnd())
+    {
+        auto s = rope.peek();
+        out.append(s.data, s.size);
+        rope.advance(s.size);
+    }
+    EXPECT_EQ(out, std::string(50, 'A') + std::string(10, 'C'));  /// [150,200)=A, [200,210)=C
+}
+
+TEST(Rope, SliceTrimsConsumedBytesAcrossOverlap)
+{
+    /// Overlapping nodes after an advance: `slice` must not expose already-consumed bytes,
+    /// even from a later node that started before the cursor.
+    auto buf = std::make_shared<OwnedRopeBuffer>(175);
+    std::memset(buf->data(), 'Z', 175);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});    /// [0, 100)
+    rope.append(RopeNode{buf, 50, 100, 50});  /// [50, 150)
+    rope.append(RopeNode{buf, 75, 100, 75});  /// [75, 175)
+    rope.advance(100);                         /// cursor at 100; coverage [100, 175)
+    ASSERT_EQ(rope.range().offset, 100u);
+
+    /// Request dips below the cursor; the [75, 100) part is consumed and must be excluded.
+    Rope s = rope.slice({75, 50});  /// [75, 125)
+    EXPECT_EQ(s.range().offset, 100u);
+    EXPECT_EQ(s.range().end(), 125u);
+
+    std::string out;
+    while (!s.atEnd())
+    {
+        auto sp = s.peek();
+        out.append(sp.data, sp.size);
+        s.advance(sp.size);
+    }
+    EXPECT_EQ(out.size(), 25u);  /// [100, 125) served once despite overlapping nodes
+}
