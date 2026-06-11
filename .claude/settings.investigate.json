@@ -1,5 +1,5 @@
 {
-  "//": "Locked-down profile for CI-failure investigation. Launch with: claude --settings .claude/settings.investigate.json. 'deny' wins over 'allow', so destructive actions are blocked even if some other settings file allows them. Read-only investigation commands run without prompts. WARNING: the node/python3 helper allows below execute repo-local scripts (.claude/tools/*) from the current checkout, and the Bash deny/allow list does NOT constrain child processes those scripts spawn — a PR under investigation could have modified them. Because of this, running this profile inside a throwaway git worktree on a trusted base-branch checkout of .claude/tools AND an environment with no credentials is REQUIRED when investigating untrusted PRs, not merely defense in depth. The play.clickhouse.com query is deliberately NOT allow-listed: a wildcard curl allow cannot be constrained to read-only bodies (e.g. curl --data-binary @<file> or $(cat <file>) would exfiltrate local files to the public endpoint), so it is left prompt-gated.",
+  "//": "Locked-down profile for CI-failure investigation. Launch with: claude --settings .claude/settings.investigate.json. 'deny' wins over 'allow', so destructive actions are blocked even if some other settings file allows them. Read-only investigation commands run without prompts. WARNING: the node/python3 helper allows below execute repo-local scripts (.claude/tools/*) from the current checkout, and the Bash deny/allow list does NOT constrain child processes those scripts spawn — a PR under investigation could have modified them. Because of this, running this profile inside a throwaway git worktree on a trusted base-branch checkout of .claude (tools, hooks, and these settings) AND an environment with no credentials is REQUIRED when investigating untrusted PRs, not merely defense in depth. The play.clickhouse.com query is deliberately NOT in the Bash allow-list: a wildcard curl allow cannot be constrained to read-only bodies (e.g. curl --data-binary @<file> or $(cat <file>) would exfiltrate local files to the public endpoint). Instead the PreToolUse hook allow_play_query.py auto-approves only the exact read-only SELECT-to-play command shape (default-deny: any other curl invocation falls through to a prompt).",
   "permissions": {
     "deny": [
       "Edit",
@@ -65,6 +65,16 @@
       "WebFetch(domain:play.clickhouse.com)",
       "WebFetch(domain:s3.amazonaws.com)",
       "WebFetch(domain:github.com)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "python3 .claude/hooks/allow_play_query.py" }
+        ]
+      }
     ]
   }
 }
