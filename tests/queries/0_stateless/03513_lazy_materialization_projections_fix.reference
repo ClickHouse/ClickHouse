@@ -1,5 +1,5 @@
 -- no projection
-LazilyReadFromMergeTree
+LazilyRead (Lazily Read)
 0	0	
 1	1	blob_
 2	2	blob_blob_
@@ -12,7 +12,7 @@ LazilyReadFromMergeTree
 9	9	blob_blob_blob_blob_blob_blob_blob_blob_blob_
 -- projection
 ReadFromMergeTree (proj_v)
-LazilyReadFromMergeTree
+LazilyRead (Lazily Read)
 3	3	blob_blob_blob_
 -- mixed reading
 all_1_1_0	[]

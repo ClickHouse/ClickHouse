@@ -113,7 +113,6 @@ void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & typ
     transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
-void registerInputFormatJSONObjectEachRow(FormatFactory & factory);
 void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONObjectEachRow", [](
@@ -128,7 +127,6 @@ void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONObjectEachRow");
 }
 
-void registerJSONObjectEachRowSchemaReader(FormatFactory & factory);
 void registerJSONObjectEachRowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("JSONObjectEachRow", [](ReadBuffer & buf, const FormatSettings & settings)

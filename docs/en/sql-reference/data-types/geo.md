@@ -5,7 +5,6 @@ sidebar_label: 'Geo'
 sidebar_position: 54
 slug: /sql-reference/data-types/geo
 title: 'Geometric'
-doc_type: 'reference'
 ---
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
@@ -19,13 +18,16 @@ ClickHouse supports data types for representing geographical objects — locatio
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE geo_point (p Point) ENGINE = Memory();
 INSERT INTO geo_point VALUES((10, 10));
 SELECT p, toTypeName(p) FROM geo_point;
 ```
+Result:
 
-```text title="Response"
+```text
 ┌─p───────┬─toTypeName(p)─┐
 │ (10,10) │ Point         │
 └─────────┴───────────────┘
@@ -37,13 +39,16 @@ SELECT p, toTypeName(p) FROM geo_point;
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
 INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT r, toTypeName(r) FROM geo_ring;
 ```
+Result:
 
-```text title="Response"
+```text
 ┌─r─────────────────────────────┬─toTypeName(r)─┐
 │ [(0,0),(10,0),(10,10),(0,10)] │ Ring          │
 └───────────────────────────────┴───────────────┘
@@ -55,13 +60,16 @@ SELECT r, toTypeName(r) FROM geo_ring;
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE geo_linestring (l LineString) ENGINE = Memory();
 INSERT INTO geo_linestring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT l, toTypeName(l) FROM geo_linestring;
 ```
+Result:
 
-```text title="Response"
+```text
 ┌─r─────────────────────────────┬─toTypeName(r)─┐
 │ [(0,0),(10,0),(10,10),(0,10)] │ LineString    │
 └───────────────────────────────┴───────────────┘
@@ -73,13 +81,16 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
 INSERT INTO geo_multilinestring VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]);
 SELECT l, toTypeName(l) FROM geo_multilinestring;
 ```
+Result:
 
-```text title="Response"
+```text
 ┌─l───────────────────────────────────────────────────┬─toTypeName(l)───┐
 │ [[(0,0),(10,0),(10,10),(0,10)],[(1,1),(2,2),(3,3)]] │ MultiLineString │
 └─────────────────────────────────────────────────────┴─────────────────┘
@@ -93,13 +104,15 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 
 This is a polygon with one hole:
 
-```sql title="Query"
+```sql
 CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory();
 INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]);
 SELECT pg, toTypeName(pg) FROM geo_polygon;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
 │ [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]] │ Polygon        │
 └───────────────────────────────────────────────────────────────┴────────────────┘
@@ -113,60 +126,17 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 
 This multipolygon consists of two separate polygons — the first one without holes, and the second with one hole:
 
-```sql title="Query"
+```sql
 CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
 INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
 SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 ```
+Result:
 
-```text title="Response"
+```text
 ┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐
 │ [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]] │ MultiPolygon    │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
-```
-
-## Geometry {#geometry}
-
-`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types.
-
-**Example**
-
-```sql title="Query"
-CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
-INSERT INTO geo VALUES ((1, 2));
-SELECT * FROM geo;
-```
-
-```text title="Response"
-   ┌─geom──┐
-1. │ (1,2) │
-   └───────┘
-```
-
-<!-- -->
-
-```sql title="Query"
-CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
-
-CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
-INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
-INSERT INTO geo VALUES ('POINT(0 0)', 2);
-INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
-INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
-INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
-INSERT INTO geo_dst SELECT readWKT(geom) FROM geo ORDER BY id;
-
-SELECT * FROM geo_dst;
-```
-
-```text title="Response"
-   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
-2. │ (0,0)                                                                                                            │
-3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
-4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
-5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
-   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related Content {#related-content}

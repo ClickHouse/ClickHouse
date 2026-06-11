@@ -23,11 +23,7 @@ InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const AST
 
 BlockIO InterpreterShowAccessEntitiesQuery::execute()
 {
-    auto query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId({});
-
-    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 
@@ -114,28 +110,6 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             break;
         }
 
-        case AccessEntityType::MASKING_POLICY:
-        {
-            origin = "masking_policies";
-            expr = "name";
-
-            if (!query.short_name.empty())
-                filter = "short_name = " + quoteString(query.short_name);
-
-            if (query.database_and_table_name)
-            {
-                const String & database = query.database_and_table_name->first;
-                const String & table_name = query.database_and_table_name->second;
-                if (!database.empty())
-                    filter += String{filter.empty() ? "" : " AND "} + "database = " + quoteString(database);
-                if (!table_name.empty())
-                    filter += String{filter.empty() ? "" : " AND "} + "table = " + quoteString(table_name);
-                if (!database.empty() && !table_name.empty())
-                    expr = "short_name";
-            }
-            break;
-        }
-
         case AccessEntityType::MAX:
             break;
     }
@@ -151,7 +125,6 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             (order.empty() ? "" : " ORDER BY " + order);
 }
 
-void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

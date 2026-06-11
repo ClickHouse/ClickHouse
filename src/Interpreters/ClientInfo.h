@@ -53,22 +53,17 @@ public:
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
-        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed query execution.
+        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
     ClientInfo();
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
-    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
-
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
     std::shared_ptr<Poco::Net::SocketAddress> current_address;
-
-    /// For IMPERSONATEd session, stores the original authenticated user
-    String authenticated_user;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
@@ -90,9 +85,6 @@ public:
     String os_user;
     String client_hostname;
     String client_name;
-    /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
-    /// detected from environment variables. Empty when no agent is detected.
-    String client_agent;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
@@ -136,12 +128,21 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
-    bool is_shared_catalog_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
     UInt64 obsolete_count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
+
+    enum class BackgroundOperationType : uint8_t
+    {
+        NOT_A_BACKGROUND_OPERATION = 0,
+        MERGE = 1,
+        MUTATION = 2,
+    };
+
+    /// It's ClientInfo and context created for background operation (not real query)
+    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
@@ -149,12 +150,8 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_client_agent` controls whether the `client_agent` field is (de)serialized as a trailing
-    /// member of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
-    /// `Distributed` insert header, where `client_agent` is stored as a trailing header field instead,
-    /// so that older binaries draining newer queue files can read the header without misinterpreting it.
-    void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_client_agent = true) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_client_agent = true);
+    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

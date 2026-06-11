@@ -43,18 +43,15 @@ private:
 
             auto current_node_type = current->getNodeType();
 
-            /// Change scope if expression is a Query or Union node.
+            /// Change scope if expression is a QueryNode.
             /// Columns in these subqueries can appear from table expressions
             /// that are registered in the child scope.
-            if (current_node_type == QueryTreeNodeType::QUERY || current_node_type == QueryTreeNodeType::UNION)
+            if (current_node_type == QueryTreeNodeType::QUERY)
             {
-                if (current != current_scope->scope_node)
+                auto it = node_to_scope_map.find(current);
+                if (it != node_to_scope_map.end() && current != current_scope->scope_node)
                 {
-                    auto it = node_to_scope_map.find(current);
-                    if (it != node_to_scope_map.end())
-                        visitExpression(current, &it->second);
-                    /// If not in the map, skip this subquery — we cannot properly
-                    /// determine column correlation without its scope information.
+                    visitExpression(current, &it->second);
                     continue;
                 }
             }

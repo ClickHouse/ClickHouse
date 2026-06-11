@@ -1,8 +1,6 @@
 #include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 
@@ -11,19 +9,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int QUERY_WAS_CANCELLED;
-}
-
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , format_settings(settings_)
     , message_transport(&out)
 {
-    // PostgreSQL uses 't' and 'f' for boolean values
-    format_settings.bool_true_representation = "t";
-    format_settings.bool_false_representation = "f";
 }
 
 void PostgreSQLOutputFormat::writePrefix()
@@ -39,7 +29,7 @@ void PostgreSQLOutputFormat::writePrefix()
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            columns.emplace_back(column_name, data_types[i]);
+            columns.emplace_back(column_name, data_types[i]->getTypeId());
             serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));
@@ -48,18 +38,8 @@ void PostgreSQLOutputFormat::writePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
-    LOG_TEST(getLogger("PostgreSQLOutputFormat"), "Consume a chunk");
-
-    /// Check for cancellation at the beginning of the loop, use throw instead of return.
-    if (isCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
-        /// Check for cancellation periodically, use throw instead of return.
-        if (isCancelled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
         const Columns & columns = chunk.getColumns();
         std::vector<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
@@ -85,7 +65,6 @@ void PostgreSQLOutputFormat::flushImpl()
     message_transport.flush();
 }
 
-void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(
