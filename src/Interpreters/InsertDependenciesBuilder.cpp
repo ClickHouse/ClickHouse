@@ -1469,7 +1469,20 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     }
     else
     {
-        auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
+        SinkToStoragePtr sink;
+        try
+        {
+            sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
+        }
+        catch (Exception & e)
+        {
+            /// view_id is empty for a direct INSERT into inner_storage, non-empty when inner_storage is a
+            /// materialized view target; name the view and target only in the latter case.
+            if (!view_id.empty())
+                e.addMessage("while writing to target table {} of materialized view {}",
+                    inner_table_id.getNameForLogs(), view_id.getNameForLogs());
+            throw;
+        }
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
