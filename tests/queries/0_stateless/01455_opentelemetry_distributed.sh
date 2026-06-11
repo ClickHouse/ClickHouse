@@ -22,7 +22,10 @@ function check_log
     # short. See issues 67108, 93452 and the amd_tsan flakiness this revision fixes.
     local _expected_query_spans="$1"
     local _expected_initial_with_parent="$2"
-    for _retry in {1..60}; do
+    local _query_spans=0 _initial_with_parent=0 _flushed=0
+    # 20 tries spaced 1s apart: give the background flush threads ~20s to land
+    # the spans without hammering the server with a tight flush loop.
+    for _retry in {1..20}; do
         ${CLICKHOUSE_CLIENT} -q "system flush logs opentelemetry_span_log"
         _counts=$(${CLICKHOUSE_CLIENT} -q "
             select
@@ -39,10 +42,20 @@ function check_log
         _query_spans=$(echo "$_counts" | cut -f1)
         _initial_with_parent=$(echo "$_counts" | cut -f2)
         if [[ "$_query_spans" -ge "$_expected_query_spans" && "$_initial_with_parent" -ge "$_expected_initial_with_parent" ]]; then
+            _flushed=1
             break
         fi
-        sleep 0.1
+        sleep 1
     done
+    # Fail loudly if the spans never showed up, instead of falling through to the
+    # assertions and reporting a cryptic "total spans: 2".
+    if [[ "$_flushed" -ne 1 ]]; then
+        echo "check_log: opentelemetry spans not flushed within 20s:" \
+             "query_spans=$_query_spans (expected >= $_expected_query_spans)," \
+             "initial_query_spans_with_parent=$_initial_with_parent" \
+             "(expected >= $_expected_initial_with_parent)" >&2
+        exit 1
+    fi
 
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -q "
 set enable_analyzer = 1;
