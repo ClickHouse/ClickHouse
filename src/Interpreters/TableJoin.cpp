@@ -130,12 +130,12 @@ bool forAllKeys(OnExpr & expressions, Func callback)
     for (auto & expr : expressions)
     {
         if constexpr (std::is_same_v<SideTag, BothSidesTag>)
-            chassert(expr.key_names_left.size() == expr.key_names_right.size());
+            assert(expr.key_names_left.size() == expr.key_names_right.size());
 
         size_t sz = !std::is_same_v<SideTag, RightSideTag> ? expr.key_names_left.size() : expr.key_names_right.size();
         for (size_t i = 0; i < sz; ++i)
         {
-            bool cont = false;
+            bool cont;
             if constexpr (std::is_same_v<SideTag, BothSidesTag>)
                 cont = callback(expr.key_names_left[i], expr.key_names_right[i]);
             if constexpr (std::is_same_v<SideTag, LeftSideTag>)
@@ -1222,7 +1222,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), strictness(), isSpecialStorage(), oneDisjunct());
 }
 
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
@@ -1289,6 +1289,7 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
+    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct)
 {
@@ -1296,6 +1297,8 @@ bool allowParallelHashJoin(
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
+        return false;
+    if (strictness == JoinStrictness::Asof)
         return false;
     if (is_special_storage || !one_disjunct)
         return false;
