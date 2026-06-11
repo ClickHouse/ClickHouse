@@ -61,7 +61,7 @@ The `ADD`, `MODIFY` and `DROP` keywords change individual entries while leaving 
 - `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — add or remove parent (inherited) profiles.
 - `DROP ALL SETTINGS` / `DROP ALL PROFILES` — remove all settings or all parent profiles.
 
-`DROP` clauses must come before `ADD`/`MODIFY` clauses in the same statement.
+Several of these clauses can be combined in a single statement, for example `DROP SETTINGS a ADD SETTINGS b = 1`.
 
 ## Examples {#examples}
 
