@@ -53,7 +53,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
     if (!root)
         return;
 
-    NodeEvaluationRange range{};
+    NodeEvaluationRange range;
 
     if (settings_.use_current_time)
     {

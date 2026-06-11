@@ -189,50 +189,6 @@ When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggreg
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
-### Tuple element aggregation {#tuple-element-aggregation}
-
-When the `allow_tuple_element_aggregation` setting is enabled, `Tuple` columns are recursively flattened so that each leaf element participates in summation independently. This allows you to store multiple metrics in a single `Tuple` column and have them summed element-wise during merges.
-
-The same rules apply to the flattened sub-columns as to regular columns:
-
-- Only numeric sub-columns are summed.
-- Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from summation.
-- If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
-- If all numeric sub-columns of a row are zero after summation, the row is deleted.
-
-:::note
-This setting is immutable and must be specified at table creation time.
-:::
-
-```sql
-CREATE TABLE summing_tuples
-(
-    key UInt32,
-    metrics Tuple(
-        impressions UInt64,
-        clicks UInt64,
-        nested Tuple(
-            conversions UInt64
-        )
-    )
-) ENGINE = SummingMergeTree()
-ORDER BY key
-SETTINGS allow_tuple_element_aggregation = 1;
-
-INSERT INTO summing_tuples VALUES (1, (100, 10, (1)));
-INSERT INTO summing_tuples VALUES (1, (200, 20, (3)));
-
-OPTIMIZE TABLE summing_tuples FINAL;
-
-SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM summing_tuples;
-```
-
-```text
-┌─key─┬─metrics.impressions─┬─metrics.clicks─┬─metrics.nested.conversions─┐
-│   1 │                 300 │             30 │                          4 │
-└─────┴─────────────────────┴────────────────┴────────────────────────────┘
-```
-
 ## Related content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

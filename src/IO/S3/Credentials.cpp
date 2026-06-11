@@ -4,9 +4,6 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Server/CloudPlacementInfo.h>
@@ -239,11 +236,11 @@ private:
         CredentialsProviderPtr credentials;
     };
 
-    using CredentialsLRUQueue = ListWithMemoryTracking<CacheValue>;
+    using CredentialsLRUQueue = std::list<CacheValue>;
 
     std::atomic<size_t> max_credentials;
     std::mutex mutex;
-    UnorderedMapWithMemoryTracking<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
+    std::unordered_map<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 
@@ -285,7 +282,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentials() const
     if (trimmed_credentials_string.empty())
         return {};
 
-    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
+    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} returned credential string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_credentials_string);
@@ -340,7 +337,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     String profile_string = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
 
     String trimmed_profile_string = Aws::Utils::StringUtils::Trim(profile_string.c_str());
-    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
+    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} with token returned profile string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_profile_string);
@@ -496,7 +493,7 @@ String AWSEC2MetadataClient::getAWSZoneName()
 }
 
 
-static String getGCPAvailabilityZoneOrException()
+String getGCPAvailabilityZoneOrException()
 {
     Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
@@ -527,7 +524,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     using AZGetter = std::function<String()>;
 
-    VectorWithMemoryTracking<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
+    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
     {
         /// mimics original behavior Placement logic relies on
         ///   skip AWS_ZONE_ID (in favour of AWS_ZONE_NAME) and CLICKHOUSE
@@ -539,7 +536,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     if (az_facility == AZFacilities::AWS_ZONE_NAME_THEN_GCP_ZONE)
     {
-        Strings ex_msgs;
+        std::vector<std::string> ex_msgs;
 
         /// it is expected that some facilities do not work, we are prepared for exceptions
         for (auto & getter : az_getters)
@@ -792,7 +789,7 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
-    Strings retryable_errors;
+    std::vector<String> retryable_errors;
     retryable_errors.push_back("IDPCommunicationError");
     retryable_errors.push_back("InvalidIdentityToken");
 
@@ -1129,8 +1126,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
 
-AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
-    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_)), external_id(std::move(external_id_))
+AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_)
+    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_))
 {
 }
 
@@ -1143,9 +1140,6 @@ void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
 {
     uri.AddQueryStringParameter("RoleArn", role_arn);
     uri.AddQueryStringParameter("RoleSessionName", role_session_name);
-    /// ExternalId is optional; STS rejects an empty value, so only send it when configured.
-    if (!external_id.empty())
-        uri.AddQueryStringParameter("ExternalId", external_id);
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -1233,7 +1227,6 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey::updateHash(SipHash & has
 {
     hash.update(role_arn);
     hash.update(session_name);
-    hash.update(external_id);
     hash.update(endpoint);
     hash.update(credentials.GetAWSAccessKeyId());
     hash.update(credentials.GetAWSSecretKey());
@@ -1243,7 +1236,6 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey::updateHash(SipHash & has
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentialsProvider::create(
     std::string role_arn_,
     std::string session_name_,
-    std::string external_id_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
@@ -1253,23 +1245,21 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
-            role_arn_, session_name, external_id_, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
+            role_arn_, session_name, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
         [&]
         {
             return std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(
-                std::move(role_arn_), std::move(session_name), std::move(external_id_), expiration_window_seconds_, std::move(client));
+                std::move(role_arn_), std::move(session_name), expiration_window_seconds_, std::move(client));
         });
 }
 
 AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider(
     std::string role_arn_,
     std::string session_name_,
-    std::string external_id_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<AWSAssumeRoleClient> client_)
     : role_arn(std::move(role_arn_))
     , session_name(session_name_.empty() ? "ClickHouseSession" : std::move(session_name_))
-    , external_id(std::move(external_id_))
     , expiration_window_seconds(expiration_window_seconds_)
     , client(std::move(client_))
     , logger(getLogger("AwsAuthSTSAssumeRoleCredentialsProvider"))
@@ -1293,7 +1283,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
-    AssumeRoleRequest request(role_arn, session_name, external_id);
+    AssumeRoleRequest request(role_arn, session_name);
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
@@ -1331,7 +1321,6 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
             credentials_configuration.role_arn,
             credentials_configuration.role_session_name,
-            credentials_configuration.external_id,
             credentials_configuration.expiration_window_seconds,
             std::move(credentials_provider),
             configuration,
