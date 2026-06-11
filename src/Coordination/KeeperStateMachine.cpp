@@ -1544,9 +1544,13 @@ int IKeeperStateMachine::read_logical_snp_obj(
     auto * ctx = reinterpret_cast<SnapshotTransferCtx *>(user_snp_ctx);
     if (!ctx)
     {
-        LOG_WARNING(log, "Snapshot transfer context is null for obj_id {}", obj_id);
+        /// A non-initial chunk request without a transfer context is a stale
+        /// request after the peer's sync context was reset; decline it (NuRaft
+        /// restarts from obj_id 0). Like the missing-pin deferral, not a failure.
+        LOG_WARNING(log, "Snapshot transfer context is null for obj_id {}; declining transfer", obj_id);
         free_user_snp_ctx(user_snp_ctx);
-        chassert(false); /// This should not happen, catch in CI.
+        ProfileEvents::increment(ProfileEvents::KeeperReadSnapshotDeferred);
+        success = true;
         return -1;
     }
 

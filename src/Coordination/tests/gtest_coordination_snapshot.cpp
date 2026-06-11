@@ -1381,4 +1381,48 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAll
     EXPECT_FALSE(fs::exists("./snapshots/tmp_snapshot_2.bin.zstd"));
 }
 
+TYPED_TEST(CoordinationTest, ReadSnapshotChunkWithoutContextDoesNotCrash)
+{
+    /// A chunk request (obj_id > 0) can reach read_logical_snp_obj with a null
+    /// user_snp_ctx after the peer's sync context was reset; it must be declined,
+    /// not abort the server.
+    getContext(); /// needed for DiskObjectStorage background threads
+
+    ChangelogDirTest snap_meta("./snapshots");
+    ChangelogDirTest rocks("./rocksdb");
+    this->setSnapshotDirectory("./snapshots");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/hello", "world");
+    DB::KeeperStorageSnapshot<Storage> snap(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
+    auto snap_buf = manager.serializeSnapshotToBuffer(snap);
+    manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
+
+    DB::SnapshotsQueue leader_snapshots_queue{1};
+    auto leader = std::make_shared<DB::KeeperStateMachine<Storage>>(
+        nullptr, leader_snapshots_queue, this->keeper_context, nullptr);
+    leader->init();
+
+    nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
+
+    /// A follow-up chunk request (obj_id > 0) arriving with no transfer
+    /// context must be declined with rc < 0 instead of asserting.
+    void * user_snp_ctx = nullptr;
+    nuraft::ptr<nuraft::buffer> data_out;
+    bool is_last = false;
+    int rc = leader->read_logical_snp_obj(s, user_snp_ctx, /*obj_id=*/1, data_out, is_last);
+    EXPECT_LT(rc, 0);
+    EXPECT_EQ(user_snp_ctx, nullptr);
+
+    /// The leader must stay healthy: a normal transfer that starts at obj_id 0
+    /// still succeeds afterwards.
+    rc = leader->read_logical_snp_obj(s, user_snp_ctx, /*obj_id=*/0, data_out, is_last);
+    EXPECT_GE(rc, 0);
+    leader->free_user_snp_ctx(user_snp_ctx);
+}
+
 #endif
