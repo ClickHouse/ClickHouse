@@ -559,7 +559,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            /// Case-insensitive to match the parse site below; otherwise lowercase `hive` is misrouted to `compression_method`.
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
             }
@@ -584,7 +585,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            /// Case-insensitive to match the parse site below; otherwise lowercase `hive` is misrouted to `compression_method`.
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }
