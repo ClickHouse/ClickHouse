@@ -1300,9 +1300,12 @@ The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-d
 
 ## Compression frame {#compression-frame}
 
-ClickHouse supports per-block compression for the column data carried inside `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packets. Compression is opt-in, activated by the protocol-level `compression` flag in the [Query packet](/interfaces/specs/NativeProtocol#query).
+ClickHouse can compress the column data of a `Native` stream with an internal frame format. The [frame layout](#frame-format) below is **transport-independent** — the same frames appear on both the native TCP protocol and over HTTP — but how compression is requested, and what surrounds the frames, differs by transport.
 
-When compression is active, every Block body (the bytes after the `table_name` string of a Data-family packet) is wrapped in the frame below. The packet envelope itself — the packet type code and the `table_name` string — is **not** compressed; `TCPHandler` writes those to the raw stream (`out`). Everything the `NativeWriter` emits goes into the compressed stream, because `block_out` is constructed over `state.maybe_compressed_out`: the `BlockInfo` prefix is the first thing `NativeWriter` writes, so it lands **inside** the compression frame along with the dimensions and columns. A client must therefore decompress the frame before it can read `BlockInfo`.
+- **Native TCP protocol.** Compression is opt-in per query via the `compression` flag in the [Query packet](/interfaces/specs/NativeProtocol#query). When active, the body of each `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packet — the bytes after the `table_name` string — is wrapped in the frame format. The packet envelope itself, the packet-type code and the `table_name` string, is **not** compressed; the server writes those to the raw stream. Everything the `NativeWriter` emits goes into the compressed stream, so the `BlockInfo` prefix is the first thing inside the frame, along with the dimensions and columns. A client must therefore decompress the frame before it can read `BlockInfo`.
+- **HTTP.** `SELECT ... FORMAT Native&compress=1` wraps the whole `FORMAT Native` byte stream in the same frames (the server uses the same internal `CompressedWriteBuffer`), and `?decompress=1` expects the same frames on a `Native` *input* body, decoding them through the matching `CompressedReadBuffer`. There is no TCP packet type, `table_name`, or packet envelope on this path: the entire compressed payload is just framed `Native` blocks (a `BlockInfo` prefix is present only if the negotiated revision is greater than `0`, exactly as in the uncompressed layout above). This internal `compress`/`decompress` framing is distinct from HTTP transport compression (`Content-Encoding: gzip`/`zstd`, enabled by `enable_http_compression`), which wraps the response at the HTTP layer and is not the frame format below.
+
+So a client that implemented only the uncompressed `FORMAT Native` layout must still add this frame layer to read a compressed HTTP `Native` response or to send a `decompress=1` request body.
 
 ### Frame format {#frame-format}
 
@@ -1352,11 +1355,13 @@ The invariant runs one way only: because the sender flushes the compressed buffe
 
 A receiver streams the frames: read 16 + 9 bytes, read exactly `compressed_size - 9` body bytes, decompress to exactly `uncompressed_size` bytes, and serve those bytes to the block decoder; when the decoder needs more than the current frame holds, pull the next frame. Because the sender flushes per block, after a block is fully decoded the frame buffer is empty and the next block begins at a fresh frame.
 
-The packet envelope — the packet-type VarUInt and the `table_name` string — is written to the **raw** stream, outside the compressed payload. Only the block body (BlockInfo + columns) is framed.
+On the native TCP protocol, the packet envelope — the packet-type VarUInt and the `table_name` string — is written to the **raw** stream, outside the compressed payload; only the block body (BlockInfo + columns) is framed. The HTTP `compress`/`decompress` path has no such envelope: the whole stream is framed blocks.
 
 ### Negotiation {#compression-negotiation}
 
-Compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
+On the native TCP protocol, compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
+
+Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`LZ4`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
 
 :::note
 With compression on, the server may also route columns through the parallel block-marshalling / `ColumnBLOB` path (`PARALLEL_BLOCK_MARSHALLING`, v54478) for blocks with more than one row. An implementation that compresses INSERT data must be prepared to handle (or explicitly opt out of) that path to avoid a desynchronized stream.
