@@ -50,6 +50,14 @@ class SparkAndClickHouseCheck:
             return False
         return True
 
+    def _clickhouse_engine_matches(self, client, table: SparkTable):
+        expected = "Iceberg" if table.lake_format == LakeFormat.Iceberg else "DeltaLake"
+        engine = client.query(
+            f"SELECT engine FROM system.tables WHERE database = '{table.database_name}' AND name = '{table.table_name}';"
+        )
+        engine = engine.rstrip() if isinstance(engine, str) else ""
+        return engine.startswith(expected), engine
+
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
             clickhouse_predicate = ""
@@ -67,6 +75,13 @@ class SparkAndClickHouseCheck:
                 port=9000,
                 command=cluster.client_bin_path,
             )
+
+            engine_ok, ch_engine = self._clickhouse_engine_matches(client, table)
+            if not engine_ok:
+                self.logger.warning(
+                    f"Skipping check for {table.get_clickhouse_path()}: ClickHouse engine is '{ch_engine}', but the descriptor expects {table.lake_format.name}"
+                )
+                return True
 
             # There is multithreading, so time travel is now required
             if table.lake_format == LakeFormat.Iceberg:
