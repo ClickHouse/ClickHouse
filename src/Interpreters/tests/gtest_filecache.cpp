@@ -3343,26 +3343,26 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
 /// cache-hit range to the requested window before calling get().
 namespace
 {
-    struct RecordingHandle : public ICacheHandle
+    /// Held read buffer over an in-memory string that records every `read(sub)`. The
+    /// executor clamps `sub` to its window before calling, so recorded ranges verify the
+    /// clamp (mirrors the old `RecordingHandle::get` recording under the new API).
+    struct RecordingReadBuffer : public CacheReadBuffer
     {
         ByteRange hit_range;
         std::vector<ByteRange> & recorded;
         std::string data;
 
-        RecordingHandle(ByteRange hit_, std::vector<ByteRange> & rec_, std::string data_)
+        RecordingReadBuffer(ByteRange hit_, std::vector<ByteRange> & rec_, std::string data_)
             : hit_range(hit_), recorded(rec_), data(std::move(data_)) {}
 
-        CacheLookupResult status() const override
+        ByteRange range() const override { return hit_range; }
+        size_t readable() const override { return hit_range.end(); }
+
+        Rope read(ByteRange sub) override
         {
-            return CacheLookupResult{{hit_range}, {}};
-        }
-        Rope get(ByteRange range) override
-        {
-            recorded.push_back(range);
-            /// Return a single rope node sized to the requested range
-            /// (mirrors DiskCacheHandle::get, which allocates overlap_size).
-            size_t lo = std::max(hit_range.offset, range.offset);
-            size_t hi = std::min(hit_range.end(), range.end());
+            recorded.push_back(sub);
+            size_t lo = std::max(hit_range.offset, sub.offset);
+            size_t hi = std::min(hit_range.end(), sub.end());
             if (lo >= hi)
                 return {};
             auto buf = std::make_shared<OwnedRopeBuffer>(hi - lo);
@@ -3371,7 +3371,14 @@ namespace
             r.append(RopeNode{std::move(buf), 0, hi - lo, lo});
             return r;
         }
-        size_t put(ByteRange, Rope) override { return 0; }
+    };
+
+    struct RecordingCacheView : public CacheView
+    {
+        const std::vector<HitEntry> & hits() const override { return hit_entries; }
+        const std::vector<MissEntry> & misses() const override { return miss_entries; }
+        std::vector<HitEntry> hit_entries;
+        std::vector<MissEntry> miss_entries;
     };
 
     struct RecordingCacheProvider : public ICacheProvider
@@ -3385,7 +3392,20 @@ namespace
 
         std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange) override
         {
-            return std::make_unique<RecordingHandle>(hit_range, recorded_gets, data);
+            return nullptr;  /// unused by the executor (it calls planResidencyView)
+        }
+        CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange) override
+        {
+            auto view = std::make_unique<RecordingCacheView>();
+            view->hit_entries.push_back(HitEntry{
+                hit_range,
+                std::make_unique<RecordingReadBuffer>(hit_range, recorded_gets, data)});
+            return view;
+        }
+        std::vector<MissEntry> openWriteBuffers(
+            const StoredObject &, size_t, const std::vector<ByteRange> &) override
+        {
+            return {};  /// the configured range is fully resident
         }
         String name() const override { return "Recording"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }

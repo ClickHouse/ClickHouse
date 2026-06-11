@@ -2,6 +2,7 @@
 #include <IO/BufferSourceReader.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
+#include <IO/IntervalSet.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/LiveConnectionLimit.h>
@@ -225,6 +226,20 @@ TEST(ReaderExecutor, Seek)
 namespace
 {
 
+/// Shared, minimal `CacheView` for the in-memory mocks: it just owns the hit/miss
+/// entry vectors the executor reads back. The per-range read/write buffers do the
+/// real work over the mock's storage. No deferred-LRU bump (the mocks have no LRU),
+/// so the default destructor is fine.
+class MockCacheView : public CacheView
+{
+public:
+    const std::vector<HitEntry> & hits() const override { return hit_entries; }
+    const std::vector<MissEntry> & misses() const override { return miss_entries; }
+
+    std::vector<HitEntry> hit_entries;
+    std::vector<MissEntry> miss_entries;
+};
+
 /// Mock cache that stores data in memory, organized by blocks.
 class MockCacheHandle : public ICacheHandle
 {
@@ -286,6 +301,127 @@ private:
     CacheLookupResult result;
 };
 
+/// Held read buffer over a run of resident blocks in `MockCacheProvider`'s storage.
+/// Re-readable; clamps `read(sub)` to its own range so a shared-storage view never
+/// reaches into a neighbouring hit's blocks. Reads each call from the LIVE storage
+/// (so eviction/regrowth is reflected). Mirrors the legacy `MockCacheHandle::get`.
+class MockCacheReadBuffer : public CacheReadBuffer
+{
+public:
+    MockCacheReadBuffer(ByteRange range_in_file, std::unordered_map<size_t, String> & storage_, size_t block_size_)
+        : range_member(range_in_file), storage(storage_), block_size(block_size_) {}
+
+    ByteRange range() const override { return range_member; }
+    size_t readable() const override { return range_member.end(); }
+
+    Rope read(ByteRange sub) override
+    {
+        Rope result;
+        const size_t lo = std::max(sub.offset, range_member.offset);
+        const size_t hi = std::min(sub.end(), range_member.end());
+        if (lo >= hi)
+            return result;
+
+        const size_t first_block = lo / block_size;
+        const size_t last_block = (hi - 1) / block_size;
+        for (size_t b = first_block; b <= last_block; ++b)
+        {
+            auto it = storage.find(b);
+            if (it == storage.end())
+                continue;
+            const auto & data = it->second;
+            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            std::memcpy(buf->data(), data.data(), data.size());
+            Rope block_rope;
+            block_rope.append(RopeNode{buf, 0, data.size(), b * block_size});
+            result.append(block_rope.slice(ByteRange{lo, hi - lo}));
+        }
+        return result;
+    }
+
+private:
+    ByteRange range_member;
+    std::unordered_map<size_t, String> & storage;
+    size_t block_size;
+};
+
+/// Held write buffer over a block-aligned miss range in `MockCacheProvider`. `write`
+/// stores whole blocks into the mock store (first-writer-wins, mirroring the legacy
+/// `put`), advancing `committed` even when the bytes were already present (so
+/// `complete` converges). `read` serves the committed prefix; `pin` is a no-op (the
+/// block mock has no evictable in-flight segment).
+class MockCacheWriteBuffer : public CacheWriteBuffer
+{
+public:
+    MockCacheWriteBuffer(ByteRange aligned_range, std::unordered_map<size_t, String> & storage_, size_t block_size_)
+        : range_member(aligned_range), storage(storage_), block_size(block_size_) {}
+
+    ByteRange range() const override { return range_member; }
+    const IntervalSet & committed() const override { return committed_ranges; }
+    bool complete() const override { return committed_ranges.subtract(range_member).empty(); }
+
+    size_t write(Rope data) override
+    {
+        size_t bytes_written = 0;
+        for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
+        {
+            const size_t b = offset / block_size;
+            const ByteRange block_range{offset, std::min(block_size, range_member.end() - offset)};
+
+            /// Already committed by us — skip.
+            if (committed_ranges.subtract(block_range).empty())
+                continue;
+            /// Only act on a block `data` fully covers (block-aligned delivery).
+            if (!data.covers(block_range))
+                continue;
+
+            if (!storage.contains(b))
+            {
+                Rope slice = data.slice(block_range);
+                String content;
+                content.resize(slice.totalBytes());
+                slice.copyTo(content.data(), block_range);
+                bytes_written += content.size();
+                storage[b] = std::move(content);
+            }
+            /// Advance `committed` even on a first-writer-wins loss, so `complete` converges.
+            committed_ranges.add(block_range);
+        }
+        return bytes_written;
+    }
+
+    Rope read(ByteRange sub) override
+    {
+        Rope result;
+        const size_t lo = std::max(sub.offset, range_member.offset);
+        const size_t hi = std::min(sub.end(), range_member.end());
+        if (lo >= hi)
+            return result;
+
+        const size_t first_block = lo / block_size;
+        const size_t last_block = (hi - 1) / block_size;
+        for (size_t b = first_block; b <= last_block; ++b)
+        {
+            auto it = storage.find(b);
+            if (it == storage.end())
+                continue;
+            const auto & data = it->second;
+            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            std::memcpy(buf->data(), data.data(), data.size());
+            Rope block_rope;
+            block_rope.append(RopeNode{buf, 0, data.size(), b * block_size});
+            result.append(block_rope.slice(ByteRange{lo, hi - lo}));
+        }
+        return result;
+    }
+
+private:
+    ByteRange range_member;
+    std::unordered_map<size_t, String> & storage;
+    size_t block_size;
+    IntervalSet committed_ranges;
+};
+
 class MockCacheProvider : public ICacheProvider
 {
 public:
@@ -299,6 +435,63 @@ public:
 
     String name() const override { return "MockCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
+
+    /// Read-only residency probe: classify each block as hit/miss against the LIVE
+    /// store (never mutating it), coalescing adjacent same-kind blocks into one entry.
+    /// Hits carry a held read buffer; misses are whole-block-aligned with no writer.
+    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
+    {
+        auto view = std::make_unique<MockCacheView>();
+        if (range_in_file.size == 0)
+            return view;
+
+        const size_t start_block = range_in_file.offset / block_size;
+        const size_t end_block = (range_in_file.end() + block_size - 1) / block_size;
+
+        bool run_active = false;
+        bool run_is_hit = false;
+        ByteRange run_range{0, 0};
+        auto flush_run = [&]()
+        {
+            if (!run_active)
+                return;
+            if (run_is_hit)
+                view->hit_entries.push_back(HitEntry{
+                    run_range, std::make_unique<MockCacheReadBuffer>(run_range, storage, block_size)});
+            else
+                view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
+            run_active = false;
+        };
+
+        for (size_t b = start_block; b < end_block; ++b)
+        {
+            const bool is_hit = storage.contains(b);
+            const ByteRange block_range{b * block_size, block_size};
+            if (run_active && run_is_hit != is_hit)
+                flush_run();
+            if (!run_active)
+            {
+                run_active = true;
+                run_is_hit = is_hit;
+                run_range = block_range;
+            }
+            else
+                run_range.size = block_range.end() - run_range.offset;
+        }
+        flush_run();
+        return view;
+    }
+
+    std::vector<MissEntry> openWriteBuffers(
+        const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override
+    {
+        std::vector<MissEntry> result;
+        result.reserve(aligned_miss_ranges.size());
+        for (const auto & aligned : aligned_miss_ranges)
+            result.push_back(MissEntry{
+                aligned, std::make_unique<MockCacheWriteBuffer>(aligned, storage, block_size)});
+        return result;
+    }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index) > 0; }
 
@@ -1433,6 +1626,17 @@ public:
 
     std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override;
 
+    /// Read-only residency probe (defined out-of-line below, after the buffer
+    /// classes): mirrors `EvictableSegmentMockCacheHandle::status`'s hit/miss
+    /// classification (committed prefix is a hit, the segment-aligned tail past the
+    /// download frontier is a per-segment miss). MUST NOT mutate the store.
+    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override;
+
+    /// One held write buffer per aligned (segment) miss range; each appends into its
+    /// segment append-only (mirroring the old `put`) and pins it via `pin`.
+    std::vector<MissEntry> openWriteBuffers(
+        const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override;
+
     String name() const override { return "EvictableSegmentMock"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
@@ -1548,6 +1752,189 @@ private:
 inline std::unique_ptr<ICacheHandle> EvictableSegmentMockCache::lookup(const StoredObject &, size_t, ByteRange range)
 {
     return std::make_unique<EvictableSegmentMockCacheHandle>(range, *this);
+}
+
+/// Held read buffer over ONE segment's committed prefix `[seg_start, seg_start+dl)`.
+/// `readable()` re-reads the LIVE `downloaded[idx]` each call (clamped to the hit
+/// range), so a partial segment grown across windows by a concurrent writer becomes
+/// visible - like the real `DiskCacheReadBuffer`. `read(sub)` fabricates 'D' bytes
+/// for the committed sub-range (mirroring `EvictableSegmentMockCacheHandle::get`).
+class EvictableSegmentReadBuffer : public CacheReadBuffer
+{
+public:
+    EvictableSegmentReadBuffer(ByteRange hit_range_, size_t seg_idx_, EvictableSegmentMockCache & cache_)
+        : hit_range(hit_range_), seg_idx(seg_idx_), cache(cache_) {}
+
+    ByteRange range() const override { return hit_range; }
+
+    size_t readable() const override
+    {
+        const size_t seg = cache.segmentSize();
+        const size_t seg_start = seg_idx * seg;
+        const size_t dl = cache.downloaded.contains(seg_idx) ? cache.downloaded[seg_idx] : 0;
+        const size_t committed_end = seg_start + std::min(dl, seg);
+        return std::min(committed_end, hit_range.end());
+    }
+
+    Rope read(ByteRange sub) override
+    {
+        Rope result;
+        const size_t lo = std::max(sub.offset, hit_range.offset);
+        const size_t hi = std::min({sub.end(), hit_range.end(), readable()});
+        if (lo >= hi)
+            return result;
+        auto buf = std::make_shared<OwnedRopeBuffer>(hi - lo);
+        std::memset(buf->data(), 'D', hi - lo);
+        result.append(RopeNode{buf, 0, hi - lo, lo});
+        return result;
+    }
+
+private:
+    ByteRange hit_range;
+    size_t seg_idx;
+    EvictableSegmentMockCache & cache;
+};
+
+/// Held write buffer over ONE aligned (segment) miss range. `write` appends into the
+/// segment append-only at the live `cwo` (mirroring the old append-only `put`,
+/// including `reject_put` and the `livenessFor` token), advancing `committed`.
+/// `read` serves the committed prefix as 'D' bytes. `pin(frontier)` mirrors the old
+/// `pinSegmentAt`: a partially-downloaded segment returns its liveness token (so it
+/// survives `evictUnpinned` while the executor holds it).
+class EvictableSegmentWriteBuffer : public CacheWriteBuffer
+{
+public:
+    EvictableSegmentWriteBuffer(ByteRange aligned_range_, size_t seg_idx_, EvictableSegmentMockCache & cache_)
+        : aligned_range(aligned_range_), seg_idx(seg_idx_), cache(cache_) {}
+
+    ByteRange range() const override { return aligned_range; }
+    const IntervalSet & committed() const override { return committed_ranges; }
+    bool complete() const override { return committed_ranges.subtract(aligned_range).empty(); }
+
+    size_t write(Rope data) override
+    {
+        const size_t seg = cache.segmentSize();
+        const size_t seg_start = seg_idx * seg;
+
+        if (auto it = cache.reject_put.find(seg_idx); it != cache.reject_put.end() && it->second)
+            return 0;
+
+        /// Append-only at the live current write offset, like `FileSegment::write`.
+        const size_t cwo = seg_start + (cache.downloaded.contains(seg_idx) ? cache.downloaded[seg_idx] : 0);
+        const size_t seg_end = seg_start + seg;
+        const size_t write_end_max = std::min(seg_end, aligned_range.end());
+        if (cwo >= write_end_max)
+            return 0;
+
+        /// Only the contiguous prefix of `data` starting at `cwo` can be appended.
+        const ByteRange target{cwo, write_end_max - cwo};
+        size_t contiguous = target.size;
+        if (auto gaps = data.gaps(target); !gaps.empty())
+        {
+            const size_t first_gap = gaps.front().offset;
+            contiguous = (first_gap > cwo) ? (first_gap - cwo) : 0;
+        }
+        if (contiguous == 0)
+            return 0;
+
+        cache.downloaded[seg_idx] = std::min(seg, (cwo + contiguous) - seg_start);
+        cache.livenessFor(seg_idx);
+        committed_ranges.add(ByteRange{cwo, contiguous});
+        return contiguous;
+    }
+
+    Rope read(ByteRange sub) override
+    {
+        Rope result;
+        const size_t seg = cache.segmentSize();
+        const size_t seg_start = seg_idx * seg;
+        const size_t dl = cache.downloaded.contains(seg_idx) ? cache.downloaded[seg_idx] : 0;
+        const size_t committed_end = seg_start + std::min(dl, seg);
+        const size_t lo = std::max({sub.offset, aligned_range.offset, seg_start});
+        const size_t hi = std::min({sub.end(), aligned_range.end(), committed_end});
+        if (lo >= hi)
+            return result;
+        auto buf = std::make_shared<OwnedRopeBuffer>(hi - lo);
+        std::memset(buf->data(), 'D', hi - lo);
+        result.append(RopeNode{buf, 0, hi - lo, lo});
+        return result;
+    }
+
+    CacheSegmentPin pin(size_t frontier) const override
+    {
+        const size_t seg = cache.segmentSize();
+        const size_t idx = frontier / seg;
+        const size_t dl = cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0;
+        if (dl == 0 || dl >= seg)
+            return nullptr;   // nothing partial to pin
+        return std::static_pointer_cast<void>(cache.livenessFor(idx));
+    }
+
+private:
+    ByteRange aligned_range;
+    size_t seg_idx;
+    EvictableSegmentMockCache & cache;
+    IntervalSet committed_ranges;
+};
+
+inline CacheViewPtr EvictableSegmentMockCache::planResidencyView(
+    const StoredObject &, size_t, ByteRange range_in_file)
+{
+    auto view = std::make_unique<MockCacheView>();
+    if (range_in_file.size == 0)
+        return view;
+
+    const size_t seg = segment_size;
+    const size_t first = range_in_file.offset / seg;
+    const size_t last = (range_in_file.end() - 1) / seg;
+    for (size_t idx = first; idx <= last; ++idx)
+    {
+        const size_t seg_start = idx * seg;
+        const size_t seg_end = seg_start + seg;
+        const size_t dl = downloaded.contains(idx) ? downloaded[idx] : 0;
+
+        if (dl >= seg)
+        {
+            const ByteRange hit{seg_start, seg};
+            view->hit_entries.push_back(HitEntry{
+                hit, std::make_unique<EvictableSegmentReadBuffer>(hit, idx, *this)});
+        }
+        else if (dl > 0)
+        {
+            const ByteRange hit{seg_start, dl};
+            view->hit_entries.push_back(HitEntry{
+                hit, std::make_unique<EvictableSegmentReadBuffer>(hit, idx, *this)});
+            /// Miss tail past the frontier, segment-aligned head (so the source
+            /// over-read fills the segment prefix), tail clamped to the request.
+            const size_t miss_head = seg_start + dl;
+            const size_t miss_end = std::min(seg_end, range_in_file.end());
+            if (miss_head < miss_end)
+                view->miss_entries.push_back(MissEntry{ByteRange{miss_head, miss_end - miss_head}, /*writer=*/nullptr});
+        }
+        else
+        {
+            const size_t miss_end = std::min(seg_end, range_in_file.end());
+            if (seg_start < miss_end)
+                view->miss_entries.push_back(MissEntry{ByteRange{seg_start, miss_end - seg_start}, /*writer=*/nullptr});
+        }
+    }
+    return view;
+}
+
+inline std::vector<MissEntry> EvictableSegmentMockCache::openWriteBuffers(
+    const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges)
+{
+    std::vector<MissEntry> result;
+    result.reserve(aligned_miss_ranges.size());
+    for (const auto & aligned : aligned_miss_ranges)
+    {
+        /// Each aligned miss lies within a single segment (one miss entry per segment
+        /// in `planResidencyView`); derive its index from the offset.
+        const size_t seg_idx = aligned.offset / segment_size;
+        result.push_back(MissEntry{
+            aligned, std::make_unique<EvictableSegmentWriteBuffer>(aligned, seg_idx, *this)});
+    }
+    return result;
 }
 
 } // anonymous namespace
@@ -2779,6 +3166,128 @@ private:
     CacheLookupResult result;
 };
 
+/// Held read buffer over a run of resident FULL blocks. `read(sub)` clamps to its own
+/// range (shared-storage safety) and assembles the overlapping stored blocks, so it
+/// covers `sub` exactly. Mirrors `WideGranularityMockCacheHandle::get`.
+class WideGranularityReadBuffer : public CacheReadBuffer
+{
+public:
+    WideGranularityReadBuffer(ByteRange range_in_file, std::unordered_map<size_t, String> & storage_, size_t block_size_)
+        : range_member(range_in_file), storage(storage_), block_size(block_size_) {}
+
+    ByteRange range() const override { return range_member; }
+    size_t readable() const override { return range_member.end(); }
+
+    Rope read(ByteRange sub) override
+    {
+        Rope result;
+        const size_t lo = std::max(sub.offset, range_member.offset);
+        const size_t hi = std::min(sub.end(), range_member.end());
+        if (lo >= hi)
+            return result;
+
+        Rope assembled;
+        const size_t first_block = lo / block_size;
+        const size_t last_block = (hi - 1) / block_size;
+        for (size_t b = first_block; b <= last_block; ++b)
+        {
+            auto it = storage.find(b);
+            if (it == storage.end())
+                continue;
+            const auto & data = it->second;
+            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            std::memcpy(buf->data(), data.data(), data.size());
+            assembled.append(RopeNode{buf, 0, data.size(), b * block_size});
+        }
+        return assembled.slice(ByteRange{lo, hi - lo});
+    }
+
+private:
+    ByteRange range_member;
+    std::unordered_map<size_t, String> & storage;
+    size_t block_size;
+};
+
+/// Held write buffer over a block-aligned miss range for `WideGranularityMockCache`.
+/// `write` stores FULL blocks (first-writer-wins), logs each stored block to `put_log`
+/// with `(block_range, slice.totalBytes())` (always disjoint, so total == range.size),
+/// and advances `committed` per block (even on a first-writer-wins loss, so `complete`
+/// converges). A block `data` does not fully cover is left for a later window.
+class WideGranularityWriteBuffer : public CacheWriteBuffer
+{
+public:
+    WideGranularityWriteBuffer(
+        ByteRange aligned_range,
+        std::unordered_map<size_t, String> & storage_,
+        std::vector<std::pair<ByteRange, size_t>> & put_log_,
+        size_t block_size_)
+        : range_member(aligned_range), storage(storage_), put_log(put_log_), block_size(block_size_) {}
+
+    ByteRange range() const override { return range_member; }
+    const IntervalSet & committed() const override { return committed_ranges; }
+    bool complete() const override { return committed_ranges.subtract(range_member).empty(); }
+
+    size_t write(Rope data) override
+    {
+        size_t bytes_written = 0;
+        for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
+        {
+            const size_t b = offset / block_size;
+            const ByteRange block_range{offset, block_size};
+
+            if (committed_ranges.subtract(block_range).empty())
+                continue;
+            if (!data.covers(block_range))
+                continue;
+
+            Rope slice = data.slice(block_range);
+            put_log.emplace_back(block_range, slice.totalBytes());
+
+            if (!storage.contains(b))
+            {
+                String content;
+                content.resize(slice.totalBytes());
+                slice.copyTo(content.data(), block_range);
+                bytes_written += content.size();
+                storage[b] = std::move(content);
+            }
+            committed_ranges.add(block_range);
+        }
+        return bytes_written;
+    }
+
+    Rope read(ByteRange sub) override
+    {
+        Rope result;
+        const size_t lo = std::max(sub.offset, range_member.offset);
+        const size_t hi = std::min(sub.end(), range_member.end());
+        if (lo >= hi)
+            return result;
+
+        Rope assembled;
+        const size_t first_block = lo / block_size;
+        const size_t last_block = (hi - 1) / block_size;
+        for (size_t b = first_block; b <= last_block; ++b)
+        {
+            auto it = storage.find(b);
+            if (it == storage.end())
+                continue;
+            const auto & data = it->second;
+            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            std::memcpy(buf->data(), data.data(), data.size());
+            assembled.append(RopeNode{buf, 0, data.size(), b * block_size});
+        }
+        return assembled.slice(ByteRange{lo, hi - lo});
+    }
+
+private:
+    ByteRange range_member;
+    std::unordered_map<size_t, String> & storage;
+    std::vector<std::pair<ByteRange, size_t>> & put_log;
+    size_t block_size;
+    IntervalSet committed_ranges;
+};
+
 class WideGranularityMockCache : public ICacheProvider
 {
 public:
@@ -2793,6 +3302,68 @@ public:
 
     String name() const override { return provider_name; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
+
+    /// A block is the write unit (`seedBlock`/`hasBlock` operate on whole blocks), so
+    /// both fetch edges round to `block_size`: a touch fills the whole block it lands in.
+    size_t fetchHeadAlignment() const override { return block_size; }
+    size_t fetchTailAlignment() const override { return block_size; }
+
+    /// Read-only residency probe at FULL block granularity, coalescing adjacent
+    /// same-kind blocks. Never mutates the store. Hits carry a held read buffer;
+    /// misses are whole-block-aligned with no writer.
+    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
+    {
+        auto view = std::make_unique<MockCacheView>();
+        if (range_in_file.size == 0)
+            return view;
+
+        const size_t start_block = range_in_file.offset / block_size;
+        const size_t end_block = (range_in_file.end() + block_size - 1) / block_size;
+
+        bool run_active = false;
+        bool run_is_hit = false;
+        ByteRange run_range{0, 0};
+        auto flush_run = [&]()
+        {
+            if (!run_active)
+                return;
+            if (run_is_hit)
+                view->hit_entries.push_back(HitEntry{
+                    run_range, std::make_unique<WideGranularityReadBuffer>(run_range, storage, block_size)});
+            else
+                view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
+            run_active = false;
+        };
+
+        for (size_t b = start_block; b < end_block; ++b)
+        {
+            const bool is_hit = storage.contains(b);
+            const ByteRange block_range{b * block_size, block_size};
+            if (run_active && run_is_hit != is_hit)
+                flush_run();
+            if (!run_active)
+            {
+                run_active = true;
+                run_is_hit = is_hit;
+                run_range = block_range;
+            }
+            else
+                run_range.size = block_range.end() - run_range.offset;
+        }
+        flush_run();
+        return view;
+    }
+
+    std::vector<MissEntry> openWriteBuffers(
+        const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override
+    {
+        std::vector<MissEntry> result;
+        result.reserve(aligned_miss_ranges.size());
+        for (const auto & aligned : aligned_miss_ranges)
+            result.push_back(MissEntry{
+                aligned, std::make_unique<WideGranularityWriteBuffer>(aligned, storage, put_log, block_size)});
+        return result;
+    }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index); }
 
@@ -3022,9 +3593,9 @@ TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
 
 namespace
 {
-    /// Records every `lookup` call so tests can assert which `StoredObject`
-    /// and `object_file_offset` the cache provider received per piece.
-    /// `status()` always reports the whole range as a miss so the executor
+    /// Records every cache access (each `planResidencyView` probe) so tests can assert
+    /// which `StoredObject` and `object_file_offset` the cache provider received per
+    /// piece. The view always reports the whole range as a single MISS so the executor
     /// falls through to the source — keeps the data path simple.
     struct TrackedLookup
     {
@@ -3049,6 +3620,22 @@ namespace
         ByteRange range;
     };
 
+    /// No-op write buffer: never commits (the source bytes are not cached), mirroring
+    /// the old `TrackingCacheHandle::put` returning 0. `write`/`read` are no-ops.
+    class TrackingWriteBuffer : public CacheWriteBuffer
+    {
+    public:
+        explicit TrackingWriteBuffer(ByteRange aligned_range_) : aligned_range(aligned_range_) {}
+        ByteRange range() const override { return aligned_range; }
+        const IntervalSet & committed() const override { return committed_ranges; }
+        bool complete() const override { return false; }
+        size_t write(Rope) override { return 0; }
+        Rope read(ByteRange) override { return {}; }
+    private:
+        ByteRange aligned_range;
+        IntervalSet committed_ranges;
+    };
+
     class TrackingCacheProvider : public ICacheProvider
     {
     public:
@@ -3062,6 +3649,28 @@ namespace
         }
         String name() const override { return "Tracking"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }
+
+        /// Read-only probe: record the access (the executor calls this both at plan
+        /// build and in `serveLateHits`, so a cold window logs two per-object passes)
+        /// and report the whole range as one writer-null miss.
+        CacheViewPtr planResidencyView(
+            const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override
+        {
+            log.push_back(TrackedLookup{object.remote_path, object_file_offset, range_in_file});
+            auto view = std::make_unique<MockCacheView>();
+            view->miss_entries.push_back(MissEntry{range_in_file, /*writer=*/nullptr});
+            return view;
+        }
+
+        std::vector<MissEntry> openWriteBuffers(
+            const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override
+        {
+            std::vector<MissEntry> result;
+            result.reserve(aligned_miss_ranges.size());
+            for (const auto & aligned : aligned_miss_ranges)
+                result.push_back(MissEntry{aligned, std::make_unique<TrackingWriteBuffer>(aligned)});
+            return result;
+        }
 
         std::vector<TrackedLookup> log;
     };

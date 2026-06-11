@@ -1,11 +1,11 @@
 100	10
 0
 10
-98
+100
 set max_size from 100 to 10
 10	10
 1
-8
+10
 set max_size from 10 to 100
 100	10
 10
