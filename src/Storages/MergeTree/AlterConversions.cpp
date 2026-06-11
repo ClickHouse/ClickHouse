@@ -334,14 +334,13 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
         addColumnsRequiredForMaterialized(storage_read_columns, storage_read_columns_set, metadata_snapshot, context);
         for (const auto & command : filterMutationCommands(storage_read_columns, std::move(storage_read_columns_set)))
         {
-            auto ast = command.ast();
-            if (!ast)
+            if (!command.ast)
             {
                 continue;
             }
             if (command.type == MutationCommand::UPDATE)
             {
-                for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
+                for (const auto & [column, _] : command.column_to_update_expression)
                 {
                     columns_overwritten_by_chain.insert(column);
                 }
