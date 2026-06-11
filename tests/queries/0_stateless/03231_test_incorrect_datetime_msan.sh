@@ -18,6 +18,8 @@ CLICKHOUSE_CLIENT_BASIC="${CLICKHOUSE_CLIENT} --cast_string_to_date_time_mode=ba
 
 ${CLICKHOUSE_CLIENT_BASIC} --query "SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:09'"
 
-${CLICKHOUSE_CLIENT_BASIC} --query "SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:0'" 2>&1 | grep -F -q "Cannot convert string '2024-08-06 09:58:0'" && echo "OK" || echo "FAIL";
+# The error message depends on the conversion path: the parser itself may throw,
+# or it may return false and the conversion code reports the whole string.
+${CLICKHOUSE_CLIENT_BASIC} --query "SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:0'" 2>&1 | grep -E -q "Cannot convert string '2024-08-06 09:58:0'|Cannot parse time component of DateTime 09:58:0" && echo "OK" || echo "FAIL";
 
-${CLICKHOUSE_CLIENT_BASIC} --query "SELECT count(*) FROM tab WHERE a = '2024-08-0 09:58:09'" 2>&1 | grep -F -q "Cannot convert string '2024-08-0 09:58:09" && echo "OK" || echo "FAIL";
+${CLICKHOUSE_CLIENT_BASIC} --query "SELECT count(*) FROM tab WHERE a = '2024-08-0 09:58:09'" 2>&1 | grep -E -q "Cannot convert string '2024-08-0 09:58:09|Cannot parse DateTime 2024-08-0" && echo "OK" || echo "FAIL";

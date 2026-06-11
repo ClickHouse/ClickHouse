@@ -843,11 +843,24 @@ inline T parseFromStringWithoutAssertEOF(std::string_view str)
 template <typename ReturnType = void, bool t64_mode = false>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
 
+/// While disambiguating a small decimal unix timestamp (e.g. 1234.5) from a YYYY-MM-DD date,
+/// `readDateTimeTextFallback` may consume the dot and up to two fractional digits from the buffer.
+/// They are passed to the DateTime64 parsing code through this struct.
+struct DateTimeFractionPrefix
+{
+    bool has_fraction = false;
+    UInt8 count = 0;
+    char digits[2]{};
+};
+
+template <typename ReturnType = void, bool dt64_mode = false>
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true, DateTimeFractionPrefix * fraction_prefix = nullptr);
+
 /** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void, bool dt64_mode = false>
-inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
+inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true, DateTimeFractionPrefix * fraction_prefix = nullptr)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -870,11 +883,15 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
 
-    bool optimistic_path_for_date_only_input = s + date_broken_down_length <= buf.buffer().end();
+    /// If the buffer does not contain a whole broken-down date and time, the value may still continue
+    /// beyond the end of the current buffer (e.g. it is read from a stream and is split between two
+    /// buffers), so parse it character by character.
+    if (s + date_time_broken_down_length > buf.buffer().end())
+        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, fraction_prefix);
 
-    if (!optimistic_path_for_date_only_input
-        || !(s[4] == s[7] && (s[4] < '0' || s[4] > '9')))
+    if (!(s[4] == s[7] && (s[4] < '0' || s[4] > '9')))
     {
+        /// Not a YYYY-MM-DD date, so it is a unix timestamp, possibly with a fractional part that is handled by the caller.
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
@@ -898,10 +915,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     UInt8 bytes_read = date_broken_down_length;
 
-    bool optimistic_path_for_date_time_input = s + date_time_broken_down_length <= buf.buffer().end();
-
     /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
-    if (optimistic_path_for_date_time_input && (s[10] == ' ' || s[10] == 'T'))
+    if (s[10] == ' ' || s[10] == 'T')
     {
         if constexpr (!throw_exception)
         {
@@ -1151,6 +1166,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
+    DateTimeFractionPrefix fraction_prefix;
 
     if (!is_empty)
     {
@@ -1158,7 +1174,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             try
             {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, &fraction_prefix);
             }
             catch (const DB::Exception &)
             {
@@ -1168,7 +1184,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, &fraction_prefix))
                 return ReturnType(false);
         }
     }
@@ -1177,14 +1193,23 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
-    if (!buf.eof() && *buf.position() == '.')
+    if (fraction_prefix.has_fraction || (!buf.eof() && *buf.position() == '.'))
     {
-        ++buf.position();
+        if (!fraction_prefix.has_fraction)
+            ++buf.position();
 
-        /// Read digits, up to 'scale' positions.
+        /// Read digits, up to 'scale' positions, starting with the digits that were already consumed
+        /// from the buffer while disambiguating the value from a YYYY-MM-DD date.
+        size_t prefix_pos = 0;
         for (size_t i = 0; i < scale; ++i)
         {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
+            if (prefix_pos < fraction_prefix.count)
+            {
+                components.fractional *= 10;
+                components.fractional += fraction_prefix.digits[prefix_pos] - '0';
+                ++prefix_pos;
+            }
+            else if (!buf.eof() && isNumericASCII(*buf.position()))
             {
                 components.fractional *= 10;
                 components.fractional += *buf.position() - '0';

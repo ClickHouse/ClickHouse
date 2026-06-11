@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_UUID;
@@ -1548,6 +1549,252 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 
 template void readDateTextFallback<void>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
 template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
+
+
+template <typename ReturnType, bool dt64_mode>
+NO_SANITIZE_UNDEFINED
+ReturnType readDateTimeTextFallback(
+    time_t & datetime,
+    ReadBuffer & buf,
+    const DateLUTImpl & date_lut,
+    const char * allowed_date_delimiters,
+    const char * allowed_time_delimiters,
+    bool saturate_on_overflow,
+    DateTimeFractionPrefix * fraction_prefix)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// YYYY-MM-DD
+    static constexpr auto date_broken_down_length = 10;
+    /// hh:mm:ss
+    static constexpr auto time_broken_down_length = 8;
+    /// YYYY-MM-DD hh:mm:ss
+    static constexpr auto date_time_broken_down_length = date_broken_down_length + 1 + time_broken_down_length;
+
+    char s[date_time_broken_down_length];
+    char * s_pos = s;
+
+    /** Read characters that could represent a unix timestamp.
+      * Then look at the next character. If it is a number, treat the whole as a unix timestamp
+      * (a fractional part, if any, is handled by the caller in DateTime64 mode).
+      * If exactly 4 digits were read and the next character is not a number, the value can be
+      * a date or a date and time in YYYY-MM-DD or YYYY-MM-DD hh:mm:ss format; check the
+      * broken-down layout character by character, because the value can be split between buffers.
+      */
+
+    int negative_multiplier = 1;
+
+    if (!buf.eof() && *buf.position() == '-')
+    {
+        if constexpr (dt64_mode)
+        {
+            negative_multiplier = -1;
+            ++buf.position();
+        }
+        else
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+            else
+                return false;
+        }
+    }
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
+    {
+        *s_pos = *buf.position();
+        ++s_pos;
+        ++buf.position();
+    }
+
+    /// 2015-01-01 01:02:03 or 2015-01-01
+    /// if negative, it is a timestamp with no ambiguity
+    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    {
+        /// The value can be a date, or a small unix timestamp with a fractional part (e.g. 1234.5)
+        /// or with other characters after it. Check the date layout character by character without
+        /// consuming a character that does not match it, so that on a mismatch the digits read so far
+        /// can still be interpreted as a timestamp.
+        const char date_delimiter = *buf.position();
+
+        size_t pos = 4;
+        bool is_date = true;
+        while (pos < date_broken_down_length)
+        {
+            if (buf.eof())
+            {
+                is_date = false;
+                break;
+            }
+
+            char c = *buf.position();
+
+            bool matches_date_layout = false;
+            if (pos == 4)
+                matches_date_layout = true;
+            else if (pos == 7)
+                matches_date_layout = (c == date_delimiter);
+            else
+                matches_date_layout = isNumericASCII(c);
+
+            if (!matches_date_layout)
+            {
+                is_date = false;
+                break;
+            }
+
+            s[pos] = c;
+            ++pos;
+            ++buf.position();
+        }
+
+        if (!is_date)
+        {
+            /// In DateTime64 mode, a string like 1234.5 is a valid timestamp with a fractional part.
+            /// While checking for the date layout, the dot and up to two fractional digits could have
+            /// been consumed from the buffer; pass them to the caller.
+            if (dt64_mode && date_delimiter == '.' && pos <= 7 && fraction_prefix != nullptr)
+            {
+                datetime = 0;
+                for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                    datetime = datetime * 10 + *digit_pos - '0';
+
+                fraction_prefix->has_fraction = true;
+                for (size_t i = 5; i < pos; ++i)
+                {
+                    fraction_prefix->digits[fraction_prefix->count] = s[i];
+                    ++fraction_prefix->count;
+                }
+                return ReturnType(true);
+            }
+
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, pos));
+            else
+                return false;
+        }
+
+        if constexpr (!throw_exception)
+        {
+            if (!isSymbolIn(s[4], allowed_date_delimiters))
+                return false;
+        }
+
+        UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+        UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+        UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+        UInt8 hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        {
+            ++buf.position();
+            size_t size = buf.read(s, time_broken_down_length);
+
+            if (size != time_broken_down_length)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", std::string_view(s, size));
+                else
+                    return false;
+            }
+
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[3]) || !isNumericASCII(s[4])
+                    || !isNumericASCII(s[6]) || !isNumericASCII(s[7]))
+                    return false;
+
+                if (!isSymbolIn(s[2], allowed_time_delimiters) || !isSymbolIn(s[5], allowed_time_delimiters))
+                    return false;
+            }
+
+            hour = (s[0] - '0') * 10 + (s[1] - '0');
+            minute = (s[3] - '0') * 10 + (s[4] - '0');
+            second = (s[6] - '0') * 10 + (s[7] - '0');
+        }
+
+        if constexpr (throw_exception)
+        {
+            if (unlikely(year == 0))
+                datetime = 0;
+            else
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        }
+        else
+        {
+            if (saturate_on_overflow)
+            {
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if (unlikely(year == 0))
+                    datetime = 0;
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            }
+            else
+            {
+                /// Use non-saturating version - return false for out-of-range values
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return false;
+
+                if constexpr (!dt64_mode)
+                {
+                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                        return false;
+                }
+
+                datetime = *datetime_maybe;
+            }
+        }
+    }
+    else
+    {
+        if (s_pos == s)
+        {
+            if (buf.eof())
+            {
+                /// There is nothing to read.
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return false;
+            }
+
+            if (negative_multiplier == -1)
+            {
+                /// Match readIntText, which throws for a sign without any digits.
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
+                else
+                    return false;
+            }
+
+            /// The value starts with a character that is not a number. Match readIntText, which
+            /// leaves the value zero; the caller will fail when it finds the unparsed characters.
+            datetime = 0;
+            return ReturnType(true);
+        }
+
+        /// A unix timestamp. Not very efficient.
+        datetime = 0;
+        for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            datetime = datetime * 10 + *digit_pos - '0';
+
+        datetime *= negative_multiplier;
+    }
+
+    return ReturnType(true);
+}
+
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+
 
 template <typename ReturnType, bool t64_mode>
 NO_SANITIZE_UNDEFINED

@@ -1,3 +1,6 @@
+-- The test is for the basic parser (the default since 26.6 is best_effort, which does not support small unix timestamps).
+SET date_time_input_format = 'basic';
+
 DROP TABLE IF EXISTS datetimes64_unixts;
 
 CREATE TABLE datetimes64_unixts
