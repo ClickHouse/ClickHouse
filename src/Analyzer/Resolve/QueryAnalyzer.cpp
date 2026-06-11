@@ -1928,6 +1928,39 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             scope.scope_node->formatASTForErrorMessage());
     }
 
+    /// In the recursive term of a recursive CTE the qualifier names the CTE itself (e.g. `x.*` in
+    /// `WITH RECURSIVE x AS (... UNION ALL SELECT x.* FROM x ...)`). The qualifier resolves through
+    /// expression arguments to the synthetic self-reference table node registered in
+    /// expression_argument_name_to_node, whose AnalysisTableExpressionData is never populated in the nearest
+    /// query scope. A qualified column (`x.a`) or an unqualified matcher (`*`) instead binds to the initialized
+    /// join-tree table expression (the `FROM x` clone). Remap the matcher to that initialized join-tree node so
+    /// `x.*` expands the same columns, matching the column/unqualified-matcher behavior and avoiding the
+    /// uninitialized-data path.
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (nearest_query_scope
+        && table_identifier_resolve_result.isResolvedFromExpressionArguments()
+        && !nearest_query_scope->table_expression_node_to_data.contains(table_expression_node))
+    {
+        QueryTreeNodePtr remapped_table_expression_node;
+        if (auto * nearest_query_node = nearest_query_scope->scope_node->as<QueryNode>();
+            nearest_query_node && nearest_query_node->getJoinTree())
+        {
+            auto join_tree_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(
+                table_identifier_lookup, nearest_query_node->getJoinTree(), *nearest_query_scope);
+            if (join_tree_resolve_result.resolved_identifier
+                && nearest_query_scope->table_expression_node_to_data.contains(join_tree_resolve_result.resolved_identifier))
+                remapped_table_expression_node = join_tree_resolve_result.resolved_identifier;
+        }
+
+        if (!remapped_table_expression_node)
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                "Qualified matcher {} cannot be resolved against an in-progress table expression. In scope {}",
+                matcher_node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        table_expression_node = std::move(remapped_table_expression_node);
+    }
+
     NamesAndTypes matched_columns;
 
     auto * table_expression_query_node = table_expression_node->as<QueryNode>();
