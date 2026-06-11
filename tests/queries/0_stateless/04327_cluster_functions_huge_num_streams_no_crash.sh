@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings
+# Tags: no-fasttest, no-random-settings, long
 # Tag no-fasttest: needs the urlCluster/fileCluster table functions
 # Tag no-random-settings: pins max_streams_for_files_processing_in_cluster_functions
+# Tag long: the clamp ceiling is 256 * number-of-cores, so each query materializes that many
+#   sources; on high-core CI runners a single run approaches the 180s flaky-check limit.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
