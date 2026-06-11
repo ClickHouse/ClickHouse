@@ -1,11 +1,14 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas, no-old-analyzer
+-- no-old-analyzer: a subcolumn predicate through a view only resolves on the analyzer.
+-- no-parallel-replicas: through a view the filter stays on the coordinator and is not pushed into the
+--                       per-replica MergeTree read, so the index is not consulted there (true for
+--                       top-level columns too); force_data_skipping_indices would then wrongly error.
 -- Subcolumn skip indexes and primary key must be used for subcolumn predicates that arrive through a view,
 -- the same as for the base table. Through a view the analyzer rewrites `col.sub` into
 -- `getSubcolumn(col, 'sub')`; index analysis must fold that back to the canonical subcolumn name.
 -- https://github.com/ClickHouse/ClickHouse/issues/107038
 
 SET use_query_condition_cache = 0;
-SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 
 DROP TABLE IF EXISTS tab;
 DROP VIEW IF EXISTS v;
