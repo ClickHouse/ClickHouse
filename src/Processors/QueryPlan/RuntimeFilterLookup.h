@@ -60,10 +60,6 @@ public:
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
     const DataTypePtr & getFilterColumnTargetType() const { return filter_column_target_type; }
 
-    /// Human-readable structural id (`_runtime_filter_<hash>`) for logging. The lookup is keyed by the
-    /// random rendezvous key, which is opaque; the builder sets this to the stable name before adding.
-    String display_name;
-
 protected:
 
     IRuntimeFilter(
@@ -312,8 +308,9 @@ struct IRuntimeFilterLookup : boost::noncopyable
 {
     virtual ~IRuntimeFilterLookup() = default;
 
-    /// Add runtime filter with the specified name
-    virtual void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+    /// Add a runtime filter under the given rendezvous key. `display_name` is the readable structural
+    /// id kept only for logging; the lookup is keyed by `key`.
+    virtual void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
     /// Used by HashJoin to install a SharedFixedHashTableRuntimeFilter that supersedes the
