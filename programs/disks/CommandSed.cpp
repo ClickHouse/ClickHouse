@@ -52,6 +52,8 @@ public:
         /// same file concurrently: the original is untouched until the final swap. On any
         /// failure the temp file is removed and the original is left intact.
         String temp_path = path + ".sed.tmp";
+        if (disk.getDisk()->existsFile(temp_path) || disk.getDisk()->existsDirectory(temp_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary file {} on disk {} already exists", temp_path, disk.getDisk()->getName());
 
         LOG_INFO(
             log,
