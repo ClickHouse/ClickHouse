@@ -68,6 +68,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -1029,10 +1030,17 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
         case IAST::QueryKind::Explain:
         case IAST::QueryKind::Exists:
         case IAST::QueryKind::Describe:
-        case IAST::QueryKind::Check:
         case IAST::QueryKind::Copy:
         case IAST::QueryKind::AsyncInsertFlush:
             audit_type = Context::AuditLogTypes::DML;
+            break;
+
+        /// CHECK GRANT is an access-control statement (DCL), not a table CHECK (DML).
+        case IAST::QueryKind::Check:
+            if (ast && ast->as<ASTCheckGrantQuery>())
+                audit_type = Context::AuditLogTypes::DCL;
+            else
+                audit_type = Context::AuditLogTypes::DML;
             break;
 
         /// TRUNCATE reports QueryKind::Drop but is a data-modifying operation (DML).
@@ -1096,6 +1104,49 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
             if (!object_names.empty())
                 object_names += ",";
             object_names += view;
+        }
+
+        /// For EXCEPTION_BEFORE_START records, query_tables/query_views may be empty because
+        /// logQueryStart never ran. Fall back to QueryAccessInfo which the analyzer may have
+        /// partially populated before the failure (e.g. access denied after resolving tables).
+        if (object_names.empty())
+        {
+            const auto & access_info = context->getQueryAccessInfo();
+            std::lock_guard lock(access_info.mutex);
+            for (const auto & table : access_info.tables)
+            {
+                if (!object_names.empty())
+                    object_names += ",";
+                object_names += table;
+            }
+            for (const auto & view : access_info.views)
+            {
+                if (!object_names.empty())
+                    object_names += ",";
+                object_names += view;
+            }
+        }
+
+        /// If QueryAccessInfo was also empty (e.g. the query failed before analysis),
+        /// extract the target table directly from the AST.
+        if (object_names.empty() && ast)
+        {
+            String database;
+            String table;
+
+            if (const auto * insert = ast->as<ASTInsertQuery>())
+            {
+                database = insert->table_id.database_name;
+                table = insert->table_id.table_name;
+            }
+            else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+            {
+                database = query_with_table->getDatabase();
+                table = query_with_table->getTable();
+            }
+
+            if (!table.empty())
+                object_names = database.empty() ? table : (database + "." + table);
         }
     }
 

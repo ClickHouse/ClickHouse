@@ -378,3 +378,66 @@ def test_audit_log_ddl_object_names_without_log_queries(start_cluster):
     assert "DDL" in log_content, "DDL audit record must be present"
     lines = [line for line in log_content.strip().split("\n") if "CREATE TABLE" in line and "test_no_log_queries_audit" in line]
     assert len(lines) >= 1, "CREATE TABLE audit record must mention the table name in OBJECT_NAMES"
+
+
+def test_audit_log_check_grant_classified_as_dcl(start_cluster):
+    """CHECK GRANT is an access-control statement and must be classified as DCL,
+    not DML (even though ASTCheckGrantQuery returns QueryKind::Check)."""
+    node_user_dcl.query("CREATE USER IF NOT EXISTS check_grant_test_user")
+    node_user_dcl.query("GRANT SELECT ON default.* TO check_grant_test_user")
+
+    # CHECK GRANT should appear as DCL in the audit log (node_user_dcl has DCL enabled)
+    node_user_dcl.query("CHECK GRANT SELECT ON default.*", user="check_grant_test_user")
+
+    assert_audit_log_contain_with_retry(node_user_dcl, "CHECK GRANT")
+    log_content = node_user_dcl.grep_in_log("CHECK GRANT", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DCL" in log_content, "CHECK GRANT must be classified as DCL"
+    assert "DML" not in log_content, "CHECK GRANT must not appear as DML"
+
+    node_user_dcl.query("DROP USER IF EXISTS check_grant_test_user")
+
+
+def test_audit_log_failed_query_has_object_names(start_cluster):
+    """Failed DDL/DML queries (EXCEPTION_BEFORE_START) must still include
+    OBJECT_NAMES in the audit record, extracted from the AST when QueryAccessInfo
+    is empty (query failed before analysis could resolve tables)."""
+    # DROP TABLE without IF EXISTS on a nonexistent table fails before the analyzer
+    # populates QueryAccessInfo, so the AST fallback must extract the table name.
+    try:
+        node_ddl.query("DROP TABLE test_nonexistent_obj_audit_98765")
+    except Exception:
+        pass
+
+    assert_audit_log_contain_with_retry(node_ddl, "test_nonexistent_obj_audit_98765")
+    log_content = node_ddl.grep_in_log("test_nonexistent_obj_audit_98765", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DDL" in log_content, "Failed DDL must still be classified as DDL"
+    lines = [line for line in log_content.strip().split("\n") if "DROP TABLE" in line]
+    assert len(lines) >= 1, "Failed DROP TABLE must appear in audit log"
+    for line in lines:
+        # The audit format is: TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
+        # OBJECT_NAMES (6th field) must contain the table name extracted from the AST.
+        parts = line.split(", ")
+        assert any("test_nonexistent_obj_audit_98765" in p for p in parts[:-1]), \
+            f"Table name must appear in OBJECT_NAMES, not just in QUERY text: {line}"
+
+
+def test_audit_log_watch_classified_as_dml(start_cluster):
+    """WATCH is a read-only monitoring query and must be classified as DML,
+    not DDL (it previously inherited QueryKind::Create from ASTWatchQuery)."""
+    node_dml_misc.query("DROP TABLE IF EXISTS test_watch_audit_table")
+    node_dml_misc.query("CREATE TABLE test_watch_audit_table(a int) ENGINE=Memory")
+
+    # WATCH with LIMIT 0 terminates immediately but still produces an audit record
+    try:
+        node_dml_misc.query("WATCH test_watch_audit_table LIMIT 0")
+    except Exception:
+        pass  # WATCH may not be supported on Memory tables, but the audit record is emitted
+
+    assert_audit_log_contain_with_retry(node_dml_misc, "WATCH")
+    log_content = node_dml_misc.grep_in_log("WATCH", from_host=True, filename="clickhouse-server.audit.log")
+    # Filter to only WATCH-related lines (not lines that happen to contain "WATCH" in other contexts)
+    watch_lines = [line for line in log_content.strip().split("\n") if "WATCH test_watch_audit_table" in line]
+    assert len(watch_lines) >= 1, "WATCH query must appear in audit log"
+    for line in watch_lines:
+        assert "DML" in line, f"WATCH must be classified as DML, not DDL: {line}"
+        assert "DDL" not in line, f"WATCH must not appear as DDL: {line}"
