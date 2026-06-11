@@ -24,18 +24,16 @@ public:
 
     void insert(Tuint S, Tuint S1, Tuint S2);
 
-    const DPEntry & operator[](Tuint x) const { return dp_tab[x]; }
+    const DPEntry & operator[](Tuint x) const { return dp_tab.at(x); }
     DPEntry & operator[](Tuint x) { return dp_tab[x]; }
 
     bool isConnected(Tuint S) const { return dp_tab.contains(S); }
-
     size_t n() const { return nr_relations; }
     UInt64 noCcp() const { return nr_ccp; }
     UInt64 noCsg() const { return map().size(); }
     const map_t & map() const { return dp_tab; }
 
     void printStatistics() const;
-
 private:
     const size_t nr_relations;
     map_t dp_tab;
@@ -48,7 +46,6 @@ DpTable<Tentry, Tuint>::DpTable(size_t nrRelations)
     , nr_ccp(0)
 {
     /// The DPsub enumerator visits every connected subset, so the table can hold up to 2^n entries.
-    /// Compute the bound in size_t to avoid undefined behaviour when shifting a Tuint by its own width.
     dp_tab.reserve(static_cast<size_t>(1) << n());
 
     for (Tuint i = 0; i < n(); ++i)
@@ -61,8 +58,6 @@ void DpTable<Tentry, Tuint>::insert(Tuint S, Tuint S1, Tuint S2)
     chassert(0 == (S1 & S2));
     chassert(S == (S1 | S2));
 
-    /// std::unordered_map keeps references to elements valid across rehashing
-    /// (only iterators are invalidated), so caching `entry` before touching S1/S2 is safe.
     auto & entry = dp_tab[S];
     if (entry.count == 0)
     {

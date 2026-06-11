@@ -13,7 +13,7 @@ class EnumeratorChecker
     using consumser_t = EnumeratorChecker;
 public:
     using acceptor_fn = void (EnumeratorChecker::*)(Tuint, Tuint, Tuint);
-    EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), dptab(nr_relations_) {}
+    explicit EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), dptab(nr_relations_) {}
     void accept(Tuint S, Tuint S1, Tuint S2) { dptab.insert(S, S1, S2); }
     inline size_t n() const { return nr_relations; }
     inline dptable_t & dptable() { return dptab; }
@@ -76,15 +76,12 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
     auto logger = optimizer.log;
     auto lhs = BitSet::fromUint(S1);
     auto rhs = BitSet::fromUint(S2);
-    /// Keep the edges that connect left and right
-    /// The following loop is unnecessary, since we already have connectedness information in the DP table
-    /// FIXME: we need a more efficient way to get the edges that connect left and right
 
     auto join_kind = optimizer.isValidJoinOrder(lhs, rhs);
     if (!join_kind)
         return;
 
-    /// FIXME: Restrict to Inner joins for now because isValidJoinOrder seems to not handle non-Inner joins with swapped inputs correctly
+    /// FIXME: Restrict to Inner joins for now because isValidJoinOrder does not handle non-Inner joins with swapped inputs correctly
     if (*join_kind != JoinKind::Inner)
         return;
 
@@ -111,20 +108,12 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
     }
 
     auto selectivity = optimizer.computeSelectivity(edge, lhs, rhs);
-
-    // LOG_TEST(logger, "Selectivity for {} and {}: [{}, {}]", toString(lhs), toString(rhs), selectivity, dptab[S1].sel * dptab[S2].sel);
-
     auto plan_cost = computeJoinCost(S1, S2, selectivity);
-
-    // LOG_TEST(logger, "Selectivity for {} and {}: [{}, {}], plan cost: {}", toString(lhs), toString(rhs), selectivity, dptab[S1].sel * dptab[S2].sel, plan_cost);
 
     if (!dptab.map().contains(S) || plan_cost < dptab[S].cost)
     {
         dptab.insert(S, S1, S2);
 
-        /// Cache the entry reference: insert() guarantees S is present, and
-        /// computeCardinality only reads the S1/S2 entries, so the reference
-        /// stays valid (unordered_map preserves references across rehashing).
         auto & entry = dptab[S];
         entry.left = S1;
         entry.right = S2;

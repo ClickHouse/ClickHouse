@@ -24,7 +24,7 @@
 #include <unordered_map>
 #include <vector>
 #include "dpTable.h"
-#include "joinChecker.h"
+#include "enumChecker.h"
 
 
 namespace ProfileEvents
