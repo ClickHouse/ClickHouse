@@ -1,6 +1,7 @@
--- Tags: no-fasttest, no-object-storage, no-replicated-database, no-shared-merge-tree
+-- Tags: no-fasttest, no-object-storage, no-replicated-database, no-shared-merge-tree, no-parallel
 -- Tag no-object-storage: relies on the local_disk / local_plain_rewritable disks from storage_conf_local.xml
 -- Tag no-replicated-database, no-shared-merge-tree: plain rewritable is not shared between replicas
+-- Tag no-parallel: SYSTEM DROP DISK METADATA CACHE affects server-wide disk metadata cache state
 
 DROP TABLE IF EXISTS t_move_empty_pr;
 
