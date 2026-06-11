@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "
         ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_at_local_dist_local, rand());
 
     -- AT LOCAL works when session_timezone is explicitly set (propagated to all shards)
-    SELECT dt AT LOCAL FROM t_at_local_dist SETTINGS session_timezone = 'UTC' ORDER BY dt;
+    SELECT dt AT LOCAL FROM t_at_local_dist ORDER BY dt SETTINGS session_timezone = 'UTC';
 
     -- AT TIME ZONE with a constant string always works
     SELECT dt AT TIME ZONE 'America/Denver' FROM t_at_local_dist ORDER BY dt;

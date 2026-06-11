@@ -46,7 +46,7 @@ SELECT formatQuery($$SELECT a * ts AT TIME ZONE 'UTC'$$);            -- a * toTi
 -- non-const column tz: requires allow_nonconst_timezone_arguments=1 to execute
 SELECT dt AT TIME ZONE tz FROM (SELECT toDateTime('2001-02-16 20:38:40', 'UTC') AS dt, 'America/Denver' AS tz)
     SETTINGS allow_nonconst_timezone_arguments = 1;
-SELECT dt AT TIME ZONE tz FROM (SELECT toDateTime('2001-02-16 20:38:40', 'UTC') AS dt, 'America/Denver' AS tz); -- { serverError ILLEGAL_COLUMN }
+SELECT dt AT TIME ZONE tz FROM (SELECT toDateTime('2001-02-16 20:38:40', 'UTC') AS dt, 'America/Denver' AS tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
 
 -- error paths
 SELECT 'x' AT TIME ZONE 'UTC';   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
