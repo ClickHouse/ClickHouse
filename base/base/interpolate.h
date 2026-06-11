@@ -1,6 +1,6 @@
 #pragma once
+#include <cassert>
 #include <cmath>
-#include <base/defines.h>
 
 /** Linear interpolation in logarithmic coordinates.
   * Exponential interpolation is related to linear interpolation
@@ -8,7 +8,7 @@
   */
 constexpr double interpolateExponential(double min, double max, double ratio)
 {
-    chassert(min > 0 && ratio >= 0 && ratio <= 1);
+    assert(min > 0 && ratio >= 0 && ratio <= 1);
     return min * std::pow(max / min, ratio);
 }
 

@@ -7,6 +7,8 @@ title: 'prometheusQuery'
 doc_type: 'reference'
 ---
 
+# prometheusQuery Table Function
+
 Evaluates a prometheus query using data from a TimeSeries table.
 
 ## Syntax {#syntax}
