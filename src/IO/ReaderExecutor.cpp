@@ -635,13 +635,13 @@ void ReaderExecutor::maybeTriggerPrefetch()
     const size_t next_logical_offset = position;
 
     /// Align the worker's fetch to the cache cells from the plan's immutable geometry
-    /// (`alignedFetchWindow` unions the aligned miss ranges - whole page-cache blocks,
+    /// (`fetchWindowAt` unions the aligned miss ranges - whole page-cache blocks,
     /// disk-segment boundary - that overlap this gap): the worker is a pure source fetch
     /// and cannot align itself, so the foreground bounds the aligned window here so the
     /// consume `write` lands aligned in every tier. `prefetch_range` stays the logical
     /// REQUESTED range (seek and the consume slice work in that space); the consume
     /// backfills the aligned `prefetch_physical_window` and slices back to the request.
-    const ByteRange next_physical_window = read_plan.geometry()->alignedFetchWindow(ByteRange{position_phys, next_size});
+    const ByteRange next_physical_window = read_plan.geometry()->fetchWindowAt(ByteRange{position_phys, next_size});
 
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {}) (requested [{}, {}))",
         next_physical_window.offset, next_physical_window.end(), position_phys, position_phys + next_size);
@@ -1670,13 +1670,13 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, ConnState & c
 
     /// Widen the FETCH to the cache-aligned miss extent (the segment/block-aligned head
     /// below `physical_window.offset` and the tail past its end), mirroring the prefetch
-    /// path's `alignedFetchWindow` at submit: the source over-reads to fill the whole
+    /// path's `fetchWindowAt` at submit: the source over-reads to fill the whole
     /// cache segment/block so the write buffers commit complete cells, and the alignment
     /// slack is counted as `OverReadBytes`. With an empty geometry (`initDecryption`) this
     /// is a no-op (`fetch_window == physical_window`). The result is sliced back to the
     /// REQUESTED `physical_window` by `finalizeAssembledWindow`, so the caller still gets
     /// only the requested bytes; the pin uses the aligned frontier.
-    const ByteRange fetch_window = geometry.alignedFetchWindow(physical_window);
+    const ByteRange fetch_window = geometry.fetchWindowAt(physical_window);
 
     /// Serve resident bytes over the ALIGNED window: a byte that is a miss on the tier
     /// driving the alignment but resident on a faster tier is covered here, so the gap

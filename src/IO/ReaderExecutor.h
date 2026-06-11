@@ -518,7 +518,7 @@ private:
         CacheTier tier{};
         /// Grid the fetch rounds to at each edge of a miss run, filling the aligned
         /// prefix/suffix of the cache cell this read starts/ends in (`ICacheProvider::
-        /// fetch{Head,Tail}Alignment`). `1` = no over-read. See `alignedFetchWindow`.
+        /// fetch{Head,Tail}Alignment`). `1` = no over-read. See `fetchWindowAt`.
         size_t head_align = 1;
         size_t tail_align = 1;
         VectorWithMemoryTracking<ByteRange> resident;
@@ -601,13 +601,13 @@ private:
             return end;
         }
 
-        /// Expand the requested gap `req` outward to the union of every tier's
-        /// cache-ALIGNED miss range that overlaps it, so a fetch covers the whole aligned
-        /// extent (the disk-segment/boundary head below `req.offset`, the page-block/
-        /// segment tail past `req.end()`) so the cache cell at each edge is populated from
-        /// its aligned floor. This replaces the old `alignToCaches` probe with a pure read
-        /// of the immutable geometry. A `req` with no overlapping aligned miss (fully
-        /// resident) is returned unchanged.
+        /// The window to FETCH in order to serve `req`: `req` rounded OUT to the cache cell
+        /// at each edge, so a touched cell is populated from its aligned floor. The result
+        /// MAY START LEFT of `req.offset` (the disk-segment/boundary head below it) and end
+        /// past `req.end()` (the page-block/segment tail) - the streaming code reads this
+        /// extent and slices the delivered window back to `req`. A `req` with no overlapping
+        /// aligned miss (fully resident) is returned unchanged. A pure read of the immutable
+        /// geometry (replaces the old `alignToCaches` probe).
         ///
         /// The widening is BOUNDED by each tier's alignment grid (`head_align`/`tail_align`),
         /// NOT the length of the coalesced miss run: a cold scan's miss run can span the whole
@@ -617,7 +617,7 @@ private:
         /// extension never reaches into resident bytes. The head slack below `req` that the
         /// foreground already covered from earlier windows is dropped by `covered`; only the
         /// genuinely-missing aligned prefix is fetched and counted as over-read (`[CF-overread]`).
-        ByteRange alignedFetchWindow(ByteRange req) const
+        ByteRange fetchWindowAt(ByteRange req) const
         {
             if (req.size == 0)
                 return req;
@@ -752,7 +752,7 @@ private:
     std::shared_ptr<PrefetchHandle> prefetch_handle;
     /// `prefetch_range` is the LOGICAL requested read-ahead range (the space `position`,
     /// seek and the consume slice work in). `prefetch_physical_window` is the PHYSICAL,
-    /// cache-aligned window the worker actually fetched (`ReadPlanGeometry::alignedFetchWindow`
+    /// cache-aligned window the worker actually fetched (`ReadPlanGeometry::fetchWindowAt`
     /// widened it to whole page blocks / the disk-segment boundary) - the consume path
     /// backfills the caches over it and pins at its frontier. Both meaningful only while
     /// the handle is set.
