@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
+#include <IO/UncompressedCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
@@ -251,11 +252,6 @@ namespace Setting
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 uncompressed_cache_size;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -277,6 +273,15 @@ namespace ErrorCodes
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 {
     return analyzePartsOnRemoteFS(parts).all_parts_on_remote_disk;
+}
+
+/// Whether the server has a usable uncompressed cache. The live cache object is checked instead of
+/// the `uncompressed_cache_size` server setting because `SYSTEM RELOAD CONFIG` resizes the cache
+/// without updating the stored server settings.
+static bool hasNonZeroUncompressedCache(const ContextPtr & context)
+{
+    const auto cache = context->getUncompressedCache();
+    return cache && cache->maxSizeInBytes() > 0;
 }
 
 /// build sort description for output stream
@@ -984,7 +989,7 @@ Pipe ReadFromMergeTree::readByLayers(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
-    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+    const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
 
     LOG_TRACE(log, "Spreading mark ranges among streams (reading by layers)");
 
@@ -1107,7 +1112,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
-    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+    const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
 
     LOG_TRACE(log, "Spreading mark ranges among streams (default reading)");
 
@@ -1256,7 +1261,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
-    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+    const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
 
     LOG_TRACE(log, "Spreading ranges among streams with order");
 
@@ -1707,7 +1712,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return {};
 
     const auto & settings = context->getSettingsRef();
-    const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+    const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
     PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
 
     chassert(num_streams == requested_num_streams);
@@ -3351,7 +3356,7 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     PartRangesReadInfo info(
         getParts(),
-        context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0,
+        hasNonZeroUncompressedCache(context),
         context->getSettingsRef(),
         *data.getSettings());
 
@@ -3731,7 +3736,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         auto empty_mutations_snapshot = mutations_snapshot->cloneEmpty();
         const auto & query_settings = context->getSettingsRef();
-        const bool has_uncompressed_cache = context->getServerSettings()[ServerSetting::uncompressed_cache_size] > 0;
+        const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
         PartRangesReadInfo info(result.parts_with_ranges, has_uncompressed_cache, query_settings, *data_settings);
         PoolSettings pool_settings{
             .threads = 1,
