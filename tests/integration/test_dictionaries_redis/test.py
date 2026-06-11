@@ -312,3 +312,22 @@ def test_redis_storage_type_key_constraints(started_cluster):
     )
     assert "requires 2 keys" in error, error
     node.query("DROP DICTIONARY IF EXISTS test_redis_hash_triple")
+
+    redis_client.set(str(2**256 - 1), "v1")
+
+    # Unsupported: wide integer key types are not supported by `ExternalResultDescription`,
+    # so reading from the dictionary throws, although the dictionary itself can be created.
+    node.query("DROP DICTIONARY IF EXISTS test_redis_uint256_key")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_uint256_key (key UInt256, value String)
+        PRIMARY KEY key
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_DIRECT())
+        """
+    )
+    error = node.query_and_get_error(
+        f"SELECT dictGet('test_redis_uint256_key', 'value', tuple(toUInt256('{2**256 - 1}')))"
+    )
+    assert "Unsupported type UInt256" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_uint256_key")
