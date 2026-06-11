@@ -63,6 +63,22 @@ bool columnSliceHasNaN(const IColumn & column, size_t start, size_t end)
 
 }
 
+void getMinMaxIndexExtremes(const IColumn & column, size_t start, size_t end, FieldRef & min_value, FieldRef & max_value)
+{
+    /// Materialize LowCardinality so getExtremesNullLast and the NaN check below see the nested float.
+    auto column_full = column.convertToFullColumnIfLowCardinality();
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column_full.get()))
+        column_nullable->getExtremesNullLast(min_value, max_value, start, end);
+    else
+        column_full->getExtremes(min_value, max_value, start, end);
+
+    /// Widen the stored max to NaN so the NaN guard in KeyCondition::checkInHyperrectangle keeps the
+    /// granule under a negated range. Keep the NULLS_LAST +inf sentinel getExtremesNullLast sets for a
+    /// NULL in the slice: it already keeps the granule under negated ranges, and overwriting it with NaN
+    /// would let isNull(val) wrongly prune the granule. isPositiveInfinity() matches only that sentinel.
+    if (!max_value.isPositiveInfinity() && columnSliceHasNaN(*column_full, start, end))
+        max_value = std::numeric_limits<Float64>::quiet_NaN();
+}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
@@ -212,21 +228,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     {
         auto index_column_name = index_sample_block.getByPosition(i).name;
         const auto & column = block.getByName(index_column_name).column;
-        /// Materialize LowCardinality so getExtremesNullLast and the NaN check below see the nested float.
-        auto column_full = column->convertToFullColumnIfLowCardinality();
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column_full.get()))
-            column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
-        else
-            column_full->getExtremes(field_min, field_max, range_start, range_end);
-
-        /// getExtremes skips NaN, so a mixed granule (e.g. [1.0, nan, 3.0]) stores a clean [min, max] that
-        /// hides the NaN. NaN sorts after +inf, so the granule's true max is NaN: widen the stored max so
-        /// the NaN guard in KeyCondition::checkInHyperrectangle keeps the granule under a negated range.
-        /// But keep the NULLS_LAST +inf sentinel getExtremesNullLast sets for a NULL in the granule: it
-        /// already keeps the granule under negated ranges, and overwriting it with NaN would let
-        /// isNull(val) wrongly prune the granule. isPositiveInfinity() matches only that sentinel.
-        if (!field_max.isPositiveInfinity() && columnSliceHasNaN(*column_full, range_start, range_end))
-            field_max = std::numeric_limits<Float64>::quiet_NaN();
+        getMinMaxIndexExtremes(*column, range_start, range_end, field_min, field_max);
 
         if (hyperrectangle.size() <= i)
         {

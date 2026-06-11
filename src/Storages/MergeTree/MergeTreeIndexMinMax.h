@@ -8,6 +8,12 @@
 namespace DB
 {
 
+/// NaN-aware extremes for a minmax index (skip index and part-level) over column[start, end).
+/// getExtremes skips NaN, so a slice mixing finite floats with NaN would store a clean [min, max] that
+/// hides the NaN and lets KeyCondition prune it under a negated range. Shared by the skip-index
+/// aggregator and IMergeTreeDataPart::MinMaxIndex::update so both keep identical NaN/NULL semantics.
+void getMinMaxIndexExtremes(const IColumn & column, size_t start, size_t end, FieldRef & min_value, FieldRef & max_value);
+
 struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_);

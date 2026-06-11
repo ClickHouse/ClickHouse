@@ -53,3 +53,25 @@ INSERT INTO t_106533_dec VALUES (1.0), (10.0), (100.0);
 SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_106533_dec;
+
+-- Part-level minmax index (built from the partition-key columns, no explicit secondary index).
+-- A part mixing finite floats with NaN stored a finite [min, max] in the part-level minmax, so the
+-- whole part was pruned for `NOT ((val >= 0) AND (val <= 3))` even though the NaN row satisfies it.
+-- The part-level minmax must record the NaN like the skip index does. use_skip_indexes = 0 also
+-- disables part-level minmax pruning, so it is the unindexed oracle.
+
+DROP TABLE IF EXISTS t_106533_partlevel;
+
+CREATE TABLE t_106533_partlevel (id UInt64, val Nullable(Float64))
+ENGINE = MergeTree PARTITION BY isNull(val) ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_partlevel VALUES (1, 1.0), (2, nan), (3, 3.0);
+
+SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.));
+SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
+
+-- A positive range no value satisfies must still prune the part.
+SELECT count() FROM t_106533_partlevel WHERE val > 500;
+SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_106533_partlevel;

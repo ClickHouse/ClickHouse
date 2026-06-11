@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -275,10 +276,9 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
         FieldRef min_value;
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
-        else
-            column.column->getExtremes(min_value, max_value, 0, column.column->size());
+        /// Shared with the minmax skip index: NaN-aware so a part mixing finite floats with NaN (e.g.
+        /// a nullable-float partition key) is not pruned for a negated range its NaN rows satisfy.
+        getMinMaxIndexExtremes(*column.column, 0, column.column->size(), min_value, max_value);
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
