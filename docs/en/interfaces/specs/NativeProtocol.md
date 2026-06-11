@@ -372,7 +372,7 @@ sequenceDiagram
 
     C->>S: Query packet (INSERT body)
     C->>S: External-table Data packets (0 or more)
-    C->>S: Empty Data marker — end of client input setup
+    Note over C,S: No empty Data marker here —<br/>it would end the row stream before it starts
     opt metadata before schema
         S->>C: TableColumns / Progress / ...
     end
@@ -392,7 +392,7 @@ sequenceDiagram
 ```
 
 1. The client sends [`Query`](#query) with `body` set to the INSERT SQL.
-2. The client sends any external tables (rare for INSERT) followed by the empty terminator.
+2. The client sends any external tables (rare for INSERT). Unlike the [Query phase](#query-phase), it does **not** send an empty Data marker here. The `INSERT` `Query` packet is sent with pending data, so the empty end-of-data block is deferred to step 5; sending it before the schema block would make the server read it as the end of the row stream, finish the INSERT with no rows, and then parse the first real row packet as a stray top-level packet.
 3. The client drains metadata packets (TableColumns, Progress, ProfileInfo, Log, ProfileEvents) until it reads the schema Data packet — a Block with 0 rows but full column structure (names and types). The schema block is the contract: the rows the client sends next must match these column shapes.
 4. The client sends data block(s). For each block it writes `VarUInt(ClientPacket::Data = 2)`, then `String("")` for the empty external-table name, then the Block. Column types must align with the schema block's columns by position.
 5. The client sends the end-of-input terminator: a Data packet with an empty Block (0 columns, 0 rows).
