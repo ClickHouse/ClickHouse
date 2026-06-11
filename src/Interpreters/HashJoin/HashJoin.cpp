@@ -371,6 +371,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 4)
+        return Type::keys32;
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -413,6 +417,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
             return Type::two_level_key32;
         case Type::key64:
             return Type::two_level_key64;
+        /// There are no two-level variants for the smaller packed-key maps,
+        /// so fall back to packing into the two-level UInt128 map.
+        case Type::keys32:
+        case Type::keys64:
         case Type::keys128:
             return Type::two_level_keys128;
         case Type::keys256:
