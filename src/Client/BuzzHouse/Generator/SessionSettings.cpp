@@ -1716,6 +1716,22 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             {{"filesystem_cache_name",
               CHSetting([&](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(fc.caches) + "'"; }, {}, false)}});
     }
+    if (!fc.function_implementations.empty())
+    {
+        /// Forces a specific SIMD implementation in functions using ImplementationSelector (hashing, MD5, SHA1,
+        /// greatCircleDistance). The values supported by the server's CPU were probed at startup, so none of them
+        /// errors on this host. The result must not depend on the implementation, so the oracles can swap them.
+        /// Static, so the lambda can reference it without copying the set into the closure.
+        static std::unordered_set<String> impls = {"''"};
+
+        for (const auto & entry : fc.function_implementations)
+        {
+            impls.insert("'" + entry + "'");
+        }
+        serverSettings.insert(
+            {{"function_implementation",
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.pickRandomly(impls); }, impls, false)}});
+    }
     for (const auto & setting : performanceSettings)
     {
         serverSettings.insert(setting);
