@@ -10,7 +10,7 @@ keywords: ['native format', 'columnar', 'block', 'wire format', 'serialization',
 
 The Native format is the columnar wire format ClickHouse uses to move tabular data. It shows up in several places:
 
-- the body of `Data`, `Totals`, `Extremes`, `Log`, `ProfileEvents`, and `TableColumns` packets in the [native TCP protocol](/interfaces/specs/NativeProtocol);
+- the body of `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packets in the [native TCP protocol](/interfaces/specs/NativeProtocol) (the `TableColumns` packet is **not** a Native block — it carries two binary strings, so its layout belongs to the [native protocol spec](/interfaces/specs/NativeProtocol));
 - the output of `SELECT ... FORMAT Native` over HTTP;
 - file exports written with `INTO OUTFILE ... FORMAT Native`;
 - inter-server replication payloads.
