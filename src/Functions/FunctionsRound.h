@@ -885,9 +885,9 @@ private:
         using ValueType = typename Container::value_type;
         VectorWithMemoryTracking<ValueType> boundary_values;
         boundary_values.reserve(boundaries.size());
-        for (size_t i = 0; i < boundaries.size(); ++i)
+        for (const auto & boundary_field : boundaries)
         {
-            auto boundary = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
+            auto boundary = static_cast<ValueType>(boundary_field.safeGet<ValueType>());
             /// Drop NaN boundaries: they have no position in the ordering, so keeping them
             /// would break the strict-weak-ordering contract of `::sort` below.
             if constexpr (is_floating_point<ValueType>)
