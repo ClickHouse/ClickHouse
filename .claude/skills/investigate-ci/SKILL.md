@@ -202,16 +202,22 @@ mean distinct bugs.
 
 - `fail_<window>d >= 1` on master → **likely FLAKY** (pre-existing instability, not caused by
   this PR). Note the recent frequency.
-- `0` rows returned, or `fail_90d == 0` → **never fails on master**. Two sub-cases:
-  - The test already exists on master → **likely a REAL regression introduced by this PR**.
+- `0` rows returned, or `fail_90d == 0` on the master gate → **does not fail on direct master**.
+  The gate is tight (`head_ref = 'master'` only) and master runs are far less frequent than PR
+  runs, so a low-rate *fleet-wide* flaky can legitimately show `0` here. **Do not jump to REAL —
+  run the cross-PR corroboration query first**, then:
+  - Fails across multiple *unrelated* PRs with the same error → **FLAKY** (low rate; it just
+    rarely lands on a direct-master run), not a regression.
   - The PR *adds* this test (`gh pr diff` shows the test file as new) → new test, judge on its
     own output, not history.
+  - Absent on master **and** across other PRs, and the test already exists on master →
+    **likely a REAL regression introduced by this PR**.
 - Borderline (rare master failures, e.g. `fail_90d` small but `fail_14d == 0`) → **uncertain**;
   rely more heavily on the step-5 root-cause read.
 
 Cross-check the verdict against the issue found in step 2: a known tracking issue corroborates a
-**FLAKY** verdict (and may already give the root cause), while no issue plus zero master history
-strengthens **REAL**.
+**FLAKY** verdict (and may already give the root cause), while no issue plus no failures on master
+*or* across other PRs strengthens **REAL**.
 
 Always keep the per-test **CIDB link** from step 1 in the final report for manual drill-down.
 
