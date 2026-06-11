@@ -25,9 +25,11 @@ path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database=curre
 # ensure path is absolute before touching the filesystem
 $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" > /dev/null || exit 1
 
-# remove the marks file for column b (compressed wide marks use .cmrk2; fall back to .mrk2)
+# remove the marks file for column b. Wide marks are adaptive-compressed (.cmrk2), adaptive
+# (.mrk2), non-adaptive-compressed (.cmrk) or non-adaptive (.mrk) depending on randomized
+# index_granularity_bytes / compress_marks; cover every wide extension.
 mark_file=""
-for ext in cmrk2 mrk2 mrk; do
+for ext in cmrk2 mrk2 cmrk mrk; do
     if [ -f "${path}b.${ext}" ]; then
         mark_file="${path}b.${ext}"
         break
@@ -77,7 +79,7 @@ $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is 
 $CLICKHOUSE_CLIENT -q "detach table t_missing_granularity_marks"
 
 mark_file=""
-for ext in cmrk2 mrk2 mrk; do
+for ext in cmrk2 mrk2 cmrk mrk; do
     if [ -f "${path}a.${ext}" ]; then
         mark_file="${path}a.${ext}"
         break
@@ -103,11 +105,15 @@ $CLICKHOUSE_CLIENT -q "SELECT reason FROM system.detached_parts WHERE database =
 # (its name contains the table name) to skip this very query's own logged text under logger 'executeQuery'.
 # Match the table name without a trailing space: the storage logger is 'db.table (uuid)' under Atomic
 # but plain 'db.table' under Ordinary, so a trailing space would miss the Ordinary case.
+# Pin the text_log read settings: system.text_log can hold many rows under load, so randomized
+# read limits / parallel-read / projection / query-condition-cache settings must not skew this scan.
 $CLICKHOUSE_CLIENT -q "system flush logs text_log"
 $CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log
-WHERE event_time > now() - INTERVAL 5 MINUTE
+WHERE event_date >= yesterday()
+  AND event_time > now() - INTERVAL 5 MINUTE
   AND logger_name LIKE '%t_missing_granularity_marks%'
   AND message LIKE '%does not exist on disk in part%'
-  AND message LIKE '%listed in the part%checksums%'"
+  AND message LIKE '%listed in the part%checksums%'
+SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0, max_threads = 1, use_query_condition_cache = 0, optimize_use_implicit_projections = 0"
 
 $CLICKHOUSE_CLIENT -q "drop table t_missing_granularity_marks sync;"
