@@ -379,7 +379,8 @@ void IStorageCluster::read(
         {
             auto remote_initiator_cluster_name = settings[Setting::object_storage_remote_initiator_cluster].value;
             if (remote_initiator_cluster_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'object_storage_remote_initiator' can be used only with 'object_storage_remote_initiator_cluster' or 'object_storage_cluster'");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Setting 'object_storage_remote_initiator' can be used only with 'object_storage_remote_initiator_cluster', 'object_storage_cluster', or cluster name in arguments");
 
             /// rewrite query to execute `remote('remote_host', s3(...))`
             /// remote_host can execute query itself or make on-cluster query depends on own `object_storage_cluster` setting

@@ -1550,6 +1550,81 @@ def test_object_storage_remote_initiator_without_cluster_function(started_cluste
                      "s0_1_0\tfoo"]
 
 
+def test_object_storage_remote_initiator_aggregation(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    # Remove initiator without cluster request
+    # Check that aggregation works on nodes
+    query_id = uuid.uuid4().hex
+
+    result = node.query(
+        f"""
+        SELECT sum(value) from s3(
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        SETTINGS
+            object_storage_remote_initiator=1,
+            object_storage_remote_initiator_cluster='cluster_with_dots_and_user'
+        """,
+        query_id = query_id,
+    )
+
+    assert result == "67802152770\n"
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_all'")
+    result_rows = node.query(
+        f"""
+        SELECT sum(result_rows)
+            FROM clusterAllReplicas('cluster_all', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id}'
+                AND is_initial_query = 0
+            ORDER BY ALL
+            FORMAT TSV
+        """
+    ).splitlines()
+
+    # Data processed on cluster 'hidden_cluster_with_username_and_password'.
+    # Cluster contains two nodes, each returns one row.
+    assert result_rows == ["2"]
+
+    # Remove initiator without cluster request
+    # Check that aggregation works on nodes
+    query_id = uuid.uuid4().hex
+
+    result = node.query(
+        f"""
+        SELECT value % 2 as bit, sum(value) from s3(
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        GROUP BY bit
+        ORDER BY bit
+        SETTINGS
+            object_storage_remote_initiator=1,
+            object_storage_remote_initiator_cluster='cluster_with_dots_and_user'
+        """,
+        query_id = query_id,
+    )
+
+    assert result == "0\t41117771522\n1\t26684381248\n"
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_all'")
+    result_rows = node.query(
+        f"""
+        SELECT sum(result_rows)
+            FROM clusterAllReplicas('cluster_all', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id}'
+                AND is_initial_query = 0
+            ORDER BY ALL
+            FORMAT TSV
+        """
+    ).splitlines()
+
+    # Data processed on cluster 'hidden_cluster_with_username_and_password'.
+    # Cluster contains two nodes, each returns up to two rows, at least two rows totaly.
+    result_rows = int(result_rows[0])
+    assert result_rows >= 2 and result_rows <= 4
+
+
 def test_hive_partitioning_with_where_condition(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     test_id = uuid.uuid4().hex[:8]

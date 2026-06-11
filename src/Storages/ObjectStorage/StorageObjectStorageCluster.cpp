@@ -39,6 +39,8 @@ namespace Setting
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString object_storage_cluster;
+    extern const SettingsBool object_storage_remote_initiator;
+    extern const SettingsString object_storage_remote_initiator_cluster;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
@@ -46,11 +48,16 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+<<<<<<< HEAD
 }
 
 namespace FailPoints
 {
     extern const char storage_cluster_read_sleep[];
+=======
+    extern const int INVALID_SETTING_VALUE;
+    extern const int BAD_ARGUMENTS;
+>>>>>>> 41e66548fd0 (Merge pull request #1872 from Altinity/bugfix/antalya-26.3/fix_aggregation_with_remote_initiator)
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -693,9 +700,19 @@ String StorageObjectStorageCluster::getClusterName(ContextPtr context) const
 QueryProcessingStage::Enum StorageObjectStorageCluster::getQueryProcessingStage(
     ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const
 {
-    /// Full query if fall back to pure storage.
-    if (getClusterName(context).empty())
+    if (!isClusterSupported())
         return QueryProcessingStage::Enum::FetchColumns;
+
+    /// Full query if fall back to pure storage.
+    if (getClusterName(context).empty()  // Not cluster request
+        && context->getSettingsRef()[Setting::object_storage_remote_initiator_cluster].value.empty()) // Not request with remote initiator
+    {
+        if (context->getSettingsRef()[Setting::object_storage_remote_initiator])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting 'object_storage_remote_initiator' can be used only with 'object_storage_remote_initiator_cluster', 'object_storage_cluster', or cluster name in arguments");
+
+        return QueryProcessingStage::Enum::FetchColumns;
+    }
 
     /// Distributed storage.
     return IStorageCluster::getQueryProcessingStage(context, to_stage, storage_snapshot, query_info);
