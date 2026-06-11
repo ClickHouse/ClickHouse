@@ -739,3 +739,45 @@ def test_reload_config_keeps_azure_endpoint_settings(cluster):
     azure_query(node, "DROP TABLE test_reload_native_copy")
     azure_query(node, "DROP TABLE test_reload_native_copy_r1")
     azure_query(node, "DROP TABLE test_reload_native_copy_r2")
+
+
+@pytest.mark.parametrize(
+    "buffer_size_setting",
+    ["max_read_buffer_size", "max_read_buffer_size_remote_fs"],
+)
+def test_backup_with_huge_max_read_buffer_size(cluster, buffer_size_setting):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/84279
+    # Backing up to Azure Blob Storage with max_read_buffer_size (or its _remote_fs variant)
+    # set to a very large value (e.g. the max uint64) used to throw std::length_error from
+    # ReadBufferFromAzureBlobStorage, which allocates a read buffer of that size while validating
+    # the backup lock file. The configured value is only an upper bound; the allocation must be
+    # capped, so the backup and restore must succeed.
+    node = cluster.instances["node"]
+    huge = {buffer_size_setting: 18446744073709551615}
+    azure_query(node, "DROP TABLE IF EXISTS test_huge_read_buffer")
+    azure_query(
+        node,
+        f"CREATE TABLE test_huge_read_buffer (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_huge_read_buffer.csv', 'CSV')",
+    )
+    azure_query(
+        node,
+        "INSERT INTO test_huge_read_buffer SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+    )
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_huge_read_buffer TO {backup_destination}",
+        settings=huge,
+    )
+
+    azure_query(node, "DROP TABLE IF EXISTS test_huge_read_buffer_restored")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_huge_read_buffer AS test_huge_read_buffer_restored FROM {backup_destination};",
+        settings=huge,
+    )
+    assert azure_query(node, "SELECT * FROM test_huge_read_buffer_restored") == "1\ta\n"
+
+    azure_query(node, "DROP TABLE test_huge_read_buffer")
+    azure_query(node, "DROP TABLE test_huge_read_buffer_restored")

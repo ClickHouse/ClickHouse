@@ -20,6 +20,9 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
+/// Upper bound for the size of a single read buffer that we eagerly allocate.
+static constexpr auto DBMS_MAX_READ_BUFFER_SIZE = 1ULL << 30; /// 1 GiB
+
 /// The initial size of adaptive I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
 
