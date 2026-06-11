@@ -810,6 +810,15 @@ bool StorageMaterializedView::refreshColumnsFromSelectQueryIfInferred(ContextPtr
 
     new_metadata.columns = std::move(*inferred);
 
+    /// The triggering ALTER's metadata transaction (Replicated database) is already committed here, so a second
+    /// persisted alterTable would add an op to an executed transaction. Refresh in memory only; each replica
+    /// replays the upstream ALTER and re-infers identical columns, leaving the persisted statement and digest intact.
+    if (query_context->getZooKeeperMetadataTransaction())
+    {
+        setInMemoryMetadata(new_metadata);
+        return true;
+    }
+
     auto table_id = getStorageID();
     DatabaseCatalog::instance().getDatabase(table_id.database_name)
         ->alterTable(query_context, table_id, new_metadata, /*validate_new_create_query=*/true);
