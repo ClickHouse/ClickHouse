@@ -43,6 +43,22 @@ def get_zk_metadata_version(node, zookeeper_path):
     )
 
 
+def list_part_index_files(node, database, table, part_name):
+    # The on-disk secondary index filename is the materialisation of the in-memory
+    # IndexDescription::escape_filenames flag (escaped: skp_idx_<escaped>.idx,
+    # unescaped: skp_idx_<raw>.idx), so listing it is how we observe the index
+    # filename policy actually in effect on a replica without restarting it.
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database = '{database}' AND name = '{table}'"
+    ).strip()
+    files = node.exec_in_container(
+        ["bash", "-c", f"ls {data_path}/{part_name}/ | grep '^skp_idx_' || true"]
+    )
+    # The skip-index data file is .idx or .idx2 depending on the part format version;
+    # the basename before the extension carries the escaping we care about.
+    return sorted(f for f in files.splitlines() if f.endswith((".idx", ".idx2")))
+
+
 def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     # ON CLUSTER ALTER batches mixing MODIFY SETTING / RESET SETTING with
     # column or table comments must converge on every replica. The storage
@@ -209,4 +225,61 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
     ch1.query(
         database="test_db",
         sql="DROP TABLE modcol_comment ON CLUSTER 'cluster' SYNC",
+    )
+
+
+def test_mixed_setting_escape_index_filenames_on_cluster(started_cluster):
+    # escape_index_filenames is a setting whose value drives derived metadata:
+    # changeSettings rewrites StorageInMemoryMetadata::escape_index_filenames and the
+    # per-index escape_filenames flag, which controls the on-disk index filename. A
+    # mixed `MODIFY SETTING escape_index_filenames = 0, MODIFY COMMENT` batch must apply
+    # that derived metadata locally on every replica, not just record the setting in
+    # SHOW CREATE. The index name has a non-word character so escaping changes the file.
+    zookeeper_path = "/clickhouse/tables/escape_mixed"
+    # PARTITION BY x so each replica writes its own part in its own partition; a part
+    # keeps the index filenames of whoever wrote it, even after replication fetches it,
+    # so inspecting a node's own partition isolates that node's in-memory policy.
+    create_sql = (
+        "CREATE TABLE escape_mixed (x UInt64, INDEX `idx-esc` x TYPE minmax GRANULARITY 1) "
+        "ENGINE=ReplicatedMergeTree('{zk}', '{replica}') ORDER BY x PARTITION BY x "
+        "SETTINGS escape_index_filenames = 1, min_bytes_for_wide_part = 0"
+    )
+    ch1.query(database="test_db", sql=create_sql.format(zk=zookeeper_path, replica="r1"))
+    ch2.query(database="test_db", sql=create_sql.format(zk=zookeeper_path, replica="r2"))
+
+    # Mixed batch: turn escaping off and set a comment in one ON CLUSTER ALTER.
+    # MODIFY COMMENT is placed first because MODIFY SETTING parses a comma-separated
+    # list, so a trailing comma after it would be read as another setting change.
+    ch1.query(
+        database="test_db",
+        sql="ALTER TABLE escape_mixed ON CLUSTER 'cluster' MODIFY COMMENT 'escape-mixed', MODIFY SETTING escape_index_filenames = 0",
+    )
+
+    # Each replica writes a part locally (distinct partition) after the alter, so the
+    # new part uses whatever index filename policy is actually in memory on that replica.
+    # With escaping disabled, the unescaped index file (skp_idx_idx-esc.idx) must be
+    # written; a replica that reverted to the old policy would write skp_idx_idx%2Desc.idx.
+    for value, node in [(1, ch1), (2, ch2)]:
+        node.query(database="test_db", sql=f"INSERT INTO escape_mixed VALUES ({value})")
+        part_name = node.query(
+            database="test_db",
+            sql=f"SELECT name FROM system.parts WHERE database = 'test_db' AND table = 'escape_mixed' AND active = 1 AND partition = '{value}'",
+        ).strip()
+        index_files = list_part_index_files(node, "test_db", "escape_mixed", part_name)
+        # Escaping disabled -> the raw index name (idx-esc) appears in the filename.
+        # If a replica reverted to escaping, the name would be skp_idx_idx%2Desc.idx*.
+        assert len(index_files) == 1 and index_files[0].startswith("skp_idx_idx-esc."), (
+            node.name,
+            index_files,
+        )
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE escape_mixed FORMAT TSVRaw",
+        )
+        assert "escape_index_filenames = 0" in show_create, (node.name, show_create)
+        assert "escape-mixed" in show_create, (node.name, show_create)
+
+    ch1.query(
+        database="test_db",
+        sql="DROP TABLE escape_mixed ON CLUSTER 'cluster' SYNC",
     )
