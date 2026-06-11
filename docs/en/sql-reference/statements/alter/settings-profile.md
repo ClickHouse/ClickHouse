@@ -24,7 +24,9 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 ```
 ## Incremental vs full replacement {#incremental-vs-full-replacement}
 
-⚠️ A bare `SETTINGS` clause **removes all existing settings and all inherited (parent) profiles** from the profile before applying the new ones.
+:::warning
+A bare `SETTINGS` clause **removes all existing settings and all inherited (parent) profiles** from the profile before applying the new ones.
+:::
 
 To change a single setting while keeping the rest, use `ADD SETTINGS` or `MODIFY SETTINGS` (see examples below).
 
