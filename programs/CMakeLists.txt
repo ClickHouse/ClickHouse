@@ -158,9 +158,20 @@ macro(clickhouse_program_alias alias)
 endmacro()
 
 set (CLICKHOUSE_BUNDLE)
-function(clickhouse_program_install name lib_name)
+
+# Link a subcommand's library into the multi-call `clickhouse` binary and create a
+# `clickhouse-<name>` symlink next to it in the build directory. The symlink is NOT
+# installed: use this for subcommands that are reachable through the multi-call binary
+# (as `clickhouse <name>`) but are not shipped as standalone programs in any package.
+function(clickhouse_program_link name lib_name)
     clickhouse_target_link_split_lib(clickhouse ${lib_name})
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name})
+endfunction()
+
+# Same as clickhouse_program_link, but also installs the standalone symlink (and any
+# extra aliases) so they are picked up when building packages.
+function(clickhouse_program_install name lib_name)
+    clickhouse_program_link(${name} ${lib_name})
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${name}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     foreach(alias ${ARGN})
@@ -172,31 +183,35 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
+# These subcommands are shipped as standalone clickhouse-<name> programs in packages.
 clickhouse_program_install(clickhouse-benchmark benchmark)
-clickhouse_program_install(clickhouse-check-marks check-marks)
-clickhouse_program_install(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)
 clickhouse_program_install(clickhouse-client client chc)
 clickhouse_program_install(clickhouse-compressor compressor)
-clickhouse_program_install(clickhouse-disks disks)
-clickhouse_program_install(clickhouse-docker-init docker-init)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
-clickhouse_program_install(clickhouse-git-import git-import)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
 clickhouse_program_install(clickhouse-server server)
-clickhouse_program_install(clickhouse-static-files-disk-uploader static-files-disk-uploader)
-clickhouse_program_install(clickhouse-su su)
-clickhouse_program_install(clickhouse-zookeeper-dump-tree zookeeper-dump-tree)
-clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-by-list)
+
+# These subcommands are only reachable through the multi-call binary (`clickhouse <name>`),
+# so only link them and create the build-tree symlink without installing it.
+clickhouse_program_link(clickhouse-check-marks check-marks)
+clickhouse_program_link(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)
+clickhouse_program_link(clickhouse-disks disks)
+clickhouse_program_link(clickhouse-docker-init docker-init)
+clickhouse_program_link(clickhouse-git-import git-import)
+clickhouse_program_link(clickhouse-static-files-disk-uploader static-files-disk-uploader)
+clickhouse_program_link(clickhouse-su su)
+clickhouse_program_link(clickhouse-zookeeper-dump-tree zookeeper-dump-tree)
+clickhouse_program_link(clickhouse-zookeeper-remove-by-list zookeeper-remove-by-list)
 
 if (TARGET ch_contrib::nuraft)
-    clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
-    clickhouse_program_install(clickhouse-keeper-utils keeper-utils)
+    clickhouse_program_link(clickhouse-keeper-data-dumper keeper-data-dumper)
+    clickhouse_program_link(clickhouse-keeper-utils keeper-utils)
 endif ()
 
 if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
-    clickhouse_program_install(clickhouse-keeper-bench keeper-bench)
+    clickhouse_program_link(clickhouse-keeper-bench keeper-bench)
 endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
