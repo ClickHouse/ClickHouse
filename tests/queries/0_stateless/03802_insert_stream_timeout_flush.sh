@@ -23,7 +23,13 @@ fifo="${CLICKHOUSE_TMP}/03802_insert_stream_timeout.fifo"
 rm -f "$fifo"
 mkfifo "$fifo"
 
+# Tag the INSERT with an explicit query_id so the part count below can be scoped to exactly
+# this INSERT. With async_insert disabled (no-async-insert tag) the parts are written in the
+# INSERT's own context, so part_log.query_id equals this id.
+insert_query_id="03802_${CLICKHOUSE_DATABASE}_$$"
+
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow" \
+    --query_id="$insert_query_id" \
     --max_insert_block_size=1000 \
     --input_format_connection_handling=1 \
     --input_format_max_block_wait_ms=2000 \
@@ -55,16 +61,16 @@ echo "Total records inserted: ${record_count}"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
 
-# Count parts the INSERT itself created. merge_reason = 'NotAMerge' excludes parts produced
-# by a background merge, so a merge firing during the test cannot reduce the count (counting
-# system.parts active would). No query_log join, so parallel replicas cannot break it either.
+# Count parts this INSERT created. query_id scopes the count to this exact INSERT, so part_log
+# rows left by an earlier run reusing the table name (part_log is append-only across DROP) are
+# excluded. merge_reason = 'NotAMerge' drops parts from a background merge. No query_log join,
+# so parallel replicas cannot break it either.
 parts_count=$(${CLICKHOUSE_CLIENT} --query "
 SELECT count()
 FROM system.part_log
-WHERE database = currentDatabase()
-  AND table = 'test_insert_timeout'
-  AND event_type = 'NewPart'
-  AND merge_reason = 'NotAMerge'")
+WHERE event_type = 'NewPart'
+  AND merge_reason = 'NotAMerge'
+  AND query_id = '$insert_query_id'")
 
 echo "Number of parts created: ${parts_count}"
 
