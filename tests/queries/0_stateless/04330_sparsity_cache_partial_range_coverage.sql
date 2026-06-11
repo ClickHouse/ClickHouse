@@ -1,5 +1,6 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-parallel
 -- no-old-analyzer: Not supported
+-- no-parallel: SYSTEM DROP QUERY CONDITION CACHE is server-wide
 
 -- Regression test: the granule analyzer must not cache a verdict for the whole
 -- part when it only inspected a subset of the part's marks. A first query with
