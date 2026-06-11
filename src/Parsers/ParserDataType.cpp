@@ -97,6 +97,13 @@ bool parseEnumValues(
             return false;
         ++pos;
 
+        /// Values are stored as Int64. A magnitude above Int64 cannot be stored faithfully:
+        /// a plain cast would silently wrap (e.g. UInt64 18446744073709551615 to -1) and pass
+        /// the downstream range check. Such a value is out of range for any Enum anyway, so
+        /// fall back to the generic parser, which rejects it.
+        if (abs_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return false;
+
         Int64 elem_value = negative ? -static_cast<Int64>(abs_value) : static_cast<Int64>(abs_value);
         values.emplace_back(elem_name, elem_value);
     }

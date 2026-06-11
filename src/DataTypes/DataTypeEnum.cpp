@@ -297,6 +297,18 @@ static DataTypePtr createExact(const ASTPtr & arguments)
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
         const String & field_name = name_literal->value.safeGet<String>();
+
+        /// safeGet<FieldType>() reinterprets the stored bits as Int64, so a UInt64 literal above
+        /// Int64 max becomes negative (e.g. 18446744073709551615 -> -1) and would slip past the
+        /// range check below. Reject such a value up front against the Enum's range.
+        if (value_literal->value.getType() == Field::Types::UInt64)
+        {
+            const UInt64 unsigned_value = value_literal->value.safeGet<UInt64>();
+            if (unsigned_value > static_cast<UInt64>(std::numeric_limits<FieldType>::max()))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                    toString(unsigned_value), field_name, EnumName<FieldType>::value);
+        }
+
         const auto value = value_literal->value.safeGet<FieldType>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())

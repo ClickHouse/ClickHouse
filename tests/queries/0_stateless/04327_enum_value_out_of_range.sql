@@ -10,8 +10,17 @@ SELECT CAST('a', 'Enum16(\'a\' = -40000)'); -- { serverError ARGUMENT_OUT_OF_BOU
 SELECT CAST('a', 'Enum(\'a\' = 40000)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT CAST('a', 'Enum(\'a\' = 100000)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
+-- Values above Int64 (read as UInt64 during parsing) must not wrap around to a small in-range
+-- value: 18446744073709551615 would become -1 under a plain cast and be silently accepted.
+SELECT CAST('a', 'Enum8(\'a\' = 18446744073709551615)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT CAST('a', 'Enum16(\'a\' = 18446744073709551615)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT CAST('a', 'Enum(\'a\' = 18446744073709551615)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- The generic parser path (forced here by the trailing auto-assigned element) has the same wrap.
+SELECT CAST('a', 'Enum8(\'z\' = 18446744073709551615, \'a\')'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 -- The CREATE TABLE path uses the same factory and must reject it too.
 CREATE TABLE t_04327 (x Enum8('a' = 200)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
+CREATE TABLE t_04327 (x Enum8('a' = 18446744073709551615)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- Boundary values are valid.
 SELECT toInt8(CAST('a', 'Enum8(\'a\' = 127, \'b\' = -128)'));
