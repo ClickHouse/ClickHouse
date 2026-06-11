@@ -245,7 +245,8 @@ static void tryPushDownTopKToPartialAggregation(QueryPlan & remote_plan, const A
     /// segment" match (`<qualified>.endsWith("." + ident)`).  This covers the
     /// simple-identifier Pattern 1 cases without us having to plumb the
     /// QueryNode all the way down here.
-    auto matches_key = [](std::string_view key, std::string_view ident_name) {
+    auto matches_key = [](std::string_view key, std::string_view ident_name)
+    {
         if (key == ident_name)
             return true;
         if (key.size() > ident_name.size() + 1
