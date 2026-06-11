@@ -1,0 +1,15 @@
+SELECT substring((x, x) -> x)
+SELECT position((h, x) -> x)
+SELECT substring((s, x) -> (x + 1))
+SELECT position((h, x) -> (x + 1))
+SELECT substring((a, b, x) -> (x AND y))
+bcd
+bcd
+3
+3
+[2,3,4]
+[11,22,33]
+[2,3]
+10
+{1:20,2:40}
+{1:20,2:40}

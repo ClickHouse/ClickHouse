@@ -5,7 +5,6 @@ macOS Smoke Test
 This script runs a basic smoke test for ClickHouse on native macOS.
 It downloads the pre-built binary via public HTTP (no AWS credentials needed),
 starts the server and executes a simple query to verify the binary works.
-
 """
 
 import os
@@ -55,7 +54,7 @@ def wait_for_server(timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         result = Shell.check(
-            f"{BINARY_PATH} client --query 'SELECT 1'",
+            f"{BINARY_PATH} client --receive_timeout=5 --query 'SELECT 1'",
             verbose=False,
         )
         if result:

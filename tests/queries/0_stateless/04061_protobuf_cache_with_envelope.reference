@@ -1,0 +1,16 @@
+Protobuf schema 1:
+0	0
+2	4
+3	9
+Protobuf schema 2 after schema 1:
+0	0
+2	4
+3	9
+ProtobufList schema 1:
+0	0
+2	4
+3	9
+ProtobufList schema 2 after schema 1:
+0	0
+2	4
+3	9

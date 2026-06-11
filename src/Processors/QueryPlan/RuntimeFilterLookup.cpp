@@ -249,7 +249,7 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
         case ValuesCount::ONE:
         {
             /// If only 1 element in the set then use "value == const" instead of set lookup
-            auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
+            ColumnPtr const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
             ColumnsWithTypeAndName arguments = {
                 values,
                 ColumnWithTypeAndName(const_column, filter_column_target_type, String())
@@ -332,6 +332,30 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
         setFullyDisabled();
 }
 
+SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
+    const DataTypePtr & filter_column_target_type_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
+    ProbeFn probe_fn_)
+    : IRuntimeFilter(
+        /*filters_to_merge_=*/0,
+        filter_column_target_type_,
+        pass_ratio_threshold_for_disabling_,
+        blocks_to_skip_before_reenabling_)
+    , probe_fn(std::move(probe_fn_))
+{
+    /// Build was already done elsewhere; nothing left to insert.
+    inserts_are_finished = true;
+}
+
+ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+{
+    chassert(inserts_are_finished);
+    auto result = probe_fn(values);
+    updateStats(values.column->size(), countPassedStats(result));
+    return result;
+}
+
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
@@ -349,6 +373,15 @@ public:
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
         filter->finishInsert();
+    }
+
+    void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
+    {
+        std::lock_guard g(rw_lock);
+        auto & filter = filters_by_name[name];
+        if (!filter)
+            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
+        filter.reset(runtime_filter.release());
     }
 
     RuntimeFilterConstPtr find(const String & name) const override

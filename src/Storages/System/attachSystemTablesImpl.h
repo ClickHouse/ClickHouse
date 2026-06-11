@@ -3,6 +3,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ template<typename StorageT, int CommentSize, bool with_description, typename... 
 void attachImpl(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
 {
     static_assert(CommentSize > 15, "The comment for a system table is too short or empty");
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
     auto table_id = StorageID::createEmpty();
     if (system_database.getUUID() == UUIDHelpers::Nil)
@@ -42,7 +43,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
 
     /// Set the comment
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
-    assert(table);
+    chassert(table);
     StorageInMemoryMetadata metadata = *table->getInMemoryMetadataPtr(context, false);
     metadata.comment = comment;
     table->setInMemoryMetadata(metadata);
