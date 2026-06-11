@@ -710,3 +710,21 @@ TEST(Rope, ShiftMovesNodesAndIntervals)
     EXPECT_EQ(rope.range().offset, 50u);
     EXPECT_EQ(rope.range().size, 110u);
 }
+
+TEST(Rope, AppendZeroSizeNodeIsIgnored)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(16);
+    Rope rope;
+
+    /// A zero-size node must not enter `nodes`: otherwise `peek` returns an empty span
+    /// while `atEnd` is false, so a drain loop advancing by the span size hangs.
+    rope.append(RopeNode{buf, 0, 0, 0});
+    EXPECT_TRUE(rope.atEnd());
+    EXPECT_EQ(rope.totalBytes(), 0u);
+    EXPECT_TRUE(rope.getNodes().empty());
+
+    /// A subsequent non-empty append still works.
+    rope.append(RopeNode{buf, 0, 8, 0});
+    EXPECT_FALSE(rope.atEnd());
+    EXPECT_EQ(rope.peek().size, 8u);
+}

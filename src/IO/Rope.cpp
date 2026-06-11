@@ -191,6 +191,13 @@ void Rope::mergeInterval(ByteRange iv)
 
 void Rope::append(RopeNode node)
 {
+    /// Drop zero-size nodes: they carry no bytes and are not merged into
+    /// `intervals` (which skips empty ranges), so keeping them would leave `nodes`
+    /// non-empty while `peek` returns an empty span -- a drain loop advancing by the
+    /// span size would never progress.
+    if (node.size == 0)
+        return;
+
     /// Insert into `nodes` keeping the sort by logical_offset (stable on tie:
     /// equal-offset nodes keep insertion order).
     ByteRange node_range = node.range();
