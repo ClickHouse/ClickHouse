@@ -16,15 +16,22 @@ def _has_data(file):
 
     Not every build emits every artifact: binary_symbols.txt is skipped for
     LTO builds (nm does not work with LTO) and cross-arch/non-Linux builds
-    produce no readable objects at all (#84159). A missing or empty file means
-    there is nothing to upload, not that the job failed.
+    produce no readable objects at all (#84159). prepare-time-trace.sh uses
+    `xargs -r`, so for those builds the artifact is left empty rather than
+    holding a junk row. An absent or empty file therefore means "this build
+    has no such profile data to upload", not that the job failed.
     """
     file = Path(file)
     return file.exists() and file.stat().st_size > 0
 
 
 def _upload_profile_artifacts(build_type, start_time, artifacts):
-    """Upload each (insert, file) pair that was produced; skip the rest."""
+    """No-op for builds without profile data; upload it for builds that have it.
+
+    Skips only artifacts that are genuinely empty (no data for this build).
+    A non-empty artifact is always uploaded, and any failure uploading it
+    propagates so the caller can fail loudly: we never swallow a real error.
+    """
     for insert, file in artifacts:
         if not _has_data(file):
             print(f"No build profile data in [{file}], skipping upload")
@@ -69,8 +76,10 @@ def check():
                 (queries.insert_binary_symbol_data, binary_symbol_file),
             ],
         )
-    except Exception as e:
-        print(f"ERROR: Failed to upload build profile data:")
+    except Exception:
+        # Fail loudly on any genuine error (producer crashed, upload rejected,
+        # malformed data): never let the post-hook pass silently.
+        print("ERROR: Failed to upload build profile data:")
         traceback.print_exc()
         sys.exit(1)
 
