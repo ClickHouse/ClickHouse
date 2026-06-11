@@ -89,6 +89,14 @@ struct RopeNode
 /// The cursor's effective position is `nodes.front().logical_offset +
 /// front_offset`. `peek()` returns the unconsumed prefix of the front
 /// node (memory stays valid until the next `advance` / `tryRewind` call).
+///
+/// Overlap contract: `append` tolerates overlapping / duplicate nodes (the merged
+/// `intervals` still reports unique coverage) — this is for transient assembly scratch
+/// ropes. But the sequential consumers `peek` / `advance` / `copyTo` walk the raw
+/// physical `nodes`, so they require a NON-overlapping rope; streaming an overlapping
+/// rope would re-serve the overlapped bytes. A producer that hands a rope to those
+/// consumers must make `nodes` disjoint — the `ReaderExecutor` does this by `extract`-ing
+/// the disjoint gaps / cache-hits it needs and `slice`-ing to the served window.
 class Rope
 {
 public:
@@ -158,8 +166,10 @@ public:
     /// Same as `slice(req)` but asserts the rope fully covers `req`.
     Rope extract(ByteRange req) const;
 
-    /// Flatten this rope's coverage of `req` into the contiguous buffer at
-    /// `dst`. Asserts `covers(req)`. Returns bytes written.
+    /// Flatten this rope's coverage of `req` into the contiguous buffer at `dst`.
+    /// Asserts `covers(req)` and (in debug) that the rope is non-overlapping — see the
+    /// overlap contract above; overlapping nodes would double-write/over-count. Returns
+    /// bytes written.
     size_t copyTo(char * dst, ByteRange req) const;
 
     // ─── Diagnostics / shifting ─────────────────────────────────────────

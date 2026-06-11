@@ -368,6 +368,9 @@ void Rope::shift(ssize_t delta)
 size_t Rope::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
+    /// Flatten assumes non-overlapping nodes (see the overlap contract). Overlap would
+    /// double-write `dst` and over-count `written`; producers must hand a disjoint rope.
+    chassert(coveredBytes(range()) == totalBytes());
     /// Nodes are sorted by logical_offset (invariant). The first node's
     /// `front_offset` bytes are already consumed — they're not part of
     /// the reachable bytes and `covers(req)` must have ruled them out.
