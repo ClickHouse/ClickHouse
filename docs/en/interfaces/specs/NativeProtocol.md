@@ -143,7 +143,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | PARALLEL_BLOCK_MARSHALLING      | 54478   | Block (Column)         | Server may wrap columns in `ColumnBLOB` (compressed inline) for parallel processing. Gated on the query having compression enabled AND `rows > 1`; otherwise the regular column wire format applies. Clients that never enable compression on outgoing Query packets see no wire change. |
 | VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Used for `*Cluster` table functions (`s3Cluster`, etc.). External clients decode and ignore. |
 | OUT_OF_ORDER_BUCKETS_IN_AGGREGATION | 54480 | BlockInfo              | Adds field 3 (`out_of_order_buckets: Vec<Int32>`) to BlockInfo's field-tagged stream. Decoded as `[VarUInt count][Int32]*count`. External clients don't emit this themselves; the decoder reads any non-empty list the server sends. |
-| COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS | 54481 | Log, ProfileEvents, TableColumns | Server may wrap [`Log`](#log), [`ProfileEvents`](#profileevents), and [`TableColumns`](#tablecolumns) packet bodies in the [compression frame](/interfaces/specs/NativeFormat#compression-frame). At this version the server routes all three through its `maybe_compressed_out` buffer, which becomes a real compression frame only when the query has `compression = true`. Clients that never enable compression on outgoing Query packets see no wire change. |
+| COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS | 54481 | Log, ProfileEvents, TableColumns | Server may wrap [`Log`](#log), [`ProfileEvents`](#profileevents), and [`TableColumns`](#tablecolumns) packet bodies in the [compression frame](/interfaces/specs/NativeFormat#compression-frame). At this version all three bodies travel through the same optionally-compressed output path, which becomes a real compression frame only when the query has `compression = true`. Clients that never enable compression on outgoing Query packets see no wire change. |
 | REPLICATED_SERIALIZATION        | 54482   | Block (Column)         | Server may emit columns with kind_stack `0x04 = REPLICATED` — a dictionary-style compact form for repeated values — see [kind_stack and sparse encoding](/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). Below this version the writer expanded such columns before sending. Decoded via index lookup (`elements[indexes[i]]` per row); leaf types plus `Nullable`/`Array`/`Tuple`/`Map`/`Nested`/`LowCardinality` inners supported. |
 | NULLABLE_SPARSE_SERIALIZATION   | 54483   | Block (Column)         | Composes sparse serialization with `Nullable(T)`. Below this version the writer expanded sparse for Nullable columns before sending; at v54483+ the wire data is sparse-over-Nullable. See [kind_stack and sparse encoding](/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). |
 | PROGRESS_IN_ASYNC_INSERT        | 54484   | Progress (INSERT)      | On an **asynchronous** INSERT (`async_insert = 1`), once the insert is flushed the server sends an extra [`Progress`](#progress) packet, then the insert's `ProfileEvents`, before `EndOfStream`. Gated on the *negotiated* version ≥ 54484; below it the server omits this trailing Progress. The Progress wire format is unchanged — only the emission is new. In practice the increment carries the elapsed time; the written-row counters are reported via the accompanying ProfileEvents. A client that already drains interleaved Progress needs no format change, only to tolerate one more packet. |
@@ -188,7 +188,7 @@ A single packet may be split across several chunks if the writer's buffer fills 
 - `chunked` / `notchunked` are strict: that side requires exactly that mode.
 - The `_optional` variants are flexible: they accept whichever mode the other side picks.
 
-The agreed value for each direction is computed pairwise (mirroring `Client/Connection.cpp::connect::is_chunked`):
+The agreed value for each direction is computed pairwise:
 
 | Server pref | Client pref | Agreed |
 |-------------|-------------|--------|
@@ -612,7 +612,7 @@ The block variants and what they mean are documented under [Block variants](/int
 
 ### Progress (packet type 3) {#progress}
 
-Server → Client. Sent periodically during query execution. All fields are VarUInt, and each packet carries **increments since the previous `Progress` packet**, not cumulative totals. Before sending, the server reads and resets its counters to zero (`TCPHandler::sendProgress` calls `Progress::fetchValuesAndResetPiecewiseAtomically`, and computes `elapsed_ns` as the delta since the last send). A client therefore **must accumulate** successive packets locally to obtain running totals — treating a packet as an absolute value makes the progress display jump backwards or undercount once more than one packet arrives.
+Server → Client. Sent periodically during query execution. All fields are VarUInt, and each packet carries **increments since the previous `Progress` packet**, not cumulative totals. Before sending, the server reads its counters and atomically resets them to zero, and computes `elapsed_ns` as the time delta since the last send. A client therefore **must accumulate** successive packets locally to obtain running totals — treating a packet as an absolute value makes the progress display jump backwards or undercount once more than one packet arrives.
 
 | # | Field       | Type    | Role      | Condition                              | Description |
 |---|-------------|---------|-----------|----------------------------------------|-------------|
@@ -721,7 +721,7 @@ Server → Client. Sent when the client needs column-default metadata, typically
 | 2 | columns_description | String | universal | Textual column definitions, e.g., `"id Int32, name String DEFAULT ''"`. Free-form text — parse as a string. |
 
 :::note Compressed body at v54481+
-At negotiated version ≥ 54481 (`COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS`) the server writes **both** fields through its `maybe_compressed_out` buffer, so when the query has `compression = true` the whole `TableColumns` body (`external_table` + `columns_description`) is inside the [compression frame](/interfaces/specs/NativeFormat#compression-frame); the client reads it through the matching decompressed stream. When the query has no compression, the body is on the wire uncompressed exactly as the table above shows. This matters for `INSERT` schema responses: a client that switches compression handling for `Log` and `ProfileEvents` but not `TableColumns` will misread the response when query compression is enabled.
+At negotiated version ≥ 54481 (`COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS`) the server writes **both** fields through the same optionally-compressed output path, so when the query has `compression = true` the whole `TableColumns` body (`external_table` + `columns_description`) is inside the [compression frame](/interfaces/specs/NativeFormat#compression-frame); the client reads it through the matching decompressed stream. When the query has no compression, the body is on the wire uncompressed exactly as the table above shows. This matters for `INSERT` schema responses: a client that switches compression handling for `Log` and `ProfileEvents` but not `TableColumns` will misread the response when query compression is enabled.
 :::
 
 ### TimezoneUpdate (packet type 17) {#timezoneupdate}
@@ -757,7 +757,7 @@ The flow runs in place of password authentication, and the challenge-response ex
 
    | Part | Source |
    |------|--------|
-   | `decimal(protocol_version)` | The client's protocol version as a **decimal ASCII string** (e.g. `"54466"`), produced by `std::to_string` — not a VarUInt or fixed-width integer. The server validates using the same protocol version it received in `ClientHello`. |
+   | `decimal(protocol_version)` | The client's protocol version as a **decimal ASCII string** (e.g. `"54466"`) — the version number as a string, not a VarUInt or fixed-width integer. The server validates using the same protocol version it received in `ClientHello`. |
    | `default_database` | The `database` field from `ClientHello` (empty string if none). |
    | `user` | The real user name **with the `" SSH KEY AUTHENTICATION "` marker prefix stripped** — the same name the server recovers after stripping the prefix. |
    | `challenge` | The raw `challenge` bytes from the `SSHChallenge` packet. |
