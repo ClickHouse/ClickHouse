@@ -52,7 +52,9 @@ echo "$err" | grep -qF "NO_FILE_IN_DATA_PART" && echo "NO_FILE_IN_DATA_PART"
 echo "$err" | grep -qF "does not exist on disk in part" && echo "does not exist on disk in part"
 echo "$err" | grep -qF "is listed in the part's checksums" && echo "is listed in the part's checksums"
 
-$CLICKHOUSE_CLIENT -q "drop table t_missing_marks sync;"
+# send_logs_level=none: with the marks file removed, dropping the table logs a CANNOT_UNLINK <Error>
+# during directory cleanup under the Ordinary engine, which would otherwise reach client stderr.
+$CLICKHOUSE_CLIENT --send_logs_level=none -q "drop table t_missing_marks sync;"
 
 # --- Case 2: index-granularity load path (MergeTreeDataPartWide::loadIndexGranularity) ---
 # Index granularity is loaded directly from the first column's marks file when a part is
@@ -97,12 +99,14 @@ echo "--- index granularity load path ---"
 $CLICKHOUSE_CLIENT -q "SELECT reason FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_missing_granularity_marks'"
 
 # the broken-part handler logs our typed diagnostic; confirm the enriched message reached the log
-# (without the fix this path logs only the opaque, path-only error). Filter on the storage logger to
-# avoid matching this very query's own logged text.
+# (without the fix this path logs only the opaque, path-only error). Filter on the storage logger
+# (its name contains the table name) to skip this very query's own logged text under logger 'executeQuery'.
+# Match the table name without a trailing space: the storage logger is 'db.table (uuid)' under Atomic
+# but plain 'db.table' under Ordinary, so a trailing space would miss the Ordinary case.
 $CLICKHOUSE_CLIENT -q "system flush logs text_log"
 $CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log
 WHERE event_time > now() - INTERVAL 5 MINUTE
-  AND logger_name LIKE '%t_missing_granularity_marks %'
+  AND logger_name LIKE '%t_missing_granularity_marks%'
   AND message LIKE '%does not exist on disk in part%'
   AND message LIKE '%listed in the part%checksums%'"
 
