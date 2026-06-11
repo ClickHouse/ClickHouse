@@ -15,5 +15,13 @@ SELECT toUInt64(value) <= 9223372036854775
 FROM system.settings WHERE name = 'connection_pool_max_wait_ms'
 SETTINGS connection_pool_max_wait_ms = 18446744073709551615;
 
+SELECT toUInt64(value) <= 9223372036854775
+FROM system.settings WHERE name = 'kafka_max_wait_ms'
+SETTINGS kafka_max_wait_ms = 18446744073709551615;
+
 -- A query carrying a huge interactive_delay must still complete (lazy-output queue wait is clamped).
 SELECT 1 SETTINGS interactive_delay = 100000000000000000;
+
+-- A huge lock_acquire_timeout must not overflow the table-lock acquire deadline (now() + timeout);
+-- the query just acquires the lock and completes.
+SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 100000000000;

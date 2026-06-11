@@ -42,6 +42,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
@@ -1396,8 +1397,9 @@ void TCPHandler::processInsertQuery(QueryState & state)
             state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
-                size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
+                auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+                size_t timeout_ms = timeout.count();
+                auto wait_status = result.future.wait_for(timeout);
 
                 if (wait_status == std::future_status::deferred)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");

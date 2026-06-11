@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
+#include <Common/saturatedDuration.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -1624,7 +1625,7 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::wait_for_async_insert])
                 {
-                    auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                    auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
                         std::move(result.future),
                         timeout,
