@@ -170,11 +170,12 @@ def test_retryable_exception_while_loading_unexpected_parts_does_not_terminate()
     # The server stayed up the whole time (it never std::terminate'd on the retryable error).
     assert node.query("SELECT 1").strip() == "1"
 
-    # Clear the transient condition; the loader finishes the part, ATTACH returns, and the data is
-    # intact. The broken part reaches its intended detached state during the replica sanity check.
+    # Clear the transient condition; the loader finishes the part and ATTACH returns. The replicated
+    # attach thread blocks in waitForUnexpectedPartsToBeLoaded() until loading is finished, so a
+    # returned ATTACH already means the previously-failing part was retried and loaded successfully.
     node.query(f"SYSTEM DISABLE FAILPOINT {UNEXPECTED_POST_LOAD_FAILPOINT}")
     attach.get_answer()
-    node.wait_for_log_line(r"Loaded \d+ unexpected data parts", timeout=60)
+    # The data is intact and the broken part reaches its detached state during the replica sanity check.
     assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
     for _ in range(60):
         detached = node.query(
