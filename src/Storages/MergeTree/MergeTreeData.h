@@ -67,7 +67,6 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
-enum class MergeTreePartMinMaxIndexColumns : uint64_t;
 
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
@@ -1251,13 +1250,12 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Get expression on columns for which part-level min-max index will be calculated.
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
-                                              const MergeTreeSettingsPtr & data_settings,
-                                              const ExpressionActionsSettings & expr_settings);
-    /// Get the columns covered by the part-level min-max index.
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    /// Get partition key expression on required columns
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
+    /// Get column names required for partition key
+    static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
+    /// Get column types required for partition key
+    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
@@ -1364,8 +1362,6 @@ public:
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
-    void triggerBackgroundOperations();
-
     /// Returns cached metadata snapshot of a patch part that contains the following columns.
     StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
 
@@ -1430,8 +1426,6 @@ private:
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
-
-    void unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings);
 
     void resetColumnSizes()
     {

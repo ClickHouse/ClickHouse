@@ -78,14 +78,8 @@ struct ProjectionDescription
 
     ProjectionIndexPtr index;
 
-    /// Settings (configurable via WITH SETTINGS clause of the projection declaration)
-    std::optional<UInt64> index_granularity = {};
-    std::optional<UInt64> index_granularity_bytes = {};
-    bool add_minmax_index_for_numeric_columns = false;
-    bool add_minmax_index_for_string_columns = false;
-    bool add_minmax_index_for_temporal_columns = false;
-    bool add_minmax_index_for_block_number_column = false;
-    bool add_minmax_index_for_block_offset_column = false;
+    std::optional<UInt64> index_granularity;
+    std::optional<UInt64> index_granularity_bytes;
 
     /// Parse projection from definition AST
     static ProjectionDescription getProjectionFromAST(

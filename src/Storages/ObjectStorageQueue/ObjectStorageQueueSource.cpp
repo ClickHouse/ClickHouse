@@ -1111,7 +1111,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,

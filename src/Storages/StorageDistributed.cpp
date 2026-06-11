@@ -429,8 +429,6 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
@@ -981,14 +979,7 @@ void StorageDistributed::read(
             column.column = column.column->convertToFullColumnIfConst();
         header = std::make_shared<const Block>(std::move(block));
 
-        /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
-        /// in a separate clone so the AST sent to shards contains the generic function name
-        /// that can be re-resolved by the shard's analyzer.  The original query tree must keep
-        /// the specialized functions because it is reused later for getSampleBlock / plan building
-        /// (the unresolved FunctionGrouping throws on execution, even with 0 rows).
-        auto query_tree_for_ast = query_tree_distributed->clone();
-        removeGroupingFunctionSpecializations(query_tree_for_ast);
-        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
@@ -1040,10 +1031,9 @@ void StorageDistributed::read(
         shard_filter_generator,
         is_remote_function);
 
-    /// This is possible when skip_unavailable_shards is enabled and all shards were skipped
-    /// (e.g., every shard had a missing table with no remote replicas).
+    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
 }
 
 
@@ -2093,6 +2083,9 @@ void registerStorageDistributed(StorageFactory & factory)
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
             storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
         }
+
+        /// Check that sharding_key exists in the table and has numeric type.
+        checkShardingKeyExistsAndIsNumeric(sharding_key_ast, context, args.columns.getAllPhysical());
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
         DistributedSettings distributed_settings = context->getDistributedSettings();

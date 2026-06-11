@@ -157,7 +157,7 @@ Chunk KafkaSource::generateImpl()
             case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
-                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})",
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                     consumer->currentTopic(),
                     consumer->currentPartition(),
                     consumer->currentOffset());
@@ -272,7 +272,7 @@ Chunk KafkaSource::generateImpl()
                             .details = DeadLetterQueueElement::KafkaDetails{
                                 .topic_name = consumer->currentTopic(),
                                 .partition = consumer->currentPartition(),
-                                .offset = consumer->currentOffset(),
+                                .offset = consumer->currentPartition(),
                                 .key = consumer->currentKey()}});
             }
 

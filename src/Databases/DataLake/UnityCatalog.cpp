@@ -264,9 +264,6 @@ bool UnityCatalog::tryGetTableMetadata(
                 LOG_DEBUG(log, "Doesn't require schema");
             }
 
-            if (hasValueAndItsNotNone("table_id", object))
-                result.setTableUUID(object->get("table_id").extract<String>());
-
             if (result.isDefaultReadableTable() && result.requiresCredentials())
                 getCredentials(object->get("table_id"), result);
 

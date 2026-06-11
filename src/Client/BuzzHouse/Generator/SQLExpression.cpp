@@ -85,10 +85,6 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 {
                     jcol->set_jarray(rg.randomInt<uint32_t>(0, 3));
                 }
-                else if (noption2 < 72)
-                {
-                    jcol->set_jcombined(true);
-                }
                 jcol->mutable_col()->set_column(rg.nextJSONCol());
                 this->width++;
             }
@@ -317,7 +313,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         break;
         case LitOp::LitStr:
-            lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
+            lv->set_string_lit(rg.nextString("'", true, rg.nextStrlen()));
             break;
         case LitOp::LitSpecial: {
             SpecialVal * val = lv->mutable_special_val();

@@ -34,12 +34,6 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -106,7 +100,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

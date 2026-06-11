@@ -258,30 +258,6 @@ public:
             auto merged_type = data_type_object.getSubcolumnType(combined_name);
             auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
-            /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
-            /// cast the extracted value to UInt8 and silently return the value itself.
-            constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
-
-            if constexpr (is_has)
-            {
-                auto result = ColumnVector<UInt8>::create(input_rows_count);
-                auto & data = result->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    data[i] = merged->isDefaultAt(i) ? 0 : 1;
-                return result;
-            }
-
-            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
-            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
-            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
-                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
-
-            if constexpr (is_extract_bool)
-            {
-                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, DataTypeFactory::instance().get("Bool"));
-                return removeNullable(casted);
-            }
-
             /// For JSONExtractRaw: serialize each value as a JSON string
             constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
                         || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");

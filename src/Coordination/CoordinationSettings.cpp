@@ -81,19 +81,17 @@ namespace ErrorCodes
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
     DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
-    DECLARE(UInt64, commit_profiler_real_time_period_ns, 0, "Period for real clock timer of the query profiler on the Keeper commit thread (in nanoseconds). The profiling results appear in system.trace_log with query_id = 'KeeperCommit'. 0 means disabled.", 0) \
     DECLARE(Bool, nuraft_streaming_mode, false, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Reduces RTT bottleneck under heavy write loads. Beneficial in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
     DECLARE(UInt64, nuraft_max_log_gap_in_stream, 64, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
 
-DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
+DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
-
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, CoordinationSettings, CoordinationSetting)
 
 void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
@@ -117,9 +115,19 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
 
     /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
     /// if max_requests_append_size was not changed
-    if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
-        (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
+    if (!max_requests_append_size.changed)
+        max_requests_append_size = max_requests_batch_size;
 }
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
+
+namespace CoordinationSetting
+{
+LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
 {

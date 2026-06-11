@@ -707,7 +707,6 @@ inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateL
 }
 
 UUID parseUUID(std::span<const UInt8> src);
-bool tryParseUUID(std::span<const UInt8> src, UUID & uuid);
 
 template <typename ReturnType = void>
 inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
@@ -738,15 +737,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
             }
         }
 
-        if constexpr (throw_exception)
-        {
-            uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
-        }
-        else
-        {
-            if (!tryParseUUID({reinterpret_cast<const UInt8 *>(s), size}, uuid))
-                return ReturnType(false);
-        }
+        uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
 
