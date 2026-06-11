@@ -642,7 +642,7 @@ Server → Client. Sent once per query, near the end of execution.
 | 3 | bytes                         | VarUInt | universal | always                             | Total bytes processed |
 | 4 | applied_limit                 | Bool    | universal | always                             | Whether a LIMIT clause was applied |
 | 5 | rows_before_limit             | VarUInt | universal | always                             | Row count before LIMIT |
-| 6 | calculated_rows_before_limit  | Bool    | universal | always                             | Whether `rows_before_limit` was computed |
+| 6 | _obsolete_                    | Bool    | universal | always                             | Obsolete compatibility byte. The server always writes `true` here and the client discards it on read; it is **not** a "`rows_before_limit` was computed" flag. The meaningful limit state is field 4 (`applied_limit`) together with field 5. Read and ignore. |
 | 7 | applied_aggregation           | Bool    | universal | ROWS_BEFORE_AGGREGATION (v54469)   | Whether GROUP BY was applied |
 | 8 | rows_before_aggregation       | VarUInt | universal | ROWS_BEFORE_AGGREGATION (v54469)   | Row count before aggregation |
 
