@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <Common/KnownObjectNames.h>
 #include <Common/re2.h>
 #include <Common/maskURIPassword.h>
@@ -977,8 +979,7 @@ protected:
                 continue;
             if (min_idx < 0 || arg_idx < min_idx)
                 min_idx = arg_idx;
-            if (arg_idx > max_idx)
-                max_idx = arg_idx;
+            max_idx = std::max(max_idx, arg_idx);
         }
         if (min_idx < 0)
             return;
