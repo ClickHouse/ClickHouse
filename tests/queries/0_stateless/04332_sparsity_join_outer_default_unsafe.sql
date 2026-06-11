@@ -40,5 +40,21 @@ WHERE r.v = 0
 ORDER BY l.k
 SETTINGS use_sparsity_info_for_pruning = 'data_read';
 
+-- `ARRAY JOIN` can wrap the `JOIN` in the same join tree, so the root of the
+-- join tree is `ARRAY_JOIN` rather than `JOIN`. The opt-out must still trigger.
+SELECT 'planning_with_array_join', l.k, r.v, a
+FROM t_join_outer_default_left l LEFT JOIN t_join_outer_default_right r ON l.k = r.k
+ARRAY JOIN [1] AS a
+WHERE r.v = 0
+ORDER BY l.k
+SETTINGS use_sparsity_info_for_pruning = 'planning';
+
+SELECT 'data_read_with_array_join', l.k, r.v, a
+FROM t_join_outer_default_left l LEFT JOIN t_join_outer_default_right r ON l.k = r.k
+ARRAY JOIN [1] AS a
+WHERE r.v = 0
+ORDER BY l.k
+SETTINGS use_sparsity_info_for_pruning = 'data_read';
+
 DROP TABLE t_join_outer_default_left;
 DROP TABLE t_join_outer_default_right;

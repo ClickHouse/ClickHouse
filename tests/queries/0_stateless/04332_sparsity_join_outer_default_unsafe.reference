@@ -1,2 +1,4 @@
 planning	3	0
 data_read	3	0
+planning_with_array_join	3	0	1
+data_read_with_array_join	3	0	1
