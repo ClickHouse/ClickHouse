@@ -32,6 +32,7 @@
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -301,6 +302,27 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
+/// Among the materialized views reading from `source_table_id`, return those whose stored columns
+/// were inferred from their SELECT (i.e. they currently match a fresh inference). These are exactly
+/// the views whose reported schema would go stale if the source table's columns change; explicit-column
+/// views and views whose columns intentionally diverge from the SELECT output are excluded.
+std::vector<StoragePtr> collectInferredDependentMaterializedViews(const StorageID & source_table_id, const ContextPtr & context)
+{
+    std::vector<StoragePtr> result;
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(source_table_id))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        auto * mv = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (!mv || mv->hasInnerTable())
+            continue;
+
+        auto inferred = mv->tryInferColumnsFromSelectQuery(context);
+        if (inferred && mv->getInMemoryMetadataPtr(context, false)->columns == *inferred)
+            result.push_back(view);
+    }
+    return result;
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context)
 {
     BlockIO res;
@@ -320,7 +342,20 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
+
+            /// An ALTER that changes columns can make the reported schema of dependent TO-target
+            /// materialized views stale (DESCRIBE / SHOW CREATE), and even break reads from them when
+            /// the new types are incompatible with the frozen ones. Capture the views that are in sync
+            /// with their SELECT output *before* the change, then re-infer their columns afterwards.
+            std::vector<StoragePtr> dependent_views;
+            if (!alter_commands->isSettingsAlter() && !alter_commands->isCommentAlter())
+                dependent_views = collectInferredDependentMaterializedViews(table->getStorageID(), context);
+
             table->alter(*alter_commands, context, alter_lock);
+
+            for (const auto & view : dependent_views)
+                if (auto * mv = dynamic_cast<StorageMaterializedView *>(view.get()))
+                    mv->refreshColumnsFromSelectQueryIfInferred(context);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {

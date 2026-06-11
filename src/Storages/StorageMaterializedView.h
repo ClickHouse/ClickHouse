@@ -83,6 +83,17 @@ public:
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
 
+    /// Recompute the column set/types from the view's SELECT against the current schemas of the
+    /// tables it reads. Returns std::nullopt if the SELECT cannot be analyzed right now.
+    std::optional<ColumnsDescription> tryInferColumnsFromSelectQuery(ContextPtr query_context) const;
+
+    /// If the view's stored columns were inferred from its SELECT (i.e. they still match a fresh
+    /// inference), refresh them so DESCRIBE / SHOW CREATE / reads reflect the current upstream types.
+    /// Used after an upstream ALTER changes a source or target table's columns. Explicit-column views
+    /// and views whose stored columns intentionally diverge from the SELECT output are left untouched.
+    /// Returns true if the stored columns were changed.
+    bool refreshColumnsFromSelectQueryIfInferred(ContextPtr query_context);
+
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 

@@ -750,6 +750,67 @@ void StorageMaterializedView::alter(
         refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());
 }
 
+std::optional<ColumnsDescription> StorageMaterializedView::tryInferColumnsFromSelectQuery(ContextPtr query_context) const
+{
+    auto select_query = getInMemoryMetadataPtr(query_context, false)->getSelectQuery().select_query;
+    if (!select_query)
+        return {};
+
+    /// Resolve unqualified table references in the view's own database, mirroring CREATE/MODIFY QUERY.
+    ContextMutablePtr select_context = Context::createCopy(query_context);
+    select_context->setCurrentDatabase(getStorageID().database_name);
+
+    /// Read the upstream tables' current schema, not the per-query metadata snapshot cached by the
+    /// triggering ALTER (MergeTreeData::getInMemoryMetadataPtr caches metadata per query when this
+    /// setting is on, which would otherwise return the pre-ALTER columns here).
+    select_context->setSetting("enable_shared_storage_snapshot_in_query", Field(false));
+
+    try
+    {
+        SharedHeader sample;
+        if (select_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query->clone(), select_context,
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+        }
+        else
+        {
+            sample = InterpreterSelectWithUnionQuery::getSampleBlock(select_query->clone(), select_context,
+                false /* is_subquery */, isRefreshable() /* is_create_parameterized_view */);
+        }
+        return ColumnsDescription(sample->getNamesAndTypesList());
+    }
+    catch (...)
+    {
+        /// The SELECT may be temporarily unanalyzable (e.g. an upstream table mid-ALTER or missing).
+        /// Leave the stored columns as-is rather than failing the triggering ALTER.
+        return {};
+    }
+}
+
+bool StorageMaterializedView::refreshColumnsFromSelectQueryIfInferred(ContextPtr query_context)
+{
+    /// Only TO-target views freeze a SELECT-derived column list that can go stale; for views with an
+    /// inner table the columns already track the target table.
+    if (has_inner_table)
+        return false;
+
+    auto inferred = tryInferColumnsFromSelectQuery(query_context);
+    if (!inferred)
+        return false;
+
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    if (new_metadata.columns == *inferred)
+        return false;
+
+    new_metadata.columns = std::move(*inferred);
+
+    auto table_id = getStorageID();
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)
+        ->alterTable(query_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    setInMemoryMetadata(new_metadata);
+    return true;
+}
 
 void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
 {
