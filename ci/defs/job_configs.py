@@ -1393,7 +1393,8 @@ class JobConfigs:
                 "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder"
+        # --network=host required for ec2 metadata http endpoint (aws cli auth) to work
+        run_in_docker="clickhouse/docs-builder+--network=host",
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
