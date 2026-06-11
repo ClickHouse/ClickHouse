@@ -116,7 +116,10 @@ void RowDataStore::init(const Columns & columns)
     row_length = layout.empty() ? 0 : layout.back().offset + layout.back().size;
 
     if (!columns.empty() && !columns[0]->empty())
+    {
+        chars.reserve_exact(columns[0]->size() * row_length);
         gatherRows(columns, 0, columns[0]->size());
+    }
 }
 
 void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t length)
