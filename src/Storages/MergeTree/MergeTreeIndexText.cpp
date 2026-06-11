@@ -80,7 +80,7 @@ static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 512;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
 static constexpr UInt64 DEFAULT_POSTING_LIST_BLOCK_SIZE = 1024 * 1024;
 static constexpr String DEFAULT_POSTING_LIST_CODEC = "none";
-static constexpr bool DEFAULT_POSITIONS = true;
+static constexpr bool DEFAULT_POSITIONS = false;
 
 bool DictionaryBlockBase::empty() const
 {
