@@ -14,6 +14,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -588,6 +589,25 @@ bool containsAsterisk(const ASTPtr & ast)
         return true;
     for (const auto & child : ast->children)
         if (containsAsterisk(child))
+            return true;
+    return false;
+}
+
+/// True if any ORDER BY element anywhere in the query uses `WITH FILL`.
+/// `WITH FILL` synthesises extra rows to fill gaps in the ordered sequence,
+/// so the result *set* (not just its order) depends on the ORDER BY. The
+/// oracles strip ORDER BY and compare row sets, which removes the FILL on one
+/// side but not necessarily the other (e.g. inside a window definition or a
+/// subquery) — a false mismatch. Checked recursively.
+bool hasWithFillAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * order_elem = ast->as<ASTOrderByElement>())
+        if (order_elem->with_fill)
+            return true;
+    for (const auto & child : ast->children)
+        if (hasWithFillAnywhere(child))
             return true;
     return false;
 }
@@ -2200,6 +2220,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasAsofJoinAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: ASOF JOIN (tie-breaking is plan-dependent)");
+        return false;
+    }
+
+    if (hasWithFillAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: ORDER BY ... WITH FILL (synthesises order-dependent rows)");
         return false;
     }
 
