@@ -2284,6 +2284,43 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
     return ByteRange{physical_start, want};
 }
 
+void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_range, GeometryEntry & geom_entry)
+{
+    for (const auto & hit : view.hits())
+    {
+        /// Hits are segment-aligned and may extend past the plan span; clamp so
+        /// streaming never reads outside `[plan_start, plan_end)`.
+        const size_t lo = std::max(hit.range.offset, plan_range.offset);
+        const size_t hi = std::min(hit.range.end(), plan_range.end());
+        if (lo < hi)
+            geom_entry.resident.push_back(ByteRange{lo, hi - lo});
+    }
+}
+
+void ReaderExecutor::extractMissesAndOpenWriters(
+    ICacheProvider & cache, const CacheView & view,
+    const StoredObject & object, size_t object_file_offset,
+    GeometryEntry & geom_entry, BufEntry & buf_entry)
+{
+    /// A bypass tier is never written, so it has no fetch/write target.
+    if (!cache.populatesOnMiss())
+        return;
+
+    /// The cache-aligned gaps this tier lacks, UNCLAMPED to the plan span (only
+    /// object-end-clamped inside the provider), so the aligned extent drives both the
+    /// fetch and the over-read bound (`[CF-overread]`). Open the held write buffers over
+    /// them now (`[CF-plan-rebuild]`): one `getOrSet` per range, owned for the plan's life,
+    /// so promotion/backfill only ever write into already-open buffers.
+    std::vector<ByteRange> aligned_miss;
+    for (const auto & miss : view.misses())
+    {
+        geom_entry.aligned_miss.push_back(miss.range);
+        aligned_miss.push_back(miss.range);
+    }
+    if (!aligned_miss.empty())
+        buf_entry.writers = cache.openWriteBuffers(object, object_file_offset, aligned_miss);
+}
+
 void ReaderExecutor::planResidencyWindow(size_t physical_start)
 {
     /// Machine-check the threading invariant: the held read/write buffers are
@@ -2333,20 +2370,14 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     geom->plan_end = plan_range.end();
     ReadPlan plan;
 
-    /// One read-only residency probe (`planResidencyView`) per cache tier per
-    /// object-piece. Both tiers are probed independently over the full span; the
-    /// streaming `covered` guard in `readPhysicalWindow` re-establishes fastest-tier-first
-    /// priority, so a byte resident in two tiers is served (and attributed) to the first.
-    /// `geom_entry` (immutable geometry) and `buf_entry` (foreground-private held buffers)
-    /// are filled in lockstep and pushed BOTH-or-NEITHER, so `read_plan.geometry()->entries` and
-    /// `read_plan.bufs` stay 1:1 positional (`residentAt`'s entry index maps into `bufs`).
-    /// The aligned miss ranges are taken UNCLAMPED to the plan span (they may extend past
-    /// it / `read_extent_end`, only clamped to object end inside the provider), so the
-    /// cache segment/block is fully populated and the over-read bound is the aligned
-    /// extent (`[CF-overread]`).
+    /// One read-only residency probe (`planResidencyView`) per cache tier per object-piece,
+    /// each translated by the two extract helpers into a 1:1 `GeometryEntry`/`BufEntry` pair
+    /// (pushed BOTH-or-NEITHER, so `geometry()->entries` and `bufs` stay positionally
+    /// aligned — `residentAt`'s entry index maps into `bufs`). Both tiers are probed over
+    /// the full span; the streaming `covered` guard in `readPhysicalWindow` re-establishes
+    /// fastest-tier-first priority when a byte is resident in two tiers.
     for (auto & cache : caches)
     {
-        const bool populates = cache->populatesOnMiss();
         auto pieces = offset_map.map(plan_range);
         size_t piece_file_start = plan_range.offset;
         for (const auto & pr : pieces)
@@ -2365,42 +2396,12 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
             buf_entry.object = pr.object;
             buf_entry.object_file_offset = object_file_offset;
 
-            for (const auto & hit : view->hits())
-            {
-                /// Hits are segment-aligned and may extend past the plan span;
-                /// clamp so streaming never reads outside `[plan_start, plan_end)`.
-                const size_t lo = std::max(hit.range.offset, plan_range.offset);
-                const size_t hi = std::min(hit.range.end(), plan_range.end());
-                if (lo < hi)
-                    geom_entry.resident.push_back(ByteRange{lo, hi - lo});
-            }
+            extractResidentRuns(*view, plan_range, geom_entry);
+            extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, geom_entry, buf_entry);
 
-            /// Record the cache-aligned gaps this tier lacks (the fetch + write targets),
-            /// but only for tiers that populate on a miss — a bypass tier is never
-            /// written, so it needs no write target. The miss ranges come from the same
-            /// read-only `planResidencyView` we already ran for the hits; they are
-            /// UNCLAMPED (only object-end-clamped inside the provider), so the aligned
-            /// extent drives both the fetch and the over-read bound (`[CF-overread]`).
-            std::vector<ByteRange> aligned_miss;
-            if (populates)
-                for (const auto & miss : view->misses())
-                {
-                    geom_entry.aligned_miss.push_back(miss.range);
-                    aligned_miss.push_back(miss.range);
-                }
-
-            /// Open the write buffers INSIDE this rebuild section (`[CF-plan-rebuild]`):
-            /// `openWriteBuffers` issues one `getOrSet` per aligned miss range and the
-            /// returned buffers own the writable segments for the plan's life - so
-            /// promotion / backfill ONLY ever write into already-open buffers (never lazily
-            /// open one), and every live buffer is finalized by the next `read_plan = {}`
-            /// before any new `getOrSet`. Returns empty for a bypass tier.
-            if (!aligned_miss.empty())
-                buf_entry.writers = cache->openWriteBuffers(pr.object, object_file_offset, aligned_miss);
-
-            /// Keep the view (hit read buffers pin resident segments) and the writers in
-            /// the same `BufEntry`. Drop records that are neither resident nor a
-            /// populatable gap — nothing to read or write.
+            /// Drop records that are neither resident nor a populatable gap — nothing to
+            /// read or write. Otherwise keep the view (its hit read buffers pin the
+            /// resident segments) alongside the writers.
             if (!geom_entry.resident.empty() || !geom_entry.aligned_miss.empty())
             {
                 buf_entry.view = std::move(view);
