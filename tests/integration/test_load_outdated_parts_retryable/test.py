@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
@@ -42,7 +43,10 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate():
     node.query("ATTACH TABLE t_outdated")
 
     # The injected exception is caught and the loading task is rescheduled instead of terminating.
-    assert node.contains_in_log("Loading of outdated parts was interrupted by a retryable error")
+    # The loader runs on a background scheduling-pool thread, so poll the log instead of checking once.
+    assert_logs_contain_with_retry(
+        node, "Loading of outdated parts was interrupted by a retryable error"
+    )
 
     # The server must still be alive and serving queries.
     assert node.query("SELECT count() FROM t_outdated").strip() == "3000"
