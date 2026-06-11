@@ -210,7 +210,20 @@ The `kind_stack` byte enumerates a non-default per-column serialization:
 | `0x02` | DETACHED | Column wrapped in a `ColumnBLOB` by parallel block marshalling (v54478+) | Pre-marshalled blob: `VarUInt size` + that many bytes; see below |
 | `0x03` | DETACHED_OVER_SPARSE | A sparse column wrapped in a `ColumnBLOB` | Same blob payload as `DETACHED`; see below |
 | `0x04` | REPLICATED | Dictionary form for repeated values (v54482+) | Index stream + dense element values; see below |
-| `0x05` | COMBINATION | Multi-kind stack | Followed by VarUInt `count` and `count` further kind bytes |
+| `0x05` | COMBINATION | Multi-kind stack | Followed by VarUInt `count` and `count` further kind bytes — see note below |
+
+**`COMBINATION` payload uses a different enum.** The five rows above are *compact* one-byte codes. `COMBINATION` (`0x05`) is the general escape for any stack not covered by them: it is followed by a `VarUInt` `count` and then `count` one-byte entries. Those entries are **not** the compact codes from the table — they are the raw `ISerialization::Kind` values:
+
+| Byte | Nested `Kind` |
+|------|---------------|
+| `0x00` | DEFAULT |
+| `0x01` | SPARSE |
+| `0x02` | DETACHED |
+| `0x03` | REPLICATED |
+
+The byte values differ from the compact codes: `REPLICATED` is `0x03` in this nested enum but `0x04` as a compact code, and there is no `DETACHED_OVER_SPARSE` entry — that combination appears as the two consecutive entries `SPARSE`, `DETACHED`. A decoder that keeps using the compact table for the nested bytes will mis-map `0x03`/`0x04` and desynchronize.
+
+The `count` is the full stack length **including the leading `DEFAULT` entry** that begins every stack. The compact codes already cover every one- and two-entry stack, so a `COMBINATION` always has a `count` of at least three.
 
 **Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse, replicated, or detached still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
 
@@ -740,11 +753,12 @@ A `Nullable(String)` with three rows `["hello", NULL, "world"]` (15 bytes total)
 
 Type string: `Array(InnerType)`. Examples: `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
 
-The wire layout is two concatenated streams, offsets first:
+The wire layout is the inner [prefix phase](#composite-types) (empty unless the inner type is versioned) followed by two concatenated streams, offsets first:
 
 ```text
-[offsets stream]   num_rows × UInt64 LE
-[values stream]    inner type's encoding for offsets[num_rows - 1] values
+[inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
+[offsets stream]              num_rows × UInt64 LE
+[values stream]               inner type's encoding for offsets[num_rows - 1] values
 ```
 
 The offsets stream is exactly `num_rows` little-endian UInt64 values, each the **cumulative end position** in the values stream after that row's elements:
@@ -810,9 +824,10 @@ That comes to 24 (outer offsets) + 24 (middle offsets) + 20 (values) = 68 bytes.
 
 Type string: `Tuple(T1, T2, ..., Tn)`. Examples: `Tuple(UInt32, String)`, `Tuple(Int32)`, `Tuple(Array(UInt32), String)`, `Tuple(UInt8, Tuple(Int32, String))`. ClickHouse also supports **named tuples** via `Tuple(a UInt32, b String)`; names are metadata only and do not affect the wire format.
 
-The wire layout is *N* concatenated streams, one per element type, in declaration order:
+The wire layout is the elements' [prefix phase](#composite-types) (each versioned element contributes its state prefix, in declaration order; empty for non-versioned elements) followed by *N* concatenated streams, one per element type, in declaration order:
 
 ```text
+[element state prefixes]   in declaration order; empty unless an element type is versioned
 [stream for T1]    inner T1's encoding for num_rows values
 [stream for T2]    inner T2's encoding for num_rows values
  ...
@@ -851,9 +866,10 @@ Element 1 stream (2 strings, 5 bytes total):
 
 Type string: `Map(KeyType, ValueType)`. Examples: `Map(String, UInt32)`, `Map(String, Array(UInt32))`, `Map(UInt8, Tuple(Int32, String))`, `Map(Array(String), Int8)`. The wire format places no restriction on either type — both `K` and `V` may be any supported type, including composites. (ClickHouse's SQL-level rules around accepted key types have varied across releases; consult the SQL documentation for the targeted server version.)
 
-The wire layout is byte-identical to `Array(Tuple(K, V))`:
+The wire layout is byte-identical to `Array(Tuple(K, V))`, so it begins with the inner [prefix phase](#composite-types) (empty unless `K` or `V` is versioned):
 
 ```text
+[K/V state prefixes]   from the inner Tuple's prefix phase; empty unless K or V is versioned
 [offsets stream]    num_rows × UInt64 LE                   ← from Array
 [keys stream]       K's encoding for total_pairs values    ┐ from Tuple's
 [values stream]     V's encoding for total_pairs values    ┘ per-element streams
@@ -917,7 +933,7 @@ n.a    Array(UInt8)
 n.b    Array(String)
 ```
 
-**Case B: `flatten_nested = 0`.** When the table was created with `flatten_nested = 0`, the column appears on the wire as a single column with type string `Nested(name1 T1, name2 T2, ...)`, and its layout after the type string is **byte-identical to `Array(Tuple(T1, T2, ..., Tn))`**:
+**Case B: `flatten_nested = 0`.** When the table was created with `flatten_nested = 0`, the column appears on the wire as a single column with type string `Nested(name1 T1, name2 T2, ...)`, and its layout after the type string is **byte-identical to `Array(Tuple(T1, T2, ..., Tn))`** — including the inner [prefix phase](#composite-types), so any versioned field `T_i` emits its state prefix first, ahead of the offsets. The example below uses non-versioned fields, so the prefix phase is empty:
 
 ```text
 Nested(a UInt8, b String) bytes (after type string):
