@@ -15,6 +15,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
+
 namespace DB
 {
 
@@ -88,7 +89,7 @@ public:
 
     void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
     {
-        size_t sample_count = 0;
+        size_t sample_count;
         readBinaryLittleEndian(sample_count,buf);
         bucket.samples.reserve(sample_count);
 
@@ -106,8 +107,6 @@ public:
     }
 
 private:
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
     void fillResultValue(const TimestampType current_timestamp,
         const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         Float64 accumulated_resets_in_window,
@@ -137,19 +136,15 @@ private:
 
         Float64 value_difference = last_value - first_value + accumulated_resets_in_window;
 
+        const auto range_end = current_timestamp;
+        const auto range_start = current_timestamp - Base::window;
+
         /// The following logic is copied from Prometheus' rate calculation
         /// https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127
         /// which is licensed under the Apache License 2.0
-        // Duration between first/last samples and boundary of range. Subtract in `Int128` first to avoid
-        // both signed overflow on `current_timestamp - Base::window` and `Float64` precision loss when
-        // timestamps are large (e.g. `DateTime64(9)` near present-day epoch ~1.7e18).
-        Float64 duration_to_start = static_cast<Float64>(
-            static_cast<Int128>(static_cast<Int64>(first_timestamp))
-            - static_cast<Int128>(static_cast<Int64>(current_timestamp))
-            + static_cast<Int128>(static_cast<Int64>(Base::window)));
-        Float64 duration_to_end = static_cast<Float64>(
-            static_cast<Int128>(static_cast<Int64>(current_timestamp))
-            - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
+        // Duration between first/last samples and boundary of range.
+        Float64 duration_to_start = static_cast<Float64>(first_timestamp - range_start);
+        Float64 duration_to_end = static_cast<Float64>(range_end - last_timestamp);
 
         const auto sampled_interval = time_difference;
         const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(samples_in_window.size() - 1);
@@ -200,7 +195,6 @@ private:
         result = static_cast<ValueType>(value_difference);
         null = 0;
     }
-#pragma clang diagnostic pop
 
 public:
     /// Insert the result into the column
@@ -260,19 +254,18 @@ public:
                 {
                     /// Check for resets in the timeseries
                     if (adjust_to_resets && !samples_in_window.empty() && samples_in_window.back().second > value)
-                        accumulated_resets_in_window += static_cast<Float64>(samples_in_window.back().second);
+                        accumulated_resets_in_window += samples_in_window.back().second;
                     samples_in_window.push_back({timestamp, value});
                 }
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty()
-                   && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
+            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
             {
-                Float64 removed_value = static_cast<Float64>(samples_in_window.front().second);
+                Float64 removed_value = samples_in_window.front().second;
                 samples_in_window.pop_front();
                 /// Subtract resets that are out of the window
-                if (adjust_to_resets && !samples_in_window.empty() && static_cast<Float64>(samples_in_window.front().second) < removed_value)
+                if (adjust_to_resets && !samples_in_window.empty() && samples_in_window.front().second < removed_value)
                     accumulated_resets_in_window -= removed_value;
             }
 

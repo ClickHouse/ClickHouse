@@ -101,7 +101,7 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-static UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
+UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 {
     std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
         {
@@ -376,11 +376,6 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     /// to avoid spurious "config changed" results.
     new_args.enforce_component_tracking = args.enforce_component_tracking;
     new_args.send_receive_os_threads_nice_value = args.send_receive_os_threads_nice_value;
-
-    /// last_zxid_seen is runtime session state propagated by startNewSession, not configuration,
-    /// so it is always 0 in new_args. Without this, the first config reload after any
-    /// expiry-driven session replacement recreates the session even if the config is unchanged.
-    new_args.last_zxid_seen = args.last_zxid_seen;
 
     return args != new_args;
 }
@@ -1359,7 +1354,7 @@ namespace
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition, ProfileEvents::Event triggered_event)
+bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
@@ -1383,7 +1378,6 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             }
         };
     });
-    watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
     /// fashion with a wait condition which returns false by the time this
@@ -2210,7 +2204,7 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, L
 String getSequentialNodeName(const String & prefix, UInt64 number)
 {
     /// NOTE Sequential counter in ZooKeeper is Int32.
-    chassert(number < std::numeric_limits<Int32>::max());
+    assert(number < std::numeric_limits<Int32>::max());
     constexpr size_t seq_node_digits = 10;
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
