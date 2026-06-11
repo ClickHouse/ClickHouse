@@ -461,4 +461,17 @@ bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
     return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
 }
 
+bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
+{
+    /// On-fly mutations (lightweight UPDATE/DELETE) and patch parts are spliced into the readers
+    /// chain ahead of PREWHERE (see initializeReadersChain). They drop or rewrite rows before
+    /// PREWHERE evaluates them, so a mark can become fully non-matching only because of the
+    /// mutation, not because of the PREWHERE predicate itself. Such marks must not be attributed
+    /// to the predicate in the QueryConditionCache, otherwise a later query that shares the same
+    /// predicate but does not apply the mutations (apply_mutations_on_fly = 0) would wrongly skip
+    /// them. The read path already bypasses the cache in this case; this keeps the write path
+    /// symmetric.
+    return !info->mutation_steps.empty() || !info->patch_parts.empty();
+}
+
 }
