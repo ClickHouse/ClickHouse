@@ -63,6 +63,7 @@ namespace Setting
     extern const SettingsBool cancel_http_readonly_queries_on_client_close;
     extern const SettingsBool enable_http_compression;
     extern const SettingsUInt64 http_headers_progress_interval_ms;
+    extern const SettingsUInt64 http_max_multipart_form_data_size;
     extern const SettingsUInt64 http_max_request_param_data_size;
     extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
     extern const SettingsUInt64 http_response_buffer_size;
@@ -876,6 +877,9 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
     auto input_stream = request.getStream();
+    /// The form was constructed with the server default settings before authentication;
+    /// re-apply the multipart limit from the authenticated user's settings.
+    params.setMaxMultipartFormDataSize(context->getSettingsRef()[Setting::http_max_multipart_form_data_size]);
     params.load(request, *input_stream, handler);
 
     std::string full_query;
@@ -984,6 +988,9 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
         auto input_stream = request.getStream();
+        /// The form was constructed with the server default settings before authentication;
+        /// re-apply the multipart limit from the authenticated user's settings.
+        params.setMaxMultipartFormDataSize(context->getSettingsRef()[Setting::http_max_multipart_form_data_size]);
         params.load(request, *input_stream, handler);
     }
 

@@ -16,8 +16,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # now enforced cumulatively inside CompressedReadBuffer, before each block is allocated.
 
 # Decompressed size of one Native block of 100 UInt64 values (no compression), used as the
-# exact limit so the first block lands precisely on the boundary.
-BLOCK_SIZE=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+number+AS+id+FROM+numbers(100)+FORMAT+Native" | wc -c)
+# exact limit so the first block lands precisely on the boundary. Zero values are used so
+# that the compressed payload stays far below the limit: the multipart parser independently
+# rejects a part whose raw content outgrows the limit, and this test exercises the
+# cumulative decompressed-size check specifically.
+BLOCK_SIZE=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+toUInt64(0)+AS+id+FROM+numbers(100)+FORMAT+Native" | wc -c)
 
 # User names are server-global, so scope the name to the test database to avoid
 # collisions when the test runs concurrently (e.g. in the flaky check).
@@ -28,14 +31,14 @@ $CLICKHOUSE_CLIENT -q "CREATE USER ${USER_NAME} IDENTIFIED WITH no_password SETT
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.* TO ${USER_NAME}"
 
 # One block exactly at the limit: accepted, returns 100.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+number+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1" | \
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+toUInt64(0)+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1" | \
     ${CLICKHOUSE_CURL} -sSF 'ext=@-' "${CLICKHOUSE_URL}&user=${USER_NAME}&query=SELECT+count()+FROM+ext&ext_structure=id+UInt64&ext_format=Native&ext_decompress=1"
 
 # Two such blocks: the first fills the budget exactly, so the second must be rejected before
 # allocation instead of being silently dropped at an artificial EOF.
 {
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+number+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1"
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+number+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+toUInt64(0)+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+toUInt64(0)+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1"
 } | \
     ${CLICKHOUSE_CURL} -sSF 'ext=@-' "${CLICKHOUSE_URL}&user=${USER_NAME}&query=SELECT+count()+FROM+ext&ext_structure=id+UInt64&ext_format=Native&ext_decompress=1" 2>&1 | \
     grep -o 'TOO_LARGE_SIZE_COMPRESSED' | head -n1
