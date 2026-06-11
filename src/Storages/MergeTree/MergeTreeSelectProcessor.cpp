@@ -292,7 +292,8 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// future queries can skip them without waiting for an entire batch to be zero.
             if (prewhere_info && !res.unmatched_mark_ranges.empty()
                 && !current_task.readersChainCanSkipMarksBeforePrewhere()
-                && !current_task.appliesMutationsBeforePrewhere())
+                && !current_task.appliesMutationsBeforePrewhere()
+                && !row_level_filter)
                 current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
 
@@ -306,10 +307,14 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     /// include marks that were filtered by the index, and recording them under the PREWHERE predicate's
     /// hash would poison the QueryConditionCache: later queries that share the same PREWHERE predicate
     /// hash would skip those marks even though the predicate alone matches their rows. See Issue #104781.
-    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason. A row-level
+    /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
+    /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
+    /// PREWHERE predicate and read by a later query without that policy.
     if (reader_settings.use_query_condition_cache && prewhere_info
         && !current_task.readersChainCanSkipMarksBeforePrewhere()
-        && !current_task.appliesMutationsBeforePrewhere())
+        && !current_task.appliesMutationsBeforePrewhere()
+        && !row_level_filter)
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
@@ -391,9 +396,13 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// could have filtered marks before PREWHERE saw them, to avoid attributing those
                 /// marks to the PREWHERE predicate hash. See Issue #104781.
                 /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+                /// A row-level security filter is also prepended before PREWHERE, yet this write keys
+                /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
+                /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
                 if (reader_settings.use_query_condition_cache && task && prewhere_info
                     && !task->readersChainCanSkipMarksBeforePrewhere()
-                    && !task->appliesMutationsBeforePrewhere())
+                    && !task->appliesMutationsBeforePrewhere()
+                    && !row_level_filter)
                 {
                     for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {
