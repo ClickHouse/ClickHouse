@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <exception>
 #include <optional>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -308,7 +309,10 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
             auth_method,
             connection_params.client_options,
             object.remote_path,
-            write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
+            /// The adaptive initial size must not exceed buf_size (the maximum); this writer
+            /// forwards the value straight to the allocator, so an out-of-range adaptive
+            /// initial size would otherwise abort the server (see WriteBufferFromFileDescriptor).
+            write_settings.use_adaptive_write_buffer ? std::min(write_settings.adaptive_write_buffer_initial_size, buf_size) : buf_size,
             patchSettings(write_settings),
             settings.get(),
             connection_params.getContainer(),
