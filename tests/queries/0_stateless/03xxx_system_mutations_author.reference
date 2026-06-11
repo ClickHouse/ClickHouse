@@ -1,3 +1,0 @@
-author	String
-default	test_mutations_author_in_replicated_table	1	default
-default test_mutations_author_in_regular_table      1   default
