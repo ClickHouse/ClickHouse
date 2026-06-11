@@ -13,7 +13,9 @@ CREATE TABLE test_rls_projection
     )
 )
 ENGINE = MergeTree()
-ORDER BY (tenant_id, id);
+ORDER BY (tenant_id, id)
+-- Pin index_granularity: the EXPLAIN indexes section below asserts an exact granule count.
+SETTINGS index_granularity = 8192;
 
 INSERT INTO test_rls_projection VALUES
     (1, 'tenant_A', 'item_1'),

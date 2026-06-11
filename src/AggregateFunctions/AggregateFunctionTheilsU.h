@@ -153,12 +153,7 @@ struct TheilsUWindowData : CrossTabCountsState
 
     void deserialize(ReadBuffer & buf)
     {
-        clear();
-
-        readBinary(count, buf);
-        count_a.read(buf);
-        count_b.read(buf);
-        count_ab.read(buf);
+        CrossTabCountsState::deserialize(buf);
 
         /// Restore cached Σ n logn sums
         sum_a_nlogn = recomputeNLogNSum(count_a);
@@ -216,17 +211,6 @@ private:
             return 0.0;
         const Float64 xf = static_cast<Float64>(x);
         return xf * std::log(xf);
-    }
-
-    void clear()
-    {
-        count = 0;
-        count_a.clear();
-        count_b.clear();
-        count_ab.clear();
-        sum_a_nlogn = 0.0;
-        sum_b_nlogn = 0.0;
-        sum_ab_nlogn = 0.0;
     }
 
     template <typename Map, typename Key>

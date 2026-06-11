@@ -75,6 +75,21 @@ FROM t2 RIGHT JOIN t3 ON t2.c = t3.c AND t2.c IS NULL
 INNER JOIN t1 ON t2.c = t1.c
 ORDER BY t3.c, t2.c;
 
+SELECT '--';
+
+-- An outer join comma-joined (cross) with a third table. The cross join must not
+-- drop the outer-join restriction of the null-supplying relation: the unmatched
+-- rows of the RIGHT/LEFT join must survive the cartesian product.
+SELECT t1.c, t2.c, t3.c
+FROM t1 RIGHT JOIN t2 ON t1.c = t2.c, t3
+ORDER BY t1.c, t2.c, t3.c;
+
+SELECT '--';
+
+SELECT t1.c, t2.c, t3.c
+FROM t1 LEFT JOIN t2 ON t1.c = t2.c, t3
+ORDER BY t1.c, t2.c, t3.c;
+
 DROP TABLE a;
 DROP TABLE b;
 DROP TABLE c;
