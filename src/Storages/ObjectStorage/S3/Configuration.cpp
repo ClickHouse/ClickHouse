@@ -764,7 +764,10 @@ static void addStructureAndFormatToArgsIfNeededS3(
         if (count > max_number_of_arguments)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", max_number_of_arguments, count);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Expected 1 to {} arguments in table function s3, got {}",
+                max_number_of_arguments,
+                count);
         }
 
         auto format_literal = make_intrusive<ASTLiteral>(format_);
