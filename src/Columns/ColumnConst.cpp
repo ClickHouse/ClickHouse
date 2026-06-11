@@ -169,6 +169,18 @@ WeakHash32 ColumnConst::getWeakHash32() const
     return WeakHash32(s, element_hash.getData()[0]);
 }
 
+Int64 ColumnConst::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    const ColumnConst & rhs = assert_cast<const ColumnConst &>(rhs_);
+
+    int cmp = data->compareAt(0, 0, *rhs.data, nan_direction_hint);
+    if (cmp < 0)
+        return -static_cast<Int64>(s - n);
+    else if (cmp > 0)
+        return static_cast<Int64>(rhs.s - m);
+    return 0;
+}
+
 void ColumnConst::compareColumn(
     const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
     const
