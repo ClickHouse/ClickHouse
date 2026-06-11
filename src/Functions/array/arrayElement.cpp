@@ -12,10 +12,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -2324,6 +2326,107 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     return res;
 }
 
+
+/** arrayElementOrDefault(arr, n, default) returns the array element at index `n`,
+  * or `default` if the index is out of range.
+  * arrayElementOrDefault(map, key, default) returns the value associated with `key`,
+  * or `default` if the key is not present in the map.
+  *
+  * The result type is the least common supertype of the array element (or map value) type
+  * and the default value type.
+  *
+  * It is implemented on top of arrayElementOrNull: that function returns a Nullable column
+  * whose NULLs mark the positions where the index is out of range or the key is missing, and
+  * those positions are then replaced with the provided default value.
+  */
+class FunctionArrayElementOrDefault : public IFunction
+{
+public:
+    static constexpr auto name = "arrayElementOrDefault";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayElementOrDefault>(); }
+
+    String getName() const override { return name; }
+
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 3; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        DataTypePtr element_type;
+        if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
+        {
+            element_type = map_type->getValueType();
+        }
+        else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get()))
+        {
+            if (!isNativeInteger(arguments[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function '{}' must be integer, got '{}' instead",
+                    getName(),
+                    arguments[1]->getName());
+            element_type = array_type->getNestedType();
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function '{}' must be an array or a map, got '{}' instead",
+                getName(),
+                arguments[0]->getName());
+        }
+
+        /// The implementation relies on arrayElementOrNull to detect absent elements, which requires
+        /// the element type to be representable inside Nullable.
+        const DataTypePtr element_not_null = removeNullable(element_type);
+        if (!element_not_null->canBeInsideNullable())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function '{}' does not support the element type '{}' because it cannot be wrapped in Nullable",
+                getName(),
+                element_type->getName());
+
+        return getLeastSupertype(DataTypes{element_not_null, arguments[2]});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        /// arrayElementOrNull(container, n) yields a Nullable column whose NULLs mark an
+        /// out-of-range index (for arrays) or a missing key (for maps).
+        const FunctionArrayElement<ArrayElementExceptionMode::Null> array_element_or_null;
+        const DataTypePtr nullable_type = array_element_or_null.getReturnTypeImpl({arguments[0].type, arguments[1].type});
+
+        /// The inner implementation does not handle constant columns on its own (it relies on the
+        /// function framework to materialize them), so materialize them here before calling it directly.
+        const ColumnsWithTypeAndName element_arguments{
+            {arguments[0].column->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name},
+            {arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name}};
+
+        ColumnPtr nullable_column = array_element_or_null.executeImpl(element_arguments, nullable_type, input_rows_count);
+        nullable_column = nullable_column->convertToFullColumnIfConst();
+
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(*nullable_column);
+        const auto & null_map = column_nullable.getNullMapData();
+
+        /// Cast both the looked-up elements and the default value to the common result type.
+        const ColumnPtr elements = castColumn({column_nullable.getNestedColumnPtr(), removeNullable(nullable_type), ""}, result_type);
+        const ColumnPtr defaults = castColumn({arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, ""}, result_type);
+
+        auto result = result_type->createColumn();
+        result->reserve(input_rows_count);
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map[row])
+                result->insertFrom(*defaults, row);
+            else
+                result->insertFrom(*elements, row);
+        }
+
+        return result;
+    }
+};
 }
 
 REGISTER_FUNCTION(ArrayElement)
@@ -2384,5 +2487,44 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
+
+    FunctionDocumentation::Description description_or_default = R"(
+Gets the element of an array by index, or the value of a map by key.
+If the index falls outside of the bounds of the array, or the key is not present in the map, the provided default value is returned instead.
+
+This function is the counterpart of [`arrayElementOrNull`](#arrayElementOrNull): it behaves like `arrayElementOrNull` but substitutes the provided default value wherever `arrayElementOrNull` would return `NULL` (including when the looked-up element itself is `NULL`).
+
+The result type is the least common supertype of the array element (or map value) type and the default value type.
+
+:::note
+Arrays in ClickHouse are one-indexed.
+:::
+
+Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
+)";
+    FunctionDocumentation::Syntax syntax_or_default = "arrayElementOrDefault(arr, n, default)";
+    FunctionDocumentation::Arguments arguments_or_default
+        = {{"arr", "The array or map to search.", {"Array(T)", "Map(K, V)"}},
+           {"n", "The index of the array element, or the key of the map value, to get.", {"(U)Int*", "K"}},
+           {"default", "The value to return when the index is out of bounds or the key is not found.", {"T"}}};
+    FunctionDocumentation::ReturnedValue returned_value_or_default
+        = {"Returns the element at index `n` (or the value for key `n`), or `default` if it is absent.", {"T"}};
+    FunctionDocumentation::Examples examples_or_default
+        = {{"Index in bounds", "SELECT arrayElementOrDefault([1, 2, 3], 2, 10)", "2"},
+           {"Index out of bounds", "SELECT arrayElementOrDefault([1, 2, 3], 4, 10)", "10"},
+           {"Missing map key", "SELECT arrayElementOrDefault(map('a', 1), 'b', -1)", "-1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_or_default = {26, 6};
+    FunctionDocumentation::Category category_or_default = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_or_default
+        = {description_or_default,
+           syntax_or_default,
+           arguments_or_default,
+           {},
+           returned_value_or_default,
+           examples_or_default,
+           introduced_in_or_default,
+           category_or_default};
+
+    factory.registerFunction<FunctionArrayElementOrDefault>(documentation_or_default);
 }
 }
