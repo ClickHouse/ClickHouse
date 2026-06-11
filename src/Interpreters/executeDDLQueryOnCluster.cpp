@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
@@ -220,6 +221,14 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
         io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
 
     return io;
+}
+
+void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database)
+{
+    if (database && database->isDatalakeCatalog())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ON CLUSTER is not supported for DataLakeCatalog databases: "
+            "the catalog is shared, run the query without ON CLUSTER");
 }
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)

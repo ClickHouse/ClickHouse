@@ -368,7 +368,17 @@ bool writeMetadataFileAndVersionHint(
         }
         else
         {
-            break;
+            /// Remove the metadata file written above, otherwise the resolver could later
+            /// pick this uncommitted file as the latest version.
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(storage_metadata_path));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+            return false;
         }
         ++i;
     }

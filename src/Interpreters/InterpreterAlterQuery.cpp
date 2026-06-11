@@ -420,6 +420,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
+        if (table_id)
+            checkDatabaseSupportsOnClusterDDL(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name));
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

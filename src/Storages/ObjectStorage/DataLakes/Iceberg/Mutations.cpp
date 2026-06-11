@@ -364,12 +364,13 @@ static bool writeMetadataFiles(
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
     SharedHeader sample_block,
-    bool write_metadata_json_file)
+    bool write_metadata_json_file,
+    const Iceberg::IcebergPathFromMetadata & previous_metadata_file_path)
 {
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
     auto storage_metadata_name = path_resolver.resolve(metadata_info.path);
     Int64 parent_snapshot = -1;
-    if (metadata->has(Iceberg::f_current_snapshot_id))
+    if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     Int64 total_rows = 0;
@@ -388,7 +389,7 @@ static bool writeMetadataFiles(
     {
         auto result = MetadataGenerator(metadata).generateNextMetadata(
             filename_generator,
-            metadata_info.path,
+            previous_metadata_file_path,
             parent_snapshot,
             /* added_files */ 0,
             /* added_records */ 0,
@@ -403,7 +404,7 @@ static bool writeMetadataFiles(
     {
         auto result = MetadataGenerator(metadata).generateNextMetadata(
             filename_generator,
-            metadata_info.path,
+            previous_metadata_file_path,
             parent_snapshot,
             /* added_files */ total_files,
             /* added_records */ total_rows,
@@ -597,6 +598,7 @@ void mutate(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto previous_metadata_path = persistent_table_components.path_resolver.reverseResolve(metadata_path);
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
@@ -673,7 +675,8 @@ void mutate(
                 chunk_partitioner,
                 Iceberg::FileContentType::POSITION_DELETE,
                 std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
-                !mutation_files->data_file);
+                !mutation_files->data_file,
+                mutation_files->data_file ? Iceberg::IcebergPathFromMetadata{} : previous_metadata_path);
             if (!result_delete_files_metadata)
                 continue;
 
@@ -695,7 +698,8 @@ void mutate(
                     chunk_partitioner,
                     Iceberg::FileContentType::DATA,
                     sample_block,
-                    true);
+                    true,
+                    previous_metadata_path);
                 if (!result_data_files_metadata)
                 {
                     continue;

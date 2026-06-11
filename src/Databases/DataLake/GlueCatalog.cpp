@@ -50,6 +50,7 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -333,7 +334,7 @@ bool GlueCatalog::tryGetTableMetadata(
         auto setup_specific_properties = [&]
         {
             const auto & table_params = table_outcome.GetParameters();
-            if (table_params.contains("metadata_location"))
+            if (table_params.contains("metadata_location") && !table_params.at("metadata_location").empty())
             {
                 result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
             }
@@ -602,9 +603,31 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     glue_client->CreateDatabase(create_request);
 }
 
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     createNamespaceIfNotExists(namespace_name);
+
+    String effective_metadata_path = new_metadata_path;
+
+    if (effective_metadata_path.empty() && metadata_content && metadata_content->has("location"))
+    {
+        String table_location = metadata_content->getValue<String>("location");
+        while (table_location.ends_with('/'))
+            table_location = table_location.substr(0, table_location.size() - 1);
+
+        TableMetadata dummy_metadata;
+        auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, dummy_metadata);
+
+        String metadata_filename = table_path + "/metadata/v1.metadata.json";
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata_content, oss, 4);
+        String metadata_str = DB::removeEscapedSlashes(oss.str());
+
+        DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "");
+
+        effective_metadata_path = "s3://" + bucket_name + "/" + metadata_filename;
+    }
 
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
@@ -613,18 +636,21 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
     table_input.SetName(table_name);
 
     Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
+    if (!effective_metadata_path.empty())
+    {
+        fs::path original_path = effective_metadata_path;
 
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
+        fs::path parent = original_path.parent_path();
+        fs::path grandparent = parent.parent_path();
 
-    sd.SetLocation(grandparent.c_str());
+        sd.SetLocation(grandparent.c_str());
+    }
 
     table_input.SetStorageDescriptor(sd);
     table_input.SetTableType("ICEBERG");
 
     Aws::Map<Aws::String, Aws::String> parameters;
-    parameters["metadata_location"] = new_metadata_path;
+    parameters["metadata_location"] = effective_metadata_path;
     parameters["table_type"] = "ICEBERG";
 
     table_input.SetParameters(parameters);
@@ -684,7 +710,7 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*purge*/) const
 {
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);

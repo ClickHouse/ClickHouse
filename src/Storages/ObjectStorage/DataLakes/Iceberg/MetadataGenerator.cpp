@@ -112,7 +112,7 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
 
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
-    const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+    const Iceberg::IcebergPathFromMetadata & previous_metadata_file_path,
     Int64 parent_snapshot_id,
     Int64 added_files,
     Int64 added_records,
@@ -135,7 +135,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
-    new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
+    if (parent_snapshot_id != -1)
+        new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
@@ -207,9 +208,10 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
 
+    if (!previous_metadata_file_path.empty())
     {
         Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
-        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
+        new_metadata_item->set(Iceberg::f_metadata_file, previous_metadata_file_path.serialize());
         new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
     }

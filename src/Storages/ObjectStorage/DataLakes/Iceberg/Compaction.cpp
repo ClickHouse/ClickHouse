@@ -364,7 +364,7 @@ static void writeMetadataFiles(
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
-            generated_metadata_info.path,
+            Iceberg::IcebergPathFromMetadata{},
             history_record.parent_id,
             history_record.added_files,
             total_records_count,

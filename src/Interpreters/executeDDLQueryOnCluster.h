@@ -19,9 +19,14 @@ namespace DB
 struct DDLLogEntry;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Returns true if provided ALTER type can be executed ON CLUSTER
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
+
+/// Throws if DDL on the database's tables cannot be mutated with ON CLUSTER
+void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database);
 
 struct DDLQueryOnClusterParams
 {

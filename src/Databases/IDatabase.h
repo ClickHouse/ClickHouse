@@ -313,6 +313,7 @@ public:
     virtual bool empty() const = 0;
 
     virtual bool isReadOnly() const { return false; }
+    virtual bool isDatalakeCatalog() const { return false; }
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(

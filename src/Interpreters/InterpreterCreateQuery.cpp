@@ -35,6 +35,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1752,6 +1753,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    /// Snapshot whether the user wrote an explicit ENGINE before `setEngine` fills in a default below.
+    /// Used to detect an engine-less `CREATE TABLE` on a `DataLakeCatalog` database.
+    const bool engine_user_specified = create.storage && create.storage->engine;
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -1824,12 +1829,35 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.cluster.empty())
     {
+        checkDatabaseSupportsOnClusterDDL(database);
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
 
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+
+    if (database && database->isDatalakeCatalog())
+    {
+        if (create.is_ordinary_view || create.is_materialized_view || create.is_window_view
+            || create.is_dictionary || create.attach || create.is_clone_as
+            || create.replace_table || create.replace_view)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DataLakeCatalog supports only plain CREATE TABLE; "
+                "views, dictionaries, ATTACH, CLONE AS, and REPLACE TABLE are not allowed");
+
+        if (engine_user_specified && !create.storage->engine->name.starts_with("Iceberg"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DataLakeCatalog only supports Iceberg-family table engines; got '{}'",
+                create.storage->engine->name);
+
+        /// The comment is not persisted in Iceberg metadata or catalog properties,
+        /// so reject it instead of silently dropping it.
+        if (create.comment)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table COMMENT is not supported by DataLakeCatalog table creation "
+                "(note: CREATE TABLE ... AS inherits the comment from the source table)");
+    }
 
     if (create.isTemporary() && create.replace_table)
     {
@@ -1845,7 +1873,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, ddl_guard, mode);
+    bool created = doCreateTable(create, properties, ddl_guard, mode, engine_user_specified);
     ddl_guard.reset();
 
     if (!created)   /// Table already exists
@@ -1922,7 +1950,7 @@ catch (...)
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
+                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode, bool engine_user_specified)
 {
     if (create.isTemporary())
     {
@@ -2017,6 +2045,71 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
+    }
+
+    auto & create_query = query_ptr->as<ASTCreateQuery &>();
+    if (database->isDatalakeCatalog() && !engine_user_specified)
+    {
+        /// Extract partition/order from the source table if CREATE TABLE ... AS was used
+        if (!as_table_saved.empty())
+        {
+            String as_database_name = getContext()->resolveDatabase(as_database_saved);
+            StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+            auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+
+            if (!create_query.storage)
+            {
+                auto storage_ast = make_intrusive<ASTStorage>();
+                create_query.set(create_query.storage, storage_ast);
+            }
+
+            if (!create_query.storage->partition_by
+                && as_storage_metadata->isPartitionKeyDefined()
+                && as_storage_metadata->hasPartitionKey())
+            {
+                create_query.storage->set(
+                    create_query.storage->partition_by,
+                    as_storage_metadata->getPartitionKeyAST()->clone());
+            }
+
+            if (!create_query.storage->order_by
+                && as_storage_metadata->isSortingKeyDefined()
+                && as_storage_metadata->hasSortingKey())
+            {
+                create_query.storage->set(
+                    create_query.storage->order_by,
+                    as_storage_metadata->getSortingKeyAST()->clone());
+            }
+        }
+
+        /// Ensure columns are in the query AST
+        if (!create_query.columns_list
+            || !create_query.columns_list->columns
+            || create_query.columns_list->columns->children.empty())
+        {
+            auto columns_declare_list = make_intrusive<ASTColumns>();
+            auto columns_expression_list = make_intrusive<ASTExpressionList>();
+            columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
+            create_query.set(create_query.columns_list, columns_declare_list);
+
+            for (const auto & column : properties.columns)
+            {
+                const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
+                column_declaration->name = column.name;
+                column_declaration->setType(makeASTDataType(column.type->getName()));
+                /// Preserve non-plain kinds so DatabaseDataLake::createTable can reject them.
+                if (column.default_desc.kind != ColumnDefaultKind::Default || column.default_desc.expression)
+                {
+                    column_declaration->default_specifier = toColumnDefaultSpecifier(column.default_desc.kind);
+                    if (column.default_desc.expression)
+                        column_declaration->setDefaultExpression(column.default_desc.expression->clone());
+                }
+                columns_expression_list->children.emplace_back(column_declaration);
+            }
+        }
+
+        database->createTable(getContext(), create.getTable(), nullptr, query_ptr);
+        return true;
     }
 
     data_path = database->getTableDataPath(create);
@@ -2132,7 +2225,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             is_restore_from_backup);
 
         /// If schema was inferred while storage creation, add columns description to create query.
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
@@ -2292,7 +2384,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, /*engine_user_specified=*/false);
         ddl_guard.reset();
         chassert(done);
         created = true;

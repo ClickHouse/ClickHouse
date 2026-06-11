@@ -119,6 +119,7 @@ private:
     bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
+    String previous_metadata_file_path;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;

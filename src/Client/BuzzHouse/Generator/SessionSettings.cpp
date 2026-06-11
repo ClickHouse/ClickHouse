@@ -873,7 +873,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10800)); },
          {},
          false)},
-    {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
+    {"data_lake_delete_data_on_drop", trueOrFalseSettingNoOracle},
     {"iceberg_expire_default_min_snapshots_to_keep",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
