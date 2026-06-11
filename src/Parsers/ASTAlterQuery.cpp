@@ -2,6 +2,7 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 
@@ -648,6 +649,71 @@ bool ASTAlterQuery::isDropPartitionAlter() const
 bool ASTAlterQuery::isCommentAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
+}
+
+namespace
+{
+
+/// `MODIFY COLUMN c COMMENT 'x'` parses as `MODIFY_COLUMN`, but the resolved
+/// `AlterCommand::isCommentAlter` treats it as comment-only, so the storage layer
+/// applies it as local metadata. Recognise the same shape here, intentionally
+/// stricter: any extra column property or surrounding modifier rejects it, which
+/// just routes the ALTER to every replica (the safe default).
+bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
+{
+    if (command.type != ASTAlterCommand::MODIFY_COLUMN)
+        return false;
+
+    const auto * col_decl = command.col_decl ? command.col_decl->as<ASTColumnDeclaration>() : nullptr;
+    if (!col_decl || col_decl->getComment() == nullptr)
+        return false;
+
+    if (col_decl->getType() || col_decl->getDefaultExpression() || col_decl->getCodec()
+        || col_decl->getTTL() || col_decl->getStatisticsDesc() || col_decl->getSettings()
+        || col_decl->getCollation())
+        return false;
+
+    if (col_decl->null_modifier.has_value()
+        || col_decl->default_specifier != ColumnDefaultSpecifier::Empty
+        || col_decl->ephemeral_default
+        || col_decl->primary_key_specifier)
+        return false;
+
+    if (!command.remove_property.empty()
+        || command.settings_changes != nullptr
+        || command.settings_resets != nullptr
+        || command.column != nullptr
+        || command.first)
+        return false;
+
+    return true;
+}
+
+}
+
+bool ASTAlterQuery::isSettingsOrCommentAlter() const
+{
+    if (!command_list || command_list->children.empty())
+        return false;
+    for (const auto & child : command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        switch (command.type)
+        {
+            case ASTAlterCommand::MODIFY_SETTING:
+            case ASTAlterCommand::RESET_SETTING:
+            case ASTAlterCommand::COMMENT_COLUMN:
+            case ASTAlterCommand::MODIFY_COMMENT:
+                break;
+            case ASTAlterCommand::MODIFY_COLUMN:
+                if (!isCommentOnlyModifyColumn(command))
+                    return false;
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
 }
 
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
