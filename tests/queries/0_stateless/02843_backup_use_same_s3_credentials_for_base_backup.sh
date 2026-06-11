@@ -44,12 +44,12 @@ echo "inc_2"
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_2)) SETTINGS base_backup=S3($(s3_location inc_1))" | cut -f2
 
 echo "inc_3_bad"
-$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "BACKUP TABLE data TO S3($(s3_location inc_3_bad)) SETTINGS base_backup=S3($(s3_location_with_invalid_password inc_1))" |& grep -m1 -o 'The request signature we calculated does not match the signature you provided. Check your key and signing method. (S3_ERROR)'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "BACKUP TABLE data TO S3($(s3_location inc_3_bad)) SETTINGS base_backup=S3($(s3_location_with_invalid_password inc_1))" |& grep -m1 -o 'Please check your AWS credentials and permissions. (S3_ERROR)'
 echo "inc_4"
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location_with_invalid_password inc_1)), use_same_s3_credentials_for_base_backup=1" | cut -f2
 
 echo "restore inc_1"
-$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "RESTORE TABLE data AS data FROM S3($(s3_location inc_1))" |& grep -m1 -o 'The request signature we calculated does not match the signature you provided. Check your key and signing method. (S3_ERROR)'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "RESTORE TABLE data AS data FROM S3($(s3_location inc_1))" |& grep -m1 -o 'Please check your AWS credentials and permissions. (S3_ERROR)'
 echo "restore inc_1"
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_1 FROM S3($(s3_location inc_1)) SETTINGS use_same_s3_credentials_for_base_backup=1" | cut -f2
 echo "restore inc_2"

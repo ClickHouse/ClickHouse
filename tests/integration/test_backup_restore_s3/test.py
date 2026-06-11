@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from typing import Dict
@@ -380,6 +381,19 @@ def test_backup_to_s3(cluster):
         cluster, storage_policy, backup_destination
     )
     check_system_tables(cluster, backup_events["query_id"])
+
+
+def test_backup_to_s3_ignores_prefixed_backup_metadata(cluster):
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_key = f"data/backups/{backup_name}"
+    data = b"not a backup"
+    cluster.minio_client.put_object(
+        "root", f"{backup_key}/.backup.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{backup_key}', 'minio', '{minio_secret_key}')"
+    check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
 def test_backup_to_s3_named_collection(cluster):
@@ -769,6 +783,23 @@ def test_backup_to_zip(cluster):
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
     check_backup_and_restore(cluster, storage_policy, backup_destination)
+
+
+def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    archive_key = f"data/backups/{backup_name}.zip"
+    data = b"not a backup archive"
+    cluster.minio_client.put_object(
+        "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{archive_key}', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_destination}"
+    )
+
+    assert "BACKUP_NOT_FOUND" in error, error
 
 
 def test_backup_to_tar(cluster):
