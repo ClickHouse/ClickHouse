@@ -140,8 +140,9 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
 
     // Verify regardless of whether setupAuthentication completed or threw
     // after writing config (credentials unavailable in test environment).
+    // librdkafka normalizes property values to lowercase.
     EXPECT_EQ(cfg.get("sasl.mechanism"), "OAUTHBEARER");
-    EXPECT_EQ(cfg.get("security.protocol"), "SASL_SSL");
+    EXPECT_EQ(cfg.get("security.protocol"), "sasl_ssl");
 }
 
 TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
