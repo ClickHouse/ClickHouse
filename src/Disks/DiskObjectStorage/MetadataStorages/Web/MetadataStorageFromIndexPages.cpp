@@ -199,6 +199,24 @@ namespace
         return ensureTrailingSlash(uri.getPath());
     }
 
+    std::string getListingPrefixURLForMatching(const std::string & url)
+    {
+        Poco::URI uri(url, false);
+        auto path = uri.getPath();
+        if (path.empty())
+            path = "/";
+        else if (!path.ends_with('/'))
+        {
+            const auto slash_pos = path.find_last_of('/');
+            path = slash_pos == std::string::npos ? "/" : path.substr(0, slash_pos + 1);
+        }
+
+        uri.setPath(path);
+        uri.setQuery("");
+        uri.setFragment("");
+        return uri.toString();
+    }
+
     std::string stripLeadingSlash(std::string path)
     {
         while (path.starts_with("/"))
@@ -363,6 +381,7 @@ MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readInde
 std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     const std::string & page_body,
     const std::string & listing_url,
+    const std::string & listing_prefix_url,
     const std::string & base_url,
     const std::string & source_url,
     const std::string & path) const
@@ -371,6 +390,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     std::unordered_set<std::string> seen_effective_relative;
     const auto & regex = getURLRegex();
     const Poco::URI listing_uri(listing_url, false);
+    const Poco::URI listing_prefix_uri(listing_prefix_url, false);
     const Poco::URI base_uri(base_url, false);
     re2::StringPiece input(page_body);
     re2::StringPiece match;
@@ -410,7 +430,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
             continue;
 
-        if (!WebIndexPage::hasPathPrefix(candidate_uri, listing_uri))
+        if (!WebIndexPage::hasPathPrefix(candidate_uri, listing_prefix_uri))
             continue;
 
         auto relative = WebIndexPage::getRelativePathWithQueryAndFragment(candidate_uri, base_uri);
@@ -458,7 +478,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
                 continue;
 
-            if (!WebIndexPage::hasPathPrefix(candidate_uri, listing_uri))
+            if (!WebIndexPage::hasPathPrefix(candidate_uri, listing_prefix_uri))
                 continue;
 
             auto relative = WebIndexPage::getRelativePathWithQueryAndFragment(candidate_uri, base_uri);
@@ -510,10 +530,12 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
             {
                 auto index_page = readIndexPage(listing_url);
                 rejectOriginChangingRedirect(listing_url, index_page.final_url);
-                const auto final_path_prefix = stripLeadingSlash(getPathPrefixForMatching(index_page.final_url));
+                const auto final_listing_prefix_url = getListingPrefixURLForMatching(index_page.final_url);
+                const auto final_path_prefix = stripLeadingSlash(getPathPrefixForMatching(final_listing_prefix_url));
                 auto entries = extractURLs(
                     index_page.body,
                     index_page.final_url,
+                    final_listing_prefix_url,
                     url_options[i].base_url,
                     url_options[i].base_url + url_options[i].query_fragment,
                     final_path_prefix);

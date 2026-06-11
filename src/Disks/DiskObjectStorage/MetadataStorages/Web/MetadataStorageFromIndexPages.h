@@ -29,6 +29,7 @@ private:
     std::vector<std::string> extractURLs(
         const std::string & page_body,
         const std::string & listing_url,
+        const std::string & listing_prefix_url,
         const std::string & base_url,
         const std::string & source_url,
         const std::string & path) const;

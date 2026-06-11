@@ -592,6 +592,16 @@ def test_url_wildcard_rejects_cross_origin_index_redirect():
     assert "redirected to a different origin" in error
 
 
+def test_url_wildcard_reads_index_file_redirect():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/index_redirect/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS max_http_get_redirects=1"
+        )
+    )
+    assert result.strip() == "41"
+
+
 def test_url_engine_wildcard_redirect_uses_query_setting():
     table_name = "url_wildcard_redirect"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
