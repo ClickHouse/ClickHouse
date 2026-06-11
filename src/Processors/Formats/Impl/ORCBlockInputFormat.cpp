@@ -58,6 +58,11 @@ Chunk ORCBlockInputFormat::read()
     if (!batch)
         return {};
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*batch);
+
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
         throw Exception(
@@ -199,6 +204,7 @@ std::optional<size_t> ORCSchemaReader::readNumberOrRows()
     return file_reader->NumberOfRows();
 }
 
+void registerInputFormatORC(FormatFactory & factory);
 void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -230,6 +236,7 @@ void registerInputFormatORC(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
+void registerORCSchemaReader(FormatFactory & factory);
 void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -258,6 +265,8 @@ void registerORCSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerInputFormatORC(FormatFactory &);
+    void registerORCSchemaReader(FormatFactory &);
     void registerInputFormatORC(FormatFactory &)
     {
     }

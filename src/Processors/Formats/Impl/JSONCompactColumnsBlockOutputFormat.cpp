@@ -28,6 +28,7 @@ void JSONCompactColumnsBlockOutputFormat::writeChunkEnd()
     writeChar('\n', *ostr);
 }
 
+void registerOutputFormatJSONCompactColumns(FormatFactory & factory);
 void registerOutputFormatJSONCompactColumns(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONCompactColumns", [](

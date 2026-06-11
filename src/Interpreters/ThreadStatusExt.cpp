@@ -4,6 +4,8 @@
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -11,21 +13,20 @@
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
 #include <Parsers/queryNormalization.h>
-#include <Common/MemoryTracker.h>
-#include <Common/VariableContext.h>
+#include <base/errnoToString.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/SignalUnsafeMutationGuard.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/setThreadName.h>
-#include <Common/noexcept_scope.h>
-#include <Common/DateLUT.h>
+#include <Common/VariableContext.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <base/errnoToString.h>
-#include <Core/ServerSettings.h>
+#include <Common/noexcept_scope.h>
+#include <Common/setThreadName.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -84,15 +85,15 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
         /// default; otherwise leave the group tracker at -1 so `getResolvedSampleConfig` falls
         /// through to `total_memory_tracker_sample_probability`.
         if (settings[Setting::memory_profiler_sample_probability].changed)
-            memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+            memory_tracker.setSampleProbability(static_cast<double>(settings[Setting::memory_profiler_sample_probability]));
         if (settings[Setting::memory_profiler_sample_min_allocation_size].changed)
             memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
         if (settings[Setting::memory_profiler_sample_max_allocation_size].changed)
             memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
     }
 
-    if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-        memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+    if (settings[Setting::memory_tracker_fault_probability] > 0.0f)
+        memory_tracker.setFaultProbability(static_cast<double>(settings[Setting::memory_tracker_fault_probability]));
 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
@@ -314,7 +315,10 @@ void ThreadStatus::applyQuerySettings()
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
-    query_id = query_context_ptr->getCurrentQueryId();
+    {
+        SignalUnsafeMutationGuard guard(is_query_id_usable);
+        query_id = query_context_ptr->getCurrentQueryId();
+    }
     initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
@@ -411,7 +415,7 @@ void ThreadStatus::detachFromGroup()
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
-    query_id.clear();
+    clearQueryId();
     query_context.reset();
 
     local_data = {};
@@ -641,7 +645,7 @@ void ThreadStatus::initQueryProfiler()
         return;
 
     auto query_context_ptr = query_context.lock();
-    assert(query_context_ptr);
+    chassert(query_context_ptr);
     const auto & settings = query_context_ptr->getSettingsRef();
 
     try

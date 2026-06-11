@@ -35,21 +35,21 @@ struct MergeInfo
     Array source_part_paths;
     std::string partition_id;
     std::string partition;
-    bool is_mutation;
-    Float64 elapsed;
-    Float64 progress;
-    UInt64 num_parts;
-    UInt64 total_size_bytes_compressed;
-    UInt64 total_size_bytes_uncompressed;
-    UInt64 total_size_marks;
-    UInt64 total_rows_count;
-    UInt64 bytes_read_uncompressed;
-    UInt64 bytes_written_uncompressed;
-    UInt64 rows_read;
-    UInt64 rows_written;
-    UInt64 columns_written;
-    UInt64 memory_usage;
-    UInt64 thread_id;
+    bool is_mutation{};
+    Float64 elapsed{};
+    Float64 progress{};
+    UInt64 num_parts{};
+    UInt64 total_size_bytes_compressed{};
+    UInt64 total_size_bytes_uncompressed{};
+    UInt64 total_size_marks{};
+    UInt64 total_rows_count{};
+    UInt64 bytes_read_uncompressed{};
+    UInt64 bytes_written_uncompressed{};
+    UInt64 rows_read{};
+    UInt64 rows_written{};
+    UInt64 columns_written{};
+    UInt64 memory_usage{};
+    UInt64 thread_id{};
     std::string merge_type;
     std::string merge_algorithm;
 
@@ -181,6 +181,13 @@ public:
                 && merge_element.result_part_info.getDataVersion() >= mutation_version)
                 merge_element.is_cancelled = true;
         }
+    }
+
+    void cancelAll()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : entries)
+            merge_element.is_cancelled = true;
     }
 
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)

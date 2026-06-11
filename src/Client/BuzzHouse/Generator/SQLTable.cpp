@@ -156,7 +156,7 @@ void collectColumnPaths(
         static const std::unordered_map<uint32_t, DB::Strings> qentries
             = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
 
-        /// Only setring a subset of the values to not add too many entries
+        /// Only setting a subset of the values to not add too many entries
         for (const auto & entry : qentries.at(fp->size))
         {
             next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
@@ -1180,8 +1180,6 @@ static void dupTableDef(SQLTable & next, const SQLTable & t)
     {
         next.cols[col.first] = col.second;
     }
-    next.constrs.clear();
-    next.constrs.insert(t.constrs.begin(), t.constrs.end());
     next.col_counter = t.col_counter;
     next.idx_counter = t.idx_counter;
     next.proj_counter = t.proj_counter;
@@ -1513,6 +1511,37 @@ void StatementGenerator::generateEngineDetails(
 
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
+
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// cleanup_interval_min_ms must be <= cleanup_interval_max_ms
+                const uint32_t min_ms = static_cast<uint32_t>(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16384));
+                const uint32_t max_ms = min_ms + static_cast<uint32_t>(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16384));
+                SetValue * sv_min = svs->add_other_values();
+                sv_min->set_property("cleanup_interval_min_ms");
+                sv_min->set_value(std::to_string(min_ms));
+                SetValue * sv_max = svs->add_other_values();
+                sv_max->set_property("cleanup_interval_max_ms");
+                sv_max->set_value(std::to_string(max_ms));
+            }
+        }
+        if (b.isDistributedEngine() && rg.nextSmallNumber() < 3)
+        {
+            /// bytes_to_throw_insert must be > bytes_to_delay_insert when both
+            /// are nonzero, so generate them as a coordinated pair.
+            SettingValues * svs = te->mutable_setting_values();
+            const uint64_t delay_bytes = rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024));
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            sv->set_property("bytes_to_delay_insert");
+            sv->set_value(std::to_string(delay_bytes));
+            if (delay_bytes > 0 && rg.nextBool())
+            {
+                const uint64_t throw_bytes
+                    = delay_bytes + 1 + rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024));
+                SetValue * sv2 = svs->add_other_values();
+                sv2->set_property("bytes_to_throw_insert");
+                sv2->set_value(std::to_string(throw_bytes));
+            }
         }
         const bool smt_disk = (b.isShared() && fc.set_smt_disk);
         SettingValues * svs = te->has_setting_values() ? te->mutable_setting_values() : nullptr;
@@ -1557,14 +1586,14 @@ void StatementGenerator::addTableColumnInternal(
     {
         if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
-            Integers nint;
+            Integers nint = {};
 
             std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
         else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
-            Dates dd;
+            Dates dd = {};
 
             std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
@@ -1597,7 +1626,7 @@ void StatementGenerator::addTableColumnInternal(
     else if (special == ColumnSpecial::ID_COL)
     {
         /// Use generateSerialID
-        Integers nint;
+        Integers nint = {};
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -1923,8 +1952,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
         }
         break;
-        default:
-            break;
+        default: break;
     }
     if (!projection)
     {
@@ -1983,10 +2011,9 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     this->inside_projection = false;
 }
 
-void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef)
+void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, ConstraintDef * cdef)
 {
     String crname = rg.nextIdentifier("c", t.constr_counter++, fc.allow_nasty_identifiers);
-    auto & to_add = staged ? t.staged_constrs : t.constrs;
     const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
     std::uniform_int_distribution<uint32_t> constr_range(1, static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX));
 
@@ -2002,7 +2029,6 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     this->generateWherePredicate(rg, cdef->mutable_expr());
     this->allow_in_expression_alias = prev_allow_in_expression_alias;
     this->levels.clear();
-    to_add.insert(std::move(crname));
 }
 
 void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
@@ -2399,7 +2425,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                  {add_const,
                   [&]
                   {
-                      addTableConstraint(rg, next, false, ndef->mutable_const_def());
+                      addTableConstraint(rg, next, ndef->mutable_const_def());
                       added_consts++;
                   }},
                  {add_col,
@@ -2516,8 +2542,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96)
-        || (next.constrs.empty() && rg.nextMediumNumber() < 11))
+        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
@@ -2962,12 +2987,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                 return std::nullopt;
             switch (t->getTypeClass())
             {
-                case SQLTypeClass::BOOL:
-                    return "true";
+                case SQLTypeClass::BOOL: return "true";
                 case SQLTypeClass::INT:
                 case SQLTypeClass::FLOAT:
-                case SQLTypeClass::DECIMAL:
-                    return "0";
+                case SQLTypeClass::DECIMAL: return "0";
                 case SQLTypeClass::ENUM: {
                     /// regexp_tree parses enum YAML values via deserializeWholeText with
                     /// enum_as_number=false, so we must emit a label, not a numeric id.
@@ -2981,20 +3004,13 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                         label = label.substr(1, label.size() - 2);
                     return label;
                 }
-                case SQLTypeClass::STRING:
-                    return "text";
-                case SQLTypeClass::DATE:
-                    return "2024-01-01";
-                case SQLTypeClass::DATETIME:
-                    return "2024-01-01 12:00:00";
-                case SQLTypeClass::TIME:
-                    return "12:00:00";
-                case SQLTypeClass::UUID:
-                    return "00000000-0000-0000-0000-000000000000";
-                case SQLTypeClass::IPV4:
-                    return "0.0.0.0";
-                case SQLTypeClass::IPV6:
-                    return "::";
+                case SQLTypeClass::STRING: return "text";
+                case SQLTypeClass::DATE: return "2024-01-01";
+                case SQLTypeClass::DATETIME: return "2024-01-01 12:00:00";
+                case SQLTypeClass::TIME: return "12:00:00";
+                case SQLTypeClass::UUID: return "00000000-0000-0000-0000-000000000000";
+                case SQLTypeClass::IPV4: return "0.0.0.0";
+                case SQLTypeClass::IPV6: return "::";
                 default:
                     /// Skip complex (Array/Map/Tuple/JSON/Variant/Dynamic/etc.)
                     return std::nullopt;
