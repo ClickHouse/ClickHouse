@@ -181,7 +181,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
-    bool valid_name;
+    bool valid_name{};
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
         "broken",
