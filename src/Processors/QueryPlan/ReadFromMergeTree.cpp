@@ -269,7 +269,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_TABLE;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -4899,17 +4898,12 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         }
     }
 
-    /// The table could be dropped concurrently after the plan was serialized,
-    /// so a failed lookup is a regular error, not a logical one.
     StorageID table_id(database_name, table_name);
-    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
+    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
+    if (!storage_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} not found in catalog", database_name, table_name);
 
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
-    if (!merge_tree)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE,
-            "Table {} is not a MergeTree table", table_id.getNameForLogs());
-
-    MergeTreeData & table = *merge_tree;
+    MergeTreeData & table = dynamic_cast<MergeTreeData &>(*storage_ptr);
     MergeTreeDataSelectExecutor executor(table);
 
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
