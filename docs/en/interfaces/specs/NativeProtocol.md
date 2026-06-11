@@ -171,7 +171,7 @@ When the `CHUNKED_PROTOCOL` feature is **negotiated** (see [the handshake](#hand
 Wire layout per packet:
 
 ```text
-<chunk>...   one or more chunks comprising the packet's body
+<chunk>...   one or more chunks; their payloads concatenated form the whole packet
 [u32 LE = 0] zero-size terminator marking end of packet
 ```
 
@@ -179,10 +179,14 @@ Wire layout per chunk:
 
 ```text
 [u32 LE: chunk_size]   chunk_size in [1, UINT32_MAX]
-[chunk_size bytes]     packet body bytes
+[chunk_size bytes]     packet bytes (see note below)
 ```
 
-A single packet may be split across several chunks if the writer's buffer fills mid-packet. The reader treats the trailing 4-byte zero as a transparent packet boundary — it consumes it but does not surface it to whatever is reading packet bodies.
+The packet type `VarUInt` is **inside** the chunked stream: it is the first byte of the packet payload (the first byte of the first chunk), not a separate byte sent ahead of the framing. Each packet's chunk payload is the full `[VarUInt packet_type_code][message body]` from the [packet envelope](#packet-envelope). A client that leaves the packet type outside the chunked stream makes the peer read that type byte as the first byte of the `u32` chunk size, desynchronizing the connection.
+
+A single packet may be split across several chunks if the writer's buffer fills mid-packet; a split can fall anywhere, including inside the packet type's `VarUInt`. The reader concatenates chunk payloads and treats the trailing 4-byte zero as a transparent packet boundary — it consumes it but does not surface it to whatever is reading packet bodies.
+
+No-body packets are still wrapped: a single-byte packet such as `Ping` or `Pong` becomes `[u32 size = 1][0x04][u32 0]` once chunking is negotiated. Any "single byte on the wire" description elsewhere on this page is the pre-chunking form.
 
 **Negotiation.** ServerHello and Addendum each carry two `String` fields, one per direction, with values drawn from `{"chunked", "notchunked", "chunked_optional", "notchunked_optional"}`:
 
@@ -478,11 +482,11 @@ The chunked-framing flip applies *after* this Addendum is flushed — the Addend
 
 ### Ping (packet type 4) {#ping}
 
-Client → Server. No body — the packet is a single byte `0x04` on the wire.
+Client → Server. No body — the packet is a single byte `0x04` before chunked framing; when chunking is negotiated the byte becomes the one-byte payload of a chunk (see [chunked framing](#chunked-framing)).
 
 ### Pong (packet type 4) {#pong}
 
-Server → Client. No body — the packet is a single byte `0x04` on the wire.
+Server → Client. No body — the packet is a single byte `0x04` before chunked framing; when chunking is negotiated the byte becomes the one-byte payload of a chunk (see [chunked framing](#chunked-framing)).
 
 ### Exception (packet type 2) {#exception}
 
