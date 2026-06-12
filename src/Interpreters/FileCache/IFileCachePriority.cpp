@@ -136,11 +136,14 @@ void IFileCachePriority::cleanupTaskFunc()
 
     /// A full batch likely means there is more to clean: come back immediately.
     bool reschedule_now = removed == cleanup_batch;
-    size_t next_ms = reschedule_now ? 0 : cleanup_interval_ms;
 
-    LOG_TRACE(
-        getLogger("FileCachePriority"),
-        "Removed {} invalidated entries in {} ms, next cleanup in {} ms", removed, elapsed_ms, next_ms);
+    if (removed)
+    {
+        LOG_TRACE(
+            getLogger("FileCachePriority"),
+            "Removed {} invalidated entries in {} ms, next cleanup in {} ms",
+            removed, elapsed_ms, reschedule_now ? 0 : cleanup_interval_ms);
+    }
 
     if (reschedule_now)
         cleanup_task->schedule();

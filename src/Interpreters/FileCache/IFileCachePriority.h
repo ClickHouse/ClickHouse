@@ -29,6 +29,9 @@ class IFileCachePriority : private boost::noncopyable
 {
     /// SplitFileCachePriority reaches its inner priorities through base references.
     friend class SplitFileCachePriority;
+    /// OvercommitFileCachePriority reaches its per-user priorities through base pointers.
+    template <typename BasePriority>
+    friend class OvercommitFileCachePriority;
 
 public:
     using Key = FileCacheKey;
@@ -177,6 +180,12 @@ public:
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
         virtual void invalidate() noexcept = 0;
+
+        /// Same as invalidate, but for callers which remove the entry under the same
+        /// write lock right after: the entry is not registered for the background
+        /// cleanup of invalidated entries (such a ref would be stale from birth and
+        /// would only pin the entry allocation until the cleanup discards it).
+        virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
 
         virtual QueueEntryType getType() const = 0;
 

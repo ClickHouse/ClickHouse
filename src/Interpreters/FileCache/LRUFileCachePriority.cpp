@@ -90,6 +90,28 @@ LRUFileCachePriority::LRUFileCachePriority(
         state = std::make_shared<State>(log);
 }
 
+LRUFileCachePriority::~LRUFileCachePriority()
+{
+    /// The queue may still hold `Invalidated` entries pending removal by the proactive
+    /// cleanup when the priority is destroyed: e.g. when an emptied per-user overcommit
+    /// priority is pruned by `CacheUsagePerUser::snapshot`, or when a whole cache is
+    /// dropped. Such entries never go through `remove`, so compensate the metrics here.
+    /// The destructor runs with exclusive ownership of the queue, no locks are needed.
+    if (getQueueType() != QueueType::Main || queue.empty())
+        return;
+
+    size_t invalidated = 0;
+    for (const auto & entry : queue)
+    {
+        if (entry->getState() == Entry::State::Invalidated)
+            ++invalidated;
+    }
+
+    if (invalidated)
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheInvalidatedElements, invalidated);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCachePriorityQueueElements, queue.size());
+}
+
 IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
@@ -244,11 +266,15 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePri
     if (invalidated_count.load(std::memory_order_relaxed) == 0)
         return 0;
 
-    auto lock = cache_guard.writeLock();
+    /// The write lock is acquired lazily, only when a live `Invalidated` ref is found,
+    /// and is then held for the rest of the batch. Refs whose entry was already removed
+    /// elsewhere (e.g. by the opportunistic `removeEntries` during eviction) can be
+    /// discarded without it: entries are registered here only in `Invalidated` state and
+    /// the only transition out of it is the terminal `Removed`, set under the write lock
+    /// in `remove`. So an expired or non-`Invalidated` ref can never become removable
+    /// again and is skipped without the lock and without touching its stale iterator.
+    std::optional<CachePriorityGuard::WriteLock> lock;
 
-    /// Hold the priority write lock for the whole cleanup, so no other path removes queue
-    /// entries meanwhile. A ref whose entry was already removed elsewhere has an expired
-    /// weak_ptr (or a non-Invalidated state) and is skipped without touching its stale iterator.
     size_t removed = 0;
     while (removed < max_batch)
     {
@@ -265,8 +291,15 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePri
         {
             if (auto entry = ref.entry.lock(); entry && entry->getState() == Entry::State::Invalidated)
             {
-                remove(ref.iterator, lock);
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundRemovedInvalidatedEntries);
+                if (!lock)
+                    lock.emplace(cache_guard.writeLock());
+
+                /// The entry could have been removed while the lock was being acquired.
+                if (entry->getState() == Entry::State::Invalidated)
+                {
+                    remove(ref.iterator, *lock);
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundRemovedInvalidatedEntries);
+                }
             }
         }
         catch (...)
@@ -711,6 +744,19 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
 
 void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
+    invalidateImpl();
+    cache_priority->addInvalidatedRef(entry, iterator);
+}
+
+void LRUFileCachePriority::LRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept
+{
+    /// The caller removes the entry under the same write lock right after,
+    /// so do not register it for the background cleanup.
+    invalidateImpl();
+}
+
+void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
+{
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
 
@@ -728,8 +774,6 @@ void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 
     if (entry_size)
         cache_priority->state->sub(entry_size, 1);
-
-    cache_priority->addInvalidatedRef(entry, iterator);
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(

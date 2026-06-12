@@ -47,6 +47,8 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
+    ~LRUFileCachePriority() override;
+
     Type getType() const override { return Type::LRU; }
 
     size_t getSize(const CacheStateGuard::Lock & lock) const override { return state->getSize(lock); }
@@ -268,6 +270,8 @@ public:
 
     void invalidate() noexcept override;
 
+    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
+
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
@@ -278,6 +282,8 @@ public:
 
 private:
     bool assertValid() const;
+
+    void invalidateImpl() noexcept;
 
     LRUFileCachePriority * cache_priority{};
 

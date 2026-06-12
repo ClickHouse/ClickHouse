@@ -197,6 +197,8 @@ public:
 
     void invalidate() noexcept override;
 
+    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
+
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;

@@ -83,8 +83,12 @@ struct CacheUsagePerUser : private boost::noncopyable
 private:
     struct CacheUserData
     {
-        CacheUsagePtr usage;
         FileCachePriorityPtr priority;
+        /// `usage` is declared after `priority`, so it is destroyed first: the final
+        /// reference-count decrement of `usage` synchronizes with the releases of the
+        /// copies handed out by `snapshot`, ordering the destruction of `priority`
+        /// (and its queue) after any concurrent use of it through those copies.
+        CacheUsagePtr usage;
         CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheOvercommitUsers};
     };
 

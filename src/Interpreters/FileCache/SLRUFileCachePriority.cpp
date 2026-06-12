@@ -943,6 +943,12 @@ void SLRUFileCachePriority::SLRUIterator::invalidate() noexcept
     lru_iterator.invalidate();
 }
 
+void SLRUFileCachePriority::SLRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock & lock) noexcept
+{
+    assertValid();
+    lru_iterator.invalidateBeforeRemove(lock);
+}
+
 bool SLRUFileCachePriority::SLRUIterator::isValid(const CachePriorityGuard::WriteLock & lock) const
 {
     return lru_iterator.isValid(lock);
