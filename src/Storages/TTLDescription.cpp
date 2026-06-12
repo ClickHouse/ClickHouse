@@ -17,6 +17,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -75,6 +76,14 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
         if (ttl_expression->getRequiredColumns().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "TTL expression {} does not depend on any of the columns of the table", result_column_name);
+
+        for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
+        {
+            if (typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                    "TTL expression cannot reference column '{}' with type {}",
+                    col.name, col.type->getName());
+        }
 
         for (const auto & action : ttl_expression->getActions())
         {
