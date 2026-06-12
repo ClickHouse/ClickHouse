@@ -14,7 +14,7 @@ namespace DB
 {
 
 ArrayJoinNode::ArrayJoinNode(QueryTreeNodePtr table_expression_, QueryTreeNodePtr join_expressions_, bool is_left_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , is_left(is_left_)
 {
     children[table_expression_child_index] = std::move(table_expression_);

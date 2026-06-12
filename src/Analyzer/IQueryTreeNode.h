@@ -4,6 +4,7 @@
 #include <vector>
 #include <deque>
 
+#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
@@ -69,6 +70,15 @@ using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
+class IColumnSourceNode;
+
+/** Id of a column source instance (a node derived from IColumnSourceNode), unique within the process.
+  * Value 0 is reserved for "no source". Ids are not deterministic between runs and must never appear
+  * in user-visible output such as EXPLAIN QUERY TREE.
+  */
+using ColumnSourceId = UInt64;
+constexpr ColumnSourceId INVALID_COLUMN_SOURCE_ID = 0;
+
 struct ConvertToASTOptions
 {
     /// Add _CAST if constant literal type is different from column type
@@ -96,6 +106,12 @@ public:
     const char * getNodeTypeName() const
     {
         return toString(getNodeType());
+    }
+
+    /// Returns true if this node can be a column source, i.e. derives from IColumnSourceNode
+    bool isColumnSource() const
+    {
+        return is_column_source;
     }
 
     /** Get result type of query tree node that can be used as part of expression.
@@ -307,6 +323,14 @@ protected:
       */
     virtual QueryTreeNodePtr cloneImpl() const = 0;
 
+    /** Called on a cloned node during cloneAndReplace for each weak pointer that was re-pointed
+      * to the clone of its previous target or to a node from the replacement map.
+      * new_node is the node the weak pointer points to after the update.
+      */
+    virtual void onWeakPointerRemappedAfterClone(size_t /*weak_pointer_index*/, const QueryTreeNodePtr & /*new_node*/)
+    {
+    }
+
     /// Subclass must convert its internal state and its children to AST
     virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
@@ -314,6 +338,8 @@ protected:
     QueryTreeWeakNodes weak_pointers;
 
 private:
+    friend class IColumnSourceNode;
+
     String alias;
     /// An alias from query. Alias can be replaced by query passes,
     /// but we need to keep the original one to support additional_table_filters.
@@ -321,6 +347,8 @@ private:
     ASTPtr original_ast;
     /// If the expression has extra parentheses around it in the original query
     bool parenthesized = false;
+    /// Set by IColumnSourceNode constructor
+    bool is_column_source = false;
 };
 
 }

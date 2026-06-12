@@ -40,7 +40,7 @@ namespace ErrorCodes
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
 {

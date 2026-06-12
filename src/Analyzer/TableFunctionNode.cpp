@@ -23,7 +23,7 @@ namespace ErrorCodes
 }
 
 TableFunctionNode::TableFunctionNode(String table_function_name_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , table_function_name(table_function_name_)
     , storage_id("system", "one")
 {

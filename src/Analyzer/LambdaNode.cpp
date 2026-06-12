@@ -14,7 +14,7 @@ namespace DB
 {
 
 LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , argument_names(std::move(argument_names_))
     , result_type(std::move(result_type_))
     , is_operator(is_operator_)

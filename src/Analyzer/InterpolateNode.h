@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ListNode.h>
 
@@ -15,7 +16,7 @@ namespace DB
 class InterpolateNode;
 using InterpolateNodePtr = std::shared_ptr<InterpolateNode>;
 
-class InterpolateNode final : public IQueryTreeNode
+class InterpolateNode final : public IColumnSourceNode
 {
 public:
     /// Initialize interpolate node with expression and interpolate expression

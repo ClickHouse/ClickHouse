@@ -28,7 +28,8 @@ static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, s
             auto it = resolved_map.find(col_name);
             if (it != resolved_map.end())
                 return it->second;
-            auto column = std::make_shared<ColumnNode>(NameAndTypePair(col_name, type), node);
+            /// The tested passes do not look at column sources, so the test column has none.
+            auto column = std::make_shared<ColumnNode>(NameAndTypePair(col_name, type), QueryTreeNodeWeakPtr());
             resolved_map[col_name] = column;
             return column;
         }

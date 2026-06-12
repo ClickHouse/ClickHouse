@@ -5,7 +5,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Analyzer/HashUtils.h>
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
@@ -62,7 +62,7 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class QueryNode final : public IQueryTreeNode
+class QueryNode final : public IColumnSourceNode
 {
 public:
     /// Construct query node with context and changed settings

@@ -46,7 +46,7 @@ namespace Setting
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
 {

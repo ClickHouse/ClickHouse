@@ -7,7 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
 namespace DB
@@ -29,7 +29,7 @@ using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-class TableNode : public IQueryTreeNode
+class TableNode : public IColumnSourceNode
 {
 public:
     /// Construct table node with storage, storage id, storage lock, storage snapshot

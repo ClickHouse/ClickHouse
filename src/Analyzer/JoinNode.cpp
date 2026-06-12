@@ -27,7 +27,7 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     JoinStrictness strictness_,
     JoinKind kind_,
     bool is_using_join_expression_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)

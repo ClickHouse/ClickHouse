@@ -56,7 +56,7 @@ ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
 }
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , storage(std::move(storage_))
     , storage_id(std::move(storage_id_))
     , storage_lock(std::move(storage_lock_))

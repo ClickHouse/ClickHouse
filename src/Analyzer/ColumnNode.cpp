@@ -1,4 +1,5 @@
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/TableNode.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
@@ -16,6 +17,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+ColumnSourceId extractColumnSourceId(const QueryTreeNodePtr & source, const NameAndTypePair & column)
+{
+    if (!source)
+        return INVALID_COLUMN_SOURCE_ID;
+
+    if (!source->isColumnSource())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Column {} {} source must be a column source node, got {}",
+            column.name,
+            column.type->getName(),
+            source->getNodeTypeName());
+
+    return static_cast<const IColumnSourceNode &>(*source).getColumnSourceId();
+}
+
+}
+
 ColumnNode::ColumnNode(
     NameAndTypePair column_,
     QueryTreeNodePtr expression_node_,
@@ -26,6 +47,7 @@ ColumnNode::ColumnNode(
 {
     children[expression_child_index] = std::move(expression_node_);
     getSourceWeakPointer() = std::move(column_source_);
+    column_source_id = extractColumnSourceId(getSourceWeakPointer().lock(), column);
 }
 
 ColumnNode::ColumnNode(
@@ -34,6 +56,30 @@ ColumnNode::ColumnNode(
 )
     : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
 {}
+
+ColumnNode::ColumnNode(
+    NameAndTypePair column_,
+    QueryTreeNodeWeakPtr column_source_,
+    ColumnSourceId column_source_id_
+)
+    : IQueryTreeNode(children_size, weak_pointers_size)
+    , column(std::move(column_))
+    , column_source_id(column_source_id_)
+{
+    getSourceWeakPointer() = std::move(column_source_);
+}
+
+void ColumnNode::setColumnSource(const QueryTreeNodePtr & source)
+{
+    getSourceWeakPointer() = source;
+    column_source_id = extractColumnSourceId(source, column);
+}
+
+void ColumnNode::onWeakPointerRemappedAfterClone(size_t weak_pointer_index, const QueryTreeNodePtr & new_node)
+{
+    chassert(weak_pointer_index == source_weak_pointer_index);
+    column_source_id = extractColumnSourceId(new_node, column);
+}
 
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
@@ -90,7 +136,7 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*com
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, getSourceWeakPointer());
+    return std::make_shared<ColumnNode>(column, getSourceWeakPointer(), column_source_id);
 }
 
 ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const

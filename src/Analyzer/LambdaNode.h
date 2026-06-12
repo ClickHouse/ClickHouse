@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Core/Names.h>
@@ -31,7 +31,7 @@ namespace DB
 class LambdaNode;
 using LambdaNodePtr = std::shared_ptr<LambdaNode>;
 
-class LambdaNode final : public IQueryTreeNode
+class LambdaNode final : public IColumnSourceNode
 {
 public:
     /// Initialize lambda with argument names and lambda body expression
