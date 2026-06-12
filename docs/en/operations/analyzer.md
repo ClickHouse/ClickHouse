@@ -7,8 +7,6 @@ title: 'Analyzer'
 doc_type: 'reference'
 ---
 
-# Analyzer
-
 In ClickHouse version `24.3`, the new query analyzer was enabled by default.
 You can read more details about how it works [here](/guides/developer/understanding-query-execution-with-the-analyzer#analyzer).
 

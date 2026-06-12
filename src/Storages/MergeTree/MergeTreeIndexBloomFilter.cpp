@@ -990,8 +990,8 @@ MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
     size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
     : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
-    assert(bits_per_row != 0);
-    assert(hash_functions != 0);
+    chassert(bits_per_row != 0);
+    chassert(hash_functions != 0);
 }
 
 bool MergeTreeIndexAggregatorBloomFilter::empty() const
@@ -1019,7 +1019,11 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
         const auto & column_and_type = block.getByName(index_columns_name[column]);
-        auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
+        /// A bloom filter only needs the set of distinct hashes, so for LowCardinality
+        /// columns this returns one hash per distinct dictionary value present in the
+        /// granule instead of one per row -- turning O(rows) hash-set inserts into
+        /// O(distinct). For other columns it is one hash per row, as before.
+        auto index_column = BloomFilterHash::hashWithColumnDistinct(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
@@ -1039,8 +1043,8 @@ MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
-    assert(bits_per_row != 0);
-    assert(hash_functions != 0);
+    chassert(bits_per_row != 0);
+    chassert(hash_functions != 0);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const

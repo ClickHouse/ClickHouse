@@ -24,7 +24,6 @@
 #include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
@@ -48,6 +47,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/URI.h>
 
 namespace fs = std::filesystem;
 
@@ -250,7 +250,7 @@ struct DeltaLakeMetadataImpl
         RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
-        char c;
+        char c = 0;
         String sum_json;
         while (!buf->eof())
         {
@@ -315,8 +315,9 @@ struct DeltaLakeMetadataImpl
                 if (!add_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
-                auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(table_path) / path;
+                String path;
+                Poco::URI::decode(add_object->getValue<String>("path"), path);
+                auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -360,8 +361,9 @@ struct DeltaLakeMetadataImpl
                 if (!remove_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
-                auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(table_path) / path);
+                String path;
+                Poco::URI::decode(remove_object->getValue<String>("path"), path);
+                result.erase(resolvePathInsideTable(table_path, path));
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -489,9 +491,7 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = format_settings.parquet.use_native_reader_v3
-            ? NativeParquetSchemaReader(*buf, format_settings).readSchema()
-            : ArrowParquetSchemaReader(*buf, format_settings).readSchema();
+        auto columns = NativeParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -561,12 +561,13 @@ struct DeltaLakeMetadataImpl
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto path = String(path_column.getDataAt(i));
+            String path;
+            Poco::URI::decode(String(path_column.getDataAt(i)), path);
             if (path.empty())
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(table_path) / path;
+            auto full_path = resolvePathInsideTable(table_path, path);
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -598,7 +599,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
@@ -713,8 +714,8 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision;
-        size_t scale;
+        size_t precision = 0;
+        size_t scale = 0;
         readIntText(precision, buf);
         skipWhitespaceIfAny(buf);
         assertChar(',', buf);
@@ -722,6 +723,10 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         tryReadIntText(scale, buf);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
+    /// varchar(n) and char(n) are valid Delta Lake types that map to string in Parquet.
+    /// The length constraint is a SQL-level annotation only; we ignore it and use String.
+    if ((type_name.starts_with("varchar(") || type_name.starts_with("char(")) && type_name.ends_with(')'))
+        return std::make_shared<DataTypeString>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }

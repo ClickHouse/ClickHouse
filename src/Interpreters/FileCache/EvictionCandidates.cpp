@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/Metadata.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -8,8 +9,6 @@
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictMicroseconds;
-    extern const Event FilesystemCacheEvictedBytes;
-    extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheFailedEvictionCandidates;
 }
 
@@ -50,79 +49,92 @@ std::string QueueEvictionInfo::toString() const
     return wb.str();
 }
 
-void QueueEvictionInfo::merge(QueueEvictionInfoPtr other)
+void QueueEvictionInfo::setEvictTarget(const QueueEvictionInfo & other)
 {
-    size_to_evict += other->size_to_evict;
-    elements_to_evict += other->elements_to_evict;
-    if (other->hold_space)
-    {
-        if (hold_space)
-            hold_space->merge(std::move(other->hold_space));
-        else
-            hold_space = std::move(other->hold_space);
-    }
+    size_to_evict = other.size_to_evict;
+    elements_to_evict = other.elements_to_evict;
+}
+
+void QueueEvictionInfo::absorbHoldSpace(IFileCachePriority::HoldSpacePtr other_hold)
+{
+    if (!other_hold)
+        return;
+    if (hold_space)
+        hold_space->merge(std::move(other_hold));
+    else
+        hold_space = std::move(other_hold);
 }
 
 EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 {
-    addImpl(queue_id, std::move(info), /* merge_if_exists */false);
+    addImpl(queue_id, std::move(info), /* replace_if_exists */false);
 }
 
 std::string EvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
-    for (auto it = begin(); it != end(); ++it)
-    {
-        if (it != begin())
-            wb << ", ";
-        wb << "[queue id " << it->first << ", " << it->second->toString() << "]";
-    }
+    wb << "total size to evict: " << size_to_evict
+       << ", total elements to evict: " << elements_to_evict
+       << ", total hold size: " << hold_size
+       << ", total hold elements: " << hold_elements;
+    for (const auto & [queue_id, info] : *this)
+        wb << ", [queue id " << queue_id << ", " << info->toString() << "]";
     return wb.str();
-}
-
-bool EvictionInfo::hasHoldSpace() const
-{
-    for (const auto & [_, elem] : *this)
-        if (elem->hasHoldSpace())
-            return true;
-    return false;
 }
 
 void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 {
     for (auto & [_, elem] : *this)
         elem->releaseHoldSpace(lock);
+    hold_size = 0;
+    hold_elements = 0;
 }
 
 void EvictionInfo::add(EvictionInfoPtr && info)
 {
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_), /* merge_if_exists */false);
+        addImpl(queue_id, std::move(info_), /* replace_if_exists */false);
 }
 
 void EvictionInfo::addOrUpdate(EvictionInfoPtr && info)
 {
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_), /* merge_if_exists */true);
+        addImpl(queue_id, std::move(info_), /* replace_if_exists */true);
 }
 
 void EvictionInfo::addImpl(
     const QueueID & queue_id,
     QueueEvictionInfoPtr info,
-    bool merge_if_exists)
+    bool replace_if_exists)
 {
-    size_to_evict += info->size_to_evict;
-    elements_to_evict += info->elements_to_evict;
-    auto [it, inserted] = emplace(queue_id, std::move(info));
-    if (!inserted)
-    {
-        if (!merge_if_exists)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+    const size_t incoming_size = info->size_to_evict;
+    const size_t incoming_elements = info->elements_to_evict;
+    const size_t incoming_hold_size = info->hold_space ? info->hold_space->getSize() : 0;
+    const size_t incoming_hold_elements = info->hold_space ? info->hold_space->getElements() : 0;
 
-        if (it->second)
-            it->second->merge(std::move(info));
+    auto [it, inserted] = try_emplace(queue_id, std::move(info));
+    if (inserted)
+    {
+        size_to_evict += incoming_size;
+        elements_to_evict += incoming_elements;
+        hold_size += incoming_hold_size;
+        hold_elements += incoming_hold_elements;
+        return;
     }
+
+    if (!replace_if_exists)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+
+    /// Target is replaced — adjust by delta. Hold is additive — just add incoming.
+    size_to_evict -= it->second->size_to_evict;
+    elements_to_evict -= it->second->elements_to_evict;
+    it->second->setEvictTarget(*info);
+    it->second->absorbHoldSpace(std::move(info->hold_space));
+    size_to_evict += it->second->size_to_evict;
+    elements_to_evict += it->second->elements_to_evict;
+    hold_size += incoming_hold_size;
+    hold_elements += incoming_hold_elements;
 }
 
 const QueueEvictionInfo & EvictionInfo::get(const QueueID & queue_id) const
@@ -153,8 +165,9 @@ std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
     return "";
 }
 
-EvictionCandidates::EvictionCandidates()
-    : log(getLogger("EvictionCandidates"))
+EvictionCandidates::EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_)
+    : on_evict_callback(std::move(on_evict_callback_))
+    , log(getLogger("EvictionCandidates"))
 {
 }
 
@@ -318,15 +331,25 @@ void EvictionCandidates::evict()
                 ///   it was freed in favour of some reserver, so we can make it visibly
                 ///   free only for that particular reserver.
 
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
-
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
+
+                if (on_evict_callback)
+                {
+                    try
+                    {
+                        on_evict_callback(*segment);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "On-evict callback failed; ignored");
+                    }
+                }
             }
             catch (...)
             {
-                failed_candidates.total_cache_size += candidate->file_segment->getDownloadedSize();
+                /// Sum up reserved size, which is the queue entry size.
+                failed_candidates.total_cache_size += candidate->size();
                 failed_candidates.total_cache_elements += 1;
                 failed_key_candidates.candidates.push_back(candidate);
 

@@ -32,9 +32,7 @@ To show internal subcolumns of other data types, use the [describe_include_subco
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE describe_example (
     id UInt64, text String DEFAULT 'unknown' CODEC(ZSTD),
     user Tuple (name String, age UInt8)
@@ -44,9 +42,7 @@ DESCRIBE TABLE describe_example;
 DESCRIBE TABLE describe_example SETTINGS describe_include_subcolumns=1;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id   │ UInt64                        │              │                    │         │                  │                │
 │ text │ String                        │ DEFAULT      │ 'unknown'          │         │ ZSTD(1)          │                │
@@ -56,7 +52,7 @@ Result:
 
 The second query additionally shows subcolumns:
 
-```text
+```text title="Response"
 ┌─name──────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┬─is_subcolumn─┐
 │ id        │ UInt64                        │              │                    │         │                  │                │            0 │
 │ text      │ String                        │ DEFAULT      │ 'unknown'          │         │ ZSTD(1)          │                │            0 │
@@ -78,9 +74,7 @@ or
 DESCRIBE (SELECT 1) FORMAT TSV;
 ```
 
-Result:
-
-``` text
+``` text title="Response"
 1       UInt8
 ```
 
