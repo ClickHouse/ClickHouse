@@ -40,14 +40,16 @@ int silkBioRead(BIO * bio, char * buf, int len)
     iovec iov{buf, static_cast<size_t>(len)};
     silk::FiberScheduler::read(fd, &iov, 1, 0, &bytes_read, &future);
 
-    const int r = timeout_ns > 0
+    int r = timeout_ns > 0
         ? silk::FiberFuture::waitWithTimeout(&future, timeout_ns)
         : future.wait();
 
     if (r == ETIMEDOUT)
     {
         future.cancel();
-        (void)future.wait();
+        r = future.wait();
+        if (r == ECANCELED)
+            r = ETIMEDOUT;
     }
 
     BIO_clear_retry_flags(bio);
@@ -79,14 +81,16 @@ int silkBioWrite(BIO * bio, const char * buf, int len)
     iovec iov{const_cast<char *>(buf), static_cast<size_t>(len)};
     silk::FiberScheduler::write(fd, &iov, 1, 0, &bytes_written, &future);
 
-    const int r = timeout_ns > 0
+    int r = timeout_ns > 0
         ? silk::FiberFuture::waitWithTimeout(&future, timeout_ns)
         : future.wait();
 
     if (r == ETIMEDOUT)
     {
         future.cancel();
-        (void)future.wait();
+        r = future.wait();
+        if (r == ECANCELED)
+            r = ETIMEDOUT;
     }
 
     BIO_clear_retry_flags(bio);

@@ -137,8 +137,9 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
             if (r == ETIMEDOUT)
             {
                 future.cancel();
-                (void)future.wait();
-                throw Poco::TimeoutException("Send timed out", peerAddress().toString());
+                r = future.wait();
+                if (r == ECANCELED)
+                    throw Poco::TimeoutException("Send timed out", peerAddress().toString());
             }
         }
         else
@@ -182,8 +183,9 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
         if (r == ETIMEDOUT)
         {
             future.cancel();
-            (void)future.wait();
-            throw Poco::TimeoutException("Receive timed out", peerAddress().toString());
+            r = future.wait();
+            if (r == ECANCELED)
+                throw Poco::TimeoutException("Receive timed out", peerAddress().toString());
         }
     }
     else
