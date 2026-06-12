@@ -8,8 +8,5 @@
                  </ssh_key>
             </ssh_keys>
         </lucy>
-        <nobody>
-            <no_password/>
-        </nobody>
     </users>
 </clickhouse>

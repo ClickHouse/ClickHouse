@@ -64,7 +64,7 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 /// Walk the plan using the same traversal as findReadingStep (following LEFT/RIGHT JOIN logic),
 /// but look for a UnionStep. If found, collect all ReadFromMergeTree steps from each child branch,
 /// recursively handling nested views with their own UNION ALL.
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree)
+static std::vector<QueryPlan::Node *> findReadingStepsUnderUnion(QueryPlan::Node * root, bool allow_view_over_mergetree)
 {
     auto * node = root;
     while (node)
@@ -85,7 +85,7 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
             std::vector<QueryPlan::Node *> result;
             for (auto * child : node->children)
             {
-                auto child_results = findReadingSteps(child, allow_view_over_mergetree);
+                auto child_results = findReadingStepsUnderUnion(child, allow_view_over_mergetree);
                 result.insert(result.end(), child_results.begin(), child_results.end());
             }
             return result;
@@ -135,7 +135,6 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
     addConvertingActions(*query_plan, header, context);
 
-    // TODO: fix view with UNION case for enabled serialize_query_plan separately (use findReadingSteps() instead)
     auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
     if (node)
         typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
@@ -216,7 +215,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     const bool allow_view_over_mergetree = context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree];
-    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree);
+    auto reading_nodes = findReadingStepsUnderUnion(query_plan->getRootNode(), allow_view_over_mergetree);
     if (reading_nodes.empty())
     {
         /// it can happen if merge tree table is empty — it'll be replaced with ReadFromPreparedSource

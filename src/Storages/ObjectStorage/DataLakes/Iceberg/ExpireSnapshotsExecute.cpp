@@ -88,7 +88,7 @@ ExpireSnapshotsOptions buildOptions(const ExecuteCommandArgs::Result & parsed)
     {
         String ts = parsed.getAs<String>("expire_before");
         ReadBufferFromString buf(ts);
-        time_t expire_time = 0;
+        time_t expire_time;
         readDateTimeText(expire_time, buf);
         options.expire_before_ms = static_cast<Int64>(expire_time) * 1000;
     }

@@ -65,7 +65,6 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Interpreters/ArrayJoinAction.h>
@@ -320,8 +319,7 @@ bool applyTrivialCountIfPossible(
     const TableFunctionNode * table_function_node,
     const QueryTreeNodePtr & query_tree,
     ContextMutablePtr & query_context,
-    const Names & columns_names,
-    const PlannerContext & planner_context)
+    const Names & columns_names)
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings[Setting::optimize_trivial_count_query])
@@ -350,13 +348,12 @@ bool applyTrivialCountIfPossible(
     /// can't apply if FINAL
     if (table_node && table_node->getTableExpressionModifiers().has_value() &&
         (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio() || table_node->getTableExpressionModifiers()->hasStream()))
+         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
     if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
         && (table_function_node->getTableExpressionModifiers()->hasFinal()
             || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
-            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()
-            || table_function_node->getTableExpressionModifiers()->hasStream()))
+            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -417,18 +414,10 @@ bool applyTrivialCountIfPossible(
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
 
-    /// Use the aggregate function's action node identifier (e.g. `count()`) as the column
-    /// name so the emitted block already matches the header the outer planner expects at
-    /// `WithMergeableState`. This lets the caller skip both the rename step and the
-    /// recursive `Planner` that was only used to derive the expected header.
-    String trivial_count_column_name = calculateActionNodeName(aggregates.front(), planner_context);
-    if (trivial_count_column_name.empty())
-        trivial_count_column_name = columns_names.front();
-
     auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
          std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
-         trivial_count_column_name}});
+         columns_names.front()}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
@@ -803,11 +792,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto * query_node = table_expression->as<QueryNode>();
     auto * union_node = table_expression->as<UnionNode>();
 
-    /// Hoisted to function scope so the rename block below can skip the recursive
-    /// `Planner` when trivial count produced a header that already matches the
-    /// expected one.
-    bool is_trivial_count_applied = false;
-
     QueryPlan query_plan;
     std::unordered_map<const QueryNode *, const QueryPlan::Node *> query_node_to_plan_step_mapping;
     std::set<std::string> used_row_policies;
@@ -903,7 +887,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = static_cast<double>(max_streams) * static_cast<double>(settings[Setting::max_streams_to_max_threads_ratio]);
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
@@ -943,7 +927,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         /// Apply trivial_count optimization if possible
-        is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
+        bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates
             && applyTrivialCountIfPossible(
                 query_plan,
@@ -952,8 +936,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 table_function_node,
                 select_query_info.query_tree,
                 planner_context->getMutableQueryContext(),
-                table_expression_data.getColumnNames(),
-                *planner_context);
+                table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -1307,25 +1290,36 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         && allow_parallel_replicas_for_join_tree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
-
-                        const bool allow_view_over_mergetree = settings[Setting::parallel_replicas_allow_view_over_mergetree];
-                        auto reading_steps = findReadingSteps(query_plan.getRootNode(), allow_view_over_mergetree);
-                        QueryPlan::Node * reading_node = nullptr;
-                        if (!reading_steps.empty())
+                        QueryPlan::Node * node = query_plan.getRootNode();
+                        ReadFromMergeTree * reading = nullptr;
+                        while (node)
                         {
-                            if (typeid_cast<ReadFromMergeTree*>(reading_steps.front()->step.get()))
-                                reading_node = reading_steps.front();
+                            reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
+                            if (reading)
+                                break;
+
+                            /// Empty table or all data pruned — nothing to read, skip parallel replicas.
+                            if (typeid_cast<ReadNothingStep *>(node->step.get()))
+                                break;
+
+                            QueryPlan::Node * prev_node = node;
+                            if (!node->children.empty())
+                            {
+                                node = node->children.at(0);
+                            }
+                            else
+                            {
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Step is expected to be ReadFromMergeTree but it's {}",
+                                    prev_node->step->getName());
+                            }
                         }
 
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                        // Note: reading_steps can have several steps in case of reading from view with UNION
-                        // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
-                        // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        if (reading_node && reading_steps.size() == 1
-                            && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        if (reading && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
-                            const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
-                            auto result_ptr = reading_step->selectRangesToRead();
+                            auto result_ptr = reading->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
@@ -1357,11 +1351,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
 
                         // (3) if parallel replicas still enabled - replace reading step
-                        if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
+                        if (reading && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
                             till_stage = QueryProcessingStage::WithMergeableState;
                             QueryPlan query_plan_parallel_replicas;
-                            QueryPlanStepPtr reading_step = std::move(reading_node->step);
+                            QueryPlanStepPtr reading_step = std::move(node->step);
                             ClusterProxy::executeQueryWithParallelReplicas(
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
@@ -1547,16 +1541,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         query_plan.addStep(std::move(rename_step));
     }
-    else if (!is_trivial_count_applied)
+    else
     {
-        /// We need to know the header that the outer planner expects at `till_stage` so we
-        /// can insert a rename if the local plan emits different column names. The cheap
-        /// way to compute it is to run the outer query through the planner under
-        /// `only_analyze` (it skips the actual storage read) and read back its header.
-        ///
-        /// Trivial count already emits the column with the aggregate's action-node name
-        /// (see `applyTrivialCountIfPossible`), so the structure matches the expected
-        /// header by construction and we can skip the recursive planner entirely.
         SelectQueryOptions analyze_query_options = SelectQueryOptions(till_stage).analyze();
         Planner planner(select_query_info.query_tree,
             analyze_query_options,
