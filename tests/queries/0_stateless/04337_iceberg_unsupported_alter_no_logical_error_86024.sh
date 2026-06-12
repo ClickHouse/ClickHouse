@@ -34,14 +34,17 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE} SYNC"
+# Setup must fail the test loudly: a broken setup leaves the statement under test
+# failing with an unrelated error that would be mistaken for a clean rejection.
 # Two columns so DROP/CLEAR COLUMN reach the Iceberg storage path instead of the
 # generic "Cannot DROP or CLEAR all columns" guard.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (c0 Int32, c1 Int32)
     ENGINE = IcebergLocal('${TABLE_PATH}')
-"
+" || { echo "FAIL: CREATE TABLE failed"; exit 1; }
 # Produce at least one real snapshot so the statements are not no-ops.
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1, 2)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1, 2)" \
+    || { echo "FAIL: INSERT failed"; exit 1; }
 
 # Run a single statement as the FIRST operation after ATTACH, i.e. with
 # `current_metadata == nullptr`. Assert the statement is rejected (non-zero
@@ -50,9 +53,13 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE}
 check() {
     local label="$1"
     local query="$2"
-    ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE} SYNC"
-    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}" 2>/dev/null
-    local output status
+    local detach_out attach_out output status
+    # DETACH/ATTACH reset current_metadata to nullptr; a failed setup step here
+    # must fail the test, not leave the statement under test on a missing table.
+    detach_out=$(${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE} SYNC" 2>&1) \
+        || { echo "FAIL: ${label} setup DETACH failed: ${detach_out}"; exit 1; }
+    attach_out=$(${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}" 2>&1) \
+        || { echo "FAIL: ${label} setup ATTACH failed: ${attach_out}"; exit 1; }
     # No --allow_insert_into_iceberg: the statement must be rejected, not applied.
     output=$(${CLICKHOUSE_CLIENT} --query "${query}" 2>&1)
     status=$?
@@ -64,6 +71,10 @@ check() {
         # Reject both forms: the debug fatal-log wording "Logical error" and the
         # release-build client exception code name "LOGICAL_ERROR" (Code: 49).
         echo "FAIL: ${label} raised a logical error"
+    elif echo "${output}" | grep -qF 'UNKNOWN_TABLE'; then
+        # The table must be attached when the statement runs, otherwise the
+        # first-operation-after-ATTACH path was never exercised.
+        echo "FAIL: ${label} hit UNKNOWN_TABLE (table not attached)"
     else
         echo "OK: ${label}"
     fi
