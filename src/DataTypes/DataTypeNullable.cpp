@@ -61,6 +61,18 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 }
 
 
+void DataTypeNullable::insertDefaultInto(IColumn & column) const
+{
+    auto & nullable_column = assert_cast<ColumnNullable &>(column);
+    nested_data_type->insertDefaultInto(nullable_column.getNestedColumn());
+    nullable_column.getNullMapData().push_back(static_cast<UInt8>(1));
+}
+
+bool DataTypeNullable::isDefaultInsertTrivial() const
+{
+    return nested_data_type->isDefaultInsertTrivial();
+}
+
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);

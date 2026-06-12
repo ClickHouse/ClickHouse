@@ -209,6 +209,10 @@ public:
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
 
+    /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
+    /// Used for cache-friendly iteration in hot loops (e.g., default filling).
+    const VectorWithMemoryTracking<IColumn *> & getSortedTypedPathColumns() const { return sorted_typed_path_columns; }
+
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
     PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
 
@@ -360,6 +364,9 @@ private:
     PathToColumnMap typed_paths;
     /// Sorted list of typed paths. Used to avoid sorting paths every time in some methods.
     VectorWithMemoryTracking<std::string_view> sorted_typed_paths;
+    /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
+    /// Used for cache-friendly iteration in hot loops (e.g., default filling).
+    VectorWithMemoryTracking<IColumn *> sorted_typed_path_columns;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
     /// during inserts into the column.

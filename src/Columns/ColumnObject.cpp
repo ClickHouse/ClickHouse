@@ -77,6 +77,10 @@ ColumnObject::ColumnObject(
     }
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+
     dynamic_paths.reserve(dynamic_paths_.size());
     dynamic_paths_ptrs.reserve(dynamic_paths_.size());
     for (auto & [path, column] : dynamic_paths_)
@@ -103,6 +107,10 @@ ColumnObject::ColumnObject(
 
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+
     MutableColumns paths_and_values;
     paths_and_values.emplace_back(ColumnString::create());
     paths_and_values.emplace_back(ColumnString::create());
@@ -126,6 +134,11 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     for (const auto & [path, _] : typed_paths)
         sorted_typed_paths.emplace_back(path);
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
+
+    sorted_typed_path_columns.clear();
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
 
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)

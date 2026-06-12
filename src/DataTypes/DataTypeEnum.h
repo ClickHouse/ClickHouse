@@ -60,6 +60,7 @@ public:
     Field getDefault() const override;
     Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
 
