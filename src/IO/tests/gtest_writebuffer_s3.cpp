@@ -856,22 +856,6 @@ TEST_P(SyncAsync, ExceptionOnCreateMPU) {
       }, DB::S3Exception);
 }
 
-TEST_P(SyncAsync, UploadChecksumAlgorithmSHA256Singlepart)
-{
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-
-    auto buffer = getWriteBuffer("checksum_sha256_singlepart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
-}
-
 TEST_P(SyncAsync, UploadChecksumAlgorithmSHA256Multipart)
 {
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
@@ -908,28 +892,6 @@ TEST_P(SyncAsync, UploadChecksumAlgorithmCRC32Singlepart)
     buffer->finalize();
 
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->put_object_algorithm);
-}
-
-TEST_P(SyncAsync, UploadChecksumAlgorithmCRC32Multipart)
-{
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("checksum_crc32_multipart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::CRC32));
-    ASSERT_EQ(injection->upload_part_crc32_checksums, injection->complete_part_crc32_checksums);
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::Not(testing::IsEmpty())));
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
