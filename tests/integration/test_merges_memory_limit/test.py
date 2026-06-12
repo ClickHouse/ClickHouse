@@ -4,11 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance(
-    "node",
-    main_configs=["configs/no_speculative_rss_reserve.xml"],
-    mem_limit='20g',
-)
+node = cluster.add_instance("node", mem_limit='20g')
 
 
 @pytest.fixture(scope="module", autouse=True)

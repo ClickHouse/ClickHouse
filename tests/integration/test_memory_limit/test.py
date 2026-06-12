@@ -13,7 +13,6 @@ node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/async_metrics_no.xml",
-        "configs/no_speculative_rss_reserve.xml",
     ],
     user_configs=[
         "configs/disable_max_bytes_ratio_before_external_group_by.xml",

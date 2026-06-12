@@ -16,7 +16,6 @@
 #include <fmt/ranges.h>
 
 #include <filesystem>
-#include <limits>
 #include <optional>
 
 namespace fs = std::filesystem;
@@ -412,6 +411,10 @@ void MemoryWorker::updateResidentMemoryThread()
 
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     bool first_run = true;
+    /// Resident memory observed on the previous iteration, to compute the last-interval
+    /// growth for the speculative reservation below. Initialized on the first iteration
+    /// (speculation is skipped there).
+    Int64 prev_resident = 0;
     std::unique_lock rss_update_lock(rss_update_mutex);
 
 #if USE_JEMALLOC
@@ -432,20 +435,31 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Int64 resident = getMemoryUsage(first_run);
 
-            /// Speculatively reserve `(resident - tracked) * ratio` on top of the observed RSS.
-            /// `resident - tracked` is the amount of memory we observed during the last tick that
-            /// had not yet flowed into the tracker; treat it as a lower bound on what may grow in
-            /// the next tick as well. With the default `ratio = 1.0` we reserve one full delta of
-            /// headroom, so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the
-            /// global `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer
-            /// closes the gap. `ratio = 0` disables the speculation (`rss = resident`); sanitizer
-            /// builds default to `0` (computed at compile time in `getDefaultMemoryWorkerRssSpeculativeReserveRatio`)
-            /// because shadow-memory overhead dominates the gap there.
+            /// Speculatively reserve growth headroom on top of the observed RSS.
+            /// `resident - prev_resident` is how much RSS actually grew during the last tick;
+            /// on the assumption that the next interval may grow by the same amount, with the
+            /// default `ratio = 1.0` we reserve one full growth delta of headroom, so
+            /// `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the global
+            /// `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer closes
+            /// the gap.
+            /// The reservation is additionally capped by `resident - tracked`, the part of RSS
+            /// the global tracker does not see: growth that has already flowed into the tracker
+            /// is handled by the ordinary `will_be > current_hard_limit` check, so reserving for
+            /// it would only make the limit fire needlessly early on fully-tracked workloads.
+            /// Note that the *cumulative* gap `resident - tracked` must not be used as the
+            /// reservation itself: on a long-running server, jemalloc page retention and
+            /// fragmentation make that gap structurally large (gigabytes) even when nothing is
+            /// growing. In particular, right after a large query frees its memory, `tracked`
+            /// collapses while `resident` stays high, so reserving the whole gap pins the
+            /// published `rss` at the hard limit and unrelated small allocations get false
+            /// `MEMORY_LIMIT_EXCEEDED` until a later tick republishes a sane value (this was
+            /// breaking queries in the performance-comparison CI).
+            /// `ratio = 0` disables the speculation (`rss = resident`); sanitizer builds
+            /// default to `0` (computed at compile time in
+            /// `getDefaultMemoryWorkerRssSpeculativeReserveRatio`) because shadow-memory
+            /// overhead dominates the `resident - tracked` gap there.
             /// Skip speculation on the very first run: there is no previous interval to
-            /// extrapolate from, and `tracked` can still lag the bootstrap allocations until
-            /// the `MemoryTracker::updateAllocated` correction at the end of this loop iteration.
-            /// Using the inflated `resident - tracked` gap here would publish a too-high `rss`
-            /// for one tick and could trigger false `MEMORY_LIMIT_EXCEEDED` decisions.
+            /// extrapolate from.
             Int64 speculative_rss = resident;
             /// Speculation only influences the global hard-limit check in
             /// `MemoryTracker::allocImpl` (the `will_be_rss > current_hard_limit` branch),
@@ -464,7 +478,7 @@ void MemoryWorker::updateResidentMemoryThread()
                 /// real resident, triggering false `MEMORY_LIMIT_EXCEEDED` decisions in
                 /// `MemoryTracker::allocImpl`. Clamp `tracked` to `0` first.
                 Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
-                Int64 delta = resident - tracked;
+                Int64 delta = std::min(resident - prev_resident, resident - tracked);
                 /// Speculate only while real `resident` is still below the hard limit.
                 /// Once `resident >= current_hard_limit`, any positive allocation already
                 /// trips the `will_be_rss > current_hard_limit` branch in
@@ -485,6 +499,7 @@ void MemoryWorker::updateResidentMemoryThread()
                     speculative_rss += reserve;
                 }
             }
+            prev_resident = resident;
             MemoryTracker::updateRSS(speculative_rss);
 
             if (page_cache)

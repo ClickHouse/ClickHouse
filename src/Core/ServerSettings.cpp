@@ -1202,20 +1202,22 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
-    On each `MemoryWorker` tick the difference between the observed RSS and the
-    globally-tracked memory (`resident - tracked`) represents allocations that
-    happened during the last tick but are not yet reflected in the tracker.
-    This setting reserves an additional `ratio * (resident - tracked)` on top of
-    the observed RSS, on the assumption that the next tick may grow by at most
-    the same amount. The reservation is applied to the `rss` counter that the
-    global hard-limit check consults via `MemoryTracker::allocImpl`, so when the
-    extrapolated value crosses `max_server_memory_usage`, subsequent allocations
-    throw `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of
-    `0` disables speculation (falling back to `rss = resident`); the default `1`
-    reserves one full delta of headroom for the next interval. Under sanitizers
-    (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the gap is
-    dominated by sanitizer shadow / runtime overhead rather than tracker
-    bookkeeping lag.
+    On each `MemoryWorker` tick, reserve an additional
+    `ratio * min(resident - previous_resident, resident - tracked)` on top of
+    the observed RSS, on the assumption that the next tick may grow by the same
+    amount as the last one (`resident - previous_resident` is the RSS growth
+    over the last tick). The growth is capped by `resident - tracked`, the part
+    of RSS not visible to the global memory tracker, because growth that is
+    already tracked is handled by the ordinary hard-limit check. The reservation
+    is applied to the `rss` counter that the global hard-limit check consults
+    via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
+    `max_server_memory_usage`, subsequent allocations throw
+    `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
+    disables speculation (falling back to `rss = resident`); the default `1`
+    reserves one full growth delta of headroom for the next interval. Under
+    sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
+    `resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
+    rather than tracker bookkeeping lag.
     )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
