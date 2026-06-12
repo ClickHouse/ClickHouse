@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -197,7 +198,12 @@ struct DeltaLakeMetadataImpl
         }
         else
         {
-            const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            /// Delta log file names are zero-padded version numbers (e.g. 00000000000000000001.json),
+            /// so lexicographic order is version order. The listing order is not guaranteed
+            /// (e.g. local object storage lists in directory iteration order), while entries
+            /// must be replayed in version order for the latest `metaData` entry to win.
+            std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
