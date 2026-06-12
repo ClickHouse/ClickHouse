@@ -35,7 +35,10 @@ private:
     size_t items;
 
 public:
-    KnownRowsHolder()
+    /// A holder is constructed for every probe row on the multi-disjunct path, so `array_holder`
+    /// is deliberately left uninitialized (only the first `items` entries are ever read); value-
+    /// initializing 128 bytes per row would be a pure waste.
+    KnownRowsHolder() /// NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
         : items(0)
     {
     }
