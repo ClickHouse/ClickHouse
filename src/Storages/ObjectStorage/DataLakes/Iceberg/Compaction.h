@@ -9,7 +9,7 @@
 
 namespace DB::Iceberg
 {
-#if USE_AVRO
+#if USE_AVRO && !CLICKHOUSE_CLOUD
 
 void compactIcebergTable(
     IcebergHistory snapshots_info,
