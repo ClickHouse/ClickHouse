@@ -35,10 +35,14 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # Step 2: provoke the corrupt-metadata-on-disk state via an INSERT with an
-# unsupported compression level. The INSERT itself must fail.
+# unsupported compression level. The INSERT itself must fail; the exact error
+# code differs across versions (e.g. INCORRECT_DATA on master vs
+# ZLIB_DEFLATE_FAILED on the 26.2 branch), so assert only that it fails rather
+# than matching a specific code.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --output_format_compression_level=11 \
-    --query "INSERT INTO ${TABLE} VALUES (2)" 2>&1 \
-    | grep -F 'INCORRECT_DATA' > /dev/null && echo "INSERT failed as expected"
+    --query "INSERT INTO ${TABLE} VALUES (2)" > /dev/null 2>&1 \
+    && echo "FAIL: INSERT unexpectedly succeeded" \
+    || echo "INSERT failed as expected"
 
 # Step 3: detach + attach to clear the in-memory `current_metadata` cache,
 # the way a server restart would. The corrupted metadata produces a server-side
