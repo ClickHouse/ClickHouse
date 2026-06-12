@@ -204,7 +204,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/fast_test.py",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
-        force_success=True,
         pre_hooks=[
             "sudo rm -rf /Library/Logs/DiagnosticReports/*",
         ],
