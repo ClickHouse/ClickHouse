@@ -410,7 +410,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
 {
-    const auto subquery_hash = subquery_node->getTreeHash();
+    const auto subquery_hash = subquery_node->getGlobalTreeHash();
     const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
 
     const auto & external_tables = mutable_context->getExternalTables();

@@ -220,7 +220,7 @@ public:
                         /// and its source expression is being traversed to reconstruct the action node name.
                         /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
                         /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
-                        auto hash = exists_argument->getTreeHash();
+                        auto hash = exists_argument->getGlobalTreeHash();
                         result = fmt::format("exists({}_{})", hash.low64, hash.high64);
                     }
                     break;
@@ -1078,7 +1078,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_is_deterministic = const_node->isDeterministic();
 
     FutureSetPtr set;
-    auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
+    auto set_key = in_second_argument->getGlobalTreeHash({ .ignore_cte = true });
 
     if (!subquery_or_table)
     {

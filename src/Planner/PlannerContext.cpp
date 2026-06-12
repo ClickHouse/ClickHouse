@@ -191,7 +191,7 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
-    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
+    const auto set_source_hash = set_source_node->getGlobalTreeHash({ .compare_aliases = false, .ignore_cte = true });
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.

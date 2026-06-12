@@ -168,6 +168,11 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
+    return getGlobalTreeHash(compare_options);
+}
+
+IQueryTreeNode::Hash IQueryTreeNode::getGlobalTreeHash(CompareOptions compare_options) const
+{
     /** Compute tree hash with this node as root.
       *
       * Some nodes can contain weak pointers to other nodes. Such weak nodes are not necessary

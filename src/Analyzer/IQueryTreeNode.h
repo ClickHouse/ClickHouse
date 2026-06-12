@@ -163,6 +163,17 @@ public:
       */
     Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
+    /** Get tree hash that is canonical across query trees and across processes.
+      *
+      * The result does not depend on the identity of column source instances: column sources
+      * referenced from the tree are hashed by their content, with repeated visits replaced by
+      * visitation-order identifiers, so structurally equal trees built independently hash equal.
+      * Use it for identifiers that must be stable across trees, queries or servers, e.g. prepared
+      * set keys and distributed set names shared between the initiator and shards, or hash-join
+      * cache keys shared between queries.
+      */
+    Hash getGlobalTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
 
