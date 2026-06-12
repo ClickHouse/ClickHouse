@@ -150,7 +150,9 @@ ColumnPtr makeSortedString(const RunLengths & runs)
     return col;
 }
 
-ColumnPtr makeSortedNullable(const RunLengths & finite_runs, size_t null_run, bool null_first)
+/// With `canonical_null_map` unset, the NULL rows get an arbitrary mix of non-zero bytes: any non-zero
+/// byte in the null map means NULL, so such a column is still validly sorted.
+ColumnPtr makeSortedNullable(const RunLengths & finite_runs, size_t null_run, bool null_first, bool canonical_null_map = true)
 {
     auto nested = ColumnUInt32::create();
     auto null_map = ColumnUInt8::create();
@@ -174,7 +176,7 @@ ColumnPtr makeSortedNullable(const RunLengths & finite_runs, size_t null_run, bo
         for (size_t k = 0; k < null_run; ++k)
         {
             nd.push_back(0);
-            nm.push_back(static_cast<UInt8>(1));
+            nm.push_back(canonical_null_map ? static_cast<UInt8>(1) : static_cast<UInt8>(1 + k % 255));
         }
     };
     if (null_first)
@@ -385,6 +387,20 @@ TEST(SortedEqualRuns, MultiColumnHelperIgnoresCollation)
     const ColumnRawPtrs cols{col.get()};
 
     EXPECT_EQ(getEqualRangeEndAssumeSorted(cols, descr, 0, col->size()), 1u);
+}
+
+TEST(SortedEqualRuns, ColumnNullableNonCanonicalNullMap)
+{
+    /// The null run is longer than 256 rows, so every non-zero byte value occurs in the null map and
+    /// the run is long enough to engage the galloping search.
+    auto null_last = makeSortedNullable({1, 3, 260, 1}, 300, false, false);
+    checkAgainstOracle(*null_last, 1, "ColumnNullable non-canonical NULLs-last");
+
+    auto null_first = makeSortedNullable({1, 3, 260, 1}, 300, true, false);
+    checkAgainstOracle(*null_first, -1, "ColumnNullable non-canonical NULLs-first");
+
+    auto all_null = makeSortedNullable({}, 300, false, false);
+    checkAgainstOracle(*all_null, 1, "ColumnNullable non-canonical all-NULL");
 }
 
 TEST(SortedEqualRuns, ColumnNullableDefaultPath)
