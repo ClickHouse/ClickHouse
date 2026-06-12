@@ -667,6 +667,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     NameSet updated_columns;
+    NameSet materialize_column_targets;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -681,6 +682,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
+
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+            materialize_column_targets.insert(command.column_name);
 
         auto alter = command.ast();
         if (alter && alter->update_assignments)
@@ -700,9 +704,11 @@ void MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
-    /// and projections to recalculate them if dependencies are updated.
+    /// and projections to recalculate them if dependencies are updated. The map is also needed
+    /// for MATERIALIZE COLUMN: rewriting a column must recompute the stored MATERIALIZED columns
+    /// computed from it (or be refused when such a dependent column feeds a key).
     std::unordered_map<String, Names> column_to_affected_materialized;
-    if (!updated_columns.empty())
+    if (!updated_columns.empty() || !materialize_column_targets.empty())
     {
         /// Collect ephemeral columns and include them in the analysis set so
         /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
@@ -734,7 +740,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     /// Warn if the mutation also updates a non-ephemeral dependency
                     /// of this MATERIALIZED column — the on-disk value will become stale.
                     if (std::ranges::any_of(required_columns, [&](const auto & dep)
-                        { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
+                        { return !ephemeral_columns.contains(dep)
+                            && (updated_columns.contains(dep) || materialize_column_targets.contains(dep)); }))
                         LOG_WARNING(logger,
                             "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
                             "columns that are being updated. Its value will NOT be recalculated "
@@ -745,12 +752,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 for (const auto & dependency : required_columns)
-                    if (updated_columns.contains(dependency))
+                    if (updated_columns.contains(dependency) || materialize_column_targets.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
             }
         }
 
-        validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
+        if (!updated_columns.empty())
+            validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
@@ -979,36 +987,36 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// than recomputing it. The same applies to the sorting keys of projections:
             /// materializing a column used by a projection's ORDER BY would leave the
             /// already-materialized projection parts sorted by stale key values.
-            auto materialized_column_required_by = [&](const Names & required_columns) -> bool
+            auto column_required_by = [&](const String & target_column, const Names & required_columns) -> bool
             {
                 for (const auto & required_column : required_columns)
                 {
-                    if (required_column == command.column_name)
+                    if (required_column == target_column)
                         return true;
 
                     /// The key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
                     /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
                     /// recalculates the subcolumn too, so it must be refused as well.
                     auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
-                    if (resolved && resolved->isSubcolumn() && resolved->getNameInStorage() == command.column_name)
+                    if (resolved && resolved->isSubcolumn() && resolved->getNameInStorage() == target_column)
                         return true;
                 }
                 return false;
             };
 
-            auto column_used_in_sorting_key = [&](const StorageMetadataPtr & key_metadata) -> bool
+            auto column_used_in_sorting_key = [&](const String & target_column, const StorageMetadataPtr & key_metadata) -> bool
             {
                 if (!key_metadata->hasSortingKey())
                     return false;
 
                 Names sort_columns = key_metadata->getSortingKeyColumns();
-                if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
+                if (std::find(sort_columns.begin(), sort_columns.end(), target_column) != sort_columns.end())
                     return true;
 
-                return materialized_column_required_by(key_metadata->getColumnsRequiredForSortingKey());
+                return column_required_by(target_column, key_metadata->getColumnsRequiredForSortingKey());
             };
 
-            if (column_used_in_sorting_key(metadata_snapshot))
+            if (column_used_in_sorting_key(command.column_name, metadata_snapshot))
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Refused to materialize column {} because it is used in the sorting key expression. "
@@ -1017,7 +1025,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             if (metadata_snapshot->hasPartitionKey()
-                && materialized_column_required_by(metadata_snapshot->getColumnsRequiredForPartitionKey()))
+                && column_required_by(command.column_name, metadata_snapshot->getColumnsRequiredForPartitionKey()))
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Refused to materialize column {} because it is used in the partition key expression. "
@@ -1028,12 +1036,56 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             for (const auto & projection : projections_desc)
             {
-                if (projection.metadata && column_used_in_sorting_key(projection.metadata))
+                if (projection.metadata && column_used_in_sorting_key(command.column_name, projection.metadata))
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                         "Refused to materialize column {} because it is used in the sorting key expression "
                         "of projection {}. Doing so could break the sort order of the projection's existing data",
                         backQuote(command.column_name), backQuote(projection.name));
+                }
+            }
+
+            /// A stored MATERIALIZED column may be computed from the column being materialized.
+            /// Rewriting the source column would leave such dependent columns stale, so they are
+            /// recomputed in an extra stage below. If a dependent column feeds the sorting key or
+            /// the partition key (of the table or of a projection), recomputing it would break the
+            /// sort order or the partition assignment just like rewriting a key column directly,
+            /// so it is refused the same way.
+            Names affected_materialized;
+            if (auto it = column_to_affected_materialized.find(command.column_name); it != column_to_affected_materialized.end())
+                affected_materialized = it->second;
+
+            for (const auto & dependent_name : affected_materialized)
+            {
+                if (column_used_in_sorting_key(dependent_name, metadata_snapshot))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                        "and is used in the sorting key expression. Recomputing it could break the sort order "
+                        "of existing data",
+                        backQuote(command.column_name), backQuote(dependent_name));
+                }
+
+                if (metadata_snapshot->hasPartitionKey()
+                    && column_required_by(dependent_name, metadata_snapshot->getColumnsRequiredForPartitionKey()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                        "and is used in the partition key expression. Recomputing it could move existing rows "
+                        "to a different partition while the part metadata still describes the old partition id",
+                        backQuote(command.column_name), backQuote(dependent_name));
+                }
+
+                for (const auto & projection : projections_desc)
+                {
+                    if (projection.metadata && column_used_in_sorting_key(dependent_name, projection.metadata))
+                    {
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                            "and is used in the sorting key expression of projection {}. Recomputing it could break "
+                            "the sort order of the projection's existing data",
+                            backQuote(command.column_name), backQuote(dependent_name), backQuote(projection.name));
+                    }
                 }
             }
 
@@ -1049,21 +1101,59 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
 
-            /// The base column data is recomputed, so any skip index, projection or statistics
-            /// that reads it must be rebuilt too — otherwise the unchanged derived files would be
+            /// Recompute the dependent MATERIALIZED columns in a separate stage, so they are
+            /// evaluated over the already-rewritten source column (mirrors the UPDATE path).
+            if (!affected_materialized.empty())
+            {
+                stages.emplace_back(context);
+                for (const auto & dependent_column : columns_desc)
+                {
+                    if (dependent_column.default_desc.kind == ColumnDefaultKind::Materialized
+                        && dependent_column.default_desc.expression
+                        && std::find(affected_materialized.begin(), affected_materialized.end(), dependent_column.name) != affected_materialized.end())
+                    {
+                        ASTPtr dependent_expr = makeASTFunction("_CAST",
+                            dependent_column.default_desc.expression->clone(),
+                            make_intrusive<ASTLiteral>(dependent_column.type->getName()));
+
+                        /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                        /// because otherwise subcolumns are extracted before the source column is updated and we get
+                        /// old subcolumns values.
+                        replaceSubcolumnsToGetSubcolumnFunctionInQuery(dependent_expr, all_columns);
+
+                        stages.back().column_to_updated.emplace(dependent_column.name, dependent_expr);
+                    }
+                }
+            }
+
+            /// The base column data is recomputed (along with the dependent MATERIALIZED columns
+            /// above), so any skip index, projection or statistics that reads any of the rewritten
+            /// columns must be rebuilt too — otherwise the unchanged derived files would be
             /// hardlinked and keep stale values. Rebuilding needs the object's input columns in the
             /// mutation output, so we register them as dependencies here, before the dependency
             /// expansion below splits columns into changed/unchanged stages. This mirrors how
             /// `MATERIALIZE INDEX` and `MATERIALIZE PROJECTION` feed their inputs into the stream;
             /// just marking the object for rebuild (without its inputs) would leave the rebuild
             /// reading a block that lacks the other required columns.
+            NameSet rewritten_columns{command.column_name};
+            for (const auto & dependent_name : affected_materialized)
+                rewritten_columns.insert(dependent_name);
+
+            auto rewritten_column_required_by = [&](const Names & required_columns) -> bool
+            {
+                return std::ranges::any_of(rewritten_columns, [&](const auto & rewritten_column)
+                {
+                    return column_required_by(rewritten_column, required_columns);
+                });
+            };
+
             for (const auto & index : indices_desc)
             {
                 if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
                     continue;
 
                 const auto & index_cols = index.expression->getRequiredColumns();
-                if (materialized_column_required_by(index_cols))
+                if (rewritten_column_required_by(index_cols))
                 {
                     for (const auto & col : index_cols)
                         dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
@@ -1077,7 +1167,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     continue;
 
                 const auto & projection_cols = projection.required_columns;
-                if (materialized_column_required_by(projection_cols))
+                if (rewritten_column_required_by(projection_cols))
                 {
                     for (const auto & col : projection_cols)
                         dependencies.emplace(col, ColumnDependency::PROJECTION);
@@ -1090,7 +1180,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (column_desc.statistics.empty())
                     continue;
 
-                if (materialized_column_required_by(Names{column_desc.name}))
+                if (rewritten_column_required_by(Names{column_desc.name}))
                 {
                     dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
                     materialized_statistics.insert(column_desc.name);

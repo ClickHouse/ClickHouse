@@ -106,3 +106,62 @@ ALTER TABLE t_mat_index_multicol MATERIALIZE COLUMN c2 SETTINGS mutations_sync =
 SELECT count() FROM t_mat_index_multicol WHERE (a + c2) = 505 SETTINGS force_data_skipping_indices = 'idx_sum';
 SELECT count() FROM t_mat_index_multicol WHERE (a + c2) = 55 SETTINGS force_data_skipping_indices = 'idx_sum';
 DROP TABLE t_mat_index_multicol;
+
+-- Case 11: A stored MATERIALIZED column computed from the materialized column is itself the
+-- sorting key. Recomputing it would break the sort order, so the command must be refused.
+DROP TABLE IF EXISTS t_mat_dep_sort_key;
+CREATE TABLE t_mat_dep_sort_key (a Int, c2 Int MATERIALIZED a * 10, k Int MATERIALIZED c2 + 1)
+    ENGINE = MergeTree() ORDER BY k;
+ALTER TABLE t_mat_dep_sort_key MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_dep_sort_key;
+
+-- Case 12: A stored MATERIALIZED column computed from the materialized column is in the
+-- partition key — must be refused for the same reason as the direct partition key case.
+DROP TABLE IF EXISTS t_mat_dep_part_key;
+CREATE TABLE t_mat_dep_part_key (a Int, c2 Int MATERIALIZED a * 10, p Int MATERIALIZED c2 % 2)
+    ENGINE = MergeTree() PARTITION BY p ORDER BY a;
+ALTER TABLE t_mat_dep_part_key MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_dep_part_key;
+
+-- Case 13: A stored MATERIALIZED column computed from the materialized column is in a
+-- projection's sorting key — must be refused like the direct projection sort key case.
+DROP TABLE IF EXISTS t_mat_dep_proj_key;
+CREATE TABLE t_mat_dep_proj_key
+(
+    a Int,
+    c2 Int MATERIALIZED a * 10,
+    m Int MATERIALIZED c2 + 1,
+    PROJECTION p (SELECT * ORDER BY m)
+) ENGINE = MergeTree() ORDER BY a;
+ALTER TABLE t_mat_dep_proj_key MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_dep_proj_key;
+
+-- Case 14: A stored MATERIALIZED column computed from the materialized column, not used in any
+-- key — the command is allowed and the dependent column must be recomputed from the new values,
+-- otherwise it would keep values derived from the old source column.
+DROP TABLE IF EXISTS t_mat_dep_recompute;
+CREATE TABLE t_mat_dep_recompute (a Int, c2 Int MATERIALIZED a * 10, m Int MATERIALIZED c2 + 1)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_dep_recompute (a) SELECT number FROM numbers(3);
+ALTER TABLE t_mat_dep_recompute MODIFY COLUMN c2 Int MATERIALIZED a * 100;
+ALTER TABLE t_mat_dep_recompute MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT a, c2, m FROM t_mat_dep_recompute ORDER BY a;
+DROP TABLE t_mat_dep_recompute;
+
+-- Case 15: A skip index over the dependent MATERIALIZED column. The dependent column is
+-- recomputed, so the index must be rebuilt as well; with a stale (hardlinked) index the query
+-- for a recomputed value would be wrongly pruned.
+DROP TABLE IF EXISTS t_mat_dep_index;
+CREATE TABLE t_mat_dep_index
+(
+    a Int,
+    c2 Int MATERIALIZED a * 10,
+    m Int MATERIALIZED c2 + 1,
+    INDEX idx_m m TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_mat_dep_index (a) SELECT number FROM numbers(10);
+ALTER TABLE t_mat_dep_index MODIFY COLUMN c2 Int MATERIALIZED a * 100;
+ALTER TABLE t_mat_dep_index MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_mat_dep_index WHERE m = 501 SETTINGS force_data_skipping_indices = 'idx_m';
+SELECT count() FROM t_mat_dep_index WHERE m = 51 SETTINGS force_data_skipping_indices = 'idx_m';
+DROP TABLE t_mat_dep_index;
