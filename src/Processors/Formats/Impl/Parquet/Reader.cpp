@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -2043,6 +2044,10 @@ void Reader::decompressPageIfCompressed(PageState & page)
 
 MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
 {
+    /// Recurses over the nested output column tree, whose depth is bounded by SchemaConverter's
+    /// recursion limit; guard the native stack here too as defense in depth.
+    checkStackSize();
+
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
 

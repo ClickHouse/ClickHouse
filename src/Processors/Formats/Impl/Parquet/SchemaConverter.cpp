@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -169,6 +170,20 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
+    /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
+    /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
+    /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
+    /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    checkStackSize();
+    ++recursion_depth;
+    SCOPE_EXIT({ --recursion_depth; });
+    if (recursion_depth > options.format.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            options.format.max_parser_depth);
+
     if (node.type_hint)
         chassert(node.requested);
     if (schema_idx >= file_metadata.schema.size())
