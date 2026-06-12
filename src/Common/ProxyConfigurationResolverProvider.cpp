@@ -154,9 +154,11 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     /// tryGetConfig: during late shutdown (after resetSharedContext) the
     /// global context still exists but its shared part is destroyed, so
     /// getConfigRef would be a member call on a null pointer, racing with the
-    /// shutdown thread. CrashWriter reaches this from the signal handler in
-    /// that window. The returned pointer also keeps the configuration alive
-    /// while it is being read.
+    /// shutdown thread. The fault-reporting path (SignalListener handling a
+    /// crash on its own thread, not a POSIX signal handler) reaches this in
+    /// that window; taking the config lock here is therefore fine. The
+    /// returned pointer also keeps the configuration alive while it is being
+    /// read.
     const auto config = context ? context->tryGetConfig() : nullptr;
     if (!config)
     {
