@@ -602,7 +602,7 @@ static bool sortPrefixEqualAt(
         const IColumn & lhs = *lhs_columns[i];
         const IColumn & rhs = *rhs_columns[i];
 
-        int res;
+        int res = 0;
         if (sort_prefix[i].collator && lhs.isCollationSupported())
             res = lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction, *sort_prefix[i].collator);
         else
