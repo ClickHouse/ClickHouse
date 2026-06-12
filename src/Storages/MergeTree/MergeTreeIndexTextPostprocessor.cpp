@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
@@ -131,25 +132,25 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
     return ColumnArray::create(std::move(result_data), std::move(result_offsets_col));
 }
 
-ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type) const
+ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
+    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description) const
 {
     chassert(actions);
 
     ASTPtr expr = original_expression_ast->clone();
+    replaceExpressionToIdentifier(expr, index_column_name, postprocessor_lambda_arg);
 
-    if (isArray(col_type))
-    {
-        /// Wrap element-wise: arrayMap(x -> postprocessor_expr(x), col_name).
-        /// Mirrors how MergeTreeIndexTextPreprocessor handles Array index columns.
-        replaceExpressionToIdentifier(expr, index_column_name, postprocessor_lambda_arg);
-        expr = makeASTFunction("arrayMap",
-            makeASTLambda({postprocessor_lambda_arg}, std::move(expr)),
-            make_intrusive<ASTIdentifier>(col_name));
-        NamesAndTypesList source_columns{{col_name, col_type}};
-        return buildActionsDAGFromAST(std::move(expr), source_columns);
-    }
+    /// Tokens to map the postprocessor over: the elements for an Array(String) column (already tokens),
+    /// otherwise tokens(col, '<tokenizer>').
+    ASTPtr tokens_ast = make_intrusive<ASTIdentifier>(col_name);
+    if (!isArray(col_type))
+        tokens_ast = makeASTFunction("tokens", std::move(tokens_ast), make_intrusive<ASTLiteral>(Field(tokenizer_description)));
 
-    replaceExpressionToIdentifier(expr, index_column_name, col_name);
+    /// arrayMap(x -> postprocessor(x), <tokens>)
+    expr = makeASTFunction("arrayMap",
+        makeASTLambda({postprocessor_lambda_arg}, std::move(expr)),
+        std::move(tokens_ast));
+
     NamesAndTypesList source_columns{{col_name, col_type}};
     return buildActionsDAGFromAST(std::move(expr), source_columns);
 }

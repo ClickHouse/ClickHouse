@@ -582,16 +582,18 @@ private:
             }
         }
 
-        /// For array tokenizer + postprocessor, apply the postprocessor element-wise to the haystack so
-        /// that the row-level function operates on normalized tokens, matching what the index stores.
-        /// This mirrors how the preprocessor rewrites the haystack for non-array tokenizers.
+        /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
+        /// function still matches when the index isn't read directly (direct read off, or unmaterialized
+        /// parts). The haystack becomes an Array(String); hasToken needs a String and is handled separately.
         if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
         {
-            if (tokenizer->getType() == ITokenizer::Type::Array)
+            if (function_name != "hasToken")
             {
                 auto haystack_name = getNameWithoutAliases(new_children[0]);
                 ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type), &merged_outputs);
+                actions_dag.mergeNodes(
+                    postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
+                    &merged_outputs);
                 chassert(merged_outputs.size() == 1);
                 new_children[0] = merged_outputs.front();
             }

@@ -46,11 +46,10 @@ public:
 
     bool hasActions() const { return actions.has_value(); }
 
-    /// Returns an ActionsDAG that applies the postprocessor to a column.
-    /// For Array(String) columns the expression is wrapped in arrayMap, mirroring
-    /// how MergeTreeIndexTextPreprocessor handles array index columns.
-    /// Only call when hasActions() is true.
-    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type) const;
+    /// Returns an ActionsDAG rewriting a haystack column into the Array(String) of postprocessed tokens
+    /// the index stores: arrayMap(x -> postprocessor(x), tokens(col, '<tokenizer>')). Array(String)
+    /// index columns are mapped directly (elements are already tokens). Only call when hasActions().
+    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description) const;
 
 private:
     std::optional<ExpressionActions> actions;
