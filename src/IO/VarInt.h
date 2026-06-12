@@ -153,6 +153,16 @@ inline Int64 decodeZigZag(UInt64 n)
     return static_cast<Int64>((n >> 1) ^ -(n & 1));
 }
 
+inline UInt32 encodeZigZag32(Int32 value)
+{
+    return (static_cast<UInt32>(value) << 1) ^ static_cast<UInt32>(value >> 31);
+}
+
+inline Int32 decodeZigZag32(UInt32 n)
+{
+    return static_cast<Int32>((n >> 1) ^ -(n & 1));
+}
+
 template <typename InBuf>
 inline void ALWAYS_INLINE readVarInt(Int64 & x, InBuf & istr)
 {
