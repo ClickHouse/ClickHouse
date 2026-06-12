@@ -1,5 +1,6 @@
-#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Common/Exception.h>
@@ -92,8 +93,8 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     /// The nested column (or some of its substreams) may already be in the substreams cache from
     /// deserialization of another subcolumn, and a cached column can contain rows from multiple ranges.
     /// Force copying only the rows of the current range from the cache, so that the number of rows appended
-    /// to `column` is exactly the size of the current range and the null map modified below is owned by
-    /// `column` rather than shared with a column produced by another subcolumn read.
+    /// to `column` is exactly the size of the current range and the null representation modified below is
+    /// owned by `column` rather than shared with a column produced by another subcolumn read.
     auto nested_settings = settings;
     nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
     nested_settings.path.push_back(Substream::NullableElements);
@@ -114,14 +115,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
     size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_nullable = assert_cast<ColumnNullable &>(*mutable_column);
-    auto & inner_null_map_data = column_nullable.getNullMapData();
-
-    for (size_t i = 0; i < new_rows; ++i)
-        inner_null_map_data[prev_size + i] |= parent_null_map_data[parent_offset + i];
-
-    column = std::move(mutable_column);
+    column = applyParentNullMapToExtractedSubcolumn(std::move(column), parent_null_map_data, prev_size, parent_offset, new_rows);
 }
 
 }
