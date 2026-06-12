@@ -474,9 +474,10 @@ DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 /// Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled.
 enum class SkipUnavailableShardsMode : uint8_t
 {
-    /// Ignore only connection-related errors (the legacy behavior of `skip_unavailable_shards`).
+    /// Ignore only connection-related errors.
     UNAVAILABLE = 0,
-    /// Additionally ignore errors caused by a missing table or database on the shard.
+    /// Additionally ignore errors caused by a missing table or database on the shard
+    /// (the historical behavior of `skip_unavailable_shards`, and the default).
     UNAVAILABLE_OR_TABLE_MISSING,
     /// Additionally ignore any exception received from the shard before it returned any data.
     UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING,

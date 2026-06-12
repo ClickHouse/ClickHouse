@@ -57,7 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
-            {"skip_unavailable_shards_mode", "unavailable", "unavailable", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled."},
+            {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
             {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},

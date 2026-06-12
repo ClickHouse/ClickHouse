@@ -8,7 +8,7 @@
 SELECT * FROM remote('127.0.0.{1,2,3}', view(SELECT throwIf(shardNum() = 2) AS x, shardNum() AS sn)) ORDER BY sn
 SETTINGS prefer_localhost_replica = 0, skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing';
 
--- `unavailable` (legacy): the exception is rethrown.
+-- `unavailable`: the exception is rethrown.
 SELECT * FROM remote('127.0.0.{1,2,3}', view(SELECT throwIf(shardNum() = 2) AS x, shardNum() AS sn)) ORDER BY sn
 SETTINGS prefer_localhost_replica = 0, skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 

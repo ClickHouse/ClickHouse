@@ -1092,7 +1092,7 @@ bool RemoteQueryExecutor::hasThrownException() const
 bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
 {
     /// Connection-related failures are handled where connections are established, not here as
-    /// server `Exception` packets, so the legacy `unavailable` mode ignores nothing at this point.
+    /// server `Exception` packets, so the `unavailable` mode ignores nothing at this point.
     if (!skip_unavailable_shards)
         return false;
 

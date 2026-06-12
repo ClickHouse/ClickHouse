@@ -28,7 +28,7 @@ SETTINGS distributed_foreground_insert = 1, skip_unavailable_shards = 1, skip_un
 
 SELECT x FROM shard_0.t_sus ORDER BY x;
 
--- `unavailable` (legacy): the missing table is an error.
+-- `unavailable`: the missing table is an error.
 INSERT INTO dist_sus SELECT number FROM numbers(4)
 SETTINGS distributed_foreground_insert = 1, skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable'; -- { serverError UNKNOWN_TABLE }
 
