@@ -161,3 +161,42 @@ SELECT 'del-otf DESC LIMIT 1', c0 FROM topk_del_otf ORDER BY c0 DESC LIMIT 1 SET
 SELECT 'del-otf DESC LIMIT 1 no-opt', c0 FROM topk_del_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
 SET apply_mutations_on_fly = 0;
 DROP TABLE topk_del_otf;
+
+-- A pending ALTER MODIFY COLUMN changes the indexed column's type, but the on-disk minmax still holds
+-- bytes serialized with the old type. The decoy part's UInt64 value 13830554455654793216 casts to the
+-- Float64 max 1.38e19, yet its raw bytes read as Float64 give -1.0, which looks minimal. A naive top-k
+-- ranking on the stale index prunes the decoy granule in favour of the live part (all 5) and returns 5
+-- instead of the true max. The MODIFY column must mark the part's index stale.
+DROP TABLE IF EXISTS topk_modify_otf;
+CREATE TABLE topk_modify_otf (c0 UInt64, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS index_granularity = 1000, min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+SYSTEM STOP MERGES topk_modify_otf;
+INSERT INTO topk_modify_otf VALUES (13830554455654793216);
+INSERT INTO topk_modify_otf SELECT toUInt64(5) FROM numbers(50000) SETTINGS max_insert_threads = 1;
+SET apply_mutations_on_fly = 1;
+-- alter_sync = 0 keeps the MODIFY unmaterialized (merges are stopped), so it is applied on the fly.
+ALTER TABLE topk_modify_otf MODIFY COLUMN c0 Float64 SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'modify-otf DESC LIMIT 1', c0 FROM topk_modify_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 1;
+SELECT 'modify-otf DESC LIMIT 1 no-opt', c0 FROM topk_modify_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
+SET apply_mutations_on_fly = 0;
+DROP TABLE topk_modify_otf;
+
+-- A pending ALTER MODIFY COLUMN on a column OTHER than the indexed one must NOT disable the optimization.
+DROP TABLE IF EXISTS topk_modify_other;
+CREATE TABLE topk_modify_other (c0 Int32, x UInt64, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS index_granularity = 1000, min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+SYSTEM STOP MERGES topk_modify_other;
+INSERT INTO topk_modify_other SELECT toInt32(number), toUInt64(number) FROM numbers(100000) SETTINGS max_insert_threads = 1;
+SET apply_mutations_on_fly = 1;
+ALTER TABLE topk_modify_other MODIFY COLUMN x Float64 SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'modify-other DESC LIMIT 1', c0 FROM topk_modify_other ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 1;
+SELECT 'EXPLAIN modify-other: TopK optimization still active';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT c0 FROM topk_modify_other ORDER BY c0 DESC LIMIT 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0)
+WHERE explain LIKE '%TopK%';
+SET apply_mutations_on_fly = 0;
+DROP TABLE topk_modify_other;

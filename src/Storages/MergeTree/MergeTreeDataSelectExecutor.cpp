@@ -817,15 +817,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
 
 /// The minmax skip index reflects the physical rows of a part as they were written, so it goes
-/// stale when a lightweight change is pending or materialized but not yet merged into the part:
-///  - a lightweight delete hides rows, but the minmax still advertises their values;
+/// stale when a pending or materialized change is not yet merged into the part:
+///  - a lightweight or ordinary delete hides rows, but the minmax still advertises their values;
 ///  - a lightweight update / patch part rewrites the indexed column, but the minmax still
-///    advertises the pre-update values.
+///    advertises the pre-update values;
+///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
+///    serialized with the old type, which order differently under the new type.
 /// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
 /// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
-/// read in full with the delete mask and patches applied on read, while the optimization stays
-/// active for parts whose top-k index is up to date.
+/// read in full with mutations and patches applied on read, while the optimization stays active for
+/// parts whose top-k index is up to date.
 static bool partHasStaleTopKIndex(
     const MergeTreeData::DataPartPtr & part,
     const MergeTreeIndexPtr & top_k_index,
@@ -837,9 +839,10 @@ static bool partHasStaleTopKIndex(
     if (part->hasLightweightDelete())
         return true;
 
-    /// Pending on-the-fly mutations or patch parts (lightweight delete or update) that are not yet
-    /// written into the part. Both contribute their touched columns to getAllUpdatedColumns().
-    if (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+    /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    if (mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
@@ -849,9 +852,9 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending update / patch that rewrites the indexed column makes its minmax stale.
-        /// Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Unrelated updates (other columns) leave the index valid.
+        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
+        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
+        /// top-k path is consistent with it. Changes to other columns leave the index valid.
         if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
             return true;
     }
