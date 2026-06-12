@@ -23,14 +23,16 @@ if __name__ == "__main__":
     digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
     info.store_kv_data("build_digest", digest)
 
-    # store recent master commits (used by bugfix validation to find builds, and by perf tests)
-    if info.repo_name == "ClickHouse/ClickHouse":
-        raw = Shell.get_output(
-            "gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50' -q '.[].sha'",
-            verbose=True,
-        )
-        master_commits = raw.splitlines()
-        info.store_kv_data("master_commits", master_commits)
+    # store recent master commits (used by bugfix validation to find builds, and by perf tests).
+    # Store unconditionally: synced PRs in the private repo run the same bugfix validation
+    # jobs, and both this query and the build artifacts in `find_master_builds` use the
+    # public upstream namespace regardless of the repo the workflow runs in.
+    raw = Shell.get_output(
+        "gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50' -q '.[].sha'",
+        verbose=True,
+    )
+    master_commits = raw.splitlines()
+    info.store_kv_data("master_commits", master_commits)
 
     if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store previous commits for perf tests
