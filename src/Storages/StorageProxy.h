@@ -97,6 +97,15 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
+    /// Must materialize the nested storage: the default `Atomic` database renames a table
+    /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
+    /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`
+    /// rejection in `StorageMergeTree::checkTableCanBeRenamed`) for lazily loaded tables.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        getNested()->checkTableCanBeRenamed(new_name);
+    }
+
     void renameInMemory(const StorageID & new_table_id) override
     {
         getNested()->renameInMemory(new_table_id);
