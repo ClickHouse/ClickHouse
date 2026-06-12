@@ -55,6 +55,11 @@ public:
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
     bool hasLightweightDelete() const;
+    /// True if a pending ALTER DELETE filters out rows on read without touching any column.
+    /// Such a delete is not reflected in all_updated_columns or _row_exists, so callers that
+    /// reason about per-part data staleness (e.g. minmax-based top-k granule selection) must
+    /// account for it separately.
+    bool hasDeleteMutation() const;
 
     /// Returns prewhere expression steps to apply
     /// mutations that affect columns from @read_columns.

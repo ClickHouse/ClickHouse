@@ -843,8 +843,10 @@ static bool partHasStaleTopKIndex(
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
-        /// A pending lightweight delete hides rows of any value -> the index is stale.
-        if (alter_conversions->hasLightweightDelete())
+        /// A pending delete hides rows of any value -> the index is stale. This covers both a
+        /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
+        /// (which adds nothing to getAllUpdatedColumns(), so the canUseIndex check below misses it).
+        if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
         /// A pending update / patch that rewrites the indexed column makes its minmax stale.

@@ -142,3 +142,22 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0)
 WHERE explain LIKE '%TopK%';
 DROP TABLE topk_lwu_other;
+
+-- A pending ordinary ALTER DELETE hides rows on read but, unlike a lightweight delete, adds nothing
+-- to the part's updated columns and leaves no _row_exists, so the part still advertises its stale
+-- extreme minmax. The decoy part's [1000000,1000000] must not prune the live part (max 49999); the
+-- decoy's only row is then filtered out by the delete, so a naive top-k ranking returns no rows.
+DROP TABLE IF EXISTS topk_del_otf;
+CREATE TABLE topk_del_otf (c0 Int32, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+SYSTEM STOP MERGES topk_del_otf;
+INSERT INTO topk_del_otf VALUES (1000000);
+INSERT INTO topk_del_otf SELECT toInt32(number) FROM numbers(50000) SETTINGS max_insert_threads = 1;
+SET mutations_sync = 0;
+SET apply_mutations_on_fly = 1;
+ALTER TABLE topk_del_otf DELETE WHERE c0 = 1000000;
+
+SELECT 'del-otf DESC LIMIT 1', c0 FROM topk_del_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 1;
+SELECT 'del-otf DESC LIMIT 1 no-opt', c0 FROM topk_del_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
+SET apply_mutations_on_fly = 0;
+DROP TABLE topk_del_otf;
