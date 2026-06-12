@@ -587,8 +587,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
 
-    /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the
-    /// initiator, so data_type_default_nullable and flatten_nested must not be applied a second time.
+    /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
+    /// Known limitation: with distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION
+    /// the initiator does not normalize the query, and the transforms are wrongly skipped here too.
     const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
 
     bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
