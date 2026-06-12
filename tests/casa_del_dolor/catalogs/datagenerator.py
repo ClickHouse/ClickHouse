@@ -48,7 +48,7 @@ except ImportError:
 from .tablegenerator import LakeTableGenerator
 from .clickhousetospark import ClickHouseTypeMapper
 
-from .laketables import SparkTable
+from .laketables import SparkTable, LakeFormat
 
 SOME_STRINGS = [
     "",
@@ -521,6 +521,44 @@ class LakeDataGenerator:
                     )
         return df
 
+    def _random_predicate(self, table: SparkTable) -> str:
+        # Simple, always-valid filter for WHERE / overwrite conditions.
+        key = random.choice(list(table.flat_columns().keys()))
+        return f"{key} IS{random.choice(['', ' NOT'])} NULL"
+
+    def _sql_scalar_literal(self, dtype: DataType):
+        """A SQL literal for a scalar type, or None for container/variant types
+        whose literals are impractical to spell out inline."""
+        if isinstance(dtype, BooleanType):
+            return "true" if self._rand_bool() else "false"
+        if isinstance(dtype, (ByteType, ShortType, IntegerType, LongType)):
+            return str(self._rand_int(-100, 100))
+        if isinstance(dtype, FloatType):
+            return f"CAST({float(self._rand_float(-1e5, 1e5))!r} AS FLOAT)"
+        if isinstance(dtype, DoubleType):
+            return repr(float(self._rand_float(-1e9, 1e9)))
+        if isinstance(dtype, DecimalType):
+            return (
+                f"CAST('{self._rand_decimal(dtype.precision, dtype.scale)}'"
+                f" AS DECIMAL({dtype.precision}, {dtype.scale}))"
+            )
+        if isinstance(dtype, (StringType, CharType, VarcharType)):
+            s = (
+                self._rand_string(random.randint(0, 16))
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+            )
+            return f"'{s}'"
+        if isinstance(dtype, DateType):
+            return f"DATE '{self._rand_date().isoformat()}'"
+        if isinstance(dtype, TimestampType) or (
+            HAS_TIMESTAMP_NTZ and isinstance(dtype, TimestampNTZType)
+        ):
+            return f"TIMESTAMP '{self._rand_timestamp().strftime('%Y-%m-%d %H:%M:%S.%f')}'"
+        if isinstance(dtype, BinaryType):
+            return f"X'{self._rand_binary(random.randint(0, 8)).hex()}'"
+        return None
+
     def insert_random_data(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)
         df = self._create_random_df(spark, table, nrows)
@@ -560,12 +598,88 @@ class LakeDataGenerator:
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
-        delete_key = random.choice(list(table.flat_columns().keys()))
-        predicate = f"{delete_key} IS{random.choice(['',' NOT'])} NULL"
-
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
         self.run_query(
-            spark, f"DELETE FROM {table.get_table_full_path()} WHERE {predicate};"
+            spark,
+            f"DELETE FROM {table.get_table_full_path()} WHERE {self._random_predicate(table)};",
+        )
+
+    def update_rows(self, spark: SparkSession, table: SparkTable):
+        # Standalone UPDATE ... SET ... WHERE (distinct from the UPDATE inside
+        # MERGE). SET targets are top-level, non-generated columns; scalar
+        # columns get a typed literal, complex-typed columns are nulled when
+        # nullable (their literals are impractical to spell inline).
+        targets = [c for c, sc in table.columns.items() if not sc.generated]
+        random.shuffle(targets)
+        assignments = []
+        for c in targets[: random.randint(1, max(1, len(targets)))]:
+            lit = self._sql_scalar_literal(table.columns[c].spark_type)
+            if lit is not None:
+                assignments.append(f"{c} = {lit}")
+            elif table.columns[c].nullable:
+                assignments.append(f"{c} = NULL")
+        if not assignments:
+            return
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Update rows in {tpath}")
+        self.run_query(
+            spark,
+            f"UPDATE {tpath} SET {', '.join(assignments)} WHERE {self._random_predicate(table)};",
+        )
+
+    def insert_replace_where(self, spark: SparkSession, table: SparkTable):
+        # Delta conditional overwrite. The newly written rows need not satisfy
+        # the predicate for fuzzing, so relax Delta's constraint check (the
+        # session is per-operation and stopped right after, so this conf does
+        # not leak to other work).
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        view_name = f"replace_src_{table.table_name}"
+        df.createOrReplaceTempView(view_name)
+        spark.conf.set(
+            "spark.databricks.delta.replaceWhere.constraintCheck.enabled", "false"
+        )
+        tpath = table.get_table_full_path()
+        self.logger.info(f"INSERT REPLACE WHERE {nrows} row(s) into {tpath}")
+        self.run_query(
+            spark,
+            f"INSERT INTO {tpath} REPLACE WHERE {self._random_predicate(table)} SELECT * FROM {view_name};",
+        )
+
+    def overwrite_partitions_data(self, spark: SparkSession, table: SparkTable):
+        # Dynamic partition overwrite via DataFrameWriterV2: replaces only the
+        # partitions present in the new data (full overwrite when unpartitioned).
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Overwrite partitions of {tpath} with {nrows} row(s)")
+        df.writeTo(tpath).overwritePartitions()
+
+    def overwrite_where_data(self, spark: SparkSession, table: SparkTable):
+        # Conditional overwrite via DataFrameWriterV2: atomically deletes rows
+        # matching the condition and appends the new data.
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Overwrite rows of {tpath} with {nrows} row(s)")
+        df.writeTo(tpath).overwrite(F.expr(self._random_predicate(table)))
+
+    def insert_into_branch(self, spark: SparkSession, table: SparkTable):
+        # Iceberg branch write: create a branch and insert into it. The main
+        # branch (what readers / tablecheck see) is left unchanged.
+        branch = f"b_{random.randint(1, 1000000)}"
+        tpath = table.get_table_full_path()
+        self.run_query(
+            spark, f"ALTER TABLE {tpath} CREATE BRANCH IF NOT EXISTS {branch};"
+        )
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        view_name = f"branch_src_{table.table_name}"
+        df.createOrReplaceTempView(view_name)
+        self.logger.info(f"INSERT {nrows} row(s) into branch {branch} of {tpath}")
+        self.run_query(
+            spark,
+            f"INSERT INTO {tpath}.branch_{branch} SELECT * FROM {view_name};",
         )
 
     def truncate_table(self, spark: SparkSession, table: SparkTable):
@@ -588,23 +702,52 @@ class LakeDataGenerator:
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
         next_operation = random.randint(1, 1000)
 
+        is_iceberg = table.lake_format == LakeFormat.Iceberg
+        is_delta = table.lake_format == LakeFormat.DeltaLake
         try:
-            if next_operation <= 380:
+            if next_operation <= 300:
                 # Insert
                 self.insert_random_data(spark, table)
-            elif next_operation <= 560:
+            elif next_operation <= 340:
+                # Standalone UPDATE ... SET ... WHERE
+                self.update_rows(spark, table)
+            elif next_operation <= 510:
                 # Update and delete
                 self.merge_into_table(spark, table)
-            elif next_operation <= 610:
+            elif next_operation <= 550:
                 # Delete
                 self.delete_table(spark, table)
-            elif next_operation <= 650:
+            elif next_operation <= 580:
                 # Truncate
                 self.truncate_table(spark, table)
-            elif next_operation <= 690:
+            elif next_operation <= 610:
                 # INSERT OVERWRITE (replaces all data)
                 self.insert_overwrite_data(spark, table)
-            elif next_operation <= 850:
+            elif next_operation <= 650:
+                # Dynamic partition overwrite (DataFrameWriterV2)
+                if is_iceberg or is_delta:
+                    self.overwrite_partitions_data(spark, table)
+                else:
+                    self.insert_random_data(spark, table)
+            elif next_operation <= 690:
+                # Conditional overwrite (DataFrameWriterV2)
+                if is_iceberg or is_delta:
+                    self.overwrite_where_data(spark, table)
+                else:
+                    self.insert_random_data(spark, table)
+            elif next_operation <= 710:
+                # Delta INSERT INTO ... REPLACE WHERE
+                if is_delta:
+                    self.insert_replace_where(spark, table)
+                else:
+                    self.insert_random_data(spark, table)
+            elif next_operation <= 730:
+                # Iceberg branch write
+                if is_iceberg:
+                    self.insert_into_branch(spark, table)
+                else:
+                    self.insert_random_data(spark, table)
+            elif next_operation <= 870:
                 # SQL Procedures or other statements specific for the lake
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
