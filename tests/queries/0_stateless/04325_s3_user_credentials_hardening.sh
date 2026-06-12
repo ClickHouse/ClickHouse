@@ -494,13 +494,14 @@ else
 fi
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE}_anon SYNC" > /dev/null 2>&1
 
-# The Google ADC secret keys, when supplied as named-collection overrides, must be masked the same way
-# `secret_access_key` is, so they do not leak into the query log. Run a query carrying them inline and check
-# the logged query hides the secret values. The query is masked by the AST formatter, so this is independent
-# of the analyzer.
+# The `session_token` and Google ADC secret keys, when supplied as named-collection overrides, must be
+# masked the same way `secret_access_key` is, so they do not leak into the query log. Run a query carrying
+# them inline and check the logged query hides the secret values. The query is masked by the AST formatter,
+# so this is independent of the analyzer.
 mask_qid="04325_adc_mask_${DB}_${RANDOM}"
 $CLICKHOUSE_CLIENT --query_id "${mask_qid}" -q "
     SELECT * FROM s3(${NC_NOCREDS},
+        session_token = 'SESSION_TOKEN_LEAK_CHECK',
         google_adc_client_secret = 'ADC_SECRET_LEAK_CHECK',
         google_adc_refresh_token = 'ADC_TOKEN_LEAK_CHECK',
         format = 'TSV', structure = 'x UInt8')" > /dev/null 2>&1
@@ -509,7 +510,7 @@ adc_mask_out="$($CLICKHOUSE_CLIENT -q "
     SELECT query FROM system.query_log
     WHERE query_id = '${mask_qid}' AND current_database = currentDatabase() AND query LIKE '%s3(%'
     ORDER BY event_time_microseconds LIMIT 1")"
-if echo "${adc_mask_out}" | grep -qE "ADC_SECRET_LEAK_CHECK|ADC_TOKEN_LEAK_CHECK"; then
+if echo "${adc_mask_out}" | grep -qE "SESSION_TOKEN_LEAK_CHECK|ADC_SECRET_LEAK_CHECK|ADC_TOKEN_LEAK_CHECK"; then
     echo "adc_masking: fail (secret leaked: ${adc_mask_out//$'\n'/ })"
 elif echo "${adc_mask_out}" | grep -q "HIDDEN"; then
     echo "adc_masking: pass"
