@@ -31,7 +31,7 @@ SELECT count() FROM test_relax WHERE ts NOT IN (toDateTime('2026-03-02 06:00:00'
 10
 SELECT count() FROM test_relax WHERE ts NOT IN (toDateTime('2026-03-02 06:00:00', 'UTC'), toDateTime('2026-03-03 12:00:00', 'UTC')) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE NOT has([toDateTime('2026-03-02 06:00:00', 'UTC')], ts)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_relax WHERE NOT has([toDateTime('2026-03-02 06:00:00', 'UTC')], ts)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%' SETTINGS enable_analyzer = 1;
 PrimaryKey
 Keys:
 Condition: (toDate(ts) notIn 1-element set)
