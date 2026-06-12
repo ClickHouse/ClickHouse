@@ -22,7 +22,8 @@ public:
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
-        UUID uuid);
+        UUID uuid,
+        bool allow_server_credentials_in_user_queries_);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -80,6 +81,10 @@ private:
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
+    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created (or
+    /// implied when it is loaded from existing metadata). The catalog clients are built once and cached, so
+    /// the restriction cannot be read from the query context of whichever query touches the catalog first.
+    const bool allow_server_credentials_in_user_queries;
 
     mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
 

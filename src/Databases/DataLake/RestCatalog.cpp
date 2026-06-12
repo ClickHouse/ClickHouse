@@ -399,7 +399,8 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    bool allow_server_credentials_in_user_queries_)
     : RestCatalog(warehouse_, base_url_, "", "", false, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
@@ -408,6 +409,7 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
@@ -479,8 +481,10 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
         return retrieveGoogleCloudAccessTokenFromRefreshToken();
 
     /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
-    /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials).
-    if (context->shouldRestrictUserQueryS3Credentials())
+    /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
+    /// unless that was allowed when the database was created (`allow_server_credentials_in_user_queries`
+    /// captures it; the context here is the global one, whose settings never reflect the creating session).
+    if (!allow_server_credentials_in_user_queries && context->shouldRestrictUserQueryS3Credentials())
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "

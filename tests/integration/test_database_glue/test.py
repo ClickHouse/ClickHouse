@@ -220,6 +220,7 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         settings={
             "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            **query_settings,
         },
     )
 
@@ -266,9 +267,7 @@ def started_cluster():
                 "configs/query_log.xml",
                 "configs/text_log.xml",
             ],
-            user_configs=[
-                "configs/allow_server_credentials.xml",
-            ],
+            user_configs=[],
             stay_alive=True,
             with_glue_catalog=True,
             with_zookeeper=True
@@ -1077,7 +1076,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "wrongsession",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1103,7 +1102,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1155,7 +1154,7 @@ def test_sts_external_id(started_cluster):
             "aws_role_session_name": "miniorole",
             "aws_external_id": "wrong_external_id",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1181,7 +1180,7 @@ def test_sts_external_id(started_cluster):
             "aws_role_session_name": "miniorole",
             "aws_external_id": "miniexternalid",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1242,6 +1241,7 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 

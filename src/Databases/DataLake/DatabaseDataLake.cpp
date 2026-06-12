@@ -98,6 +98,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
+    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
 
 }
 
@@ -128,13 +129,15 @@ DatabaseDataLake::DatabaseDataLake(
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
-    UUID uuid)
+    UUID uuid,
+    bool allow_server_credentials_in_user_queries_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
+    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , db_uuid(uuid)
 {
     validateSettings();
@@ -231,7 +234,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 google_adc_client_secret,
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                allow_server_credentials_in_user_queries);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::UNITY:
@@ -251,7 +255,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 url,
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
-                table_engine_definition);
+                table_engine_definition,
+                allow_server_credentials_in_user_queries);
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use Glue catalog: ClickHouse was compiled without AWS S3 or Avro support");
@@ -1104,13 +1109,24 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 break;
         }
 
+        /// The catalog clients (Glue, BigLake OAuth) are built once, lazily, and cached for every later
+        /// query against the database, so the effective `s3_allow_server_credentials_in_user_queries`
+        /// restriction must be captured now, from the CREATE query. When loading an already-created
+        /// database from existing metadata (server startup or RESTORE) the credentials were validated at
+        /// CREATE time, so the restriction is skipped; otherwise a database that legitimately used
+        /// server-managed credentials would fail after a restart. User `ATTACH` is still re-validated.
+        const bool allow_server_credentials_in_user_queries
+            = isLoadingFromExistingMetadata(args.mode)
+            || args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
             url,
             database_settings,
             database_engine_define->clone(),
             std::move(engine_for_tables),
-            args.uuid);
+            args.uuid,
+            allow_server_credentials_in_user_queries);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
