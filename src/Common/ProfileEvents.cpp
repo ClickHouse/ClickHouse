@@ -117,7 +117,7 @@
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
-    M(TextIndexPostingsCacheMisses, "Number of times a a text index posting list has not been found in the cache.", ValueType::Number) \
+    M(TextIndexPostingsCacheMisses, "Number of times a text index posting list has not been found in the cache.", ValueType::Number) \
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
@@ -127,15 +127,13 @@
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
     M(TextIndexLazyPackedBlocksDecoded, "Number of packed blocks decoded in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyAdvanceCount, "Number of advance operations performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsPrepared, "Number of segments prepared (Index Section loaded) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsPrepared, "Number of segments prepared (read from disk or cached) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedDense, "Number of segments skipped via dense-memset optimization in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedCovered, "Number of segments skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBlocksSkippedCovered, "Number of packed blocks skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyAndSegmentsSkippedZero, "Number of segments skipped because the output region was all-zeros in lazy AND mode.", ValueType::Number) \
-    M(TextIndexLazyAndBlocksSkippedZero, "Number of packed blocks skipped because the output region was all-zeros in lazy AND mode.", ValueType::Number) \
-    M(TextIndexLazyAndSegmentsSkippedDense, "Number of segments skipped via dense-increment optimization in lazy AND mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
@@ -241,6 +239,14 @@
     M(AllUsersThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_all_users' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
+    M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
+    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
+    M(ReaderExecutorRequestedBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).", ValueType::Bytes) \
+    M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
+    M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
+    M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
+    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextChunk (opening, seeking and reading the served chunk). Direct contributor to query read latency.", ValueType::Microseconds) \
+    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
@@ -781,6 +787,7 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.", ValueType::Number) \
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.", ValueType::Microseconds) \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
+    M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
     \
@@ -829,7 +836,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
-    M(FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease, "Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)", ValueType::Number) \
+    M(FilesystemCacheDowngradedFileSegments, "Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
@@ -1389,13 +1396,13 @@ The server successfully detected this situation and will download merged part fr
     M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
     M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
     \
-    M(ExecutableUserDefinedFunctionInvocations, "Number of executable_pool user-defined function invocations.", ValueType::Number) \
-    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable_pool user-defined functions, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable_pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
-    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable_pool user-defined function child processes.", ValueType::Bytes) \
-    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable_pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionInvocations, "Number of executable and executable_pool user-defined function invocations.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable_pool user-defined functions, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable and executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable and executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable and executable_pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
@@ -1601,12 +1608,11 @@ void Counters::setTraceProfileEvent(Event event)
     {
         /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
         auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
-        auto * fresh_raw = fresh.get();
         std::atomic_bool * expected = nullptr;
-        if (should_trace_array.compare_exchange_strong(expected, fresh_raw, std::memory_order_release, std::memory_order_relaxed))
+        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_relaxed))
         {
             should_trace_holder = std::move(fresh);
-            trace_array = fresh_raw;
+            trace_array = should_trace_holder.get();
         }
         else
             trace_array = expected;
