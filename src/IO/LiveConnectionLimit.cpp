@@ -9,6 +9,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+LiveConnectionSlot::~LiveConnectionSlot()
+{
+    release();
+}
+
 LiveConnectionSlot::LiveConnectionSlot(LiveConnectionSlot && other) noexcept
     : limit(std::move(other.limit))
     , held(other.held)
@@ -28,9 +33,10 @@ LiveConnectionSlot & LiveConnectionSlot::operator=(LiveConnectionSlot && other) 
     return *this;
 }
 
-LiveConnectionSlot::~LiveConnectionSlot()
+LiveConnectionSlot::LiveConnectionSlot(std::shared_ptr<LiveConnectionLimit> limit_)
+    : limit(std::move(limit_))
+    , held(true)
 {
-    release();
 }
 
 void LiveConnectionSlot::release()
@@ -44,10 +50,15 @@ void LiveConnectionSlot::release()
 }
 
 
+LiveConnectionLimit::LiveConnectionLimit(size_t max_slots_)
+    : max_slots(max_slots_)
+{
+}
+
 LiveConnectionSlot LiveConnectionLimit::tryAcquire(std::shared_ptr<LiveConnectionLimit> self)
 {
-    /// Lock-free CAS loop: claim a unit iff under capacity. A `setCapacity` lowering
-    /// below the live count is a soft limit - new acquirers just wait it out.
+    /// Claim a unit iff under capacity. A `setCapacity` lowering below the
+    /// live count is soft - new acquirers just wait it out.
     size_t cur = count.load(std::memory_order_relaxed);
     while (cur < max_slots.load(std::memory_order_relaxed))
     {
@@ -58,6 +69,11 @@ LiveConnectionSlot LiveConnectionLimit::tryAcquire(std::shared_ptr<LiveConnectio
         }
     }
     return {};
+}
+
+void LiveConnectionLimit::setCapacity(size_t new_max_slots)
+{
+    max_slots.store(new_max_slots, std::memory_order_relaxed);
 }
 
 void LiveConnectionLimit::release()

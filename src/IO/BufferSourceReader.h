@@ -2,37 +2,27 @@
 
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Common/logger_useful.h>
 
 #include <functional>
 
 namespace DB
 {
 
+/// `IFileBasedSourceReader` over a caller-provided buffer factory.
 class BufferSourceReader : public IFileBasedSourceReader
 {
 public:
     using BufferFactory = std::function<std::unique_ptr<ReadBufferFromFileBase>(const StoredObject & object)>;
 
-    explicit BufferSourceReader(BufferFactory factory_, String name_ = "BufferSource")
-        : factory(std::move(factory_))
-        , source_name(std::move(name_))
-    {
-    }
+    explicit BufferSourceReader(BufferFactory factory_, String name_ = "BufferSource");
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
-    {
-        /// Factory is expected to honor external-buffer mode where its underlying
-        /// API supports it; the executor drives reads via set()+next() either way.
-        return factory(object);
-    }
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
 
     String name() const override { return source_name; }
 
 private:
     BufferFactory factory;
     String source_name;
-    LoggerPtr log = getLogger("BufferSourceReader");
 };
 
 }

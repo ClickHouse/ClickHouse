@@ -5,6 +5,11 @@
 namespace DB
 {
 
+FetchMachineRunner::FetchMachineRunner(std::shared_ptr<PrefetchThreadPool> pool_)
+    : pool(std::move(pool_))
+{
+}
+
 bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
 {
     chassert(machine && machine->run_step);
@@ -21,9 +26,8 @@ bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
         try
         {
             const StepResult result = m->run_step();
-            /// Store the parked/terminal state BEFORE this job resolves its
-            /// handle (set_value runs after this lambda returns), so a waiter
-            /// woken by the handle reads the final state.
+            /// The parked/terminal state must be stored BEFORE the handle
+            /// resolves, so a waiter woken by the handle reads the final state.
             switch (result)
             {
                 case StepResult::AwaitCollect:
@@ -59,23 +63,25 @@ bool FetchMachineRunner::tryCancelQueued(MachineBase & machine)
     if (!machine.current_step || !machine.current_step->tryCancel())
         return false;
 
-    /// The worker provably never ran (the CAS Queued->Cancelled beat
-    /// Queued->Running), so the payload is untouched and executor-owned again.
+    /// The worker provably never ran (Queued->Cancelled beat Queued->Running),
+    /// so the payload is untouched and executor-owned again.
     machine.state.store(MachineState::Cancelled);
     return true;
+}
+
+void FetchMachineRunner::requestInterrupt(MachineBase & machine)
+{
+    machine.interrupt_requested.store(true);
 }
 
 void FetchMachineRunner::waitReleased(MachineBase & machine)
 {
     if (!machine.current_step)
         return;
-    /// Cannot throw for a machine step: the schedule wrapper captures every
-    /// step-body exception into `machine.failure`, and a revoked step's handle
-    /// resolves with a value (cancellation is a correct outcome, not an
-    /// error). The return establishes the release (happens-before) edge over
-    /// the machine's payload.
+    /// Cannot throw: the schedule wrapper captures step-body exceptions into
+    /// `machine.failure`, and a revoked step's handle resolves with a value.
     machine.current_step->get();
-    /// Joined exactly once: drop the consumed handle (see the header note).
+    /// Joined exactly once: drop the consumed handle.
     machine.current_step.reset();
 }
 

@@ -3,7 +3,6 @@
 #include <IO/Rope.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
-#include <vector>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -26,11 +25,8 @@ public:
     /// A single logical range may span multiple objects.
     VectorWithMemoryTracking<PhysicalRange> map(ByteRange logical_range) const;
 
-    /// Find the object whose range contains `logical_offset`. Returns nullptr
-    /// if `logical_offset` is at or past `totalSize()`. The optional output
-    /// `object_file_offset` (the segment's `logical_offset`) lets callers
-    /// translate between object-local and file-level coordinates without
-    /// re-walking the segment list.
+    /// Find the object whose range contains `logical_offset` (nullptr at/past
+    /// `totalSize`). The optional output is the object's file-level offset.
     const StoredObject * findObjectAt(size_t logical_offset, size_t * object_file_offset = nullptr) const;
 
     size_t totalSize() const { return total_size; }

@@ -28,17 +28,12 @@ enum class MachineState : uint8_t
     Failed,         /// the step threw; `failure` holds the exception
 };
 
-/// A step's verdict: park at the barrier, wrap up early, or finish.
-/// (Multi-step machines return AwaitCollect and the executor schedules the
-/// continuation - every transition is executor-mediated; a worker never
-/// schedules the next step.)
+/// A step's verdict. Every transition is executor-mediated; a worker never
+/// schedules the next step.
 enum class StepResult : uint8_t
 {
     AwaitCollect,
-    /// The step saw `interrupt_requested` at an interrupt point and wrapped up,
-    /// keeping its partial products. The executor decides: keep them (collect
-    /// takeover) or destroy (cancel).
-    Interrupted,
+    Interrupted, /// wrapped up at an interrupt point, partial products kept
     Done,
 };
 
@@ -48,31 +43,29 @@ enum class StepResult : uint8_t
 /// (connection cluster, fetched rope, job-local stats, ...).
 struct MachineBase
 {
+    virtual ~MachineBase() = default;
+
     std::atomic<MachineState> state{MachineState::Constructed};
 
-    /// The ONE cooperative stop request, polled at safe points (progress
-    /// committed into machine-owned fields). The fetch policy: a LIVE
-    /// connection stops at the next block - it is saved with the machine and
-    /// continues from its frontier later, nothing is forfeited; a one-shot GET
-    /// is NEVER cut mid-response - the stop lands between connections, where
-    /// no request is in flight and stopping is free. Its production setter is
-    /// the CANCEL path (seek-away / extent change / teardown), which does not
-    /// wait: the machine goes to the soft list and is reaped after release.
+    /// The ONE cooperative stop request, polled at safe points. Stop policy:
+    /// a LIVE connection stops at the next block (saved with the machine,
+    /// continues from its frontier later); a one-shot GET is NEVER cut
+    /// mid-response - the stop lands between connections. Its production
+    /// setter is the cancel path, which does not wait: the machine goes to
+    /// the soft list and is reaped after release.
     std::atomic<bool> interrupt_requested{false};
 
     /// The queued/running step's pool handle: its CAS arbitrates the
     /// queued-pickup race (revoke vs run), its `get` is the release wait.
     std::shared_ptr<JobHandle> current_step;
 
-    /// The machine's current step body; run by a pool worker (or inline).
-    /// Must touch ONLY machine-owned state, never shared executor members.
+    /// The current step body, run by a pool worker (or inline). Must touch
+    /// ONLY machine-owned state, never shared executor members.
     std::function<StepResult()> run_step;
 
-    /// Set when `run_step` threw; the executor rethrows it at collect (fetch
+    /// Set when `run_step` threw; the executor rethrows at collect (fetch
     /// steps are mandatory work) or logs and abandons (put steps).
     std::exception_ptr failure;
-
-    virtual ~MachineBase() = default;
 };
 
 }

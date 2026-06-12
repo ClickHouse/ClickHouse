@@ -7,8 +7,8 @@ namespace DB
 
 /// Drives `MachineBase` machines over the shared pool: owns the state writes
 /// and the scheduling/release ordering, never step semantics. The executor is
-/// its only client and the single concurrent owner on the foreground side, so
-/// state transitions need no CAS beyond the step handle's queued-pickup race:
+/// the only client and the single concurrent owner on the foreground side, so
+/// transitions need no CAS beyond the step handle's queued-pickup race:
 ///   - executor owns the machine from construction to `schedule`;
 ///   - the pool worker owns it from step entry (`Running`) until it stores a
 ///     parked/terminal state and its handle resolves (the release edge);
@@ -17,30 +17,24 @@ namespace DB
 class FetchMachineRunner
 {
 public:
-    explicit FetchMachineRunner(std::shared_ptr<PrefetchThreadPool> pool_) : pool(std::move(pool_)) {}
+    explicit FetchMachineRunner(std::shared_ptr<PrefetchThreadPool> pool_);
 
     /// Schedule the machine's next step. Returns false - machine parked
-    /// `ParkedPoolFull`, still executor-owned, payload untouched - when the
-    /// queue rejects it. The runner does not know what the step does (which
-    /// pool a future split would route it to is the machine's own business).
+    /// `ParkedPoolFull`, executor-owned, payload untouched - on queue reject.
     bool schedule(std::shared_ptr<MachineBase> machine);
 
     /// Revoke a still-queued step (the handle CAS): on success the worker
-    /// provably never ran, the payload is untouched and the machine is
-    /// executor-owned again (state `Cancelled`). False = the step is
-    /// running or finished; use `waitReleased`.
+    /// provably never ran and the machine is executor-owned again
+    /// (`Cancelled`). False = running or finished; use `waitReleased`.
     bool tryCancelQueued(MachineBase & machine);
 
-    /// Ask a running step to wrap up at its next interrupt point (honored by
-    /// the step's own gate while the remaining work exceeds the breakeven).
-    void requestInterrupt(MachineBase & machine) { machine.interrupt_requested.store(true); }
+    /// Ask a running step to wrap up at its next interrupt point.
+    void requestInterrupt(MachineBase & machine);
 
-    /// Block until the scheduled/running step releases the machine (its handle
-    /// resolves), establishing the happens-before edge over the machine's
-    /// payload. Step-body exceptions land in `machine.failure`, not here.
-    /// IDEMPOTENT: the consumed handle is dropped, so a repeated call (and a
-    /// call on a never-scheduled machine) is a no-op - a `std::future` must
-    /// not be joined twice.
+    /// Block until the step releases the machine (its handle resolves),
+    /// establishing the happens-before edge over the payload. Step-body
+    /// exceptions land in `machine.failure`, not here. Idempotent: the
+    /// consumed handle is dropped (a `std::future` must not be joined twice).
     void waitReleased(MachineBase & machine);
 
 private:
