@@ -32,6 +32,15 @@ INSERT INTO t_probe
 SELECT k, concat('key_', toString(k)), k * 13
 FROM (SELECT 50000 + intDiv(number, 2) AS k FROM numbers(200000));
 
+-- Block-skip path: the second identical insert yields whole blocks in which every key is already
+-- present in the ANY map, so nothing is inserted, the stored block is dropped and its
+-- `StoredColumnsIndex` entry is cleared; no ref may ever resolve to it. Rows are identical
+-- between the inserts, so ANY results stay deterministic.
+DROP TABLE IF EXISTS t_build_dup;
+CREATE TABLE t_build_dup (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY ();
+INSERT INTO t_build_dup SELECT number AS k, k * 7 FROM numbers(200000);
+INSERT INTO t_build_dup SELECT number AS k, k * 7 FROM numbers(200000);
+
 SET join_algorithm = 'hash';
 
 SELECT 'inner_all_u64', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.k = r.k;
@@ -43,6 +52,7 @@ SELECT 'any_inner_u64', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l A
 SELECT 'inner_all_str', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.s = r.s;
 SELECT 'full_all_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l FULL JOIN t_build r ON l.s = r.s;
 SELECT 'any_left_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l ANY LEFT JOIN t_build r ON l.s = r.s;
+SELECT 'any_left_skip', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l ANY LEFT JOIN t_build_dup r ON l.k = r.k;
 
 SET join_algorithm = 'parallel_hash';
 SET log_comment = '04327_parallel_hash_deferred_build';
@@ -56,6 +66,7 @@ SELECT 'any_inner_u64', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l A
 SELECT 'inner_all_str', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.s = r.s;
 SELECT 'full_all_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l FULL JOIN t_build r ON l.s = r.s;
 SELECT 'any_left_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l ANY LEFT JOIN t_build r ON l.s = r.s;
+SELECT 'any_left_skip', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l ANY LEFT JOIN t_build_dup r ON l.k = r.k;
 
 -- Positive control: all parallel_hash queries above must have used the deferred exact-size
 -- reserve (`HashJoinPreallocatedElementsInHashTables` is incremented only by the reserve; the
@@ -72,4 +83,5 @@ WHERE current_database = currentDatabase()
     AND log_comment = '04327_parallel_hash_deferred_build';
 
 DROP TABLE t_build;
+DROP TABLE t_build_dup;
 DROP TABLE t_probe;
