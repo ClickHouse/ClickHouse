@@ -528,8 +528,10 @@ void ReaderExecutor::releaseLiveConnectionAtBound(ConnState & conn) const
 void ReaderExecutor::accountLiveConnectionDrop(ConnState & conn, bool at_eof, Stats & out_stats) const
 {
     /// A connection dropped before it was fully consumed (not read to its right
-    /// bound or to EOF) is abandoned mid-response and not pool-reusable.
-    if (conn.connection && !conn.connection->isComplete(at_eof))
+    /// bound or to EOF) is abandoned mid-response and not pool-reusable. One
+    /// that never transferred is excluded: its lazy GET never started, the
+    /// pool gets it back untouched (see `everTransferred`).
+    if (conn.connection && !conn.connection->isComplete(at_eof) && conn.connection->everTransferred())
         out_stats.add(Stats::IncompleteConnections);
 }
 
@@ -812,8 +814,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         /// (`~ConnState` at machine destruction would otherwise destroy it
         /// silently and under-count `I`). Don't drain its tail: the rope is
         /// discarded.
-        if (m->conn.connection && !m->conn.connection->isComplete(/*at_eof=*/false))
-            stats.add(Stats::IncompleteConnections);
+        accountLiveConnectionDrop(m->conn, /*at_eof=*/false, stats);
         /// The worker ran, so the machine-local stats hold this read-ahead's
         /// I/O - it really happened, fold it in. Starting from zero, the
         /// machine's `prefetch_issued_*` ARE exactly this read-ahead's wasted
@@ -1249,8 +1250,7 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
     /// issued-I/O counters before rethrowing - the bytes crossed the wire.
     if (m->failure)
     {
-        if (m->conn.connection && !m->conn.connection->isComplete(/*at_eof=*/false))
-            stats.add(Stats::IncompleteConnections);
+        accountLiveConnectionDrop(m->conn, /*at_eof=*/false, stats);
         stats += m->stats;
         std::rethrow_exception(m->failure);
     }
@@ -1644,6 +1644,7 @@ Rope ReaderExecutor::readFromSource(
 
             conn.connection.emplace(Connection{
                 .current_position = offset,
+                .opened_at = offset,
                 .read_until = read_until,
                 .buffer = std::move(opened),
                 .object_path = object.remote_path,
@@ -1689,8 +1690,16 @@ Rope ReaderExecutor::readFromSource(
 
     for (auto & block : blocks)
     {
-        /// The interrupt point (see `Connection::readInto`): stop between blocks.
-        if (interrupt && interrupt->load(std::memory_order_relaxed))
+        /// The interrupt point (see `Connection::readInto`) - COST-GATED here: a
+        /// one-shot dropped mid-response forfeits its GET and the remainder pays
+        /// a fresh request, so honoring the flag is only cost-positive while the
+        /// unread remainder exceeds the request-cost breakeven (the same
+        /// `min_bytes_for_seek` constant that governs bridging). Near the tail
+        /// the read completes instead - the wait it adds is smaller than the
+        /// request it saves. (A LIVE connection has no such trade: its
+        /// continuation is free, so `readInto` honors the flag unconditionally.)
+        if (interrupt && interrupt->load(std::memory_order_relaxed)
+            && want - total_read > min_bytes_for_seek)
             break;
 
         size_t chunk = block->size();
@@ -1713,7 +1722,9 @@ Rope ReaderExecutor::readFromSource(
     /// A one-shot GET dropped before it was fully consumed is not reusable: an
     /// unbounded one (unknown size AND no advertised extent) that did not reach
     /// EOF, or a bounded one shortened by an interrupt (`total_read < want`).
-    if (!hit_eof && (!stateless_bounded || total_read < want))
+    /// Zero transfer means the lazy GET never started - nothing for the pool to
+    /// reset, so nothing to count (the interrupt landed before the first block).
+    if (!hit_eof && total_read > 0 && (!stateless_bounded || total_read < want))
         out_stats.add(Stats::IncompleteConnections);
 
     return rope;

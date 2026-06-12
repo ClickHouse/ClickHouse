@@ -889,6 +889,10 @@ private:
     struct Connection
     {
         size_t current_position = 0;
+        /// Where the connection was opened: `current_position > opened_at` iff it
+        /// ever transferred (the underlying GET is issued lazily at the first
+        /// read, so a never-read connection returns to the pool untouched).
+        size_t opened_at = 0;
         std::optional<size_t> read_until;
         std::unique_ptr<ReadBufferFromFileBase> buffer;
         /// The object this open connection streams - used to decide whether the next
@@ -902,6 +906,12 @@ private:
 
         /// Dropping now leaves the connection pool-reusable: read to its bound, or EOF.
         bool isComplete(bool at_eof) const { return at_eof || atBound(); }
+
+        /// The request was actually issued: at least one byte crossed the wire.
+        /// A machine interrupted before its first block drops a connection whose
+        /// lazy GET never started - the pool has nothing to reset, so it must
+        /// not count as an incomplete connection (`I == DiskConnectionsReset`).
+        bool everTransferred() const { return current_position > opened_at; }
 
         /// Can be continued forward to object-local `next_local` without reopening:
         /// forward, within `min_gap` of the frontier, and not past the bound (the same
