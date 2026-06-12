@@ -831,6 +831,11 @@ static void getFileReader(
 static const orc::Type *
 traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case)
 {
+    /// Recurses the file-controlled ORC type tree. The matching CH type (and the requested column
+    /// name) bound the depth in practice, but keep a stack backstop here too, since this runs in
+    /// prepareFileReader before the readColumnFromORCColumn guard is reached.
+    checkStackSize();
+
     if (target.empty())
         return orc_type;
 
@@ -885,6 +890,11 @@ traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type
 static void
 updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
 {
+    /// Recurses the file-controlled ORC type tree in lockstep with the (parser-bounded) CH type.
+    /// Keep a stack backstop here too: this runs in prepareFileReader, before the
+    /// readColumnFromORCColumn guard is reached, also for explicit-schema reads.
+    checkStackSize();
+
     /// For primitive types, directly append column id into result
     if (orc_type->getSubtypeCount() == 0)
     {
