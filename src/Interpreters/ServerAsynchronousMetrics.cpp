@@ -225,6 +225,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
 
 #if defined(OS_LINUX)
+    try
     {
         const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
         new_values["ExecutableUserDefinedFunctionMemoryResident"] = { udf_processes_sample.memory_resident_bytes,
@@ -235,6 +236,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["ExecutableUserDefinedFunctionProcesses"] = { udf_processes_sample.process_count,
             "Number of live processes spawned for executable and executable_pool user-defined functions,"
             " including their descendant processes." };
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 #endif
 

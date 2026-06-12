@@ -41,7 +41,7 @@ public:
     };
 
     /// Walk the /proc subtree of every registered pid and read the VmRSS
-    /// once per process. Returns 0 for non-Linux.
+    /// once per process.
     Sample sample() const;
 
 private:
