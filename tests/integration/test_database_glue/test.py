@@ -1226,3 +1226,50 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
     )
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_profile_events(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_profile_events_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+    num_rows = 10
+    df = generate_arrow_data(num_rows)
+    table.append(df)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    def get_events(query_id):
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+            SELECT
+                tupleElement(arrayJoin(ProfileEvents), 1) as name,
+                tupleElement(arrayJoin(ProfileEvents), 2) as value
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND name like 'DataLake%'
+            FORMAT CSV
+            """
+        ).strip().split("\n")
+        events = {}
+        for line in res:
+            line = line.split(",")
+            events[line[0].strip('"')] = int(line[1])
+        return events
+
+    query_id = uuid.uuid4().hex
+    node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`",
+        query_id=query_id
+    )
+
+    events = get_events(query_id)
+    assert events["DataLakeGlueCatalogGetTable"] == 1
+    assert events["DataLakeGlueCatalogGetTableMicroseconds"] > 0

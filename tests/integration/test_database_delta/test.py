@@ -982,3 +982,55 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
         .strip()
     )
     assert row == "1\thello varchar\thello char"
+
+
+def test_profile_events(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_profile_events_{uuid.uuid4()}".replace("-", "_")
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+    database = f"{test_ref}_database"
+
+    schema = "key INT, value INT"
+
+    create_query = f"CREATE TABLE {namespace}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{namespace}/{table_name}'"
+    insert_query = f"insert into {namespace}.{table_name} SELECT 1, 42"
+
+    execute_multiple_spark_queries(
+        node,
+        [f"CREATE SCHEMA {namespace}", create_query, insert_query],
+    )
+
+    node.query(
+        f"create database {database} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    #assert node.query(f"SHOW TABLES FROM {namespace}") == "foo"
+
+    def get_events(query_id):
+        node.query("SYSTEM FLUSH LOGS")
+        res = node.query(
+            f"""
+            SELECT
+                tupleElement(arrayJoin(ProfileEvents), 1) as name,
+                tupleElement(arrayJoin(ProfileEvents), 2) as value
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND name like 'DataLake%'
+            FORMAT CSV
+            """
+        ).strip().split("\n")
+        events = {}
+        for line in res:
+            line = line.split(",")
+            events[line[0].strip('"')] = int(line[1])
+        return events
+
+    query_id = uuid.uuid4().hex
+    node.query(f"SELECT * FROM {database}.`{namespace}.{table_name}`", query_id=query_id)
+
+    events = get_events(query_id)
+
+    assert events["DataLakeUnityCatalogGetTableMetadata"] == 1
+    assert events["DataLakeUnityCatalogGetTableMetadataMicroseconds"] > 0
