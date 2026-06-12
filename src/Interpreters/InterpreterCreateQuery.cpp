@@ -2637,10 +2637,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
                 }
             }
         }
-        else
-        {
-            required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
-        }
+        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
 
     return required_access;

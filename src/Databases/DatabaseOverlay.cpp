@@ -479,7 +479,7 @@ void DatabaseOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
     /// Note: the `Overlay` exposes the *union* of tables from its underlying
     /// databases. The same physical table may also be reachable directly via
@@ -489,7 +489,7 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     Tables tables;
     for (const auto & db : resolveDatabases())
     {
-        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name); table_it->isValid(); table_it->next())
+        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
             tables.insert({table_it->name(), table_it->table()});
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());

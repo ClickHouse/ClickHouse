@@ -70,6 +70,7 @@ CREATE DATABASE bad_overlay ENGINE = Overlay('this_db_does_not_exist'); -- { ser
 -- DROP/DETACH/TRUNCATE TABLE on the facade are rejected so that the underlying tables are not stopped behind the user's back.
 DROP TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
 DETACH TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
 TRUNCATE TABLE db_overlay.t_a; -- { serverError TABLE_IS_READ_ONLY }
 
 -- The rejected operations had no side effect on the underlying table: it is still fully operational.

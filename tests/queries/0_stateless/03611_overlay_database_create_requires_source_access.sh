@@ -2,8 +2,8 @@
 # Tags: no-random-merge-tree-settings
 #
 # Overlay database creation is gated by read access on the underlying databases:
-# a user may create CREATE DATABASE ... ENGINE = Overlay(a, b) iff they hold
-# SELECT and SHOW TABLES on every underlying database a, b. No TABLE ENGINE grant
+# a user may create CREATE DATABASE ... ENGINE = Overlay(a, b) if they hold
+# SELECT TABLES on every underlying database a, b. No TABLE ENGINE grant
 # is required. Missing access on any single source denies the create.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,8 +17,8 @@ DB_B="db_b_${SUF}"
 T_A="t_a"
 T_B="t_b"
 
-USER_BOTH="u_both_${SUF}"   # SELECT+SHOW on both sources  -> create allowed
-USER_PART="u_part_${SUF}"   # SELECT+SHOW on A only         -> create denied
+USER_BOTH="u_both_${SUF}"   # SELECT on both sources  -> create allowed
+USER_PART="u_part_${SUF}"   # SELECT on A only         -> create denied
 USER_NONE="u_none_${SUF}"   # no source access              -> create denied
 
 OVL_BOTH="ovl_both_${SUF}"
@@ -60,16 +60,16 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     GRANT CREATE DATABASE ON *.* TO ${USER_NONE};
 
     -- BOTH: read access on both sources.
-    GRANT SELECT, SHOW TABLES ON ${DB_A}.* TO ${USER_BOTH};
-    GRANT SELECT, SHOW TABLES ON ${DB_B}.* TO ${USER_BOTH};
+    GRANT SELECT, TABLES ON ${DB_A}.* TO ${USER_BOTH};
+    GRANT SELECT, TABLES ON ${DB_B}.* TO ${USER_BOTH};
 
     -- PART: read access on A only.
-    GRANT SELECT, SHOW TABLES ON ${DB_A}.* TO ${USER_PART};
+    GRANT SELECT, TABLES ON ${DB_A}.* TO ${USER_PART};
 
     -- NONE: no source access.
 "
 
-echo 'User with SELECT+SHOW on both sources can create the overlay'
+echo 'User with SELECT on both sources can create the overlay'
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_BOTH}" --query "
     CREATE DATABASE ${OVL_BOTH} ENGINE = Overlay('${DB_A}', '${DB_B}');
 " >/dev/null 2>&1 && echo "CREATE: allowed" || echo "CREATE: denied"
