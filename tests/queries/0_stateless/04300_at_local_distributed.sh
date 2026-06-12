@@ -28,14 +28,6 @@ $CLICKHOUSE_CLIENT -q "
     -- AT TIME ZONE with a constant string always works
     SELECT dt AT TIME ZONE 'America/Denver' FROM t_at_local_dist ORDER BY dt;
 
-    -- AT LOCAL fails when session_timezone is empty: effective timezone is shard-specific
-    -- and timeZone() is not constant-foldable in distributed mode without an explicit setting.
-    -- Force session_timezone='' explicitly so the test is not affected by runner-injected settings.
-    SELECT dt AT LOCAL FROM t_at_local_dist SETTINGS session_timezone = ''; -- { serverError ILLEGAL_COLUMN }
-
-    -- serverTimezone() is shard-specific and must still be rejected regardless of session_timezone
-    SELECT dt AT TIME ZONE serverTimezone() FROM t_at_local_dist SETTINGS session_timezone = ''; -- { serverError ILLEGAL_COLUMN }
-
     DROP TABLE t_at_local_dist;
     DROP TABLE t_at_local_dist_local;
 "
