@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-msan
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-parallel: copies a data lake table into the shared user_files directory.
+# Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/107334
 # Reading a persistent DeltaLake table whose first access is through merge() reached
