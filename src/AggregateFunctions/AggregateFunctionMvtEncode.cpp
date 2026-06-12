@@ -486,9 +486,16 @@ public:
         state.num_features += rhs_state.num_features;
     }
 
+    /// Version of the serialized aggregate state layout, written as the first byte. The state is persisted
+    /// (e.g. by AggregatingMergeTree and the -State combinator) and exchanged between servers of different
+    /// versions, so tagging it lets the record format evolve later (e.g. interning values earlier to shrink
+    /// the state) without breaking states written by other versions.
+    static constexpr UInt8 state_format_version = 0;
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /*version*/) const override
     {
         const auto & state = Base::data(place);
+        writeBinary(state_format_version, buf);
         writeVarUInt(state.num_features, buf);
         writeVarUInt(state.data_size, buf);
         buf.write(state.data, state.data_size);
@@ -499,6 +506,12 @@ public:
         auto & state = Base::data(place);
         if (state.data_size != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "mvtEncode deserialize() expects an empty state");
+
+        UInt8 version = 0;
+        readBinary(version, buf);
+        if (version != state_format_version)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "Unknown mvtEncode aggregate state version {}", static_cast<UInt16>(version));
 
         readVarUInt(state.num_features, buf);
 
