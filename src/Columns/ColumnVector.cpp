@@ -9,6 +9,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -375,13 +376,12 @@ size_t), findFirstNotEqualImpl, MULTITARGET_FUNCTION_BODY((
 )
 
 template <typename T>
-size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t end, int nan_direction_hint)
 {
     /// An empty range contains no run, so its end is `begin`.
     if (begin >= end)
         return begin;
 
-    const T * d = data.data();
     const T ref = d[begin];
 
     /// Resolve a run of length one with a single comparison. This is the common case for
@@ -439,6 +439,16 @@ size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, i
             hi = mid;
     }
     return lo;
+}
+
+template <typename T>
+size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    const T * d = data.data();
+    const size_t run_end = getEqualRangeEndAssumeSortedImpl<T>(d, begin, end, nan_direction_hint);
+    checkEqualRangeEndAssumeSorted(
+        begin, end, run_end, [&](size_t i) { return CompareHelper<T>::equals(d[i], d[begin], nan_direction_hint); });
+    return run_end;
 }
 
 template <typename T>
