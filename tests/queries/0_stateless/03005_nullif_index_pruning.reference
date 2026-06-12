@@ -82,4 +82,10 @@ Expression ((Project names + Projection))
             Condition: true
             Parts: 1/1
             Granules: 245/245
+          Skip
+            Name: idx_s
+            Description: minmax GRANULARITY 1
+            Condition: (s in [50, 50])
+            Parts: 1/1
+            Granules: 1/245
           Ranges: 1

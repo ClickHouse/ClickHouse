@@ -39,9 +39,10 @@ DROP TABLE t_nullif_partition;
 
 -- Regression test for MinMax Skip Index Pruning
 DROP TABLE IF EXISTS t_nullif_skip_index;
-CREATE TABLE t_nullif_skip_index (id UInt64, s UInt16, INDEX idx_s s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
-INSERT INTO t_nullif_skip_index SELECT number, number % 100 FROM numbers(2000000);
+CREATE TABLE t_nullif_skip_index (id UInt64, s UInt8, INDEX idx_s s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+-- Shape data monotonically so each granule contains a distinct narrow minmax range
+INSERT INTO t_nullif_skip_index SELECT number, toUInt8(number / 8192) FROM numbers(2000000);
 OPTIMIZE TABLE t_nullif_skip_index FINAL;
 
-EXPLAIN indexes = 1 SELECT count() FROM t_nullif_skip_index WHERE nullIf(s, 999) = 50;
-DROP TABLE t_nullif_skip_index;
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_skip_index WHERE nullIf(s, 255) = 50;
+DROP TABLE IF EXISTS t_nullif_skip_index;
