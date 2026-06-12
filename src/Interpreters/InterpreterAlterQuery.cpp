@@ -448,13 +448,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    /// Resolve the storage under a DDLGuard taken by name, like RENAME/EXCHANGE/DROP do. Resolving the
-    /// UUID earlier and fetching the storage without the guard races with a concurrent EXCHANGE, which
-    /// moves the UUID to another name and makes the fetch return nothing (UNKNOWN_TABLE). The per-command
-    /// alter below re-takes the guard for the metadata change itself.
+    /// Re-resolve by name under a DDLGuard, like RENAME/EXCHANGE/DROP do, so a concurrent EXCHANGE
+    /// cannot move the table away in between. Temporary tables are session-local and need no guard.
+    if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
         auto resolve_guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
-        table = DatabaseCatalog::instance().tryGetTable(StorageID(table_id.database_name, table_id.table_name), getContext());
+        table = database->tryGetTable(table_id.table_name, getContext());
     }
 
     if (!table)
