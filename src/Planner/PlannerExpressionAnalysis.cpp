@@ -60,7 +60,13 @@ std::optional<FilterAnalysisResult> analyzeFilter(
 {
     FilterAnalysisResult result;
 
-    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context, correlated_columns_set);
+    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        filter_expression_node,
+        input_columns,
+        planner_context,
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/ true,
+        /*duplicate_const_columns=*/ false);
 
     result.filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     result.filter_actions->dag = std::move(filter_expression_dag);
@@ -324,7 +330,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
     ActionsAndProjectInputsFlagPtr before_window_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    before_window_actions->dag = ActionsDAG(input_columns);
+    before_window_actions->dag = ActionsDAG(input_columns, /*duplicate_const_columns=*/ false);
     before_window_actions->dag.getOutputs().clear();
 
     std::unordered_set<std::string_view> before_window_actions_output_node_names;
@@ -453,7 +459,9 @@ ProjectionAnalysisResult analyzeProjection(
         query_node.getProjectionNode(),
         input_columns,
         planner_context,
-        correlated_columns_set);
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/ true,
+        /*duplicate_const_columns=*/ false);
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);
@@ -507,7 +515,7 @@ SortAnalysisResult analyzeSort(
     ActionsChain & actions_chain)
 {
     auto before_sort_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    before_sort_actions->dag = ActionsDAG(input_columns);
+    before_sort_actions->dag = ActionsDAG(input_columns, /*duplicate_const_columns=*/ false);
     auto & before_sort_actions_outputs = before_sort_actions->dag.getOutputs();
     before_sort_actions_outputs.clear();
 
@@ -558,7 +566,7 @@ SortAnalysisResult analyzeSort(
         /// However, we materialize ORDER BY columns in case of WITH FILL, and it causes a name-collision.
         /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
-        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
+        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns(), /*duplicate_const_columns=*/ false);
         for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
             if (!before_sort_actions_dag_output_node_names.contains(out.name))
                 before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
@@ -600,7 +608,9 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
         query_node.getLimitByNode(),
         input_columns,
         planner_context,
-        correlated_columns_set);
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/ true,
+        /*duplicate_const_columns=*/ false);
     correlated_subtrees.assertEmpty("in LIMIT BY expression");
 
     auto before_limit_by_actions = std::make_shared<ActionsAndProjectInputsFlag>();
@@ -831,7 +841,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     }
 
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    project_names_actions->dag = ActionsDAG(project_names_input);
+    project_names_actions->dag = ActionsDAG(project_names_input, /*duplicate_const_columns=*/ false);
 
     if (query_node.hasInterpolate())
     {

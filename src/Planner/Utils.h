@@ -57,13 +57,22 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
 /** Convert query tree expression node into actions dag.
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
+  *
+  * `duplicate_const_columns = false` disables creating a free-standing `COLUMN` node for each
+  * constant input column. Constant values then stay attached to `INPUT` nodes: expressions over
+  * them are still constant-folded, but the inputs remain required, so a column whose constness
+  * was only observed in the source header (e.g. a view subquery result) keeps flowing through
+  * the stream like an ordinary column. This keeps stream structure identical to the one computed
+  * during analysis (where such columns are not constant), which distributed query processing
+  * relies on when it compares independently computed headers.
   */
 std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name = true);
+    bool use_column_identifier_as_action_node_name = true,
+    bool duplicate_const_columns = true);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
