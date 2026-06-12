@@ -776,3 +776,38 @@ def test_predefined_handler_whitespace():
         assert result.strip() == "1\ttest"
 
         cluster.instance.query("DROP TABLE test_table")
+
+
+def test_url_prefix_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "url_prefix_handler", "test_url_prefix_handler"
+        )
+    ) as cluster:
+        def get(path):
+            return cluster.instance.http_request(path, method="GET")
+
+        # The rule is <url>prefix:/test_prefix</url>: it must match the base path itself and
+        # anything below it on a path-segment boundary, regardless of the query string.
+        for matching in [
+            "test_prefix",  # the base path itself
+            "test_prefix/",  # the base path with a trailing slash
+            "test_prefix/write",  # a sub-path
+            "test_prefix/a/b/c",  # a deeper sub-path
+            "test_prefix?param=value",  # query string is ignored
+            "test_prefix/write?param=value",
+        ]:
+            response = get(matching)
+            assert response.status_code == 200, f"{matching} -> {response.status_code}"
+            assert response.content == b"prefix handler matched", matching
+
+        # These must NOT match: a textual prefix that is not a path-segment boundary,
+        # or a path that is not under the base at all.
+        for not_matching in [
+            "test_prefixbeta",  # not a segment boundary
+            "test_prefixbeta/write",  # not a segment boundary
+            "test_pre",  # not even a full prefix
+            "other",  # unrelated path
+            "",  # root
+        ]:
+            assert 404 == get(not_matching).status_code, not_matching
