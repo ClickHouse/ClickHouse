@@ -79,7 +79,7 @@ SELECT number FROM numbers(0) ORDER BY number LIMIT -1 WITH TIES;
 SELECT 'Offset discarding tied tail';
 SELECT intDiv(number, 3) AS x FROM numbers(12) ORDER BY x LIMIT -3, -5 WITH TIES;
 
-SELECT 'Case-insensitive collation, bytewise ties (matches positive LIMIT WITH TIES)';
+SELECT 'Case-insensitive collation, collation-aware ties (matches positive LIMIT WITH TIES)';
 SELECT count() FROM (SELECT x FROM (SELECT arrayJoin(['a', 'A']) AS x) ORDER BY x COLLATE 'en-u-ks-level1' LIMIT 1 WITH TIES);
 SELECT count() FROM (SELECT x FROM (SELECT arrayJoin(['a', 'A']) AS x) ORDER BY x COLLATE 'en-u-ks-level1' LIMIT -1 WITH TIES);
 
