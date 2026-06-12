@@ -197,54 +197,6 @@ const ArrowNumericArray & checkedCast(const arrow::Array & array, const String &
     return typed;
 }
 
-/// Validate that a single BinaryView struct's data range is within its variadic buffer.
-/// Inline views store data directly inside the view struct (already covered by
-/// checkedCastView on buffers[1]); only non-inline views reference a variadic buffer.
-void checkViewStruct(
-    const arrow::BinaryViewType::c_type & v,
-    const arrow::ArrayData & chunk_data,
-    const String & column_name,
-    int64_t row)
-{
-    /// Reject negative sizes before the inline check: a crafted size of e.g. -1
-    /// would satisfy is_inline() (−1 ≤ kInlineSize = 12) and return here unchecked,
-    /// then static_cast<size_t>(-1) in the accumulation loop wraps to SIZE_MAX.
-    if (unlikely(v.size() < 0))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow StringView has negative size {} for column '{}' row {}",
-            v.size(), column_name, row);
-
-    if (v.is_inline())
-        return;
-
-    const int32_t buf_idx    = v.ref.buffer_index;
-    const int32_t ref_offset = v.ref.offset;
-    const int32_t ref_size   = v.ref.size;
-
-    /// variadic data buffers start at index 2 (after validity bitmap and view-struct buffer)
-    const int64_t num_variadic = static_cast<int64_t>(chunk_data.buffers.size()) - 2;
-    if (unlikely(buf_idx < 0 || buf_idx >= num_variadic))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow StringView buffer_index {} is out of range ({} variadic buffers) "
-            "for column '{}' row {}",
-            buf_idx, num_variadic, column_name, row);
-
-    const auto & vbuf = chunk_data.buffers[2 + buf_idx];
-    const size_t vbuf_size   = vbuf ? static_cast<size_t>(vbuf->size()) : 0;
-    const size_t safe_offset = static_cast<size_t>(ref_offset);
-    const size_t safe_length = static_cast<size_t>(ref_size);
-    if (unlikely(ref_offset < 0 || ref_size < 0
-               || safe_offset > vbuf_size
-               || safe_length > vbuf_size - safe_offset))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow StringView data exceeds variadic buffer bounds for column '{}' row {}: "
-            "offset {} length {} but variadic buffer {} is {} bytes",
-            column_name, row, ref_offset, ref_size, buf_idx, vbuf_size);
-}
-
 /// Cast to a view array type (StringViewArray or BinaryViewArray) and validate
 /// that the view-struct buffer (buffers[1]) has enough 16-byte view structs for
 /// all declared rows.  The actual string bytes live in variadic buffers[2..N]
