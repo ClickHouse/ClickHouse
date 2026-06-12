@@ -73,6 +73,11 @@ public:
         /// When false (the default) it reaps with plain `waitpid` and allocates
         /// nothing. Set for executable (non-pool) UDFs, which read the usage.
         bool collect_resource_usage = false;
+
+        /// When true, the child pid is tracked in the global `UDFProcessRegistry`
+        /// from spawn until reap or wrapper destruction. Set for both
+        /// executable and executable_pool UDFs.
+        bool register_in_udf_process_registry = false;
     };
 
     pid_t getPid() const

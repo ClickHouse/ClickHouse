@@ -23,6 +23,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -114,6 +115,8 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {} (seconds)", pid, timeout_in_seconds);
 
     wait_called = true;
+    if (config.register_in_udf_process_registry)
+        UDFProcessRegistry::instance().remove(pid);
 
     in.close();
     out.close();
@@ -244,6 +247,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         pipe_stderr.fds_rw[0],
         config));
 
+    if (config.register_in_udf_process_registry)
+        UDFProcessRegistry::instance().add(pid);
+
     for (size_t i = 0; i < config.read_fds.size(); ++i)
     {
         auto & fds = *read_pipe_fds[i];
@@ -350,6 +356,8 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
             /// moment the child is reaped — before any operation that can throw — so the
             /// destructor never waits on or signals an unrelated process.
             wait_called = true;
+            if (config.register_in_udf_process_registry)
+                UDFProcessRegistry::instance().remove(pid);
             if (config.collect_resource_usage)
             {
                 child_user_time_us = static_cast<UInt64>(local_rusage.ru_utime.tv_sec) * 1000000ULL

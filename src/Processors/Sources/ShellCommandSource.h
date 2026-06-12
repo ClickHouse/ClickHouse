@@ -84,6 +84,9 @@ public:
         /// Execute script direct or with /bin/bash.
         bool execute_direct = true;
 
+        /// True when this coordinator runs an executable or executable pool UDF.
+        bool is_user_defined_function = false;
+
     };
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);

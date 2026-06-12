@@ -259,7 +259,8 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .max_command_execution_time_seconds = max_command_execution_time,
         .is_executable_pool = is_executable_pool,
         .send_chunk_header = send_chunk_header,
-        .execute_direct = execute_direct
+        .execute_direct = execute_direct,
+        .is_user_defined_function = true
     };
 
     auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
