@@ -658,6 +658,12 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t num_rows, bool 
     return addBlockToJoin(materialized, ScatteredBlock::Selector(rows), check_limits);
 }
 
+void HashJoin::captureMemoryUsageBaseline()
+{
+    if (!memory_usage_before_adding_blocks)
+        memory_usage_before_adding_blocks = getCurrentQueryMemoryUsage();
+}
+
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
 {
     if (!data)

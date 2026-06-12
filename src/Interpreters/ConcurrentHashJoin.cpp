@@ -374,6 +374,12 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 continue;
             auto & hash_join = hash_joins[i];
             std::lock_guard lock(hash_join->mutex);
+            /// The shrink heuristic of `shrinkStoredBlocksToFit` measures query memory growth from a
+            /// baseline that the slot's `HashJoin` would otherwise capture only at replay time, when
+            /// all the buffered blocks are already part of the usage. Capture it before the first
+            /// block is buffered, as the streaming build effectively does.
+            if (hash_join->buffered_blocks.empty())
+                hash_join->data->captureMemoryUsageBaseline();
             hash_join->buffered_rows += dispatched_block.rows();
             hash_join->buffered_bytes += dispatched_block.allocatedBytes();
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
@@ -886,6 +892,17 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     hash_join->buffered_blocks.shrink_to_fit();
                     hash_join->buffered_rows = 0;
                     hash_join->buffered_bytes = 0;
+
+                    /// `addBlockToJoin(..., check_limits=false)` early-returns before maintaining
+                    /// `keys_to_join` and before the memory-pressure shrink, so compensate here, as
+                    /// `GraceHashJoin` does with `getAndSetRightTableKeys` after its own
+                    /// `check_limits=false` inserts. Without this, `avgPerKeyRows` would see zero
+                    /// keys and silently flip the `output_by_row_list` emit heuristic to the
+                    /// per-row path. The bucket merge below sums the per-slot `keys_to_join`
+                    /// into slot 0, so this must run before it.
+                    hash_join->data->getAndSetRightTableKeys();
+                    size_t total_bytes = hash_join->data->getTotalByteCount();
+                    hash_join->data->shrinkStoredBlocksToFit(total_bytes);
                 });
         }
         pool->wait();

@@ -489,6 +489,13 @@ public:
 
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
 
+    /// Capture the query memory usage baseline that `shrinkStoredBlocksToFit` measures growth
+    /// against. Normally the first `addBlockToJoin` captures it; a deferred build
+    /// (`ConcurrentHashJoin`) buffers the right blocks outside this class first, and without this
+    /// call the baseline would only be captured at replay time, hiding all the buffered bytes from
+    /// the shrink heuristic. Idempotent: only the first call has an effect.
+    void captureMemoryUsageBaseline();
+
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
     void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
 
