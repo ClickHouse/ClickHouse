@@ -1121,11 +1121,27 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 or b"oom_reaper: reaped process" in dmesg
                 or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
             ):
-                test_results.append(
-                    Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL
+                if is_bugfix_validation:
+                    # A host OOM is an infrastructure/resource failure, not bug
+                    # reproduction. Report it as `ERROR` and set `has_error` so
+                    # the status inversion below is skipped (same as `Timeout`),
+                    # otherwise the inverted `FAIL` would flip the job to green.
+                    test_results.append(
+                        Result(
+                            name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.ERROR
+                        )
                     )
-                )
+                    has_error = True
+                    error_info.append(
+                        "OOM in dmesg - infrastructure/resource failure, "
+                        "not bug reproduction"
+                    )
+                else:
+                    test_results.append(
+                        Result(
+                            name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL
+                        )
+                    )
                 attached_files.append("./ci/tmp/dmesg.log")
 
     # For targeted, flaky checks, and bugfix validation, the synthetic "Timeout"
