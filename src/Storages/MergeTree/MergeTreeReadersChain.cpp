@@ -1,7 +1,7 @@
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 namespace DB
 {
@@ -56,67 +56,23 @@ static std::optional<UInt64> getMaxPatchVersionForStep(const MergeTreeRangeReade
     return prewhere_info ? prewhere_info->mutation_version : std::nullopt;
 }
 
-/// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
-/// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
-static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
-{
-    if (columns.size() != on_disk_columns.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Number of columns doesn't match number of on-disk columns, columns size: {}, on_disk_columns size: {}",
-            columns.size(),
-            on_disk_columns.size());
-
-    ColumnsWithTypeAndName res;
-    res.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`
-        if (columns[i])
-            res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
-    }
-    return res;
-}
-
-MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
-    size_t max_rows,
-    MarkRanges & ranges,
-    std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb)
+MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
 
-    ReadResult read_result{log};
-
     if (range_readers.empty())
-        return read_result;
+        return ReadResult{log};
 
     auto & first_reader = range_readers.front();
+    auto read_result = first_reader.startReadingChain(max_rows, ranges);
 
-    try
-    {
-        read_result = first_reader.startReadingChain(max_rows, ranges);
-        LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("While reading part {}", first_reader.getReader()->data_part_info_for_read->getPartName());
-        throw;
-    }
+    LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
-    std::optional<bool> should_continue_sampling;
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
-
-        if (dataflow_cache_update_cb)
-            dataflow_cache_update_cb(
-                toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
-                read_result.num_bytes_read,
-                should_continue_sampling);
-
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
@@ -125,7 +81,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
-        const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
 
@@ -143,17 +98,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             /// In this case we need to use number of rows in the result to fill the default values and don't filter block.
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
-
-            if (dataflow_cache_update_cb)
-            {
-                chassert(read_result.num_bytes_read >= num_bytes_read_so_far);
-                // It is important that we call `recordInputColumns` here even if `should_continue_sampling`
-                // is already set to false, because we still need to update the total bytes seen.
-                dataflow_cache_update_cb(
-                    toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
-                    read_result.num_bytes_read - num_bytes_read_so_far,
-                    should_continue_sampling);
-            }
 
             executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
@@ -228,55 +172,10 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
     apply_patches(ColumnForPatch::Order::BeforeConversions);
 
-    /// Apply alter conversions for columns read by this step.
-    ///
-    /// On-fly UPDATE/DELETE steps that precede a pending `ALTER MODIFY COLUMN` are built
-    /// by `AlterConversions::getMutationSteps` with `perform_alter_conversions = false`,
-    /// because the on-fly action's DAG embeds its own CAST for the columns the mutation
-    /// overwrites. Pre-casting the on-disk value would fail on values the UPDATE is
-    /// about to replace (e.g. `CAST('x' AS UInt64)` before `UPDATE v = '100'`).
-    ///
-    /// The same step also produces pass-through columns the mutation never touches.
-    /// Skipping conversion for those leaves the block advertising the post-MODIFY
-    /// metadata type over the on-disk column class, and downstream operators
-    /// (`MergingSortedTransform`'s `ColumnLowCardinality::insertFrom`, `NativeWriter`'s
-    /// `typeid_cast<ColumnLowCardinality>`, etc.) trip on the type vs. storage mismatch.
-    ///
-    /// `prewhere_info->columns_overwritten_by_chain` is the set of columns the chain
-    /// will overwrite. Null those out around `performRequiredConversions` so they are
-    /// skipped, then restore them so the step's action sees them in their on-disk form.
-    /// An empty skip set means the chain has nothing to skip, so the conversion is a
-    /// no-op for this step and we leave the columns untouched.
+    /// If columns not empty, then apply on-fly alter conversions if any required
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
         merge_tree_reader->performRequiredConversions(read_columns);
-    }
-    else if (!prewhere_info->columns_overwritten_by_chain.empty())
-    {
-        const auto & reader_columns = merge_tree_reader->getColumns();
-        const auto & skip = prewhere_info->columns_overwritten_by_chain;
-
-        Columns saved(read_columns.size());
-        size_t pos = 0;
-        for (const auto & name_and_type : reader_columns)
-        {
-            if (skip.contains(name_and_type.getNameInStorage()))
-            {
-                saved[pos] = read_columns[pos];
-                read_columns[pos] = nullptr;
-            }
-            ++pos;
-        }
-
-        merge_tree_reader->performRequiredConversions(read_columns);
-
-        pos = 0;
-        for (const auto & name_and_type : reader_columns)
-        {
-            if (skip.contains(name_and_type.getNameInStorage()))
-                read_columns[pos] = std::move(saved[pos]);
-            ++pos;
-        }
     }
 
     apply_patches(ColumnForPatch::Order::AfterConversions);
@@ -446,6 +345,17 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         suitable_orders,
         result.columns_for_patches);
 }
+
+struct NamesHash
+{
+    size_t operator()(const Names & column_names) const
+    {
+        SipHash hash;
+        for (const auto & column_name : column_names)
+            hash.update(column_name);
+        return hash.get64();
+    }
+};
 
 void MergeTreeReadersChain::applyPatches(
     const Block & result_header,

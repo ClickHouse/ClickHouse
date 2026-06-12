@@ -4,7 +4,6 @@
 
 #if USE_SQLITE
 #include <Core/ExternalResultDescription.h>
-#include <DataTypes/IDataType.h>
 #include <Processors/ISource.h>
 
 #include <sqlite3.h>
@@ -13,7 +12,7 @@
 namespace DB
 {
 
-class SQLiteSource final : public ISource
+class SQLiteSource : public ISource
 {
 
 using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -34,9 +33,7 @@ private:
 
     Chunk generate() override;
 
-    void onCancel() noexcept override;
-
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type);
+    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx);
 
     String query_str;
     UInt64 max_block_size;

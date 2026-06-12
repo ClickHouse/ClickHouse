@@ -13,9 +13,6 @@
 #include <fmt/format.h>
 #include <unistd.h>
 
-#include <cstdlib>
-#include <cstring>
-
 
 namespace DB
 {
@@ -25,60 +22,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// Detect whether the client (clickhouse-client or clickhouse-local) is being invoked under a known
-/// AI coding agent, by inspecting environment variables that these agents set for the processes they
-/// spawn. Returns the canonical agent id, or an empty string when no agent is detected.
-/// Only environment variables are inspected; no filesystem probing is performed.
-String detectClientAgent()
-{
-    /// The presence of a specific marker variable maps to a canonical agent id.
-    static constexpr std::pair<const char *, std::string_view> agent_env_markers[] =
-    {
-        {"CLAUDECODE", "claude-code"},
-        {"CLAUDE_CODE", "claude-code"},
-        {"CURSOR_TRACE_ID", "cursor"},
-        {"CURSOR_AGENT", "cursor-cli"},
-        {"GEMINI_CLI", "gemini-cli"},
-        {"CODEX_SANDBOX", "codex"},
-        {"CODEX_CI", "codex"},
-        {"CODEX_THREAD_ID", "codex"},
-        {"ANTIGRAVITY_AGENT", "antigravity"},
-        {"AUGMENT_AGENT", "augment"},
-        {"CLINE_ACTIVE", "cline"},
-        {"OPENCODE_CLIENT", "opencode"},
-        {"TRAE_AI_SHELL_ID", "trae"},
-        {"GOOSE_TERMINAL", "goose"},
-        {"REPL_ID", "replit"},
-        {"COPILOT_MODEL", "github-copilot"},
-        {"COPILOT_ALLOW_ALL", "github-copilot"},
-        {"COPILOT_GITHUB_TOKEN", "github-copilot"},
-    };
-
-    for (const auto & [env_name, agent_id] : agent_env_markers)
-        if (nullptr != std::getenv(env_name)) // NOLINT(concurrency-mt-unsafe)
-            return String(agent_id);
-
-    /// Cursor CLI also identifies itself via a role marker that must have a specific value.
-    if (const char * cursor_role = std::getenv("CURSOR_EXTENSION_HOST_ROLE"); // NOLINT(concurrency-mt-unsafe)
-        cursor_role != nullptr && 0 == std::strcmp(cursor_role, "agent-exec"))
-        return "cursor-cli";
-
-    /// Generic convention: any tool may advertise itself via the standard AGENT environment variable.
-    if (const char * generic_agent = std::getenv("AGENT"); // NOLINT(concurrency-mt-unsafe)
-        generic_agent != nullptr && generic_agent[0] != '\0')
-        return String(generic_agent);
-
-    return {};
-}
-
-}
-
 ClientInfo::ClientInfo()
 {
-    connection_address = std::make_shared<Poco::Net::SocketAddress>();
     current_address = std::make_shared<Poco::Net::SocketAddress>();
     initial_address = std::make_shared<Poco::Net::SocketAddress>();
 }
@@ -115,7 +60,7 @@ String ClientInfo::getLastForwardedForHost() const
 }
 
 
-void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_client_agent) const
+void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
@@ -209,17 +154,10 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
         else
             writeBinary(static_cast<UInt8>(0), out);
     }
-
-    /// Sent for all interfaces (not only TCP): the detected client agent must also be preserved
-    /// when a clickhouse-local query (LOCAL interface) is forwarded to remote shards.
-    /// Skipped for the embedded `ClientInfo` of the persisted async `Distributed` insert header
-    /// (see `with_client_agent` in the declaration), where it is stored as a trailing header field.
-    if (with_client_agent && server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
-        writeBinary(client_agent, out);
 }
 
 
-void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_client_agent)
+void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
@@ -300,7 +238,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
-        UInt64 value = 0;
+        UInt64 value;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
         readVarUInt(obsolete_count_participating_replicas, in);
@@ -320,9 +258,6 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         if (have_jwt)
             readBinary(jwt, in);
     }
-
-    if (with_client_agent && client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
-        readBinary(client_agent, in);
 }
 
 
@@ -359,8 +294,6 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
         os_user.clear();    /// Don't mind if we cannot determine user login.
 
     client_hostname = getFQDNOrHostName();
-
-    client_agent = detectClientAgent();
 
     client_version_major = VERSION_MAJOR;
     client_version_minor = VERSION_MINOR;

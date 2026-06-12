@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -102,15 +101,15 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     else if (type.starts_with("timestamp"))
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
-        res = std::make_shared<DataTypeDate32>();
+        res = std::make_shared<DataTypeDate>();
     else if (type == "uuid")
         res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision = 0;
-        UInt32 scale = 0;
+        UInt32 precision;
+        UInt32 scale;
         if (type.ends_with(")"))
         {
             res = DataTypeFactory::instance().get(type);

@@ -1,7 +1,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Common/Exception.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
@@ -169,7 +168,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         dest += sizeof(T);
     }
     chassert(source == source_end);
-    return static_cast<UInt32>(dest - original_dest);
+    return dest - original_dest;
 }
 
 }

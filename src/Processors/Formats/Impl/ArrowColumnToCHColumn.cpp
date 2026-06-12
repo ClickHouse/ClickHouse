@@ -20,11 +20,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/IntervalKind.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
@@ -42,12 +39,10 @@
 #include <Common/quoteString.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
-#include <bit>
 #include <arrow/builder.h>
 #include <arrow/array.h>
 #include <arrow/util/key_value_metadata.h>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <base/unaligned.h>
 
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
@@ -57,6 +52,7 @@
         M(arrow::Type::INT16, Int16) \
         M(arrow::Type::UINT64, UInt64) \
         M(arrow::Type::INT64, Int64) \
+        M(arrow::Type::DURATION, Int64) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -82,31 +78,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
-}
-
-static bool emptyTimezoneAsUTC(const std::string & format_name, const FormatSettings & format_settings)
-{
-    return format_name == "Parquet" && format_settings.parquet.local_time_as_utc;
-}
-
-static bool isUUIDField(const arrow::Field & field)
-{
-    // Check for our ClickHouse/Arrow extension name
-    if (field.HasMetadata())
-    {
-        auto metadata = field.metadata();
-        auto ext_name = metadata->Get("ARROW:extension:name");
-        if (ext_name.ok() && *ext_name == "arrow.uuid")
-            return true;
-
-        // Also check the Parquet logical type hint we added to the writer
-        auto pq_type = metadata->Get("PARQUET:logical_type");
-        if (pq_type.ok() && *pq_type == "UUID")
-            return true;
-    }
-    return field.type()->id() == arrow::Type::EXTENSION &&
-           std::static_pointer_cast<arrow::ExtensionType>(field.type())->extension_name() == "arrow.uuid";
 }
 
 namespace
@@ -218,54 +189,6 @@ const ArrowNumericArray & checkedCast(const arrow::Array & array, const String &
     const auto & typed = assert_cast<const ArrowNumericArray &>(array);
     checkArrowBuffer(typed, sizeof(typename ArrowNumericArray::value_type), column_name);
     return typed;
-}
-
-/// Validate that a single BinaryView struct's data range is within its variadic buffer.
-/// Inline views store data directly inside the view struct (already covered by
-/// checkedCastView on buffers[1]); only non-inline views reference a variadic buffer.
-void checkViewStruct(
-    const arrow::BinaryViewType::c_type & v,
-    const arrow::ArrayData & chunk_data,
-    const String & column_name,
-    int64_t row)
-{
-    /// Reject negative sizes before the inline check: a crafted size of e.g. -1
-    /// would satisfy is_inline() (−1 ≤ kInlineSize = 12) and return here unchecked,
-    /// then static_cast<size_t>(-1) in the accumulation loop wraps to SIZE_MAX.
-    if (unlikely(v.size() < 0))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow StringView has negative size {} for column '{}' row {}",
-            v.size(), column_name, row);
-
-    if (v.is_inline())
-        return;
-
-    const int32_t buf_idx    = v.ref.buffer_index;
-    const int32_t ref_offset = v.ref.offset;
-    const int32_t ref_size   = v.ref.size;
-
-    /// variadic data buffers start at index 2 (after validity bitmap and view-struct buffer)
-    const int64_t num_variadic = static_cast<int64_t>(chunk_data.buffers.size()) - 2;
-    if (unlikely(buf_idx < 0 || buf_idx >= num_variadic))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow StringView buffer_index {} is out of range ({} variadic buffers) "
-            "for column '{}' row {}",
-            buf_idx, num_variadic, column_name, row);
-
-    const auto & vbuf = chunk_data.buffers[2 + buf_idx];
-    const size_t vbuf_size   = vbuf ? static_cast<size_t>(vbuf->size()) : 0;
-    const size_t safe_offset = static_cast<size_t>(ref_offset);
-    const size_t safe_length = static_cast<size_t>(ref_size);
-    if (unlikely(ref_offset < 0 || ref_size < 0
-               || safe_offset > vbuf_size
-               || safe_length > vbuf_size - safe_offset))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow StringView data exceeds variadic buffer bounds for column '{}' row {}: "
-            "offset {} length {} but variadic buffer {} is {} bytes",
-            column_name, row, ref_offset, ref_size, buf_idx, vbuf_size);
 }
 
 /// Cast to a view array type (StringViewArray or BinaryViewArray) and validate
@@ -394,55 +317,7 @@ static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arr
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         const auto * raw_data = getValidatedBuffer<NumericType>(*chunk, column_name);
         column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
-
-        /// Values at null positions are not guaranteed to be initialized in the source buffer.
-        /// Zero them out because downstream code (type conversions, serialization) may read all values.
-        if (chunk->null_count() > 0)
-        {
-            size_t start = column_data.size() - chunk->length();
-            for (int64_t i = 0; i < chunk->length(); ++i)
-            {
-                if (chunk->IsNull(i))
-                    column_data[start + i] = {};
-            }
-        }
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
-}
-
-static ColumnWithTypeAndName readColumnWithDurationData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
-{
-    const auto & duration_type = assert_cast<const arrow::DurationType &>(*(arrow_column->type()));
-
-    std::optional<IntervalKind::Kind> interval_kind;
-    switch (duration_type.unit())
-    {
-        case arrow::TimeUnit::SECOND: interval_kind = IntervalKind::Kind::Second; break;
-        case arrow::TimeUnit::MILLI:  interval_kind = IntervalKind::Kind::Millisecond; break;
-        case arrow::TimeUnit::MICRO:  interval_kind = IntervalKind::Kind::Microsecond; break;
-        case arrow::TimeUnit::NANO:   interval_kind = IntervalKind::Kind::Nanosecond; break;
-    }
-
-    if (!interval_kind)
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported Arrow duration unit {}", static_cast<int>(duration_type.unit()));
-
-    auto internal_type = std::make_shared<DataTypeInterval>(IntervalKind(*interval_kind));
-    auto internal_column = internal_type->createColumn();
-    auto & column_data = assert_cast<ColumnVector<Int64> &>(*internal_column).getData();
-    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkArrowBuffer(chunk, sizeof(Int64), column_name); });
-    column_data.reserve(arrow_column->length());
-
-    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-    {
-        std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
-        if (chunk->length() == 0)
-            continue;
-
-        /// buffers[0] is a null bitmap and buffers[1] are actual values
-        const auto * raw_data = getValidatedBuffer<Int64>(*chunk, column_name);
-        column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
-    }
-
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
@@ -557,107 +432,6 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-template <typename ArrowView>
-static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
-{
-    auto internal_type = std::make_shared<DataTypeString>();
-    auto internal_column = internal_type->createColumn();
-    auto & column_str = assert_cast<ColumnString &>(*internal_column);
-    auto & column_chars = column_str.getChars();
-    auto & column_offsets = column_str.getOffsets();
-
-    if (arrow_column->length() == 0)
-        return {std::move(internal_column), std::move(internal_type), column_name};
-
-    size_t total_bytes_size = 0;
-
-    for (const auto & arrow_chunk : arrow_column->chunks())
-    {
-        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
-        const int64_t chunk_length = arrow_view_chunk.length();
-        /// An empty chunk in a multi-batch stream can leave buffers[1] null; skip it before
-        /// forming a pointer into the view-struct buffer.
-        if (chunk_length == 0)
-            continue;
-        const auto * view_structs = reinterpret_cast<const arrow::BinaryViewType::c_type *>(
-            arrow_view_chunk.data()->buffers[1]->data()) + arrow_view_chunk.offset();
-
-        if (arrow_view_chunk.null_count() == 0)
-        {
-            for (int64_t i = 0; i < chunk_length; ++i)
-            {
-                checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
-                total_bytes_size += static_cast<size_t>(view_structs[i].size()); /// size() >= 0 guaranteed by checkViewStruct
-            }
-        }
-        else
-        {
-            for (int64_t i = 0; i < chunk_length; ++i)
-            {
-                if (arrow_view_chunk.IsValid(i))
-                {
-                    checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
-                    total_bytes_size += static_cast<size_t>(view_structs[i].size());
-                }
-            }
-        }
-    }
-
-    column_chars.resize(total_bytes_size);
-    column_offsets.resize(arrow_column->length());
-
-    UInt8 * chars_dest = column_chars.data();
-    ColumnString::Offset * offsets_dest = column_offsets.data();
-    ColumnString::Offset current_offset = 0;
-
-    const UInt8 dummy_byte = 0;
-
-    for (const auto & arrow_chunk : arrow_column->chunks())
-    {
-        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
-        const int64_t chunk_length = arrow_view_chunk.length();
-
-        if (arrow_view_chunk.null_count() == 0)
-        {
-            for (int64_t i = 0; i < chunk_length; ++i)
-            {
-                /// view already validated in the first pass above
-                const auto & view = arrow_view_chunk.GetView(i);
-                size_t len = view.length();
-
-                const UInt8 * src = len > 0 ? reinterpret_cast<const UInt8 *>(view.data()) : &dummy_byte;
-
-                std::memcpy(chars_dest, src, len);
-                chars_dest += len;
-
-                current_offset += len;
-                *offsets_dest++ = current_offset;
-            }
-        }
-        else
-        {
-            for (int64_t i = 0; i < chunk_length; ++i)
-            {
-                if (arrow_view_chunk.IsValid(i))
-                {
-                    const auto & view = arrow_view_chunk.GetView(i);
-                    size_t len = view.length();
-
-                    const UInt8 * src = len > 0 ? reinterpret_cast<const UInt8 *>(view.data()) : &dummy_byte;
-
-                    std::memcpy(chars_dest, src, len);
-                    chars_dest += len;
-                    current_offset += len;
-                }
-
-                *offsets_dest++ = current_offset;
-            }
-        }
-    }
-
-    return {std::move(internal_column), std::move(internal_type), column_name};
-}
-
 template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithJSONData(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
@@ -723,7 +497,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
             {
                 validate_row(row_i);
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view);
+                ReadBufferFromMemory rb(view.data(), view.size());
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -738,7 +512,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                 }
                 validate_row(row_i);
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view);
+                ReadBufferFromMemory rb(view.data(), view.size());
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -889,15 +663,15 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     DataTypePtr internal_type;
     bool check_date_range = false;
 
-    if (type_hint && isNumber(type_hint))
-    {
-        /// If requested type is a number, read as raw number without checking if it's a valid date.
-        internal_type = std::make_shared<DataTypeInt32>();
-    }
-    else
+    if (!type_hint || isDateOrDate32(type_hint) || isDateTime(type_hint) || isDateTime64(type_hint))
     {
         internal_type = std::make_shared<DataTypeDate32>();
         check_date_range = true;
+    }
+    else
+    {
+        /// If requested type is raw number, read as raw number without checking if it's a valid date.
+        internal_type = std::make_shared<DataTypeInt32>();
     }
 
     auto internal_column = internal_type->createColumn();
@@ -968,14 +742,11 @@ static ColumnWithTypeAndName readColumnWithDate64Data(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, bool empty_timezone_as_utc)
+static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     const auto & arrow_type = static_cast<const arrow::TimestampType &>(*(arrow_column->type()));
     const UInt8 scale = arrow_type.unit() * 3;
-    String timezone = arrow_type.timezone();
-    if (timezone.empty() && empty_timezone_as_utc)
-        timezone = "UTC";
-    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, arrow_type.timezone());
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
     validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::TimestampArray>(chunk, column_name); });
@@ -1078,66 +849,6 @@ static ColumnWithTypeAndName readColumnWithDecimalData(const std::shared_ptr<arr
     return readColumnWithDecimalDataImpl<Decimal256, DecimalArray>(arrow_column, column_name, internal_type);
 }
 
-static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
-    const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
-    const std::string & column_name,
-    DataTypePtr type_hint)
-{
-    auto column = type_hint->createColumn();
-    auto & column_data = assert_cast<ColumnVector<UUID> &>(*column).getData();
-
-    /// Reject a wrong fixed-size width before reserving the column: the UUID column reserves
-    /// sizeof(UUID) bytes per row, so a FixedSizeBinary(1) read with a UUID hint would otherwise
-    /// allocate 16x the (attacker-controlled) row count before the per-chunk width check fired.
-    /// The type is uniform across chunks, so the type's byte_width covers every chunk.
-    const auto * fixed_type = assert_cast<const arrow::FixedSizeBinaryType *>(arrow_column->type().get());
-    if (static_cast<size_t>(fixed_type->byte_width()) != sizeof(UUID))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot read UUID from Arrow FixedSizeBinary array with byte_width != {}", sizeof(UUID));
-
-    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCastFixedSizeBinary(chunk, column_name); });
-    column_data.reserve(arrow_column->length());
-
-    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-    {
-        const auto & fixed_binary_array = checkedCastFixedSizeBinary(*(arrow_column->chunk(chunk_i)), column_name);
-
-        for (int64_t i = 0; i < fixed_binary_array.length(); ++i)
-        {
-            if (fixed_binary_array.IsNull(i))
-            {
-                // The Nullable wrapper handles the actual null map later; just insert a dummy value
-                column_data.emplace_back(UUID{});
-            }
-            else
-            {
-                UUID res;
-                std::memcpy(&res, fixed_binary_array.GetValue(i), 16);
-
-                auto * bytes = reinterpret_cast<uint8_t *>(&res);
-
-                // Only swap the 64-bit halves back if the host CPU is Little-Endian
-                if constexpr (std::endian::native == std::endian::little)
-                {
-                    std::reverse(bytes, bytes + 8);
-                    std::reverse(bytes + 8, bytes + 16);
-                }
-                else
-                {
-                    // Big-Endian: The bytes are already in network order, but the
-                    // 64-bit halves are in the wrong order for Arrow (low||high).
-                    // Swap the first 8 bytes with the second 8 bytes.
-                    std::swap_ranges(bytes, bytes + 8, bytes + 8);
-                }
-
-                column_data.emplace_back(res);
-            }
-        }
-    }
-
-    return {std::move(column), type_hint, column_name};
-}
-
 /// Creates a null bytemap from arrow's null bitmap
 static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
@@ -1148,7 +859,7 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
     if (!arrow_column->null_count())
-        return ColumnUInt8::create(arrow_column->length(), static_cast<UInt8>(0));
+        return ColumnUInt8::create(arrow_column->length(), 0);
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -1375,15 +1086,15 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         ///     indexes: [1, 2, 1]
         /// LowCardinality(Nullable):
         ///     dict: [null, "", "one", "two"]
-        ///     indexes: [2, 3, 2]`
+        ///     indexes: [2, 3, 2]
         else if (default_value_index == -1)
         {
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
                 if (chunk->IsNull(i))
-                    column_data.push_back(static_cast<NumericType>(0));
+                    column_data.push_back(0);
                 else
-                    column_data.push_back(static_cast<NumericType>(data[i] + shift));
+                    column_data.push_back(data[i] + shift);
             }
         }
         /// If dictionary contains default value, we change all indexes of it to
@@ -1409,7 +1120,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
                 if (chunk->IsNull(i))
-                    column_data.push_back(static_cast<NumericType>(0));
+                    column_data.push_back(0);
                 else
                 {
                     NumericType value = data[i];
@@ -1660,7 +1371,6 @@ struct ReadColumnFromArrowColumnSettings
     bool case_insensitive_matching;
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
-    bool empty_timezone_as_utc;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1684,7 +1394,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
-    bool make_nullable_if_low_cardinality,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
@@ -1742,55 +1451,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             {
                 return readColumnWithGeoData(arrow_column, column_name, *geo_metadata);
             }
-            if (type_hint && type_hint->getName() == "Geometry" && settings.allow_geoparquet_parser)
-            {
-                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed});
-            }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
-        }
-        case arrow::Type::EXTENSION:
-        {
-            // Unwrap the Extension array into raw physical chunks
-            auto ext_type = std::static_pointer_cast<arrow::ExtensionType>(arrow_column->type());
-            std::vector<std::shared_ptr<arrow::Array>> storage_chunks;
-
-            for (int i = 0; i < arrow_column->num_chunks(); ++i)
-            {
-                auto ext_array = std::static_pointer_cast<arrow::ExtensionArray>(arrow_column->chunk(i));
-                storage_chunks.push_back(ext_array->storage());
-            }
-
-            auto storage_column = std::make_shared<arrow::ChunkedArray>(storage_chunks, ext_type->storage_type());
-
-            std::shared_ptr<arrow::Field> storage_field = nullptr;
-
-            if (arrow_field)
-                storage_field = std::make_shared<arrow::Field>(arrow_field->name(),
-                    ext_type->storage_type(),
-                    arrow_field->nullable(),
-                    arrow_field->metadata());
-
-            return readNonNullableColumnFromArrowColumn(
-                storage_column,
-                column_name,
-                full_column_name,
-                dictionary_infos,
-                type_hint,
-                is_map_nested_column,
-                make_nullable_if_low_cardinality,
-                geo_metadata,
-                settings,
-                storage_field,
-                parquet_columns_to_clickhouse,
-                clickhouse_columns_to_parquet);
         }
         case arrow::Type::FIXED_SIZE_BINARY:
         {
-            DataTypePtr hint_to_check = type_hint ? removeNullable(type_hint) : nullptr;
-
-            if (hint_to_check)
+            if (type_hint)
             {
-                switch (hint_to_check->getTypeId())
+                switch (type_hint->getTypeId())
                 {
                     case TypeIndex::Int128:
                         return readColumnWithBigIntegerFromFixedBinaryData<Int128>(arrow_column, column_name, type_hint);
@@ -1800,20 +1467,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         return readColumnWithBigIntegerFromFixedBinaryData<Int256>(arrow_column, column_name, type_hint);
                     case TypeIndex::UInt256:
                         return readColumnWithBigIntegerFromFixedBinaryData<UInt256>(arrow_column, column_name, type_hint);
-                    case TypeIndex::UUID:
-                        return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, type_hint);
                     default:
                         break;
                 }
             }
 
-            /// Correctly triggers the UUID reader for metadata-flagged columns.
-            if (arrow_field && isUUIDField(*arrow_field))
-            {
-                return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, std::make_shared<DataTypeUUID>());
-            }
-
-            // Default fallback
             return readColumnWithFixedStringData(arrow_column, column_name);
         }
         case arrow::Type::LARGE_STRING:
@@ -1830,9 +1488,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithDate32Data(arrow_column, column_name, type_hint, settings.date_time_overflow_behavior);
         case arrow::Type::DATE64:
             return readColumnWithDate64Data(arrow_column, column_name);
-        // ClickHouse writes DateTime as arrow UINT32,
-        // so, read UINT32 as DateTime to perform correct conversion further.
-        // UINT16 is also read as Date for backward compatibility with older Arrow files.
+        // ClickHouse writes Date as arrow UINT16 and DateTime as arrow UINT32,
+        // so, read UINT16 as Date and UINT32 as DateTime to perform correct conversion
+        // between Date and DateTime further.
         case arrow::Type::UINT16:
         {
             auto column = readColumnWithNumericData<UInt16>(arrow_column, column_name);
@@ -1856,7 +1514,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<Int32>(arrow_column, column_name);
         }
         case arrow::Type::TIMESTAMP:
-            return readColumnWithTimestampData(arrow_column, column_name, settings.empty_timezone_as_utc);
+            return readColumnWithTimestampData(arrow_column, column_name);
         case arrow::Type::DECIMAL128:
             return readColumnWithDecimalData<arrow::Decimal128Array>(arrow_column, column_name);
         case arrow::Type::DECIMAL256:
@@ -2018,26 +1676,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         return readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column, column_name);
                 }
             }();
-            DataTypePtr array_type;
-            ColumnPtr array_data_column = nested_column.column;
-            /// If type hint is Nested and the element is a named Tuple, return the Nested type
-            /// so that `Nested::flatten` can decompose it into separate arrays.
-            /// When the element is Nullable(Tuple(...)) (e.g. from Arrow's default nullable schema),
-            /// unwrap it and propagate the struct null map to each element via `unwrapNullableTuple`.
-            const auto * tuple_type = type_hint && isNested(type_hint)
-                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
-                : nullptr;
-            if (tuple_type)
-            {
-                auto unwrapped = Nested::unwrapNullableTuple({array_data_column, nested_column.type, column_name});
-                array_data_column = unwrapped.column;
-                const auto & result_tuple = assert_cast<const DataTypeTuple &>(*unwrapped.type);
-                array_type = createNested(result_tuple.getElements(), result_tuple.getElementNames());
-            }
-            else
-            {
-                array_type = std::make_shared<DataTypeArray>(nested_column.type);
-            }
             /// Validate that the last offset matches the nested column size before constructing
             /// ColumnArray.  ColumnArray's constructor skips data->size() == last_offset when
             /// data->empty() (the && !data->empty() short-circuit), so a crafted Arrow file
@@ -2045,13 +1683,26 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             /// interior offsets point past the inner allocation.
             {
                 const auto & off = assert_cast<const ColumnVector<UInt64> &>(*offsets_column).getData();
-                if (!off.empty() && off.back() != array_data_column->size())
+                if (!off.empty() && off.back() != nested_column.column->size())
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Arrow List column '{}': last offset {} does not match nested column size {}",
-                        column_name, off.back(), array_data_column->size());
+                        column_name, off.back(), nested_column.column->size());
             }
-            auto array_column = ColumnArray::create(array_data_column, offsets_column);
+            auto array_column = ColumnArray::create(nested_column.column, offsets_column);
+
+            DataTypePtr array_type;
+            /// If type hint is Nested, we should return Nested type,
+            /// because we differentiate Nested and simple Array(Tuple)
+            if (type_hint && isNested(type_hint))
+            {
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
+                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+            }
+            else
+            {
+                array_type = std::make_shared<DataTypeArray>(nested_column.type);
+            }
             return {std::move(array_column), array_type, column_name};
         }
         case arrow::Type::STRUCT:
@@ -2189,9 +1840,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::DICTIONARY:
         {
             auto & dict_info = dictionary_infos[column_name];
-            const bool is_lc_nullable = make_nullable_if_low_cardinality
-                || arrow_column->null_count() > 0
-                || (type_hint && type_hint->isLowCardinalityNullable());
+            const auto is_lc_nullable = arrow_column->null_count() > 0 || (type_hint && type_hint->isLowCardinalityNullable());
 
             /// Load dictionary values only once and reuse it.
             if (!dict_info.values)
@@ -2233,16 +1882,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
-                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + is_lc_nullable;
-                if (tmp_dict_column->size() != expected_dictionary_size)
-                {
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Expected Dictionary size {}, real Dictionary size is {}. The discrepancy probably caused by duplicated values",
-                        expected_dictionary_size,
-                        tmp_dict_column->size());
-                }
-
                 dict_column.column = std::move(tmp_dict_column);
                 dict_info.values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
                 dict_info.dictionary_size = arrow_dict_column->length();
@@ -2278,20 +1917,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             return readColumnWithTime64Data(arrow_column, column_name);
         }
-        case arrow::Type::DURATION:
-        {
-            /// Preserve interval semantics on round-trip from ClickHouse -> Arrow -> ClickHouse.
-            return readColumnWithDurationData(arrow_column, column_name);
-        }
-        case arrow::Type::BINARY_VIEW:
-        {
-            return readColumnWithViewData<arrow::BinaryViewArray>(arrow_column, column_name);
-        }
-        case arrow::Type::STRING_VIEW:
-        {
-            return readColumnWithViewData<arrow::StringViewArray>(arrow_column, column_name);
-        }
             // TODO: read JSON as a string?
+            // TODO: read UUID as a string?
         case arrow::Type::NA:
         {
             if (settings.allow_arrow_null_type)
@@ -2347,13 +1974,13 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
-    bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && !geo_metadata && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
         arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
+        arrow_column->type()->id() != arrow::Type::STRUCT &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         DataTypePtr nested_type_hint;
@@ -2366,7 +1993,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
-            /*make_nullable_if_low_cardinality*/ false,
             geo_metadata,
             settings,
             arrow_field,
@@ -2389,7 +2015,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         dictionary_infos,
         type_hint,
         is_map_nested_column,
-        /*make_nullable_if_low_cardinality*/ read_as_nullable_column,
         geo_metadata,
         settings,
         arrow_field,
@@ -2406,73 +2031,12 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(const std::shared_ptr<arrow::DataType> & type)
-{
-    if (!type) return type;
-
-    if (type->id() == arrow::Type::EXTENSION)
-        return std::static_pointer_cast<arrow::ExtensionType>(type)->storage_type();
-
-    if (type->id() == arrow::Type::LIST)
-    {
-        auto list_type = std::static_pointer_cast<arrow::ListType>(type);
-        auto value_field = list_type->value_field();
-        return arrow::list(value_field->WithType(unwrapArrowExtensionTypesRecursively(value_field->type())));
-    }
-
-    if (type->id() == arrow::Type::LARGE_LIST)
-    {
-        auto large_list_type = std::static_pointer_cast<arrow::LargeListType>(type);
-        auto value_field = large_list_type->value_field();
-        return arrow::large_list(value_field->WithType(unwrapArrowExtensionTypesRecursively(value_field->type())));
-    }
-
-    if (type->id() == arrow::Type::FIXED_SIZE_LIST)
-    {
-        auto fixed_list = std::static_pointer_cast<arrow::FixedSizeListType>(type);
-        auto value_field = fixed_list->value_field();
-        return arrow::fixed_size_list(value_field->WithType(unwrapArrowExtensionTypesRecursively(value_field->type())), fixed_list->list_size());
-    }
-
-    if (type->id() == arrow::Type::MAP)
-    {
-        auto map_type = std::static_pointer_cast<arrow::MapType>(type);
-        auto item_field = map_type->item_field();
-
-        // arrow::map expects a DataType for the key (since keys cannot be nullable),
-        // but accepts a Field for the item to preserve custom nullability.
-        return arrow::map(unwrapArrowExtensionTypesRecursively(map_type->key_type()),
-            item_field->WithType(unwrapArrowExtensionTypesRecursively(item_field->type())),
-            map_type->keys_sorted()
-        );
-    }
-
-    if (type->id() == arrow::Type::STRUCT)
-    {
-        auto struct_type = std::static_pointer_cast<arrow::StructType>(type);
-        std::vector<std::shared_ptr<arrow::Field>> new_fields;
-        for (const auto & struct_field : struct_type->fields())
-        {
-            // WithType preserves the field name and nullable status, only changing the underlying type
-            new_fields.push_back(struct_field->WithType(unwrapArrowExtensionTypesRecursively(struct_field->type())));
-        }
-        return arrow::struct_(new_fields);
-    }
-
-    return type;
-}
-
 /// Create empty arrow column using specified field
 static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_ptr<arrow::Field> & field, const String & format_name)
 {
-    // We unwrap the type ONLY for the `build_type`
-    // passed to MakeBuilder. We DO NOT mutate the `field` itself.
-    // This provides Arrow with the primitive storage type it needs for RAM allocation
-    // without destroying the logical metadata required by ClickHouse for type inference
-    std::shared_ptr<arrow::DataType> build_type = unwrapArrowExtensionTypesRecursively(field->type());
-
+    arrow::MemoryPool * pool = ArrowMemoryPool::instance();
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
-    arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), build_type, &array_builder);
+    arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
     checkStatus(status, field->name(), format_name);
 
     std::shared_ptr<arrow::Array> arrow_array;
@@ -2505,18 +2069,13 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
         .case_insensitive_matching = case_insensitive_matching,
         .allow_geoparquet_parser = allow_geoparquet_parser,
-        .enable_json_parsing = enable_json_parsing,
-        .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .enable_json_parsing = enable_json_parsing
     };
 
     ColumnsWithTypeAndName sample_columns;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -2598,18 +2157,7 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
         auto arrow_field = table->schema()->GetFieldByName(column_name);
 
         if (parquet_columns_to_clickhouse)
-        {
-            auto column_name_it = parquet_columns_to_clickhouse->find(column_name);
-            if (column_name_it == parquet_columns_to_clickhouse->end())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Column '{}' is not present in input data. Column name mapping has {} columns",
-                    column_name,
-                    parquet_columns_to_clickhouse->size());
-            }
-            column_name = column_name_it->second;
-        }
+            column_name = parquet_columns_to_clickhouse->at(column_name);
 
         if (case_insensitive_matching)
             boost::to_lower(column_name);
@@ -2635,8 +2183,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_inferring_nullable_columns = true,
         .case_insensitive_matching = case_insensitive_matching,
         .allow_geoparquet_parser = allow_geoparquet_parser,
-        .enable_json_parsing = enable_json_parsing,
-        .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .enable_json_parsing = enable_json_parsing
     };
 
     Columns columns;
@@ -2644,12 +2191,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {

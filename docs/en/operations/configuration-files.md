@@ -5,7 +5,6 @@ sidebar_label: 'Configuration Files'
 sidebar_position: 50
 slug: /operations/configuration-files
 title: 'Configuration Files'
-doc_type: 'guide'
 ---
 
 :::note

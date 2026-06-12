@@ -24,13 +24,12 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTKillQueryQuery>(*this);
-        clone->children.clear();
-
+        auto clone = std::make_shared<ASTKillQueryQuery>(*this);
         if (where_expression)
-            clone->set(clone->where_expression, where_expression->clone());
-
-        cloneOutputOptions(*clone);
+        {
+            clone->where_expression = where_expression->clone();
+            clone->children = {clone->where_expression};
+        }
 
         return clone;
     }

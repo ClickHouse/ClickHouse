@@ -6,7 +6,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
-#include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
@@ -45,7 +44,7 @@ namespace
 
             if (result)
             {
-                bool value = false;
+                bool value;
                 if (tryGetLiteralBool(result.get(), value) && value)
                     result = nullptr; /// The condition is always true, no need to check it.
             }

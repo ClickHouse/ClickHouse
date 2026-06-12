@@ -4,8 +4,9 @@ sidebar_label: 'sqlite'
 sidebar_position: 185
 slug: /sql-reference/table-functions/sqlite
 title: 'sqlite'
-doc_type: 'reference'
 ---
+
+# sqlite Table Function
 
 Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
 
@@ -26,11 +27,15 @@ sqlite('db_path', 'table_name')
 
 ## Example {#example}
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─col1──┬─col2─┐
 │ line1 │    1 │
 │ line2 │    2 │
@@ -41,4 +46,3 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ## Related {#related}
 
 - [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine
-- [SQLite database engine](../../engines/database-engines/sqlite.md) — Data types support section
