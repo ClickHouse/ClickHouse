@@ -1,4 +1,4 @@
-User with SELECT+SHOW on both sources can create the overlay
+User with SELECT on both sources can create the overlay
 CREATE: allowed
 And, once granted SELECT on the overlay, can read through it
 READ: allowed

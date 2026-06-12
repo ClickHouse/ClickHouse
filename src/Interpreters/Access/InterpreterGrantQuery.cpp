@@ -7,6 +7,7 @@
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
+#include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
@@ -434,8 +435,14 @@ BlockIO InterpreterGrantQuery::execute()
             && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
             && !element.anyParameter())
         {
-            /// Will throw UNKNOWN_STORAGE if engine is unknown
-            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
+            /// Database engines (e.g. `Overlay`) participate in `TABLE ENGINE` checks too
+            /// (`CREATE DATABASE` checks `TABLE_ENGINE` in `InterpreterCreateQuery`),
+            /// so accept their names here as well.
+            if (DatabaseFactory::instance().resolveCanonicalEngineName(element.parameter).empty())
+            {
+                /// Will throw UNKNOWN_STORAGE if engine is unknown
+                (void)StorageFactory::instance().getStorageFeatures(element.parameter);
+            }
         }
     }
 

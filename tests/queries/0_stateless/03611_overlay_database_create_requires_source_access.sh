@@ -2,9 +2,11 @@
 # Tags: no-random-merge-tree-settings
 #
 # Overlay database creation is gated by read access on the underlying databases:
-# a user may create CREATE DATABASE ... ENGINE = Overlay(a, b) if they hold
-# SELECT TABLES on every underlying database a, b. No TABLE ENGINE grant
-# is required. Missing access on any single source denies the create.
+# a user may run CREATE DATABASE ... ENGINE = Overlay(a, b) only if they hold
+# SELECT on every underlying database a, b. Missing access on any single
+# source denies the create. The stateless test configuration enables
+# `table_engines_require_grant`, so all users are also granted
+# TABLE ENGINE ON Overlay — what is being tested is the SELECT requirement.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -59,12 +61,16 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     GRANT CREATE DATABASE ON *.* TO ${USER_PART};
     GRANT CREATE DATABASE ON *.* TO ${USER_NONE};
 
+    GRANT TABLE ENGINE ON Overlay TO ${USER_BOTH};
+    GRANT TABLE ENGINE ON Overlay TO ${USER_PART};
+    GRANT TABLE ENGINE ON Overlay TO ${USER_NONE};
+
     -- BOTH: read access on both sources.
-    GRANT SELECT, TABLES ON ${DB_A}.* TO ${USER_BOTH};
-    GRANT SELECT, TABLES ON ${DB_B}.* TO ${USER_BOTH};
+    GRANT SELECT ON ${DB_A}.* TO ${USER_BOTH};
+    GRANT SELECT ON ${DB_B}.* TO ${USER_BOTH};
 
     -- PART: read access on A only.
-    GRANT SELECT, TABLES ON ${DB_A}.* TO ${USER_PART};
+    GRANT SELECT ON ${DB_A}.* TO ${USER_PART};
 
     -- NONE: no source access.
 "

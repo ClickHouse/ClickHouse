@@ -2621,13 +2621,19 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.storage && create.storage->engine)
     {
-        if (!create.table && create.storage && create.storage->engine
-            && Poco::toLower(create.storage->engine->name) == "overlay")
+        String engine_name = create.storage->engine->name;
+        if (!create.table)
         {
-            /// Overlay re-exposes the tables of the databases it unions, so creating it
-            /// requires SELECT on each source database.
-            if (create.storage->engine->arguments)
+            /// The parser may canonicalize a database engine name (e.g. `Overlay` is parsed as the
+            /// SQL-standard `overlay` function), and `TABLE ENGINE` grants are case-sensitive,
+            /// so resolve the canonical database engine name before forming the access element.
+            if (String canonical = DatabaseFactory::instance().resolveCanonicalEngineName(engine_name); !canonical.empty())
+                engine_name = canonical;
+
+            if (engine_name == "Overlay" && create.storage->engine->arguments)
             {
+                /// Overlay re-exposes the tables of the databases it unions, so creating it
+                /// requires SELECT on each source database.
                 for (const auto & arg : create.storage->engine->arguments->children)
                 {
                     auto resolved = evaluateConstantExpressionOrIdentifierAsLiteral(arg, getContext());
@@ -2637,7 +2643,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
                 }
             }
         }
-        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+        required_access.emplace_back(AccessType::TABLE_ENGINE, engine_name);
     }
 
     return required_access;
