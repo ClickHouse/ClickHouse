@@ -103,7 +103,6 @@ namespace DB::FailPoints
 #include <IO/ReadBufferFromMemory.h>
 #endif
 
-#include <Common/logger_useful.h>
 #include <Core/LogsLevel.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>

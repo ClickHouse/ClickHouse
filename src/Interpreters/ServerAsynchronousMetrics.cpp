@@ -19,7 +19,6 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
-#include <Common/ProfileEvents.h>
 
 
 #include "config.h"
