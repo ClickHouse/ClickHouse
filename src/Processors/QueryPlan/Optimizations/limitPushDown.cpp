@@ -174,8 +174,8 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// `LimitByStep`. Each stream can reduce its row count before the final merge to
     /// a single stream, so the final merge and later pipeline steps have less data to process.
     ///
-    /// We try to apply `LIMIT BY` per stream when each stream is sorted and `LIMIT BY` keys are a
-    /// prefix of the sort keys. This way we run the in-order variant of LIMIT BY, which is
+    /// We try to apply `LIMIT BY` per stream when each stream is sorted and the `LIMIT BY` keys, in any
+    /// order, form a prefix of the sort keys. This way we run the in-order variant of LIMIT BY, which is
     /// just a linear scan over the data with O(1) memory.
     ///
     /// TODO: When LIMIT BY prefix columns are a strict monotonic function of the ORDER BY key,
@@ -185,7 +185,8 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// by first applying an `ExpressionTransform`, and this will give quite a bit of speedup as well.
     /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
     /// whose size is the number of unique keys, and this can cause OOM.
-    if (!sort->getSortDescription().hasPrefix(limit_by->getColumns()))
+    const auto & limit_by_columns = limit_by->getColumns();
+    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns).size() != limit_by_columns.size())
         return;
 
     const UInt64 length = limit_by->getGroupLength();
