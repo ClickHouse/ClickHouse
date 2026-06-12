@@ -1810,20 +1810,34 @@ def test_sync_database_replica_strict(started_cluster):
                 settings=settings,
             )
 
-        # DEFAULT: cannot process the frozen snapshot -> times out.
-        default_error = dummy_node.query_and_get_error(
+        # The sync's wait budget is the server-side `receive_timeout`. The STRICT
+        # loop only reaches its `became_synced` check AFTER the inner DDL-worker
+        # wait consumes that whole budget, so STRICT returns success at ~the
+        # timeout. Over the native protocol the client socket uses the same
+        # `receive_timeout`, so it gives up at the exact moment the server
+        # answers (a flaky photo-finish). Use the HTTP interface instead: `params`
+        # sets `receive_timeout` server-side (the sync's budget), while the python
+        # read timeout (`timeout=`) is independent and generous, so the STRICT
+        # success is always delivered.
+        sync_params = {"receive_timeout": 3}
+
+        # DEFAULT: needs the frozen snapshot fully processed -> times out.
+        default_error = dummy_node.http_query_and_get_error(
             "system sync database replica strict_sync",
-            settings={"receive_timeout": 5},
+            params=sync_params,
+            timeout=60,
         )
         assert "TIMEOUT_EXCEEDED" in default_error, default_error
 
         # STRICT: lag is within max_replication_lag_to_enqueue, so the guarded
         # getZooKeeper()->get(max_log_ptr) runs and became_synced is true ->
-        # the query succeeds (it would time out if STRICT were ignored, and
-        # would raise "Current component is empty" / crash without the guard).
-        dummy_node.query(
+        # the query succeeds (it would time out like DEFAULT if STRICT were
+        # ignored, and would raise "Current component is empty" / crash without
+        # the guard).
+        dummy_node.http_query(
             "system sync database replica strict_sync strict",
-            settings={"receive_timeout": 5},
+            params=sync_params,
+            timeout=60,
         )
     finally:
         dummy_node.query(
