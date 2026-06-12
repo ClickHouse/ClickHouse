@@ -1086,7 +1086,7 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     sentinel_node->column->get(0, sentinel_field);
     const_node->column->get(0, const_field);
 
-    if (sentinel_field.getType() != const_field.getType() || sentinel_field == const_field)
+    if (!sentinel_node->result_type->equals(*const_node->result_type) || sentinel_field == const_field)
         return nullptr;
 
     auto function_builder = FunctionFactory::instance().get(String(canonical_op), context);
