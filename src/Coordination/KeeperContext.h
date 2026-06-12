@@ -65,6 +65,10 @@ public:
     std::vector<DiskPtr> getOldSnapshotDisks() const;
     void setSnapshotDisk(DiskPtr disk);
 
+    /// Set only the latest-snapshot storage (`setSnapshotDisk` overwrites both).
+    /// Only for tests that need the two-disk layout.
+    void setLatestSnapshotDisk(DiskPtr disk);
+
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
 

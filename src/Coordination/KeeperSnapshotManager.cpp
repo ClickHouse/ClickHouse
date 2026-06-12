@@ -843,7 +843,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     if (latest_snapshot_disk != disk)
         load_snapshot_from_disk(latest_snapshot_disk);
 
-    removeOutdatedSnapshotsIfNeeded();
+    removeOutdatedSnapshotsIfNeeded(/*just_written_log_idx=*/0);
     moveSnapshotsIfNeeded();
 }
 
@@ -890,11 +890,10 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
         throw;
     }
 
-    auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
-    existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
+    auto snapshot_file_info = registerSnapshotFile(up_to_log_idx, makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx));
     try
     {
-        removeOutdatedSnapshotsIfNeeded();
+        removeOutdatedSnapshotsIfNeeded(up_to_log_idx);
         moveSnapshotsIfNeeded();
     }
     catch (...)
@@ -958,11 +957,10 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
         throw;
     }
 
-    auto snapshot_file_info = makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx);
-    existing_snapshots.emplace(ctx.log_idx, snapshot_file_info);
+    auto snapshot_file_info = registerSnapshotFile(ctx.log_idx, makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx));
     try
     {
-        removeOutdatedSnapshotsIfNeeded();
+        removeOutdatedSnapshotsIfNeeded(ctx.log_idx);
         moveSnapshotsIfNeeded();
     }
     catch (...)
@@ -1114,10 +1112,54 @@ DiskPtr KeeperSnapshotManager<Storage>::getLatestSnapshotDisk() const
 }
 
 template<typename Storage>
-void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded()
+void KeeperSnapshotManager<Storage>::setProtectedSnapshotIndex(uint64_t log_idx)
 {
+    protected_snapshot_log_idx = log_idx;
+}
+
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::registerSnapshotFile(uint64_t log_idx, const SnapshotFileInfoPtr & snapshot_file_info)
+{
+    auto [it, inserted] = existing_snapshots.try_emplace(log_idx, snapshot_file_info);
+    if (inserted)
+        return it->second;
+
+    if (it->second->disk == snapshot_file_info->disk && it->second->path == snapshot_file_info->path)
+        return it->second; /// In-place overwrite: keep the canonical entry the map already tracks.
+
+    LOG_WARNING(
+        log,
+        "Snapshot with last log idx {} was already registered at {} (disk {}); replacing the registry entry "
+        "with the just-written file at {} (disk {}) and retiring the old one",
+        log_idx, it->second->path, it->second->disk->getName(),
+        snapshot_file_info->path, snapshot_file_info->disk->getName());
+    /// Different (disk, path), and the managed deleter unlinks only after the last pin releases.
+    it->second->retired_for_removal.store(true, std::memory_order_release);
+    it->second = snapshot_file_info;
+    return it->second;
+}
+
+template<typename Storage>
+void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx)
+{
+    /// Keep the `snapshots_to_keep` newest snapshots, plus the protected (mark-backing)
+    /// entry and the just-written entry. Worst-case retained files: snapshots_to_keep + 2.
     while (existing_snapshots.size() > snapshots_to_keep)
-        removeSnapshot(existing_snapshots.begin()->first);
+    {
+        auto candidate = existing_snapshots.begin();
+        size_t pinned_below = 0;
+        while (candidate != existing_snapshots.end()
+               && (candidate->first == protected_snapshot_log_idx || candidate->first == just_written_log_idx))
+        {
+            ++candidate;
+            ++pinned_below;
+        }
+        /// Remove the lowest unpinned entry only while it is not among the newest `snapshots_to_keep`.
+        if (candidate == existing_snapshots.end()
+            || existing_snapshots.size() <= snapshots_to_keep + pinned_below)
+            break;
+        removeSnapshot(candidate->first);
+    }
 }
 
 template<typename Storage>
@@ -1211,12 +1253,11 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
         throw;
     }
 
-    auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
-    existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
+    auto snapshot_file_info = registerSnapshotFile(up_to_log_idx, makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx));
 
     try
     {
-        removeOutdatedSnapshotsIfNeeded();
+        removeOutdatedSnapshotsIfNeeded(up_to_log_idx);
         moveSnapshotsIfNeeded();
     }
     catch (...)

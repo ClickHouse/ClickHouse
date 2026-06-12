@@ -241,9 +241,23 @@ public:
     /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
     SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
 
+    /// Protect the snapshot with this log index from outdated-snapshot retention — the
+    /// file backing `latest_snapshot_meta` must stay servable to NuRaft until the mark
+    /// advances. 0 = nothing protected. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    void setProtectedSnapshotIndex(uint64_t log_idx);
+
 private:
-    void removeOutdatedSnapshotsIfNeeded();
+    /// `just_written_log_idx` (0 = none) pins the entry the calling writer just registered:
+    /// it must survive this retention pass so the caller can publish it.
+    void removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
     void moveSnapshotsIfNeeded();
+
+    /// Register a just-written snapshot file and return the CANONICAL map entry for
+    /// `log_idx` — callers must use the returned pin, not their local twin. On a same-index
+    /// collision with a DIFFERENT (disk, path), retire the old entry and point the map at
+    /// the new file; a collision with the SAME (disk, path) is an in-place overwrite and
+    /// keeps the old entry (retiring it would later unlink the just-written bytes).
+    SnapshotFileInfoPtr registerSnapshotFile(uint64_t log_idx, const SnapshotFileInfoPtr & snapshot_file_info);
 
     /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
     /// `retired_for_removal` is set.
@@ -260,6 +274,8 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
+    /// See `setProtectedSnapshotIndex`. Checked by `removeOutdatedSnapshotsIfNeeded`.
+    uint64_t protected_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage
