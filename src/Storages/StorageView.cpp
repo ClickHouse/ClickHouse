@@ -414,9 +414,8 @@ public:
         , user_specified_columns_(std::move(user_specified_columns))
         , view_id_(view_id)
         , context_(context)
+        , async_insert_(async_insert)
     {
-        auto insert_context = Context::createCopy(context);
-
         /// Build an INSERT query targeting the underlying table.
         auto insert_query = make_intrusive<ASTInsertQuery>();
         insert_query->table_id = target_table_->getStorageID();
@@ -460,12 +459,9 @@ public:
         insert_query->columns = columns_ast;
         insert_query->children.push_back(insert_query->columns);
 
-        /// Create the inner INSERT pipeline for the target table.
-        ASTPtr insert_query_ptr = insert_query;
-        InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, /*allow_materialized=*/false, /*no_squash=*/false, /*no_destination=*/false, async_insert);
-        block_io_ = interpreter.execute();
-        executor_ = std::make_unique<PushingPipelineExecutor>(block_io_.pipeline);
-        executor_->start();
+        /// The inner `INSERT` pipeline is created and started in `onStart`, after the
+        /// constructor has finished all validation below (the `WHERE` analysis can throw).
+        insert_query_ = insert_query;
 
         /// Build WHERE constraint expression if the view has a WHERE clause.
         if (where_condition)
@@ -508,11 +504,26 @@ public:
             where_actions_ = ExpressionAnalyzer(where_clone, syntax, context).getActions(false, true);
             where_column_name_ = where_clone->getColumnName();
         }
-
-        addInterpreterContext(std::move(insert_context));
     }
 
     String getName() const override { return "SinkToStorageView"; }
+
+    void onStart() override
+    {
+        /// Create and start the inner `INSERT` pipeline only when the outer pipeline begins
+        /// executing, mirroring `StorageAlias::AliasSink`. Doing this in the constructor would
+        /// check target privileges, acquire target locks and start the target sink before the
+        /// constructor's own validation has succeeded — and if that validation threw, the
+        /// half-constructed sink would never receive `onException`, so the already-started
+        /// executor would only be torn down by member destructors.
+        auto insert_context = Context::createCopy(context_);
+        addInterpreterContext(insert_context);
+
+        InterpreterInsertQuery interpreter(insert_query_, insert_context, /*allow_materialized=*/false, /*no_squash=*/false, /*no_destination=*/false, async_insert_);
+        block_io_ = interpreter.execute();
+        executor_ = std::make_unique<PushingPipelineExecutor>(block_io_.pipeline);
+        executor_->start();
+    }
 
     void consume(Chunk & chunk) override
     {
@@ -540,9 +551,8 @@ public:
             /// logical error instead of enforcing the constraint. Build them once, lazily, on the
             /// first chunk — mirroring `CheckConstraintsTransform::onConsume`. The set is built by
             /// running the subquery's own pipeline, which must happen while this sink is executing,
-            /// not while it is being constructed (the inner `INSERT` executor is already started by
-            /// then), so building it here rather than in the constructor avoids a nested-pipeline
-            /// execution during outer-pipeline construction.
+            /// not while it is being constructed, so building it here rather than in the
+            /// constructor avoids a nested-pipeline execution during outer-pipeline construction.
             if (!where_sets_built_)
             {
                 VirtualColumnUtils::buildSetsForDAG(where_actions_->getActionsDAG(), context_);
@@ -711,6 +721,10 @@ private:
     Names omitted_view_columns_;
     StorageID view_id_;
     ContextPtr context_;
+    bool async_insert_;
+
+    /// The inner `INSERT` query built in the constructor and executed in `onStart`.
+    ASTPtr insert_query_;
 
     BlockIO block_io_;
     std::unique_ptr<PushingPipelineExecutor> executor_;
