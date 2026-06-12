@@ -42,3 +42,17 @@ Expression ((Project names + Projection))
             Granules: 245/245
             Search Algorithm: binary search
           Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_pruning)
+        Indexes:
+          PrimaryKey
+            Keys:
+              team
+            Condition: (team in [1, 1])
+            Parts: 1/1
+            Granules: 245/245
+            Search Algorithm: binary search
+          Ranges: 1

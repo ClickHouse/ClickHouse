@@ -14,5 +14,6 @@ EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND null
 SELECT '--- NEGATIVE TESTS (Should fallback to full scan) ---';
 EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, 255) != 5;
 EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, k) = 5;
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, toInt16(5)) = 5;
 
 DROP TABLE t_nullif_pruning;
