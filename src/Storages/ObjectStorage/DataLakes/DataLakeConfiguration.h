@@ -94,6 +94,7 @@ public:
             return;
 
         BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
+        assertLocalPathCorrect(object_storage, local_context);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
@@ -102,14 +103,13 @@ public:
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
-    /// Initialize the data lake metadata on first use without re-fetching it if
-    /// it is already loaded. update(..., if_not_updated_before=true) is a no-op
-    /// once current_metadata is set, so this is safe to call on every access.
     void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context)
     {
         if (current_metadata != nullptr)
             return;
-        update(object_storage, local_context, /* if_not_updated_before */ true);
+        BaseStorageConfiguration::update(object_storage, local_context, /* if_not_updated_before */ true);
+        assertLocalPathCorrect(object_storage, local_context);
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
     void create(
@@ -122,14 +122,8 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
-        if (object_storage->getType() == ObjectStorageType::Local)
-        {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-        }
         BaseStorageConfiguration::update(object_storage, local_context, true);
+        assertLocalPathCorrect(object_storage, local_context);
 
         DataLakeMetadata::createInitial(
             object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
@@ -327,6 +321,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
+        lazyInitializeIfNeeded(object_storage, context);
         update(object_storage, context, /* if_not_updated_before */ true);
         return current_metadata->write(
             sample_block,
@@ -414,6 +409,17 @@ private:
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
 
+    void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
+    {
+        if (object_storage->getType() == ObjectStorageType::Local)
+        {
+            auto user_files_path = local_context->getUserFilesPath();
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                throw Exception(
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+        }
+    }
+
     void assertInitialized() const
     {
         if (!current_metadata)
@@ -429,6 +435,7 @@ private:
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
+        assertLocalPathCorrect(object_storage, local_context);
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(
