@@ -934,76 +934,90 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
+
+    /// Snapshot the projection-item structural hashes BEFORE ReplaseAliasColumnsVisitor
+    /// inlines ALIAS columns.  These "original" hashes identify what the outer planner
+    /// (which sees the un-inlined query tree) will treat as equivalent: items with the
+    /// same original hash collapse to a single DAG output through removeUnusedActions's
+    /// name-based deduplication, so we must keep them collapsed on the shard too.
+    /// Items that only become structurally identical after inlining (e.g. two ALIAS
+    /// columns expanding to the same expression, or one ALIAS column written next to
+    /// the same expression written directly) must, conversely, be disambiguated, or
+    /// the shard returns fewer columns than the outer planner expects and the
+    /// position-based rename in PlannerJoinTree throws NUMBER_OF_COLUMNS_DOESNT_MATCH.
+    std::vector<IQueryTreeNode::Hash> original_projection_hashes;
+    if (auto * pre_visitor_query_node = query_tree_to_modify->as<QueryNode>())
+    {
+        const auto & projection_nodes = pre_visitor_query_node->getProjection().getNodes();
+        original_projection_hashes.reserve(projection_nodes.size());
+        for (const auto & node : projection_nodes)
+            original_projection_hashes.push_back(node->getTreeHash({.compare_aliases = false}));
+    }
+
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
     replace_alias_columns_visitor.visit(query_tree_to_modify);
 
-    /// After inlining ALIAS columns, the projection may contain structurally
-    /// identical expressions (e.g. two ALIAS columns both defined as toString(x)).
-    /// The planner assigns action-node names by expression structure, so duplicates
-    /// get the same name and downstream deduplication shrinks the column count,
-    /// causing NUMBER_OF_COLUMNS_DOESNT_MATCH.  Wrap subsequent duplicates in
-    /// __actionName(expr, '<unique_name>') which forces a unique action-node name.
-    /// Identify ALIAS columns via the alias set by ReplaseAliasColumnsVisitor
-    /// (which is the original column name), and use position-based naming to
-    /// guarantee uniqueness even for repeated projections like SELECT a1, a2, a2.
-    auto * query_node_ptr = query_tree_to_modify->as<QueryNode>();
-    if (query_node_ptr)
+    /// Resolve structural collisions in the post-inlining projection that did not
+    /// exist in the original tree.  Items are bucketed by their post-inlining
+    /// structural hash; within each bucket they are further partitioned by their
+    /// original (pre-inlining) hash.  The first partition in each bucket keeps the
+    /// natural DAG name; every subsequent partition gets a fresh __actionName wrap;
+    /// items in the same partition share that wrap, so the shard ends up with
+    /// exactly as many distinct DAG output names as the outer planner's NameSet
+    /// deduplication produces.
+    if (auto * query_node_ptr = query_tree_to_modify->as<QueryNode>())
     {
-        const auto & columns_description = distributed_storage_snapshot->metadata->getColumns();
         auto & projection_nodes = query_node_ptr->getProjection().getNodes();
-        struct TreeHashHash { size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); } };
-        std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_hashes;
-        bool has_duplicate = false;
-
-        for (const auto & proj_node : projection_nodes)
+        if (projection_nodes.size() == original_projection_hashes.size())
         {
-            auto tree_hash = proj_node->getTreeHash({.compare_aliases = false});
-            if (!seen_hashes.emplace(tree_hash).second)
+            struct TreeHashHash
             {
-                /// The alias on the node was set by ReplaseAliasColumnsVisitor
-                /// to the original ALIAS column name (before any user AS rename).
-                const auto & node_alias = proj_node->getAlias();
-                const auto & col_default = columns_description.getDefault(node_alias);
-                if (col_default && col_default->kind == ColumnDefaultKind::Alias)
-                {
-                    has_duplicate = true;
-                    break;
-                }
-            }
-        }
-
-        if (has_duplicate)
-        {
-            seen_hashes.clear();
-            std::unordered_set<String> wrapped_aliases;
-            auto action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
+                size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); }
+            };
+            struct OriginEntry { IQueryTreeNode::Hash original_hash; String wrap_name; };
+            std::unordered_map<IQueryTreeNode::Hash, std::vector<OriginEntry>, TreeHashHash> bucket;
+            FunctionOverloadResolverPtr action_name_resolver;
+            size_t wrap_counter = 0;
 
             for (size_t i = 0; i < projection_nodes.size(); ++i)
             {
-                auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
-                if (seen_hashes.emplace(tree_hash).second)
-                    continue;
+                auto inlined_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
+                auto & entries = bucket[inlined_hash];
 
-                const auto & node_alias = projection_nodes[i]->getAlias();
-                const auto & col_default = columns_description.getDefault(node_alias);
-                if (!col_default || col_default->kind != ColumnDefaultKind::Alias)
+                if (entries.empty())
+                {
+                    entries.push_back({original_projection_hashes[i], {}});
                     continue;
+                }
 
-                /// Only wrap the first occurrence of each distinct ALIAS column
-                /// name that collides.  Repeated references to the same column
-                /// (SELECT a2, a2) share one identifier in the original tree and
-                /// must remain as one DAG node so the column count matches.
-                if (!wrapped_aliases.emplace(node_alias).second)
-                    continue;
+                String wrap_name;
+                auto it = std::find_if(entries.begin(), entries.end(),
+                    [&](const OriginEntry & e) { return e.original_hash == original_projection_hashes[i]; });
+                if (it != entries.end())
+                {
+                    if (it->wrap_name.empty())
+                        continue;
+                    wrap_name = it->wrap_name;
+                }
+                else
+                {
+                    ++wrap_counter;
+                    wrap_name = "__distributed_alias_dedup_" + std::to_string(wrap_counter);
+                    entries.push_back({original_projection_hashes[i], wrap_name});
+                }
 
-                auto unique_name = "__distributed_alias_" + node_alias + "_" + std::to_string(i);
+                if (!action_name_resolver)
+                    action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
+
+                auto node_alias = projection_nodes[i]->getAlias();
                 projection_nodes[i]->removeAlias();
-                auto name_node = std::make_shared<ConstantNode>(unique_name);
+                auto name_node = std::make_shared<ConstantNode>(wrap_name);
                 auto wrapper = std::make_shared<FunctionNode>("__actionName");
                 wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
                 wrapper->getArguments().getNodes().push_back(std::move(name_node));
                 wrapper->resolveAsFunction(action_name_resolver);
-                wrapper->setAlias(node_alias);
+                if (!node_alias.empty())
+                    wrapper->setAlias(node_alias);
                 projection_nodes[i] = std::move(wrapper);
             }
         }
