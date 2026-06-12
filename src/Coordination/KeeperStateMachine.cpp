@@ -1994,6 +1994,41 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
     }
 }
 
+template<typename Storage>
+std::vector<KeeperSnapshotStatus> KeeperStateMachine<Storage>::getSnapshotsStatus() const
+{
+    std::lock_guard lock(snapshots_lock);
+
+    auto existing = snapshot_manager.getExistingSnapshots(lock);
+
+    std::vector<KeeperSnapshotStatus> result;
+    result.reserve(existing.size() + (snapshot_receive_ctx ? 1 : 0));
+
+    for (auto & [log_idx, file_info] : existing)
+    {
+        result.push_back(KeeperSnapshotStatus{
+            log_idx,
+            file_info->path,
+            file_info->disk,
+            std::move(file_info),
+            /*is_received=*/ false,
+        });
+    }
+
+    if (snapshot_receive_ctx)
+    {
+        result.push_back(KeeperSnapshotStatus{
+            snapshot_receive_ctx->log_idx,
+            snapshot_receive_ctx->snapshot_file_name,
+            snapshot_receive_ctx->disk,
+            /*pin=*/ nullptr,
+            /*is_received=*/ true,
+        });
+    }
+
+    return result;
+}
+
 template class KeeperStateMachine<KeeperMemoryStorage>;
 #if USE_ROCKSDB
 template class KeeperStateMachine<KeeperRocksStorage>;
