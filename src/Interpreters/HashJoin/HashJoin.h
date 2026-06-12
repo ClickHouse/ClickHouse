@@ -575,6 +575,9 @@ private:
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
 
+    /// Track if shared runtime filters were already published to keep publication one-shot.
+    bool shared_runtime_filters_publish_attempted = false;
+
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
     String instance_log_id;
@@ -608,6 +611,10 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
 
     bool canConvertToFixedHashMap() const;
+
+    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
+    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
+    void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
     template <bool is_signed, typename Key, typename MapsTemplate>

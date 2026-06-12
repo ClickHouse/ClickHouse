@@ -387,6 +387,9 @@ void optimizeTreeSecondPass(
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
+            if (optimization_settings.limit_by_in_order)
+                optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
+
             if (optimization_settings.push_limit_by_into_sort)
                 pushLimitByIntoSort(frame_node);
         });
