@@ -99,6 +99,8 @@ namespace DB::Setting
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
 static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
+static constexpr size_t MAX_LIST_RETRIES = 5;
+
 namespace DB::Iceberg
 {
 
@@ -1079,7 +1081,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-        const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+        
+        std::vector<String> metadata_files;
+        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        {
+            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            if (!metadata_files.empty())
+                break;
+            LOG_DEBUG(
+                log,
+                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                "(attempt {} of {}), retrying",
+                table_path,
+                attempt + 1,
+                MAX_LIST_RETRIES);
+        }
         if (metadata_files.empty())
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
