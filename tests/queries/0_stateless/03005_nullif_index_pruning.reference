@@ -1,0 +1,15 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_pruning)
+        Indexes:
+          PrimaryKey
+            Keys:
+              team
+              k
+            Condition: and((k in [5, 5]), (team in [1, 1]))
+            Parts: 1/1
+            Granules: 2/245
+            Search Algorithm: binary search
+          Ranges: 1
