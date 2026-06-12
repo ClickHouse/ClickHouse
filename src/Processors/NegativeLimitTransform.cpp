@@ -249,8 +249,18 @@ bool NegativeLimitTransform::sortKeysEqual(const Chunk & lhs, UInt64 lhs_row, co
     {
         const size_t pos = sort_column_positions[i];
         const auto & desc = description[i];
+        const auto & lhs_col = *lhs_cols[pos];
+        const auto & rhs_col = *rhs_cols[pos];
 
-        if (lhs_cols[pos]->compareAt(lhs_row, rhs_row, *rhs_cols[pos], desc.nulls_direction) != 0)
+        /// Compare ties using the same collation as ORDER BY, otherwise rows that are equal
+        /// according to the collation would be treated as distinct and the tie run would be cut short.
+        int res = 0;
+        if (desc.collator && lhs_col.isCollationSupported())
+            res = lhs_col.compareAtWithCollation(lhs_row, rhs_row, rhs_col, desc.nulls_direction, *desc.collator);
+        else
+            res = lhs_col.compareAt(lhs_row, rhs_row, rhs_col, desc.nulls_direction);
+
+        if (res != 0)
             return false;
     }
     return true;
@@ -463,9 +473,10 @@ void NegativeLimitTransform::cutFrontChunkToRunStart()
 
     /// Binary search for the first row equal to the boundary key.
     /// We search only within [0, hi) where hi is at or before the boundary
-    /// position — all rows in this range are <= boundary in sort order,
+    /// position — all rows in this range are <= boundary in sort order, and
+    /// key equality uses the same comparator as the ordering (including collation),
     /// so non-equal rows are strictly before equal rows and the equality-based
-    /// binary search is correct regardless of collation.
+    /// binary search is correct.
     UInt64 lo = 0;
     UInt64 hi = (boundary.limit_boundary_chunk_idx == 0) ? boundary.limit_boundary_row_idx + 1 : run_start_chunk.getNumRows();
     while (lo < hi)
