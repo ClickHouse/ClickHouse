@@ -207,6 +207,12 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, bool seed_is_empty
             for (const auto & change : settings_ast->changes)
                 if (change.name == "obfuscate_seed")
                     seed_is_empty = change.value.getType() == Field::Types::String && change.value.safeGet<String>().empty();
+
+            /// `SETTINGS obfuscate_seed = DEFAULT` is stored separately and resets the seed
+            /// to its default, which is the empty (non-deterministic) one.
+            for (const auto & name : settings_ast->default_settings)
+                if (name == "obfuscate_seed")
+                    seed_is_empty = true;
         }
     }
 

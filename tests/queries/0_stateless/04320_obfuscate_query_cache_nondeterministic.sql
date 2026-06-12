@@ -30,3 +30,9 @@ SELECT count() FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8 S
 SELECT count() FROM system.query_cache;
 
 SYSTEM CLEAR QUERY CACHE;
+
+SELECT '-- DEFAULT in an inner SETTINGS resets the seed to the empty one: rejected';
+SELECT count() FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8 SETTINGS obfuscate_seed = DEFAULT) SETTINGS use_query_cache = 1, obfuscate_seed = 'stable'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT count() FROM system.query_cache;
+
+SYSTEM CLEAR QUERY CACHE;

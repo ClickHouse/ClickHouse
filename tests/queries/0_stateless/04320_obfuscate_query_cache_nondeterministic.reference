@@ -8,3 +8,5 @@
 -- non-empty seed in an inner SETTINGS makes the result reproducible: cacheable
 8
 1
+-- DEFAULT in an inner SETTINGS resets the seed to the empty one: rejected
+0
