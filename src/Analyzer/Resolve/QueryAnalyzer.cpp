@@ -2363,7 +2363,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -3028,7 +3028,9 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
         is_aggregate_argument = is_aggregate_argument
             || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
 
-        if (!is_aggregate_argument)
+        /// `find(node)` computes `node`'s hash, so skip scopes with no keys (avoids the hash for
+        /// the common scope that is not under `group_by_use_nulls`).
+        if (!is_aggregate_argument && !scope_ptr->nullable_group_by_keys.empty())
         {
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
@@ -3254,6 +3256,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             const auto & proj_cols = mat_subquery->as<QueryNode>()
                                 ? mat_subquery->as<QueryNode>()->getProjectionColumns()
                                 : mat_subquery->as<UnionNode>()->computeProjectionColumns();
+
 
                             NamesAndTypesList columns;
                             for (const auto & col : proj_cols)
