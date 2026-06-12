@@ -2459,7 +2459,18 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (result.column_names_to_read.empty())
     {
         NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
-        result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
+
+        /// Pick the column that is cheapest to read from disk. getSmallestColumn() ranks by the
+        /// in-memory value size, which mis-ranks compactly stored columns: a LowCardinality(String)
+        /// reads far fewer bytes than a UInt64 yet looks "larger" in memory. Use the on-disk
+        /// compressed size instead, matching the carrier chosen later in injectRequiredColumns().
+        String smallest_column_name;
+        if (!parts.empty())
+            smallest_column_name = parts.front().data_part->getColumnNameWithMinimumCompressedSize(available_real_columns);
+        else
+            smallest_column_name = ExpressionActions::getSmallestColumn(available_real_columns).name;
+
+        result.column_names_to_read.push_back(std::move(smallest_column_name));
     }
 
     /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
