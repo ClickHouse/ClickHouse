@@ -90,6 +90,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPutScheduled;
     extern const Event ReaderExecutorPutPoolFull;
     extern const Event ReaderExecutorPutAbandoned;
+    extern const Event ReaderExecutorBytesPromoted;
 }
 
 namespace
@@ -4381,5 +4382,53 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
         EXPECT_EQ(all, content) << "an abandoned fill must not affect served bytes";
         EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u)
             << "a put parked twice must be abandoned";
+    }
+}
+
+TEST(ReaderExecutor, WarmServeDefersPromoteToPutStep)
+{
+    /// The warm-path lever: an fs-resident scan serves from the slower tier and
+    /// promotes the served runs into the faster (page) tier - through put-only
+    /// machines when pools are present, so the serve loop itself never writes a
+    /// cache. The fs mock fabricates 'D' bytes; the source must never be read.
+    constexpr size_t FILE_SIZE = 8000;
+    constexpr size_t SEG = 2000;
+    constexpr size_t WINDOW = 1000;
+    constexpr size_t BLOCK = 500;
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(FILE_SIZE, 'X')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", FILE_SIZE);
+
+    auto fs = std::make_shared<EvictableSegmentMockCache>(SEG);
+    for (size_t i = 0; i < FILE_SIZE / SEG; ++i)
+        fs->downloaded[i] = SEG;   /// every segment fully resident
+    PageCacheFixture pcfix;
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(pcfix.provider(BLOCK, FILE_SIZE));   /// faster tier, cold
+    caches.push_back(fs);                                 /// slower tier, warm
+
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    TestThreadGroup tg;
+    {
+        ReaderExecutor executor(source, objects, caches, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
+        executor.setPrefetchPool(pool);
+
+        String result;
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            for (const auto & node : rope.getNodes())
+                result.append(node.data(), node.size);
+        }
+        EXPECT_EQ(result, String(FILE_SIZE, 'D')) << "warm serve must come from the fs tier";
+        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u);
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPromoted), 0u)
+            << "served runs must be promoted into the faster tier";
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutScheduled), 0u)
+            << "promotes must go through put-only machines, not the serve loop";
     }
 }

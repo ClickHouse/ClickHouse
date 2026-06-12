@@ -59,6 +59,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPutAbandoned;
     extern const Event ReaderExecutorPutFailed;
     extern const Event ReaderExecutorPutWaitMicroseconds;
+    extern const Event ReaderExecutorPromoteSkipped;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
 }
@@ -172,6 +173,7 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case PutAbandoned:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPutAbandoned, value); break;
         case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
         case PutWaitMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorPutWaitMicroseconds, value); break;
+        case PromoteSkipped:            ProfileEvents::increment(ProfileEvents::ReaderExecutorPromoteSkipped, value); break;
         case NumCounters:               break;
     }
 }
@@ -1158,8 +1160,9 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
         const bool is_page = run.tier == CacheTier::PageCache;
         stats.add(is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache, got);
         /// Promote this run up into any faster tier that misses it (no-op when served from
-        /// the fastest tier or nothing faster populates).
-        maybePromote(run.tier, ByteRange{pos, got}, chunk, stats);
+        /// the fastest tier or nothing faster populates) - deferred to a put-only machine
+        /// when pools are present; skipped outright under contention (optional work).
+        schedulePromoteStep(run.tier, ByteRange{pos, got}, chunk, stats);
         rope.append(std::move(chunk));
         pos += got;
         if (pos < serve_end)
@@ -2260,7 +2263,7 @@ void ReaderExecutor::assembleAndWriteBack(
 }
 
 void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
-    const Rope & rope, bool async, const std::atomic<bool> * interrupt, Stats & out_stats)
+    const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
     for (auto & w : writers)
     {
@@ -2283,8 +2286,7 @@ void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & wri
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(async ? Stats::BytesPushedToCacheAsync : Stats::BytesPushedToCacheSync,
-            w.writer->write(std::move(slice)));
+        out_stats.add(bytes_counter, w.writer->write(std::move(slice)));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
@@ -2301,7 +2303,7 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
     /// This is the SYNCHRONOUS write side (the no-pool/sync paths); a machine collect
     /// defers the same work to a put step (`schedulePutStep`).
     for (auto & buf : read_plan.bufs)
-        pushRopeToWriters(buf.writers, physical_window, result, /*async=*/false, /*interrupt=*/nullptr, out_stats);
+        pushRopeToWriters(buf.writers, physical_window, result, Stats::BytesPushedToCacheSync, /*interrupt=*/nullptr, out_stats);
 }
 
 void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope & assembled)
@@ -2357,7 +2359,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
             ? self->physical_window.offset
             : std::min(self->physical_window.end(), self->fill_rope.range().end());
         pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
-            /*async=*/true, &self->interrupt_requested, self->stats);
+            self->put_bytes_counter, &self->interrupt_requested, self->stats);
         /// Pin the partial segment under the just-written frontier until the
         /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
         /// fill landed, so a fresh segment was not pinnable there.
@@ -2382,6 +2384,78 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
     else
         stats.add(Stats::PutPoolFull);  /// parked; the sweep grants one reschedule
     put_machines.push_back(std::move(m));
+}
+
+void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
+{
+    /// Pool-less executors promote synchronously, as always.
+    if (!runner)
+    {
+        maybePromote(from_tier, range, bytes, out_stats);
+        return;
+    }
+
+    /// STRICTLY optional: over the cap means skip, not park - a warm serve must
+    /// never wait on promote bookkeeping.
+    if (put_machines.size() >= MAX_PUT_MACHINES)
+    {
+        out_stats.add(Stats::PromoteSkipped);
+        return;
+    }
+
+    auto pm = std::make_shared<FetchMachine>();
+    pm->requested_range = range;
+    pm->physical_window = range;
+
+    /// Borrow the faster-tier writers overlapping `range` that are HOME - chain
+    /// order, breaking at the serving tier (`[CF-promote]`, decided here on the
+    /// foreground; the machine gets a flat list). A writer on loan to a fill is
+    /// simply not here - that part of the promote is skipped, not waited for.
+    for (size_t i = 0; i < read_plan.bufs.size(); ++i)
+    {
+        auto & buf = read_plan.bufs[i];
+        if (!buf.provider)
+            continue;
+        if (buf.provider->tier() == from_tier)
+            break;
+        auto kept = std::stable_partition(buf.writers.begin(), buf.writers.end(),
+            [&](const MissEntry & w)
+            {
+                return !(w.writer && w.range.offset < range.end() && range.offset < w.range.end());
+            });
+        for (auto it = kept; it != buf.writers.end(); ++it)
+        {
+            pm->writers.push_back(std::move(*it));
+            pm->writer_origins.push_back(i);
+        }
+        buf.writers.erase(kept, buf.writers.end());
+    }
+    if (pm->writers.empty())
+        return;  /// nothing faster populatable for this run (or all on loan)
+
+    pm->fill_rope = bytes;
+    pm->put_wait.restart();
+    pm->put_bytes_counter = Stats::BytesPromoted;
+    pm->run_step = [this, self = pm.get()]
+    {
+        self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
+        pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
+            self->put_bytes_counter, &self->interrupt_requested, self->stats);
+        self->fill_rope = {};
+        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
+    };
+
+    if (runner->schedule(pm, StepKind::Put))
+    {
+        stats.add(Stats::PutScheduled);
+        put_machines.push_back(std::move(pm));
+    }
+    else
+    {
+        /// Skip, no park: return the borrowed writers home right away.
+        out_stats.add(Stats::PromoteSkipped);
+        reapPutMachine(*pm);
+    }
 }
 
 void ReaderExecutor::reapPutMachine(FetchMachine & m)
@@ -2496,7 +2570,7 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
             /// source AND drop the fill (double loss). The one case a deferred
             /// write runs on the client thread, bounded by one window.
             pushRopeToWriters(m.writers, m.physical_window, m.fill_rope,
-                /*async=*/false, /*interrupt=*/nullptr, m.stats);
+                Stats::BytesPushedToCacheSync, /*interrupt=*/nullptr, m.stats);
             m.fill_rope = {};
         }
         else
@@ -2510,6 +2584,8 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
 
 void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
 {
+    /// The POOL-LESS promote body (`schedulePromoteStep` defers the same write to a
+    /// put-only machine when pools are present).
     /// Walk the plan's held write buffers in chain order (provider-grouped fastest-first).
     /// Everything before `from_tier` is faster and missed `range` (else it would have
     /// served it), so write `bytes` up into each such tier's held write buffers. BREAK at

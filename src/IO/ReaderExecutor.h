@@ -355,14 +355,6 @@ private:
     /// work to a put step (`schedulePutStep`).
     void pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats);
 
-    /// The per-writer-list body shared by the sync push above and the machine's
-    /// put step: write `rope ∩ writer-range ∩ window` into each writer, counted
-    /// as `BytesPushedToCache{Sync,Async}` per `async`. `interrupt` (nullable)
-    /// is polled between writers - the put step's interrupt point; remaining
-    /// writers are left untouched for the caller's abandon path.
-    void pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
-        const Rope & rope, bool async, const std::atomic<bool> * interrupt, Stats & out_stats);
-
     /// The retrigger verb: turn a just-collected machine into its PUT step.
     /// BORROW the writers overlapping its aligned window from `read_plan.bufs`
     /// into the machine (joining any earlier put still holding them), hand it
@@ -382,6 +374,16 @@ private:
     /// abandon beyond that (the writers still return home - a later window may
     /// fill them). `wait` joins running ones too (plan rebuild / destruction).
     void sweepPutMachines(bool wait);
+
+    /// The deferred promote: borrow the FASTER-tier writers overlapping `range`
+    /// that are currently home (chain order, breaking at `from_tier` -
+    /// `[CF-promote]` computed here, on the foreground, against the plan) into a
+    /// put-only machine fed by the served rope slice (refcounted, no copy).
+    /// STRICTLY optional work with no ladder: writers on loan, a full pool, or
+    /// the machine cap mean the promote is SKIPPED outright (`PromoteSkipped`) -
+    /// any later read can regenerate it - so a warm serve never waits. The
+    /// pool-less executor keeps the synchronous `maybePromote`.
+    void schedulePromoteStep(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats);
 
     /// Join (wait + reap) every put machine whose window - or, with
     /// `writers_too`, whose borrowed writer ranges - intersects `window`,
@@ -1088,6 +1090,9 @@ private:
             PutFailed,
             /// Time a scheduled put step spent queued before running.
             PutWaitMicroseconds,
+            /// Deferred promotes skipped (writers on loan / pool full / over the
+            /// machine cap): purely optional work, regenerable by any later read.
+            PromoteSkipped,
             NumCounters
         };
 
@@ -1142,6 +1147,16 @@ private:
     /// release happens-before edge.
     mutable Stats stats;
 
+    /// The per-writer-list body shared by the sync push, the machine's put step
+    /// and the deferred promote: write `rope ∩ writer-range ∩ window` into each
+    /// writer, counted into `bytes_counter` (`BytesPushedToCache{Sync,Async}`
+    /// for fills, `BytesPromoted` for promotes). `interrupt` (nullable) is
+    /// polled between writers - the put step's interrupt point; remaining
+    /// writers are left untouched for the caller's abandon path.
+    void pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
+        const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats);
+
+
     /// The background read-ahead machine (see the `machine` member): the old
     /// `PrefetchJob` grown into a steppable context (FetchMachine.h). One step
     /// today - a pure source fetch of the pre-bounded aligned gap window - then
@@ -1194,6 +1209,9 @@ private:
         /// One reschedule is granted to a `ParkedPoolFull` put before it is
         /// abandoned (the park -> reschedule once -> abandon ladder).
         bool put_rescheduled = false;
+        /// Which byte counter the put step credits: a fill counts
+        /// `BytesPushedToCacheAsync`, a deferred promote counts `BytesPromoted`.
+        Stats::Counter put_bytes_counter = Stats::BytesPushedToCacheAsync;
         /// Strategy-A pin taken by the PUT step over the partial segment it just
         /// filled, held until the machine's reap: the foreground finalize runs
         /// BEFORE the deferred fill, so its `writerPinAt` finds a fresh segment
