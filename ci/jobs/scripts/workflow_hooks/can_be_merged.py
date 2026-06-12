@@ -14,6 +14,7 @@ def check():
         Labels.CI_INTEGRATION,
         Labels.CI_FUNCTIONAL,
         Labels.CI_BUILD,
+        Labels.NO_CI_MACOS,
     ]
 
     for label in forbidden_labels:
