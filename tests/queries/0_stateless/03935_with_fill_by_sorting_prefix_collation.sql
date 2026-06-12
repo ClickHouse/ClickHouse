@@ -1,4 +1,5 @@
 -- { echoOn }
+-- Tags: no-fasttest
 SET use_with_fill_by_sorting_prefix = 1;
 
 DROP TABLE IF EXISTS t_fill_collation;
