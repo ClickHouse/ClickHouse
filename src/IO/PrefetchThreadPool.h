@@ -67,8 +67,8 @@ private:
     std::future<void> future;
 };
 
-/// Shared bounded thread pool for the executor's background jobs (prefetch
-/// fetch steps today; cache-write steps share it as a distinct `StepKind`).
+/// Shared bounded thread pool for the executor's background jobs (machine
+/// fetch steps and deferred cache-write steps share it).
 class PrefetchThreadPool
 {
 public:

@@ -313,7 +313,8 @@ private:
     /// neither latch EOF nor throw (the flags are checked FIRST). The window is the
     /// plan gap the foreground bounded at launch.
     Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
-        bool & eof_latch, MemoryPressureLevel pressure_level, const MachineBase * stop, Stats & out_stats);
+        bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
+        const MachineBase * stop, Stats & out_stats);
 
     /// Backfill the cache for `physical_window` from `source_bytes` (the whole window
     /// already fetched from the source). FOREGROUND-only: serve any late-hit from cache
@@ -444,7 +445,8 @@ private:
     Rope readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-        bool keep_live, ConnState & conn, const MachineBase * stop, Stats & out_stats);
+        bool keep_live, ConnState & conn, std::optional<size_t> read_extent,
+        const MachineBase * stop, Stats & out_stats);
 
     /// Before dropping the live connection away from its bound, if only a small
     /// tail (<= `max_tail_for_drain`) remains, read it out so the connection
@@ -1170,7 +1172,7 @@ private:
     /// cancel intent applies to puts); remaining writers are left untouched for
     /// the caller's abandon path.
     void pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
-        const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * abort, Stats & out_stats);
+        const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats);
 
 
     /// The background read-ahead machine (see the `machine` member): the old
@@ -1200,6 +1202,10 @@ private:
         /// and pins at its frontier.
         ByteRange physical_window;
         std::shared_ptr<const ReadPlanGeometry> geometry;
+        /// The advertised read extent at launch: the worker bounds its source
+        /// connection with THIS, never the live `read_extent_end` member - a
+        /// soft-cancelled machine must not race `setReadExtent`.
+        std::optional<size_t> extent_snapshot;
         Stats stats;
         ConnState conn;
         /// Whether the launching plan held the live-connection lease (a wide

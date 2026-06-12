@@ -5,7 +5,7 @@
 namespace DB
 {
 
-bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine, StepKind /*kind*/)
+bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
 {
     chassert(machine && machine->run_step);
 
@@ -80,6 +80,8 @@ void FetchMachineRunner::waitReleased(MachineBase & machine)
         /// schedule wrapper. Either way the handle resolved - the release
         /// (happens-before) edge over the payload is established.
     }
+    /// Joined exactly once: drop the consumed handle (see the header note).
+    machine.current_step.reset();
 }
 
 }

@@ -28,14 +28,6 @@ enum class MachineState : uint8_t
     Failed,         /// the step threw; `failure` holds the exception
 };
 
-/// Which pool a step runs on. One shared pool today; the kind keys the routing
-/// once a dedicated cache-write pool exists.
-enum class StepKind : uint8_t
-{
-    Fetch,
-    Put,
-};
-
 /// A step's verdict: park at the barrier, wrap up early, or finish.
 /// (Multi-step machines return AwaitCollect and the executor schedules the
 /// continuation - every transition is executor-mediated; a worker never
@@ -58,17 +50,14 @@ struct MachineBase
 {
     std::atomic<MachineState> state{MachineState::Constructed};
 
-    /// Cooperative TAKEOVER request (collect catching a running fetch): polled
-    /// at tile boundaries, honored only while the remaining fetch exceeds the
-    /// request-cost breakeven - serving a tiny prefix is not worth shredding a
-    /// streaming window (and, on a one-shot, forfeiting its GET). The executor
-    /// keeps the wrap-up products.
+    /// The ONE cooperative stop request, polled at tile boundaries (safe
+    /// points: progress committed into machine-owned fields). Honored only
+    /// while the remaining work exceeds the request-cost breakeven - a small
+    /// tail completes instead, returning the connection CLEAN. Its production
+    /// setter is the CANCEL path (seek-away / extent change / teardown), which
+    /// does not wait: the machine goes to the soft list and is reaped after
+    /// release, so the bounded completion is invisible to the foreground.
     std::atomic<bool> interrupt_requested{false};
-
-    /// Cooperative ABORT request (cancel: seek-away / extent change /
-    /// teardown): the work is already doomed, so it is honored at the very
-    /// next tile boundary unconditionally. The executor discards the products.
-    std::atomic<bool> abort_requested{false};
 
     /// The queued/running step's pool handle: its CAS arbitrates the
     /// queued-pickup race (revoke vs run), its `get` is the release wait.

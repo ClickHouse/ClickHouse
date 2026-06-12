@@ -600,13 +600,12 @@ void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
     /// would need explicit buffer trimming, which the executor does not support.
     chassert(!logical_end || *logical_end >= position);
 
-    /// Drain any in-flight machine before changing the extent: the worker reads
-    /// `read_extent_end` to bound its source connection, so mutating it
-    /// underneath the worker would race, and a read-ahead issued for the old
-    /// range must not be served for the new one. No-op when no machine is in
-    /// flight (the common per-mark-range boundary, where prefetch is clamped to
-    /// the extent), so it is free on the hot path. Mirrors the legacy
-    /// `AsynchronousBoundedReadBuffer::setReadUntilPosition` contract.
+    /// Detach any in-flight machine before changing the extent: a read-ahead
+    /// issued for the old range must not be served for the new one. The cancel
+    /// is SOFT (no wait): the machine works against its own launch-time extent
+    /// snapshot, never the live member, so the mutation below cannot race it.
+    /// No-op when no machine is in flight (the common per-mark-range boundary,
+    /// where prefetch is clamped to the extent), so it is free on the hot path.
     cancelMachine(/*cancelled=*/true);
     read_extent_end = logical_end;
 }
@@ -698,8 +697,11 @@ void ReaderExecutor::maybeTriggerPrefetch()
     m->physical_window = next_physical_window;
     /// Immutable snapshot, co-owned by design; the worker consults only its
     /// cached `pressure_level` (no cache lookup, no resident serve), so there
-    /// is nothing for a foreground re-plan to race.
+    /// is nothing for a foreground re-plan to race. The read extent is
+    /// snapshotted too: the worker must never read the live member, or a
+    /// soft-cancelled machine would race `setReadExtent`'s mutation.
     m->geometry = read_plan.geometry();
+    m->extent_snapshot = read_extent_end;
 
     /// Hand the source-connection cluster (live connection + pin) to the machine:
     /// `foreground_connection_state` goes EMPTY, so the worker - which operates on
@@ -734,14 +736,13 @@ void ReaderExecutor::maybeTriggerPrefetch()
         self->fetched = fetchGapsFromSource(
             self->physical_window, /*from_prefetch=*/true, /*keep_live=*/self->leased,
             self->conn, self->reached_eof, self->geometry->pressure_level,
-            self, self->stats);
-        /// Wrapped early iff the fetch actually stopped short on a flag (a
-        /// takeover near the tail completes instead and stays a full collect;
-        /// an EOF-short is not a wrap either).
+            self->extent_snapshot, self, self->stats);
+        /// Wrapped early iff the fetch actually stopped short on the flag (a
+        /// request near the tail completes instead; an EOF-short is not a wrap).
         const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;
         const bool stopped_short = !self->reached_eof
             && fetched_size < self->physical_window.size
-            && (self->abort_requested.load() || self->interrupt_requested.load());
+            && self->interrupt_requested.load();
         if (stopped_short)
         {
             self->stats.add(Stats::MachineInterrupted);
@@ -757,7 +758,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// one writer spans both (the common case).
     joinPutMachinesOverlapping(next_physical_window, /*writers_too=*/false);
 
-    if (!runner->schedule(m, StepKind::Fetch))
+    if (!runner->schedule(m))
     {
         LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
         stats.add(Stats::PrefetchPoolFull);
@@ -805,32 +806,17 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     }
     else
     {
-        /// Already running (or finished); ask it to wrap up at the next interrupt
-        /// point and block until the step releases the machine - the wait is
-        /// bounded by one source block, not one window. Work wasted.
+        /// Already running (or finished): SOFT cancel - flag the doomed work
+        /// and stash the machine, with no foreground wait. The worker wraps at
+        /// its next safe point (or completes a small tail, returning the
+        /// connection CLEAN); the sweep reaps it opportunistically and the
+        /// destructor joins it hard. Its connection, stats and wasted-bytes
+        /// attribution are reconciled at the reap. The machine reads only its
+        /// own snapshots (geometry, extent), so the foreground is free to
+        /// re-plan or move the extent right away.
         stats.add(Stats::PrefetchDiscardedRunning);
-        StatTimer wait_scope(stats, Stats::PrefetchDiscardWaitMicroseconds);
-        runner->requestAbort(*m);
-        runner->waitReleased(*m);
-        if (m->failure)
-            tryLogException(m->failure, log, "Discarded prefetch task threw", LogsLevel::debug);
-        /// The worker advanced `m->conn` to the WRONG frontier (a seek /
-        /// extent-change is discarding this read-ahead), so the connection is
-        /// DROPPED rather than reclaimed - but a connection dropped before its
-        /// bound is an incomplete connection, so account it BEFORE the drop
-        /// (`~ConnState` at machine destruction would otherwise destroy it
-        /// silently and under-count `I`). Don't drain its tail: the rope is
-        /// discarded.
-        accountLiveConnectionDrop(m->conn, /*at_eof=*/false, stats);
-        /// The worker ran, so the machine-local stats hold this read-ahead's
-        /// I/O - it really happened, fold it in. Starting from zero, the
-        /// machine's `prefetch_issued_*` ARE exactly this read-ahead's wasted
-        /// bytes (read but never served or cached - collect is skipped).
-        stats += m->stats;
-        stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
-        stats.add(Stats::PrefetchWastedCacheBytes, m->stats.get(Stats::PrefetchIssuedCacheBytes));
-        /// `m` is destroyed here: `~ConnState` drops the advanced connection
-        /// (accounted above) and the in-flight gauge decrements.
+        runner->requestInterrupt(*m);
+        abandoned_machines.push_back(std::move(m));
     }
 }
 
@@ -850,11 +836,21 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                 }
                 catch (...)
                 {
-                    /// Cancellation throws `JobHandle: task was cancelled` — every
-                    /// abandoned-on-revoke machine reaches here. Debug level keeps
-                    /// the error log clean.
+                    /// A revoked step's handle throws `JobHandle: task was
+                    /// cancelled` here. Debug level keeps the error log clean.
                     tryLogCurrentException(log, "Abandoned prefetch task threw", LogsLevel::debug);
                 }
+                if (m->failure)
+                    tryLogException(m->failure, log, "Cancelled prefetch task threw", LogsLevel::debug);
+                /// Reconcile the reaped machine: its fetch really happened, so
+                /// merge the stats, attribute the issued bytes to wasted (the
+                /// rope is never collected) and account the dropped connection.
+                /// A REVOKED machine no-ops every term: its cluster was
+                /// reclaimed at cancel and its stats are zero.
+                accountLiveConnectionDrop(m->conn, /*at_eof=*/false, stats);
+                stats += m->stats;
+                stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
+                stats.add(Stats::PrefetchWastedCacheBytes, m->stats.get(Stats::PrefetchIssuedCacheBytes));
                 return true;
             }),
         abandoned_machines.end());
@@ -1247,9 +1243,14 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
     /// reclaim the connection cluster FIRST (so the backfill pins the in-flight
     /// segment on it and the next read continues the same open GET - cold R=1),
     /// then fold the machine-local source I/O into `this->stats`.
+    /// Collect WAITS at the barrier - no takeover. The metric grid retired the
+    /// collect-side interruption: on the live path a fetch is one block (there
+    /// is nothing to take over), and on a stateless one-shot every honored
+    /// takeover splits the GET in two (prewhere/cold R measured ~4x with it,
+    /// exact pre-machine parity without). Interruption remains the CANCEL
+    /// mechanism, where the remainder is never fetched at all.
     LOG_TRACE(log, "coverWindow: waiting on prefetched [{}, {})", m->requested_range.offset, m->requested_range.end());
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
-    runner->requestInterrupt(*m);
     runner->waitReleased(*m);
 
     /// The fetch step failed: mandatory work, so the read fails. Account the
@@ -1475,18 +1476,14 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
     return buf.read(dest, chunk);
 }
 
-/// The cooperative stop gate, shared by every fetch loop: an ABORT (cancel -
-/// the work is doomed) stops at the very next tile; a TAKEOVER (collect) stops
-/// only while `remaining` exceeds `takeover_breakeven` - near the tail,
-/// completing beats shredding the window into tiny collects (and, on a
-/// one-shot, forfeiting its GET for a fresh request).
-static bool shouldStopFetch(const MachineBase * stop, size_t remaining, size_t takeover_breakeven)
+/// The cooperative stop gate, shared by every fetch loop: honored only while
+/// `remaining` exceeds the breakeven - a small tail completes instead, so the
+/// connection comes back CLEAN (pool-reusable) rather than reset. The caller
+/// (the cancel path) does not wait on the wrap - the machine sits on the soft
+/// list until reaped - so the bounded completion costs the foreground nothing.
+static bool shouldStopFetch(const MachineBase * stop, size_t remaining, size_t breakeven)
 {
-    if (!stop)
-        return false;
-    if (stop->abort_requested.load(std::memory_order_relaxed))
-        return true;
-    return stop->interrupt_requested.load(std::memory_order_relaxed) && remaining > takeover_breakeven;
+    return stop && stop->interrupt_requested.load(std::memory_order_relaxed) && remaining > breakeven;
 }
 
 Rope ReaderExecutor::Connection::readInto(
@@ -1562,7 +1559,8 @@ size_t ReaderExecutor::Connection::drainTail(size_t max_tail, size_t block_bytes
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-    bool keep_live, ConnState & conn, const MachineBase * stop, Stats & out_stats)
+    bool keep_live, ConnState & conn, std::optional<size_t> read_extent,
+    const MachineBase * stop, Stats & out_stats)
 {
     size_t want = 0;
     for (const auto & block : blocks)
@@ -1644,7 +1642,7 @@ Rope ReaderExecutor::readFromSource(
                     if (!hasUnknownSize())
                         read_until = offset + want;
                 }
-                else if (read_extent_end)
+                else if (read_extent)
                 {
                     /// The advertised extent is a concrete position even when the
                     /// total size is unknown, so bound to it regardless - otherwise
@@ -1652,7 +1650,10 @@ Rope ReaderExecutor::readFromSource(
                     /// pinned after the consumer stops at the extent. Only the
                     /// object-end clamp needs a known size; an unknown-size object
                     /// has no end to clamp against, the extent is the only bound.
-                    const size_t physical_extent_end = *read_extent_end + data_start_offset;
+                    /// `read_extent` is the CALLER's snapshot - the foreground
+                    /// passes the live member, a machine its launch-time copy, so
+                    /// a worker never races `setReadExtent`.
+                    const size_t physical_extent_end = *read_extent + data_start_offset;
                     const size_t to_extent = physical_extent_end > logical_offset ? physical_extent_end - logical_offset : 0;
                     size_t bound_size = to_extent;
                     if (!hasUnknownSize())
@@ -1701,7 +1702,7 @@ Rope ReaderExecutor::readFromSource(
     /// (`read_extent_end`) even when the size is unknown. Only a truly unbounded
     /// source (unknown size AND no advertised extent) is left open-ended.
     const bool stateless_bounded = opened->supportsRightBoundedReads() && want > 0
-        && (!hasUnknownSize() || read_extent_end.has_value());
+        && (!hasUnknownSize() || read_extent.has_value());
     if (stateless_bounded)
         opened->setReadUntilPosition(offset + want);
 
@@ -2152,7 +2153,8 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             /// Keep the connection live iff the current plan holds the lease (a wide plan);
             /// a narrow tail plan reads a one-shot.
             Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
-                /*keep_live=*/static_cast<bool>(connection_lease), conn, /*stop=*/nullptr, out_stats);
+                /*keep_live=*/static_cast<bool>(connection_lease), conn, read_extent_end,
+                /*stop=*/nullptr, out_stats);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             const size_t actual = sr.totalBytes();
@@ -2177,7 +2179,8 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 }
 
 Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
-    bool & eof_latch, MemoryPressureLevel pressure_level, const MachineBase * stop, Stats & out_stats)
+    bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
+    const MachineBase * stop, Stats & out_stats)
 {
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
     /// physical run (short at EOF or at an interrupt point). No cache
@@ -2206,7 +2209,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         auto blocks = allocateBlocks(pr.size, window_block_size, {});
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
-            keep_live, conn, stop, out_stats);
+            keep_live, conn, read_extent, stop, out_stats);
         HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
             static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
         const size_t actual = source_rope.totalBytes();
@@ -2221,8 +2224,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         /// throw the size-known short-read error. This is a POST-HOC check ("did
         /// a stop cause this short read") - the inner loop already made the
         /// gated decision - so it looks at the raw flags, not the gate.
-        if (stop && (stop->abort_requested.load(std::memory_order_relaxed)
-                     || stop->interrupt_requested.load(std::memory_order_relaxed)))
+        if (stop && stop->interrupt_requested.load(std::memory_order_relaxed))
             break;
 
         /// Size-known short reads are fatal (the map promised those bytes). Size-unknown
@@ -2295,13 +2297,15 @@ void ReaderExecutor::assembleAndWriteBack(
 }
 
 void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
-    const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * abort, Stats & out_stats)
+    const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
     for (auto & w : writers)
     {
         /// The put step's stop point: stop between writers on a cancel, leaving
-        /// the remaining ones untouched for the caller's abandon path.
-        if (abort && abort->load(std::memory_order_relaxed))
+        /// the remaining ones untouched for the caller's abandon path. (Nothing
+        /// flags put machines today; a re-armed machine clears a consumed
+        /// fetch-side flag before its put - see `schedulePutStep`.)
+        if (interrupt && interrupt->load(std::memory_order_relaxed))
             break;
 
         chassert(w.writer);
@@ -2340,6 +2344,7 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
 
 void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope & assembled)
 {
+
     /// Over the cap: the NEW fill is skipped - droppable by the invariant
     /// (mandatory work never queues behind it). The writers stay home, the
     /// segments stay partial; a later window may still fill them.
@@ -2391,7 +2396,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
             ? self->physical_window.offset
             : std::min(self->physical_window.end(), self->fill_rope.range().end());
         pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
-            self->put_bytes_counter, &self->abort_requested, self->stats);
+            self->put_bytes_counter, &self->interrupt_requested, self->stats);
         /// Pin the partial segment under the just-written frontier until the
         /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
         /// fill landed, so a fresh segment was not pinnable there.
@@ -2408,10 +2413,10 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
         /// writer spans many windows and the next one needs it). Only the rope
         /// is dropped: the fill is committed (or abandoned on abort).
         self->fill_rope = {};
-        return self->abort_requested.load() ? StepResult::Interrupted : StepResult::Done;
+        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
-    if (runner->schedule(m, StepKind::Put))
+    if (runner->schedule(m))
         stats.add(Stats::PutScheduled);
     else
         stats.add(Stats::PutPoolFull);  /// parked; the sweep grants one reschedule
@@ -2420,6 +2425,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
 
 void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
 {
+
     /// Pool-less executors promote synchronously, as always.
     if (!runner)
     {
@@ -2472,12 +2478,12 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
         pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
-            self->put_bytes_counter, &self->abort_requested, self->stats);
+            self->put_bytes_counter, &self->interrupt_requested, self->stats);
         self->fill_rope = {};
-        return self->abort_requested.load() ? StepResult::Interrupted : StepResult::Done;
+        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
-    if (runner->schedule(pm, StepKind::Put))
+    if (runner->schedule(pm))
     {
         stats.add(Stats::PutScheduled);
         put_machines.push_back(std::move(pm));
@@ -2504,6 +2510,16 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
     }
     m.writers.clear();
     m.writer_origins.clear();
+
+    /// Hand the put's Strategy-A pin to the foreground slot the pre-machine
+    /// pin lived in: the fill landed, but its segment stays mid-stream until
+    /// the scan passes it. Dropping the pin at reap let an eviction snap the
+    /// next miss head back to the segment start - re-fetching aligned heads
+    /// inflates R/O, worst on small-extent loads. Reaps run oldest-first, so
+    /// the newest frontier wins; `finalizeAssembledWindow` keeps re-pointing /
+    /// clearing it exactly as before.
+    if (m.fill_pin)
+        foreground_connection_state.inflight_segment_pin = std::move(m.fill_pin);
 
     /// A failed put is logged, never thrown - a read must not fail because
     /// cache population failed.
@@ -2545,7 +2561,7 @@ void ReaderExecutor::sweepPutMachines(bool wait)
                 if (!wait && !m.put_rescheduled)
                 {
                     m.put_rescheduled = true;
-                    if (runner->schedule(*it, StepKind::Put))
+                    if (runner->schedule(*it))
                     {
                         stats.add(Stats::PutScheduled);
                         ++it;

@@ -19,11 +19,11 @@ class FetchMachineRunner
 public:
     explicit FetchMachineRunner(std::shared_ptr<PrefetchThreadPool> pool_) : pool(std::move(pool_)) {}
 
-    /// Schedule the machine's next step. `kind` labels the step (and picks the
-    /// pool once a dedicated cache-write pool exists; today both kinds share
-    /// the one pool). Returns false - machine parked `ParkedPoolFull`, still
-    /// executor-owned, payload untouched - when the queue rejects it.
-    bool schedule(std::shared_ptr<MachineBase> machine, StepKind kind);
+    /// Schedule the machine's next step. Returns false - machine parked
+    /// `ParkedPoolFull`, still executor-owned, payload untouched - when the
+    /// queue rejects it. The runner does not know what the step does (which
+    /// pool a future split would route it to is the machine's own business).
+    bool schedule(std::shared_ptr<MachineBase> machine);
 
     /// Revoke a still-queued step (the handle CAS): on success the worker
     /// provably never ran, the payload is untouched and the machine is
@@ -31,18 +31,16 @@ public:
     /// running or finished; use `waitReleased`.
     bool tryCancelQueued(MachineBase & machine);
 
-    /// Ask a running step to wrap up at its next interrupt point IF the
-    /// remaining work exceeds the cost breakeven (the takeover intent).
+    /// Ask a running step to wrap up at its next interrupt point (honored by
+    /// the step's own gate while the remaining work exceeds the breakeven).
     void requestInterrupt(MachineBase & machine) { machine.interrupt_requested.store(true); }
-
-    /// Ask a running step to wrap up at its next interrupt point
-    /// unconditionally - the work is doomed (the cancel intent).
-    void requestAbort(MachineBase & machine) { machine.abort_requested.store(true); }
 
     /// Block until the scheduled/running step releases the machine (its handle
     /// resolves), establishing the happens-before edge over the machine's
     /// payload. Step-body exceptions land in `machine.failure`, not here.
-    /// No-op when no step was ever scheduled.
+    /// IDEMPOTENT: the consumed handle is dropped, so a repeated call (and a
+    /// call on a never-scheduled machine) is a no-op - a `std::future` must
+    /// not be joined twice.
     void waitReleased(MachineBase & machine);
 
 private:
