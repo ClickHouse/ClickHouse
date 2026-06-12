@@ -9,8 +9,20 @@ ngrams tokenizer, substring vs whole token
 - inner substring, no index	0
 - whole word, with index	1
 - whole word, no index	1
+array tokenizer, needle is a real token of a multi-word value (was a false negative)
+- token of multi-word value, with index	1
+- token of multi-word value, no index	1
+splitByString tokenizer, needle inside a token spanning a non-separator boundary (was a false negative)
+- token inside a separator span, with index	1
+- token inside a separator span, no index	1
+asciiCJK tokenizer, connector merges what splitByNonAlpha splits (was a false negative)
+- connector-joined token, with index	1
+- connector-joined token, no index	1
 splitByNonAlpha tokenizer (exact read still used, results unchanged)
 - existing token, with index	1
 - existing token, no index	1
 - missing substring, with index	0
 - missing substring, no index	0
+splitByNonAlpha tokenizer with preprocessor (documented divergence still works, index kept)
+- preprocessed token, with index	1
+- preprocessed token, no index	1

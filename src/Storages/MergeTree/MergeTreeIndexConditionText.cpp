@@ -224,6 +224,14 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
     return settings[Setting::query_plan_text_index_add_hint] ? TextIndexDirectReadMode::Hint : TextIndexDirectReadMode::None;
 }
 
+bool MergeTreeIndexConditionText::isConservativeHasTokenTokenizer() const
+{
+    /// A preprocessor is allowed: it transforms the needle the same way as the indexed text (the divergence
+    /// vs use_skip_indexes = 0 is documented hasToken behaviour), so the index tokens stay a necessary condition.
+    const auto type = tokenizer->getType();
+    return type == ITokenizer::Type::SplitByNonAlpha || type == ITokenizer::Type::Ngrams;
+}
+
 TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
 {
     bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
@@ -924,13 +932,15 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         auto tokens = stringToTokens(value_field);
-        if (tokens.empty())
+        /// Decline the index unless its tokens are a necessary condition for a row-level hasToken match:
+        ///  - empty tokens (separator-only needle, or shorter than the tokenizer can represent, e.g. "abc"
+        ///    with ngrams(4)) would prune every granule;
+        ///  - a coarser tokenizer (array/splitByString/asciiCJK/sparseGrams) can omit a row-level token, so a
+        ///    present needle may still be pruned.
+        /// In both cases the row-level hasToken decides (and it throws BAD_ARGUMENTS / returns NULL for an
+        /// invalid needle, as without the index).
+        if (tokens.empty() || !isConservativeHasTokenTokenizer())
         {
-            /// The needle does not map to any index token (a separator-only needle, or a needle shorter
-            /// than the tokenizer can represent, e.g. "abc" with ngrams(4)). The index tokens are then not
-            /// a necessary condition for the real hasToken result, so pushing an empty token would prune
-            /// every granule and return wrong (missing) rows. Decline the index and let the row-level
-            /// hasToken decide (it also throws BAD_ARGUMENTS / returns NULL for an invalid needle, as without the index).
             return false;
         }
 

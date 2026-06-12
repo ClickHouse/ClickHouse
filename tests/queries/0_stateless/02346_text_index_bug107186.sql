@@ -38,6 +38,36 @@ SELECT '- whole word, with index', count() FROM tab WHERE hasToken(s, 'helloworl
 SELECT '- whole word, no index', count() FROM tab WHERE hasToken(s, 'helloworld') SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
 
+SELECT 'array tokenizer, needle is a real token of a multi-word value (was a false negative)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('hello world');
+-- The array tokenizer stores the whole value as one token, but 'hello' is a splitByNonAlpha token of the row: must be 1.
+SELECT '- token of multi-word value, with index', count() FROM tab WHERE hasToken(s, 'hello');
+SELECT '- token of multi-word value, no index', count() FROM tab WHERE hasToken(s, 'hello') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;
+
+SELECT 'splitByString tokenizer, needle inside a token spanning a non-separator boundary (was a false negative)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByString([', ']))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('hello world, foo');
+-- splitByString(', ') yields ['hello world', 'foo'], but 'hello' is a splitByNonAlpha token of the row: must be 1.
+SELECT '- token inside a separator span, with index', count() FROM tab WHERE hasToken(s, 'hello');
+SELECT '- token inside a separator span, no index', count() FROM tab WHERE hasToken(s, 'hello') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;
+
+SELECT 'asciiCJK tokenizer, connector merges what splitByNonAlpha splits (was a false negative)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = asciiCJK)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('a.b');
+-- asciiCJK keeps 'a.b' as one token (the '.' connects letters), but splitByNonAlpha splits it, so 'a' is a real token: must be 1.
+SELECT '- connector-joined token, with index', count() FROM tab WHERE hasToken(s, 'a');
+SELECT '- connector-joined token, no index', count() FROM tab WHERE hasToken(s, 'a') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;
+
 SELECT 'splitByNonAlpha tokenizer (exact read still used, results unchanged)';
 
 DROP TABLE IF EXISTS tab;
@@ -47,4 +77,14 @@ SELECT '- existing token, with index', count() FROM tab WHERE hasToken(s, 'world
 SELECT '- existing token, no index', count() FROM tab WHERE hasToken(s, 'world') SETTINGS use_skip_indexes = 0;
 SELECT '- missing substring, with index', count() FROM tab WHERE hasToken(s, 'wor');
 SELECT '- missing substring, no index', count() FROM tab WHERE hasToken(s, 'wor') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;
+
+SELECT 'splitByNonAlpha tokenizer with preprocessor (documented divergence still works, index kept)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(s))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('Hello World');
+-- The needle is preprocessed the same way (lowered) as the indexed text, so 'hello' matches with and without the index: must be 1.
+SELECT '- preprocessed token, with index', count() FROM tab WHERE hasToken(s, 'Hello');
+SELECT '- preprocessed token, no index', count() FROM tab WHERE hasToken(s, 'Hello') SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;

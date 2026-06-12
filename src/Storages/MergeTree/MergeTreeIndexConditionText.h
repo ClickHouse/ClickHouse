@@ -139,6 +139,12 @@ private:
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
+    /// True when the index tokens are a necessary condition for a row-level hasToken match, so granule
+    /// pruning cannot drop a matching row. Holds for splitByNonAlpha (same tokenization) and ngrams (every
+    /// n-gram of a splitByNonAlpha token is an n-gram of the row). Coarser tokenizers (array, splitByString,
+    /// asciiCJK, sparseGrams) can omit a row-level token and must not prune.
+    bool isConservativeHasTokenTokenizer() const;
+
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
