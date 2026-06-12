@@ -36,12 +36,17 @@ enum class StepKind : uint8_t
     Put,
 };
 
-/// A step's verdict: park at the barrier or finish. (Multi-step machines
-/// return AwaitCollect and the executor schedules the continuation - every
-/// transition is executor-mediated; a worker never schedules the next step.)
+/// A step's verdict: park at the barrier, wrap up early, or finish.
+/// (Multi-step machines return AwaitCollect and the executor schedules the
+/// continuation - every transition is executor-mediated; a worker never
+/// schedules the next step.)
 enum class StepResult : uint8_t
 {
     AwaitCollect,
+    /// The step saw `interrupt_requested` at an interrupt point and wrapped up,
+    /// keeping its partial products. The executor decides: keep them (collect
+    /// takeover) or destroy (cancel).
+    Interrupted,
     Done,
 };
 

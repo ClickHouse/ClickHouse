@@ -52,6 +52,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchIssuedCacheBytes;
     extern const Event ReaderExecutorPrefetchWastedSourceBytes;
     extern const Event ReaderExecutorPrefetchWastedCacheBytes;
+    extern const Event ReaderExecutorMachineInterrupted;
+    extern const Event ReaderExecutorPartialCollects;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
 }
@@ -158,6 +160,8 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case PrefetchIssuedCacheBytes:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedCacheBytes, value); break;
         case PrefetchWastedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedSourceBytes, value); break;
         case PrefetchWastedCacheBytes:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedCacheBytes, value); break;
+        case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
+        case PartialCollects:           ProfileEvents::increment(ProfileEvents::ReaderExecutorPartialCollects, value); break;
         case NumCounters:               break;
     }
 }
@@ -704,13 +708,21 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// The machine's single step: a PURE source fetch of the pre-bounded aligned
     /// gap window into machine-owned state - no shared `this->`, no cache, no
     /// mutable plan. The foreground does the cache backfill + logical shift at
-    /// collect. (`self` stays valid for the step's whole run: the runner's pool
-    /// job co-owns the machine.)
+    /// collect. `interrupt_requested` is polled between source blocks; a set flag
+    /// wraps the step up with the partial rope as its product - the executor then
+    /// keeps it (collect takeover) or destroys it (cancel). (`self` stays valid
+    /// for the step's whole run: the runner's pool job co-owns the machine.)
     m->run_step = [this, self = m.get()]
     {
         self->fetched = fetchGapsFromSource(
             self->physical_window, /*from_prefetch=*/true, /*keep_live=*/self->leased,
-            self->conn, self->reached_eof, self->geometry->pressure_level, self->stats);
+            self->conn, self->reached_eof, self->geometry->pressure_level,
+            &self->interrupt_requested, self->stats);
+        if (self->interrupt_requested.load())
+        {
+            self->stats.add(Stats::MachineInterrupted);
+            return StepResult::Interrupted;
+        }
         return StepResult::AwaitCollect;
     };
 
@@ -762,10 +774,12 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     }
     else
     {
-        /// Already running (or finished); block until the step releases the
-        /// machine so the caller can safely overwrite shared state. Work wasted.
+        /// Already running (or finished); ask it to wrap up at the next interrupt
+        /// point and block until the step releases the machine - the wait is
+        /// bounded by one source block, not one window. Work wasted.
         stats.add(Stats::PrefetchDiscardedRunning);
         StatTimer wait_scope(stats, Stats::PrefetchDiscardWaitMicroseconds);
+        runner->requestInterrupt(*m);
         runner->waitReleased(*m);
         if (m->failure)
             tryLogException(m->failure, log, "Discarded prefetch task threw", LogsLevel::debug);
@@ -1192,13 +1206,16 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         return false;
     }
 
-    /// Started/finished: collect the worker's raw PHYSICAL gap bytes. Wait the
-    /// release edge, then reclaim the connection cluster it advanced FIRST (so the
-    /// backfill pins the in-flight segment on it and the next `readFromSource`
-    /// continues the same open GET - cold R=1), then fold the machine-local
-    /// source I/O into `this->stats`.
+    /// Started/finished: collect the worker's raw PHYSICAL gap bytes. The takeover:
+    /// ask a still-running step to wrap up at its next interrupt point instead of
+    /// blocking for the whole window - the wait is bounded by one source block. An
+    /// already-parked machine ignores the flag (nothing reads it any more). Then
+    /// reclaim the connection cluster FIRST (so the backfill pins the in-flight
+    /// segment on it and the next read continues the same open GET - cold R=1),
+    /// then fold the machine-local source I/O into `this->stats`.
     LOG_TRACE(log, "coverWindow: waiting on prefetched [{}, {})", m->requested_range.offset, m->requested_range.end());
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
+    runner->requestInterrupt(*m);
     runner->waitReleased(*m);
 
     /// The fetch step failed: mandatory work, so the read fails. Account the
@@ -1212,23 +1229,64 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         std::rethrow_exception(m->failure);
     }
 
-    stats.add(Stats::PrefetchHits);
+    const bool interrupted = m->state.load() == MachineState::Interrupted;
     chassert(!foreground_connection_state.connection);
     foreground_connection_state = std::move(m->conn);
     /// Reconcile the worker's one-way EOF latch - ONLY here (its bytes are kept); the
     /// cancel paths must not, or a wasted read-ahead's EOF strands us at false EOF.
+    /// (An interrupt-short return never latches it - see `fetchGapsFromSource`.)
     reached_eof |= m->reached_eof;
     stats += m->stats;
     HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
         static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
 
-    /// Backfill the cache for the fetched window (the worker did none), pin the in-flight
-    /// segment at the aligned frontier, slice back to the REQUESTED window and shift to logical.
     const ByteRange requested_phys{m->requested_range.offset + data_start_offset, m->requested_range.size};
+
+    if (interrupted)
+    {
+        /// An interrupted step that produced nothing degrades to the revoke path:
+        /// the connection is reclaimed (above), the caller reads synchronously.
+        if (m->fetched.empty())
+            return false;
+
+        /// A prefix that cannot serve the cursor (extension-only bytes below the
+        /// requested range, or a kept seek moved past it) is still BANKED in the
+        /// caches - the fetch already paid for it - and then the caller reads
+        /// synchronously: serving an empty window here would read as a false EOF
+        /// upstream.
+        const size_t fetched_logical_end = m->fetched.range().end() - data_start_offset;
+        if (fetched_logical_end <= position)
+        {
+            Rope unused;
+            IntervalSet covered_unused;
+            backfillBytes(m->physical_window, requested_phys, m->fetched, unused, covered_unused, stats);
+            return false;
+        }
+        stats.add(Stats::PartialCollects);
+    }
+    else
+        stats.add(Stats::PrefetchHits);
+
+    /// Backfill the cache for the fetched window (the worker did none), pin the
+    /// in-flight segment at the frontier the fetch actually reached (an interrupted
+    /// step stops short of the aligned window end; a full fetch reaches it), slice
+    /// back to the REQUESTED window and shift to logical. A partial rope is
+    /// structurally an EOF-short window: the backfill clamps to delivered bytes and
+    /// the contiguity contract holds for a prefix - the remainder is just the next
+    /// gap, found by the normal dispatch (usually relaunched as the next machine on
+    /// the same live connection). The slice is additionally clamped to the fetched
+    /// prefix when interrupted: a late hit BEYOND the prefix would otherwise leave a
+    /// disjoint island in `result` and trip the contiguity guard; those bytes stay
+    /// cached and the next window serves them from the plan.
+    const size_t pin_frontier = std::min(m->physical_window.end(), m->fetched.range().end());
+    const ByteRange slice_window = interrupted
+        ? ByteRange{requested_phys.offset,
+            std::min(requested_phys.end(), m->fetched.range().end()) - requested_phys.offset}
+        : requested_phys;
     Rope result;
     IntervalSet covered;
     backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered, stats);
-    rope = finalizeAssembledWindow(requested_phys, m->physical_window.end(),
+    rope = finalizeAssembledWindow(slice_window, pin_frontier,
         result, foreground_connection_state, reached_eof);
     if (data_start_offset)
         rope.shift(-static_cast<ssize_t>(data_start_offset));
@@ -1378,13 +1436,21 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 }
 
 Rope ReaderExecutor::Connection::readInto(
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, const LoggerPtr & logger)
+    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, const LoggerPtr & logger,
+    const std::atomic<bool> * interrupt)
 {
     Rope rope;
     size_t total_read = 0;
 
     for (auto & block : blocks)
     {
+        /// The interrupt point: stop BETWEEN blocks on a set flag, returning the
+        /// blocks read so far - bounding a waiting executor's release latency by
+        /// one block instead of one window. The caller distinguishes this short
+        /// return from EOF by re-checking the flag.
+        if (interrupt && interrupt->load(std::memory_order_relaxed))
+            break;
+
         size_t chunk = block->size();
         size_t got = readIntoBlock(*buffer, block->data(), chunk);
 
@@ -1439,7 +1505,7 @@ size_t ReaderExecutor::Connection::drainTail(size_t max_tail, size_t block_bytes
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-    bool keep_live, ConnState & conn, Stats & out_stats)
+    bool keep_live, ConnState & conn, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
     size_t want = 0;
     for (const auto & block : blocks)
@@ -1477,7 +1543,7 @@ Rope ReaderExecutor::readFromSource(
             LOG_TRACE(log, "readFromSource: live connection hit for {}, position={}", object.remote_path, offset);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
 
-            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log);
+            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, interrupt);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
             releaseLiveConnectionAtBound(conn);
             return rope;
@@ -1551,7 +1617,7 @@ Rope ReaderExecutor::readFromSource(
             });
             out_stats.add(Stats::SourceRequests);
 
-            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log);
+            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, interrupt);
 
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
@@ -1590,6 +1656,10 @@ Rope ReaderExecutor::readFromSource(
 
     for (auto & block : blocks)
     {
+        /// The interrupt point (see `Connection::readInto`): stop between blocks.
+        if (interrupt && interrupt->load(std::memory_order_relaxed))
+            break;
+
         size_t chunk = block->size();
         size_t got = readIntoBlock(buf, block->data(), chunk);
 
@@ -1607,10 +1677,10 @@ Rope ReaderExecutor::readFromSource(
         total_read += got;
     }
 
-    /// An unbounded one-shot GET (unknown size AND no advertised extent, so the
-    /// bound above was skipped) that did not reach EOF is dropped mid-response —
-    /// not reusable.
-    if (!stateless_bounded && !hit_eof)
+    /// A one-shot GET dropped before it was fully consumed is not reusable: an
+    /// unbounded one (unknown size AND no advertised extent) that did not reach
+    /// EOF, or a bounded one shortened by an interrupt (`total_read < want`).
+    if (!hit_eof && (!stateless_bounded || total_read < want))
         out_stats.add(Stats::IncompleteConnections);
 
     return rope;
@@ -1992,7 +2062,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             /// Keep the connection live iff the current plan holds the lease (a wide plan);
             /// a narrow tail plan reads a one-shot.
             Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
-                /*keep_live=*/static_cast<bool>(connection_lease), conn, out_stats);
+                /*keep_live=*/static_cast<bool>(connection_lease), conn, /*interrupt=*/nullptr, out_stats);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             const size_t actual = sr.totalBytes();
@@ -2017,14 +2087,15 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 }
 
 Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
-    bool & eof_latch, MemoryPressureLevel pressure_level, Stats & out_stats)
+    bool & eof_latch, MemoryPressureLevel pressure_level, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
-    /// physical run (short at EOF). No cache `lookup`/`get`/`put`, no plan - this is
-    /// all a prefetch worker runs (it cannot touch shared cache/plan state), and the
-    /// foreground reuses it before its own `backfillBytes`. The window is already
-    /// clamped to one plan gap by the caller, so it never straddles a resident run;
-    /// the cache backfill of these bytes is `backfillBytes`'s job.
+    /// physical run (short at EOF or at an interrupt point). No cache
+    /// `lookup`/`get`/`put`, no plan - this is all a machine fetch step runs (it
+    /// cannot touch shared cache/plan state), and the foreground reuses it before
+    /// its own `backfillBytes`. The window is already clamped to one plan gap by
+    /// the caller, so it never straddles a resident run; the cache backfill of
+    /// these bytes is `backfillBytes`'s job.
     Rope result;
     if (physical_window.size == 0)
         return result;
@@ -2045,7 +2116,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         auto blocks = allocateBlocks(pr.size, window_block_size, {});
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
-            keep_live, conn, out_stats);
+            keep_live, conn, interrupt, out_stats);
         HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
             static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
         const size_t actual = source_rope.totalBytes();
@@ -2054,6 +2125,13 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
             out_stats.add(Stats::PrefetchIssuedSourceBytes, actual);
         result.append(std::move(source_rope));
         file_pos += pr.size;
+
+        /// An interrupt-short return is checked FIRST: it must neither latch EOF
+        /// (the bytes exist - the remainder is read by the normal dispatch) nor
+        /// throw the size-known short-read error. The partial result is the
+        /// machine's wrap-up product.
+        if (interrupt && interrupt->load(std::memory_order_relaxed))
+            break;
 
         /// Size-known short reads are fatal (the map promised those bytes). Size-unknown
         /// short reads are how EOF is learned - latch it and stop (no later piece exists).

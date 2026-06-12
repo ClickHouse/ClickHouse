@@ -24,9 +24,18 @@ bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine, StepKind
             /// Store the parked/terminal state BEFORE this job resolves its
             /// handle (set_value runs after this lambda returns), so a waiter
             /// woken by the handle reads the final state.
-            m->state.store(result == StepResult::AwaitCollect
-                ? MachineState::AwaitCollect
-                : MachineState::Done);
+            switch (result)
+            {
+                case StepResult::AwaitCollect:
+                    m->state.store(MachineState::AwaitCollect);
+                    break;
+                case StepResult::Interrupted:
+                    m->state.store(MachineState::Interrupted);
+                    break;
+                case StepResult::Done:
+                    m->state.store(MachineState::Done);
+                    break;
+            }
         }
         catch (...)
         {

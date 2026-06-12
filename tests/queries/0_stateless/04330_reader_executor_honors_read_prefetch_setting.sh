@@ -39,18 +39,21 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 # this non-vacuous (fails if the executor path was not taken at all).
 $CLICKHOUSE_CLIENT --query "
     SELECT throwIf(
-        sum(ProfileEvents['ReaderExecutorPrefetchHits'] + ProfileEvents['ReaderExecutorPrefetchCancelled']) != 0
+        sum(ProfileEvents['ReaderExecutorPrefetchHits'] + ProfileEvents['ReaderExecutorPartialCollects']
+            + ProfileEvents['ReaderExecutorPrefetchCancelled']) != 0
         OR sum(ProfileEvents['ReaderExecutorBytesFromSource']) = 0,
         'executor prefetched despite remote_filesystem_read_prefetch=0 (or executor did not run)')
     FROM system.query_log
     WHERE query LIKE '%re\\_prefetch\\_off%' AND type = 'QueryFinish' AND current_database = currentDatabase()
     FORMAT Null
 "
-# prefetch=1 -> each window submits a prefetch that the next read consumes (hit)
-# or cancels, so prefetch activity must be non-zero.
+# prefetch=1 -> each window submits a prefetch that the next read collects in
+# full (hit), takes over partially (partial collect), or revokes (cancelled) -
+# so prefetch activity must be non-zero.
 $CLICKHOUSE_CLIENT --query "
     SELECT throwIf(
-        sum(ProfileEvents['ReaderExecutorPrefetchHits'] + ProfileEvents['ReaderExecutorPrefetchCancelled']) = 0,
+        sum(ProfileEvents['ReaderExecutorPrefetchHits'] + ProfileEvents['ReaderExecutorPartialCollects']
+            + ProfileEvents['ReaderExecutorPrefetchCancelled']) = 0,
         'executor did not prefetch despite remote_filesystem_read_prefetch=1')
     FROM system.query_log
     WHERE query LIKE '%re\\_prefetch\\_on%' AND type = 'QueryFinish' AND current_database = currentDatabase()

@@ -300,12 +300,16 @@ private:
 
     /// PURE source fetch: read the WHOLE `physical_window` from the source as one
     /// contiguous physical Rope (short at EOF), no cache/plan/pin. This is ALL a
-    /// prefetch worker runs (it cannot touch shared state). `from_prefetch` routes the
-    /// issued-source counter into the worker's job-local `Stats`. `eof_latch` is set on
-    /// a size-unknown short read. The window is the plan gap the foreground bounded at
-    /// submit (the aligned miss ranges already live in the plan geometry).
+    /// machine fetch step runs (it cannot touch shared state). `from_prefetch` routes
+    /// the issued-source counter into the machine-local `Stats`. `eof_latch` is set on
+    /// a size-unknown short read. `interrupt` (nullable) is the machine's cooperative
+    /// stop flag, polled between source blocks: when set, the fetch returns SHORT with
+    /// what it has - the same shape as an EOF-short return - and the short-read
+    /// handling must neither latch EOF nor throw (the flag is checked FIRST). The
+    /// window is the plan gap the foreground bounded at launch (the aligned miss
+    /// ranges already live in the plan geometry).
     Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
-        bool & eof_latch, MemoryPressureLevel pressure_level, Stats & out_stats);
+        bool & eof_latch, MemoryPressureLevel pressure_level, const std::atomic<bool> * interrupt, Stats & out_stats);
 
     /// Backfill the cache for `physical_window` from `source_bytes` (the whole window
     /// already fetched from the source). FOREGROUND-only: serve any late-hit from cache
@@ -391,10 +395,11 @@ private:
     /// `readFromSource` never takes or releases the lease itself.
     /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
     /// blocks that receive no data (e.g., file ended early) are released when this function returns.
+    /// `interrupt` (nullable) is polled between blocks; a set flag returns short.
     Rope readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-        bool keep_live, ConnState & conn, Stats & out_stats);
+        bool keep_live, ConnState & conn, const std::atomic<bool> * interrupt, Stats & out_stats);
 
     /// Before dropping the live connection away from its bound, if only a small
     /// tail (<= `max_tail_for_drain`) remains, read it out so the connection
@@ -857,8 +862,11 @@ private:
 
         /// Read the pre-allocated `blocks` off the open connection into a Rope using
         /// `set()`/`next()` (data lands directly in block memory), advancing the frontier.
+        /// `interrupt` (nullable) is polled before each block - the machine's interrupt
+        /// point; a set flag stops between blocks and returns what is read so far.
         Rope readInto(VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks,
-                      size_t logical_offset, const LoggerPtr & logger);
+                      size_t logical_offset, const LoggerPtr & logger,
+                      const std::atomic<bool> * interrupt);
 
         /// Discard up to `gap` bytes off the open connection so the frontier advances
         /// over an already-cached hole; the bytes cross the wire (over-read), only the
@@ -1013,6 +1021,12 @@ private:
             PrefetchIssuedCacheBytes,
             PrefetchWastedSourceBytes,
             PrefetchWastedCacheBytes,
+            /// A machine wrapped up early at an interrupt point on request
+            /// (collect takeover or cancel).
+            MachineInterrupted,
+            /// Collects that served a non-empty partial prefix of an
+            /// interrupted fetch; the remainder goes through normal dispatch.
+            PartialCollects,
             NumCounters
         };
 

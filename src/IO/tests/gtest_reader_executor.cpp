@@ -41,8 +41,12 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <latch>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <semaphore>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -80,6 +84,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorIncompleteConnections;
+    extern const Event ReaderExecutorMachineInterrupted;
+    extern const Event ReaderExecutorPartialCollects;
 }
 
 namespace
@@ -582,10 +588,11 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
     ///
     /// The returned size depends on which branch the executor takes:
     ///   - Wait branch (worker already running): rope is the prefetched [500, 1000)
-    ///     sliced to [750, 1000), size 250.
+    ///     sliced to [750, 1000) - size 250, or less when the takeover interrupted
+    ///     the worker mid-window and a shorter prefix past 750 was served.
     ///   - Cancel branch (worker hadn't started): a fresh window from position 750
     ///     of size min(window_size, file_size - 750), so the rope spans [750, 1250).
-    /// Both are valid outcomes and the test accepts either.
+    /// All are valid outcomes and the test accepts any.
 
     String content(2000, 0);
     for (size_t i = 0; i < content.size(); ++i)
@@ -610,7 +617,7 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
 
     auto rope2 = executor.readNextWindow();
     EXPECT_EQ(rope2.range().offset, 750u);
-    EXPECT_TRUE(rope2.range().size == 250u || rope2.range().size == 500u)
+    EXPECT_TRUE((rope2.range().size >= 1 && rope2.range().size <= 250u) || rope2.range().size == 500u)
         << "got size " << rope2.range().size;
     ASSERT_FALSE(rope2.getNodes().empty());
     EXPECT_EQ(rope2.getNodes().front().data()[0], content[750]);
@@ -3993,4 +4000,165 @@ TEST(ReaderExecutor, ModeledCostScalesWithSourceRequests)
     EXPECT_EQ(requests_after_coarse, 1u);
     EXPECT_EQ(requests_after_fine - requests_after_coarse, 16u);
     EXPECT_GT(cost_after_fine - cost_after_coarse, cost_after_coarse);
+}
+
+namespace
+{
+
+/// In-memory right-bounded buffer whose `nextImpl` consumes one `gate` token
+/// per call once `free_calls` are spent, signalling `entered` at its first
+/// gated call. Holds a machine's fetch step at a deterministic mid-window
+/// block so a test can interrupt it between blocks.
+class GatedBuffer : public ReadBufferFromFileBase
+{
+public:
+    GatedBuffer(const String & data_, size_t buf_size, size_t free_calls_,
+                std::latch & entered_, std::counting_semaphore<> & gate_)
+        : ReadBufferFromFileBase(buf_size, nullptr, 0)
+        , data(data_), free_calls(free_calls_), entered(entered_), gate(gate_) {}
+
+    String getFileName() const override { return "GatedBuffer"; }
+    bool supportsRightBoundedReads() const override { return true; }
+    void setReadUntilPosition(size_t p) override { read_until = p; }
+
+    off_t seek(off_t off, int whence) override
+    {
+        file_offset = whence == SEEK_SET ? static_cast<size_t>(off) : file_offset + static_cast<size_t>(off);
+        resetWorkingBuffer();
+        return static_cast<off_t>(file_offset);
+    }
+    off_t getPosition() override { return static_cast<off_t>(file_offset); }
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset; }
+
+private:
+    bool nextImpl() override
+    {
+        if (calls++ >= free_calls)
+        {
+            if (!entered_signalled)
+            {
+                entered_signalled = true;
+                entered.count_down();
+            }
+            gate.acquire();
+        }
+        const size_t end = read_until ? std::min(*read_until, data.size()) : data.size();
+        if (file_offset >= end)
+            return false;
+        const size_t n = std::min(end - file_offset, internal_buffer.size());
+        memcpy(internal_buffer.begin(), data.data() + file_offset, n);
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
+        file_offset += n;
+        return true;
+    }
+
+    String data;
+    size_t free_calls;
+    std::latch & entered;
+    std::counting_semaphore<> & gate;
+    size_t calls = 0;
+    bool entered_signalled = false;
+    size_t file_offset = 0;
+    std::optional<size_t> read_until;
+};
+
+/// Source whose `gated_open_index`-th open (0-based) returns a gated buffer;
+/// every other open is ungated (`free_calls = SIZE_MAX`) over the same content.
+class GatedSource : public IFileBasedSourceReader
+{
+public:
+    GatedSource(String content_, size_t gated_open_index_, size_t buf_size_, size_t free_calls_,
+                std::latch & entered_, std::counting_semaphore<> & gate_)
+        : content(std::move(content_)), gated_open_index(gated_open_index_), buf_size(buf_size_)
+        , free_calls(free_calls_), entered(entered_), gate(gate_) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
+    {
+        const size_t idx = opens.fetch_add(1);
+        const size_t free = idx == gated_open_index ? free_calls : std::numeric_limits<size_t>::max();
+        return std::make_unique<GatedBuffer>(content, buf_size, free, entered, gate);
+    }
+
+    String name() const override { return "GatedSource"; }
+
+    std::atomic<size_t> opens{0};
+
+private:
+    String content;
+    size_t gated_open_index;
+    size_t buf_size;
+    size_t free_calls;
+    std::latch & entered;
+    std::counting_semaphore<> & gate;
+};
+
+}
+
+TEST(ReaderExecutor, TakeoverServesPartialPrefixWithoutDataLoss)
+{
+    /// A collect that catches the machine mid-window interrupts it instead of
+    /// blocking for the full window: the fetched prefix is served and the
+    /// remainder re-covered by the normal dispatch. Scheduling decides whether
+    /// the interrupt lands mid-fetch (partial collect) or the worker finishes
+    /// first (plain hit) - BOTH must deliver byte-identical data. Whenever the
+    /// partial path fires it also pins the interrupt-short guard: without the
+    /// flag-first check in `fetchGapsFromSource`, a size-known short read would
+    /// throw CANNOT_READ_ALL_DATA and fail this test.
+    constexpr size_t FILE_SIZE = 16000;
+    constexpr size_t WINDOW = 4000;
+    constexpr size_t BLOCK = 250;
+    String content(FILE_SIZE, 0);
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('a' + (i % 23));
+
+    std::latch entered{1};
+    std::counting_semaphore<> gate{0};
+    /// Open #0 = window 1's synchronous one-shot (ungated). Open #1 = the
+    /// machine's fetch for window 2: one free block, then one token per block.
+    auto source = std::make_shared<GatedSource>(
+        content, /*gated_open_index=*/1, BLOCK, /*free_calls=*/1, entered, gate);
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", FILE_SIZE);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(1);
+    TestThreadGroup tg;
+    String result;
+    {
+        ReaderExecutor executor(source, objects, {}, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
+        executor.setPrefetchPool(pool);
+
+        auto w1 = executor.readNextWindow();
+        ASSERT_EQ(w1.range().size, WINDOW);
+        for (const auto & node : w1.getNodes())
+            result.append(node.data(), node.size);
+
+        /// The machine for window 2 is mid-fetch at the gate. Feed it one block
+        /// per token from a helper while the collect below interrupts and waits.
+        entered.wait();
+        std::thread feeder([&]
+        {
+            for (int i = 0; i < 1000; ++i)
+                gate.release();
+        });
+
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            for (const auto & node : rope.getNodes())
+                result.append(node.data(), node.size);
+        }
+        feeder.join();
+    }
+
+    EXPECT_EQ(result, content) << "interrupted/partial collects must not lose or duplicate bytes";
+    const auto partials = tg.get(ProfileEvents::ReaderExecutorPartialCollects);
+    const auto interrupted = tg.get(ProfileEvents::ReaderExecutorMachineInterrupted);
+    EXPECT_LE(partials, interrupted) << "a partial collect implies an interrupted machine";
+    /// Which outcome the scheduling produced (both are valid; see the header
+    /// comment) - recorded so CI history shows the partial path is exercised.
+    RecordProperty("partial_collects", static_cast<int>(partials));
+    RecordProperty("machine_interrupted", static_cast<int>(interrupted));
 }
