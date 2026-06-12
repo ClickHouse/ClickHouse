@@ -2,7 +2,9 @@
 # Tags: no-object-storage, no-shared-merge-tree
 
 # Regression test for parsing detached part names with the _tryN suffix.
-# The bug caused BAD_DATA_PART_NAME when trying to drop such parts.
+# The bug caused BAD_DATA_PART_NAME when trying to drop such parts with zero-copy
+# replication, and made DROP DETACHED PARTITION ALL skip them silently everywhere
+# (the unparsable name excluded them from the partition-level drop).
 #
 # The leftover "_tryN" directories are produced here with a filesystem-level "cp -r" of the
 # original detached part directory. On object storage this only copies the local metadata, so all
@@ -101,5 +103,28 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE table = '${TABLE}' AND database = '${CLICKHOUSE_DATABASE}'
     ORDER BY name
 " | sed "s/${PART}/PART/g"
+
+# DROP DETACHED PARTITION ALL must drop "_tryN" leftovers too. Before the fix they were
+# skipped silently, because their directory name failed to parse (valid_name was false),
+# so a partition-level drop could never remove them.
+PART2=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT name FROM system.parts
+    WHERE table = '${TABLE}' AND database = '${CLICKHOUSE_DATABASE}' AND active
+    LIMIT 1
+")
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} DETACH PART '${PART2}'"
+cp -r "${DETACHED_DIR}/${PART2}" "${DETACHED_DIR}/${PART2}_try7"
+
+${CLICKHOUSE_CLIENT} --query "
+    ALTER TABLE ${TABLE} DROP DETACHED PARTITION ALL
+    SETTINGS allow_drop_detached = 1
+"
+
+# Everything except the malformed "_try" directory (not a tryN suffix) must be gone
+${CLICKHOUSE_CLIENT} --query "
+    SELECT name FROM system.detached_parts
+    WHERE table = '${TABLE}' AND database = '${CLICKHOUSE_DATABASE}'
+    ORDER BY name
+" | sed "s/${PART2}/PART2/g; s/${PART}/PART/g"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
