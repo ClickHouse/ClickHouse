@@ -210,12 +210,16 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     task.readers_future = buildReadersForTask(task, /*on_warmup_thread=*/false);
 }
 
-void MergeTreePrefetchedReadPool::startPrefetches()
+std::vector<MergeTreePrefetchedReadPool::TaskHolder> MergeTreePrefetchedReadPool::startPrefetches()
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::startPrefetches");
 
+    /// Deferred (use_skip_indexes_on_data_read) tasks are collected here and their warmup jobs are
+    /// scheduled by the caller AFTER `mutex` is released (see getTask / schedulePrefetchWarmupJobs).
+    std::vector<TaskHolder> tasks_to_warm_up;
+
     if (prefetch_queue.empty())
-        return;
+        return tasks_to_warm_up;
 
     [[maybe_unused]] TaskHolder prev;
     [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
@@ -233,32 +237,10 @@ void MergeTreePrefetchedReadPool::startPrefetches()
             /// filtering (partHasSelectedGranules), which is expensive and may read from remote
             /// storage. Doing it inline here would serialize filtering across all parts while
             /// holding `mutex`, blocking every reader thread until the slowest part finishes
-            /// filtering. Instead schedule one warmup job per part: filtering then runs
-            /// concurrently and each selected part starts prefetching as soon as its own filtering
-            /// completes. getOrBuildIndexReadResult dedupes per part via a promise/future registry,
-            /// so concurrent jobs are safe. The task is shared_ptr-owned so it outlives this job
-            /// even if a reader thread takes it from per_thread_tasks first; the result is stored
-            /// back under `mutex` so it cannot race getTask()/createTask().
-            auto task = top.task;
-            prefetch_warmup_runner.enqueueAndKeepTrack(
-                [this, task]
-                {
-                    std::unique_ptr<PrefetchedReaders> readers_future;
-                    std::exception_ptr warmup_exception;
-                    try
-                    {
-                        readers_future = buildReadersForTask(*task, /*on_warmup_thread=*/true);
-                    }
-                    catch (...)
-                    {
-                        warmup_exception = std::current_exception();
-                    }
-
-                    std::lock_guard lock(mutex);
-                    task->readers_future = std::move(readers_future);
-                    task->warmup_exception = std::move(warmup_exception);
-                },
-                top.task->priority);
+            /// filtering. Instead collect the task and let the caller schedule one warmup job per
+            /// part once `mutex` is released; filtering then runs concurrently and each selected
+            /// part starts prefetching as soon as its own filtering completes.
+            tasks_to_warm_up.push_back(top);
         }
         else
         {
@@ -275,37 +257,90 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 #endif
         prefetch_queue.pop();
     }
+
+    return tasks_to_warm_up;
+}
+
+void MergeTreePrefetchedReadPool::schedulePrefetchWarmupJobs(const std::vector<TaskHolder> & tasks_to_warm_up)
+{
+    /// MUST be called WITHOUT holding `mutex`. Each warmup job acquires `mutex` to publish its
+    /// result, and `prefetch_threadpool` has a bounded queue (prefetch_threadpool_queue_size).
+    /// Scheduling while holding `mutex` would deadlock once there are more warmup jobs than the
+    /// queue can hold: scheduleOrThrowOnError blocks waiting for a free queue slot while the
+    /// already-running jobs block on `mutex` at their publish step, so no job can finish to free a slot.
+    for (const auto & holder : tasks_to_warm_up)
+    {
+        auto task = holder.task;
+        prefetch_warmup_runner.enqueueAndKeepTrack(
+            [this, task]
+            {
+                /// getOrBuildIndexReadResult dedupes per part via a promise/future registry, so
+                /// concurrent jobs over the same part are safe. The task is shared_ptr-owned so it
+                /// outlives this job even if a reader thread takes it from per_thread_tasks first;
+                /// the result is published under `mutex` so it cannot race getTask()/createTask().
+                std::unique_ptr<PrefetchedReaders> readers_future;
+                std::exception_ptr warmup_exception;
+                try
+                {
+                    readers_future = buildReadersForTask(*task, /*on_warmup_thread=*/true);
+                }
+                catch (...)
+                {
+                    warmup_exception = std::current_exception();
+                }
+
+                std::lock_guard lock(mutex);
+                task->readers_future = std::move(readers_future);
+                task->warmup_exception = std::move(warmup_exception);
+            },
+            task->priority);
+    }
 }
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::getTask");
 
-    std::lock_guard lock(mutex);
-
-    if (per_thread_tasks.empty())
-        return nullptr;
-
-    if (!started_prefetches)
+    std::vector<TaskHolder> tasks_to_warm_up;
+    MergeTreeReadTaskPtr result;
     {
-        started_prefetches = true;
-        startPrefetches();
+        std::lock_guard lock(mutex);
+
+        if (per_thread_tasks.empty())
+            return nullptr;
+
+        if (!started_prefetches)
+        {
+            started_prefetches = true;
+            tasks_to_warm_up = startPrefetches();
+        }
+
+        auto it = per_thread_tasks.find(task_idx);
+        if (it == per_thread_tasks.end())
+        {
+            result = stealTask(task_idx, previous_task);
+        }
+        else
+        {
+            auto & thread_tasks = it->second;
+            chassert(!thread_tasks.empty());
+
+            auto thread_task = std::move(thread_tasks.front());
+            thread_tasks.pop_front();
+
+            if (thread_tasks.empty())
+                per_thread_tasks.erase(it);
+
+            result = createTask(*thread_task, previous_task);
+        }
     }
 
-    auto it = per_thread_tasks.find(task_idx);
-    if (it == per_thread_tasks.end())
-        return stealTask(task_idx, previous_task);
+    /// Schedule the deferred warmup jobs only after `mutex` is released: they acquire `mutex` to
+    /// publish their results and run on the bounded `prefetch_threadpool`, so scheduling under the
+    /// lock could deadlock (see schedulePrefetchWarmupJobs).
+    schedulePrefetchWarmupJobs(tasks_to_warm_up);
 
-    auto & thread_tasks = it->second;
-    chassert(!thread_tasks.empty());
-
-    auto thread_task = std::move(thread_tasks.front());
-    thread_tasks.pop_front();
-
-    if (thread_tasks.empty())
-        per_thread_tasks.erase(it);
-
-    return createTask(*thread_task, previous_task);
+    return result;
 }
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, MergeTreeReadTask * previous_task)

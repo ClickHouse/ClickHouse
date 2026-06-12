@@ -124,7 +124,14 @@ private:
     void fillPerPartStatistics();
     void fillPerThreadTasks(size_t threads, size_t sum_marks);
 
-    void startPrefetches();
+    /// Drains `prefetch_queue` under `mutex`. For the deferred (use_skip_indexes_on_data_read) path
+    /// it does NOT schedule anything; it returns the tasks whose warmup jobs the caller must
+    /// schedule via schedulePrefetchWarmupJobs() AFTER releasing `mutex`.
+    std::vector<TaskHolder> startPrefetches();
+    /// Schedules the per-part warmup jobs returned by startPrefetches(). MUST be called without
+    /// holding `mutex`: the jobs acquire `mutex` to publish and run on the bounded
+    /// `prefetch_threadpool`, so scheduling under the lock would deadlock.
+    void schedulePrefetchWarmupJobs(const std::vector<TaskHolder> & tasks_to_warm_up);
     void createPrefetchedReadersForTask(ThreadTask & task);
     /// Does the expensive part of reader creation for a single task WITHOUT holding `mutex`:
     /// skip-index filtering (deferred path) and reader construction + prefetch issuing. Returns
