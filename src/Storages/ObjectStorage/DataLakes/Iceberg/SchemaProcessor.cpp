@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 
@@ -219,7 +220,12 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             type_mapping[f_geography] = f_binary;
             type_mapping[f_geometry] = f_binary;
         }
-        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping));
+        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
+        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
+                schema_id);
     }
     else
     {
