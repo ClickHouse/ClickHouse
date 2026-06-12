@@ -1060,7 +1060,7 @@ constexpr size_t E8_SUBDIM = 8;
 /// Nearest point of D8 = { integer vectors with even coordinate sum } to `y` (8 doubles), returned as integers in `out`.
 inline void nearestD8(const double * y, int * out)
 {
-    long long isum = 0;
+    Int64 isum = 0;
     size_t worst = 0;
     double worst_delta = -1.0;
     for (size_t i = 0; i < E8_SUBDIM; ++i)
@@ -1139,11 +1139,11 @@ struct E8Codebook
 /// Recursively enumerate all E8 lattice points (in 2*coordinate units, so all entries share parity `parity`) whose
 /// squared norm (in 2*coordinate units) is <= `max_sumsq`. E8 membership reduces to: all entries same parity and the
 /// sum of the 2*coordinates is divisible by 4.
-void e8Collect(int depth, long long sumsq, long long max_sumsq, int parity, std::array<int, E8_SUBDIM> & cur, std::vector<std::pair<int, std::array<int, E8_SUBDIM>>> & out)
+void e8Collect(int depth, Int64 sumsq, Int64 max_sumsq, int parity, std::array<int, E8_SUBDIM> & cur, std::vector<std::pair<int, std::array<int, E8_SUBDIM>>> & out)
 {
     if (depth == static_cast<int>(E8_SUBDIM))
     {
-        long long s = 0;
+        Int64 s = 0;
         for (size_t i = 0; i < E8_SUBDIM; ++i)
             s += cur[i];
         if (((s % 4) + 4) % 4 != 0)
@@ -1151,13 +1151,13 @@ void e8Collect(int depth, long long sumsq, long long max_sumsq, int parity, std:
         out.emplace_back(static_cast<int>(sumsq), cur);
         return;
     }
-    const long long remaining = max_sumsq - sumsq;
+    const Int64 remaining = max_sumsq - sumsq;
     const int maxc = static_cast<int>(std::floor(std::sqrt(static_cast<double>(remaining))));
     for (int v = -maxc; v <= maxc; ++v)
     {
         if ((((v % 2) + 2) % 2) != parity)
             continue;
-        const long long ns = sumsq + static_cast<long long>(v) * v;
+        const Int64 ns = sumsq + static_cast<Int64>(v) * v;
         if (ns > max_sumsq)
             continue;
         cur[static_cast<size_t>(depth)] = v;
@@ -1173,7 +1173,7 @@ std::shared_ptr<const E8Codebook> buildE8Codebook(size_t dimensions, size_t bits
     const size_t num_points = static_cast<size_t>(1) << bits;
 
     std::vector<std::pair<int, std::array<int, E8_SUBDIM>>> pts;
-    long long max_sumsq = 8;
+    Int64 max_sumsq = 8;
     while (true)
     {
         pts.clear();
@@ -1284,8 +1284,8 @@ inline void encodeE8(const E8Codebook & cb, const float * rhat, size_t dimension
         if (cb.use_clamp && yn2 > static_cast<double>(cb.clamp_radius) * static_cast<double>(cb.clamp_radius))
         {
             const double f = static_cast<double>(cb.clamp_radius) / std::sqrt(yn2);
-            for (size_t i = 0; i < E8_SUBDIM; ++i)
-                y[i] *= f;
+            for (double & yi : y)
+                yi *= f;
         }
 
         int c2[E8_SUBDIM];
