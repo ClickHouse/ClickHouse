@@ -24,6 +24,15 @@ struct KeeperStorageStats;
 
 struct ISnapshotLoader;
 
+struct KeeperSnapshotStatus
+{
+    uint64_t last_log_index;
+    String path;
+    DiskPtr disk;
+    SnapshotFileInfoPtr pin;
+    bool is_received;
+};
+
 class IKeeperStateMachine : public nuraft::state_machine
 {
 public:
@@ -126,6 +135,8 @@ public:
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
 
+    virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
+
     /// Return a pin for `log_idx`, or `nullptr` if absent. The pin defers
     /// unlink and cross-disk moves until the transfer releases it.
     /// Caller must hold `snapshots_lock`.
@@ -134,8 +145,19 @@ public:
 protected:
     CommitCallback commit_callback;
 
-    /// Latest snapshot metadata, stored on both leader/follower.
+    /// Monotonic high-water mark reported to NuRaft via `last_snapshot`. Advanced only via
+    /// `advanceLatestSnapshotMeta`; never regresses; retention pins its registry entry (the
+    /// bytes can still be rewritten in place by a same-index re-receive — pre-existing).
+    /// A saved-but-not-applied install does not advance it, so the manager's map max may
+    /// exceed it; `init` adopts the newest disk snapshot.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
+
+    /// Per-install context: stamped by the `save_logical_snp_obj` tail, validated and
+    /// consumed by the matching `apply_snapshot` on every exit (identity =
+    /// (last_log_idx, last_log_term)). May move to ANY index — a lower-index re-install
+    /// after leadership churn is valid. A lingering value is harmless; the next stamp
+    /// overwrites it.
+    SnapshotMetadataPtr pending_snapshot_to_apply TSA_GUARDED_BY(snapshots_lock) = nullptr;
 
     /// Follower snapshot receive context.
     /// Kept for the duration of snapshot transfer, reset on completion/error.
@@ -150,11 +172,9 @@ protected:
     /// Requests for a different retained snapshot reset the cache.
     uint64_t snapshot_loader_info_log_idx TSA_GUARDED_BY(snapshots_lock) = 0;
 
-    /// Cached size of the latest snapshot file, updated atomically after each snapshot
-    /// creation/save while snapshots_lock is held. Read lock-free by `getLatestSnapshotSize`
-    /// (called from `mntr`) to avoid blocking on `snapshots_lock` during long-running
-    /// snapshot serialization. On `getFileSize` failure the previous value is retained
-    /// and a warning is logged; the value self-corrects on the next successful snapshot.
+    /// Cached size of the newest REGISTERED snapshot (the manager's map max). Updated under
+    /// `snapshots_lock` only when the written index is the map max; read lock-free by
+    /// `getLatestSnapshotSize` (`mntr`). Stale values self-correct on the next snapshot.
     std::atomic<uint64_t> latest_snapshot_size{0};
 
     CoordinationSettingsPtr coordination_settings;
@@ -286,7 +306,11 @@ public:
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
 
-    /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
+    std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
+
+    /// Cancel an in-progress snapshot receive: remove the receive file (the FINAL
+    /// `snapshot_<idx>` name — a same-index re-receive can thus delete a registered
+    /// snapshot) and its marker, and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
 
     SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);
@@ -314,7 +338,7 @@ private:
     };
 
     /// Phase 3: metadata-only publication with adopt-on-conflict. No disk IO.
-    /// Throws only before any state mutation.
+    /// Adopt-on-conflict: the caller unlinks loser_to_remove outside the lock.
     LocalSnapshotPublishOutcome publishWrittenSnapshot(
         const SnapshotFileInfoPtr & written_file_info,
         const SnapshotMetadataPtr & written_snapshot_meta,
@@ -326,6 +350,10 @@ private:
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager<Storage> snapshot_manager;
+
+    /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
+    /// different term) and re-point retention protection at its backing snapshot file.
+    void advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate) TSA_REQUIRES(snapshots_lock);
 
     KeeperResponseForSession processReconfiguration(const KeeperRequestForSession & request_for_session) override;
 };

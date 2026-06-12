@@ -12,6 +12,8 @@
 #include <IO/WriteBuffer.h>
 #include <vector>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -226,7 +228,8 @@ public:
     /// Insert-or-reuse: returns the already-registered entry for the same log index if any
     /// (state-equivalent in Raft); the caller retires its own file when it loses.
     SnapshotFileInfoPtr publishSnapshotFile(uint64_t up_to_log_idx, SnapshotFileInfoPtr file_info);
-    SnapshotMaintenanceTasks prepareSnapshotMaintenanceTasks();
+    /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
+    SnapshotMaintenanceTasks prepareSnapshotMaintenanceTasks(uint64_t just_written_log_idx);
     bool publishMovedSnapshotIfValid(const SnapshotMoveCandidate & candidate);
     SnapshotFileInfoPtr getLatestSnapshotInfoMetadataOnly() const;
     void retireUnpublishedSnapshotFile(const SnapshotFileInfoPtr & file_info) const;
@@ -275,14 +278,21 @@ public:
 
     SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
+    std::map<uint64_t, SnapshotFileInfoPtr> getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
+
     /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
     /// result pins the file against unlink and cross-disk moves.
     /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
     SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
 
+    /// Protect this log index from retention — the file backing `latest_snapshot_meta` must
+    /// stay servable to NuRaft. 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    void setProtectedSnapshotIndex(uint64_t log_idx);
+
 private:
     SnapshotFileInfoPtr detachSnapshotForRemoval(uint64_t log_idx);
-    std::vector<SnapshotFileInfoPtr> detachOutdatedSnapshotsIfNeeded();
+    /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
+    std::vector<SnapshotFileInfoPtr> detachOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
     std::vector<SnapshotMoveCandidate> selectSnapshotsToMove();
     void cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate) const;
 
@@ -301,6 +311,8 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
+    /// See `setProtectedSnapshotIndex`. Checked by `detachOutdatedSnapshotsIfNeeded`.
+    uint64_t protected_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage

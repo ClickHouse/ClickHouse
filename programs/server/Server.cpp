@@ -31,6 +31,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
+#include <Common/OOMCanary/OOMCanary.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -47,6 +48,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
@@ -111,6 +113,7 @@
 #include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadStackSize.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
@@ -289,6 +292,9 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString unique_key_index_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_index_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_index_cache_size_ratio;
     extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
@@ -411,6 +417,12 @@ namespace ServerSetting
     extern const ServerSettingsString google_protos_path;
     extern const ServerSettingsString filesystem_caches_path;
     extern const ServerSettingsInt32 oom_score;
+    extern const ServerSettingsBool oom_canary_enable;
+    extern const ServerSettingsUInt64 oom_canary_size;
+    extern const ServerSettingsBool oom_canary_relaunch;
+    extern const ServerSettingsUInt64 oom_canary_max_rapid_relaunches;
+    extern const ServerSettingsUInt64 oom_canary_initial_backoff_seconds;
+    extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
@@ -1069,7 +1081,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    auto query_scope = QueryScope::create(startup_context);
+                    auto thread_group = ThreadGroup::createForQuery(startup_context);
+                    ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1102,7 +1115,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            auto query_scope = QueryScope::create(startup_context);
+            auto thread_group = ThreadGroup::createForQuery(startup_context);
+            ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1496,7 +1510,7 @@ try
         /* minCapacity */3,
         /* maxCapacity */server_settings[ServerSetting::max_connections],
         /* idleTime */60,
-        /* stackSize */POCO_THREAD_STACK_SIZE,
+        /* stackSize */DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
@@ -1855,6 +1869,27 @@ try
         setOOMScore(oom_score, log);
 #endif
 
+#if defined(OS_LINUX)
+    std::optional<OOMCanary> oom_canary;
+    if (server_settings[ServerSetting::oom_canary_enable])
+    {
+        OOMCanary::Config canary_config;
+        canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
+        canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
+        canary_config.max_rapid_relaunches = server_settings[ServerSetting::oom_canary_max_rapid_relaunches];
+        canary_config.initial_backoff_seconds = server_settings[ServerSetting::oom_canary_initial_backoff_seconds];
+        canary_config.max_backoff_seconds = server_settings[ServerSetting::oom_canary_max_backoff_seconds];
+        oom_canary.emplace(global_context, std::move(canary_config));
+    }
+    else
+    {
+        LOG_INFO(log, "OOM canary is disabled");
+    }
+#else
+    if (server_settings[ServerSetting::oom_canary_enable])
+        LOG_WARNING(log, "OOM canary is only supported on Linux, ignoring");
+#endif
+
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
 
     SCOPE_EXIT({
@@ -2055,6 +2090,16 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    String unique_key_index_cache_policy_name = server_settings[ServerSetting::unique_key_index_cache_policy];
+    size_t unique_key_index_cache_size = server_settings[ServerSetting::unique_key_index_cache_size_bytes];
+    double unique_key_index_cache_size_ratio = server_settings[ServerSetting::unique_key_index_cache_size_ratio];
+    if (unique_key_index_cache_size > max_cache_size)
+    {
+        unique_key_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_index_cache_size));
+    }
+    global_context->setUniqueKeyIndexCache(unique_key_index_cache_policy_name, unique_key_index_cache_size, unique_key_index_cache_size_ratio);
 
     String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
     size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
@@ -2547,6 +2592,9 @@ try
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
+
+                if (config().has("startup_scripts"))
+                    loadStartupScripts(config(), new_server_settings, global_context, log);
             }
 
             global_context->updateStorageConfiguration(config());
@@ -2558,6 +2606,7 @@ try
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -2993,6 +3042,11 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
 
+#if defined(OS_LINUX)
+        if (oom_canary)
+            oom_canary->start();
+#endif
+
         global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
 
         /// Build loggers before tables startup to make log messages from tables
@@ -3000,7 +3054,11 @@ try
         buildLoggers(config(), logger());
         initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
+        bool has_keeper_server = false;
+#if USE_NURAFT
+        has_keeper_server = global_context->tryGetKeeperDispatcher() != nullptr;
+#endif
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, has_keeper_server);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
@@ -3216,6 +3274,16 @@ try
 #endif
         };
 
+        /// Wrapping the call to OOM canary stop in a lambda lets us write
+        /// the OS_LINUX guard outside the SCOPE_EXIT_SAFE macro argument list,
+        /// avoiding -Wembedded-directive.
+        auto stop_oom_canary = [&]{
+#if defined(OS_LINUX)
+            if (oom_canary)
+                oom_canary->stop();
+#endif
+        };
+
         SCOPE_EXIT_SAFE({
             const auto & logger_shutdown_level_setting = server_settings[ServerSetting::logger_shutdown_level];
             if (logger_shutdown_level_setting.changed && !logger_shutdown_level_setting.value.empty())
@@ -3278,6 +3346,8 @@ try
                 global_context->waitAllBackupsAndRestores();
             else
                 global_context->cancelAllBackupsAndRestores();
+
+            stop_oom_canary();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])

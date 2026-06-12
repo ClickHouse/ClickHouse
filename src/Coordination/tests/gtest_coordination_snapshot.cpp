@@ -45,26 +45,6 @@ namespace DB::CoordinationSetting
 namespace
 {
 
-class TestLocalObjectStorage : public DB::LocalObjectStorage
-{
-public:
-    mutable std::atomic<int> read_count{0};
-
-    explicit TestLocalObjectStorage(DB::LocalObjectStorageSettings settings)
-        : DB::LocalObjectStorage(std::move(settings)) {}
-
-    std::unique_ptr<DB::ReadBufferFromFileBase> readObject( /// NOLINT
-        const DB::StoredObject & object,
-        const DB::ReadSettings & read_settings,
-        std::optional<size_t> read_hint,
-        bool use_external_buffer,
-        bool restrict_seek) const override
-    {
-        ++read_count;
-        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
-    }
-};
-
 enum class SnapshotDiskFailureMode
 {
     OpenFileAfterCreate,
@@ -108,6 +88,16 @@ public:
     void disarm()
     {
         failure_enabled = false;
+    }
+
+    void arm()
+    {
+        failure_enabled = true;
+    }
+
+    void setFailPathPrefix(std::string p)
+    {
+        fail_path_prefix = std::move(p);
     }
 
     std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
@@ -289,24 +279,6 @@ void assertNoSnapshotArtifactsAndNoRegistration(Manager & manager, const std::st
     EXPECT_EQ(manager.totalSnapshots(), 0);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 0);
     EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
-}
-
-std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjectStorage>>
-createLocalObjectStorageDisk(const std::string & meta_path, const std::string & obj_path)
-{
-    auto obj_storage = std::make_shared<TestLocalObjectStorage>(
-        DB::LocalObjectStorageSettings("SnapshotDisk", obj_path, false));
-    std::unordered_map<DB::Location, DB::LocationInfo> cluster_locations = {{"main", {true, true, ""}}};
-    auto cluster = std::make_shared<DB::ClusterConfiguration>("SnapshotDisk", std::move(cluster_locations));
-    auto router = std::make_shared<DB::ObjectStorageRouter>(
-        std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", obj_storage}});
-    auto meta_disk = std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path);
-    DB::MetadataStoragePtr metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
-        meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/0);
-    Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
-    auto disk = std::make_shared<DB::DiskObjectStorage>(
-        "SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "", /*use_fake_transaction=*/true);
-    return {disk, obj_storage};
 }
 
 struct IntNode
@@ -1077,6 +1049,20 @@ static nuraft::ptr<nuraft::buffer> makeSingleNodeSnapshotBuffer(
     return makeSnapshotBufferFromStorage(storage, log_idx, ctx);
 }
 
+/// Drain a queued create_snapshot task synchronously (the snapshot thread's job in production)
+/// and return the resulting file info, mirroring the pattern used by the cleanup tests.
+static DB::SnapshotFileInfoPtr executeCreateSnapshotTask(
+    DB::KeeperStateMachine<DB::KeeperMemoryStorage> & state_machine,
+    DB::SnapshotsQueue & snapshots_queue,
+    nuraft::snapshot & s)
+{
+    nuraft::async_result<bool>::handler_type when_done = [](bool &, nuraft::ptr<std::exception> &) {};
+    state_machine.create_snapshot(s, when_done);
+    DB::CreateSnapshotTask snapshot_task;
+    EXPECT_TRUE(snapshots_queue.pop(snapshot_task));
+    return snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+}
+
 TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotReplacesCommittedState)
 {
     ChangelogDirTest snapshots("./snapshots");
@@ -1227,220 +1213,501 @@ TEST(KeeperMemorySnapshotApplyTest, CorruptSnapshotPrefixFailsBeforeDroppingStor
     EXPECT_EQ(std::string(storage.container.getValue("/old").getData()), "old");
 }
 
-/// Verify that concurrent snapshot transfers from a leader with a remote snapshot disk work correctly.
-/// A remote disk causes `RemoteSnapshotLoader` to be used, which loads the snapshot into memory once
-/// and serves all concurrent followers from the same buffer. The test checks that all followers
-/// receive correct data and that the snapshot file is read from disk exactly once.
-TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
+namespace
 {
-    getContext(); /// needed for DiskObjectStorage background threads
+/// Serialize a snapshot of `storage` for log index `idx` into a buffer, using a manager over an
+/// ISOLATED empty disk — a throwaway manager over the real snapshot disk would run a ctor
+/// retention pass pruning the on-disk snapshots the test asserts about. Buffer content is
+/// identical (serialization is disk-independent).
+nuraft::ptr<nuraft::buffer> makeInstallBuffer(
+    DB::KeeperMemoryStorage & storage, uint64_t idx, const DB::KeeperContextPtr & version_ctx)
+{
+    static int iso_counter = 0;
+    const std::string iso_path = fmt::format("./iso_buf_{}", iso_counter++);
+    fs::remove_all(iso_path);
+    fs::create_directory(iso_path);
+    SCOPE_EXIT({ fs::remove_all(iso_path); });
 
-    ChangelogDirTest snap_meta("./snapshots");
-    ChangelogDirTest snap_obj("./snapshots_obj");
+    auto iso_settings = std::make_shared<DB::CoordinationSettings>();
+    auto iso_ctx = std::make_shared<DB::KeeperContext>(true, iso_settings);
+    iso_ctx->setLocalLogsPreprocessed();
+    iso_ctx->setDigestEnabled(true);
+    iso_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("IsoBufDisk", iso_path));
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, iso_ctx, true);
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
+        &storage, idx, nullptr, version_ctx->getWriteSnapshotVersion());
+    return manager.serializeSnapshotToBuffer(snapshot);
+}
+
+/// Build a state-equivalent "install" snapshot file for `idx` (term 0) holding a single marker
+/// node and save it through the receive path without applying it. Mirrors a fully received but
+/// not-yet-applied snapshot install.
+void saveInstallSnapshot(
+    DB::KeeperStateMachine<DB::KeeperMemoryStorage> & state_machine,
+    const DB::KeeperContextPtr & ctx,
+    uint64_t idx,
+    const std::string & marker)
+{
+    DB::KeeperMemoryStorage storage(500, "", ctx);
+    addNode(storage, marker, marker);
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = idx;
+    nuraft::snapshot snap(idx, 0, std::make_shared<nuraft::cluster_config>());
+    auto buf = makeInstallBuffer(storage, idx, ctx);
+    saveSingleObjectSnapshot(state_machine, snap, buf);
+}
+}
+
+/// HARD CONSTRAINT: snapshot 5 saved but never applied (leader died), then a new leader installs
+/// the older snapshot 3 — must converge. A naive "only stamp the mark if monotonic" guard would
+/// skip the apply of 3 and silently diverge.
+TEST(KeeperMemorySnapshotApplyTest, InterruptedInstallThenOlderReinstallConverges)
+{
+    ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
 
-    auto leader_settings = std::make_shared<DB::CoordinationSettings>();
-#if USE_ROCKSDB
-    (*leader_settings)[DB::CoordinationSetting::experimental_use_rocksdb] = std::is_same_v<Storage, DB::KeeperRocksStorage>;
-#else
-    (*leader_settings)[DB::CoordinationSetting::experimental_use_rocksdb] = 0;
-#endif
-    (*leader_settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = 10;
-    auto leader_ctx = std::make_shared<DB::KeeperContext>(true, leader_settings);
-    leader_ctx->setLocalLogsPreprocessed();
-    leader_ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("RocksDisk", "./rocksdb"));
-    leader_ctx->setRocksDBOptions();
+    auto old_entry = makeCreateEntry(*state_machine, "/old", "old");
+    state_machine->pre_commit(1, old_entry->get_buf());
+    state_machine->commit(1, old_entry->get_buf());
 
-    auto [snap_disk, obj_storage] = createLocalObjectStorageDisk("./snapshots", "./snapshots_obj/");
-    leader_ctx->setSnapshotDisk(snap_disk);
-
-    DB::KeeperSnapshotManager<Storage> manager(3, leader_ctx, this->enable_compression);
-    Storage storage(500, "", leader_ctx);
-    addNode(storage, "/hello", "world");
-    DB::KeeperStorageSnapshot<Storage> snap(&storage, 50, nullptr, leader_ctx->getWriteSnapshotVersion());
-    auto snap_buf = manager.serializeSnapshotToBuffer(snap);
-    manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
-
-    DB::SnapshotsQueue leader_snapshots_queue{1};
-    auto leader = std::make_shared<DB::KeeperStateMachine<Storage>>(
-        nullptr, leader_snapshots_queue, leader_ctx, nullptr);
-    leader->init();
-
-    nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
-
-    const int reads_after_init = obj_storage->read_count.load();
-
-    constexpr int num_threads = 10;
-    std::vector<std::string> loaded_data(num_threads);
+    /// Local create win at 1 -> mark 1.
+    nuraft::snapshot s1(1, 0, std::make_shared<nuraft::cluster_config>());
     {
-        std::vector<std::thread> threads;
-        threads.reserve(num_threads);
-        for (int i = 0; i < num_threads; ++i)
-            threads.emplace_back([&, i] { loaded_data[i] = runFollower<Storage>(i, *leader, s); });
-        for (auto & t : threads)
-            t.join();
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s1);
+        ASSERT_NE(info, nullptr);
     }
-    for (int i = 0; i < num_threads; ++i)
-        EXPECT_EQ(loaded_data[i], "world") << "thread " << i;
+    ASSERT_NE(state_machine->last_snapshot(), nullptr);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 1);
 
-    EXPECT_EQ(obj_storage->read_count.load() - reads_after_init, 1);
+    /// Save a full install of 5, do NOT apply it (leader died).
+    saveInstallSnapshot(*state_machine, ctx, 5, "/from_snap5");
+    /// The fix's discriminator: the high-water mark stays at 1 (master would regress to 5).
+    ASSERT_NE(state_machine->last_snapshot(), nullptr);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 1);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u);
 
-    snap_disk->shutdown();
+    /// New leader installs the older snapshot 3, then applies it.
+    saveInstallSnapshot(*state_machine, ctx, 3, "/from_snap3");
+    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
+    EXPECT_TRUE(state_machine->apply_snapshot(s3));
+
+    auto & storage = state_machine->getStorageUnsafe();
+    EXPECT_TRUE(storage.container.contains("/from_snap3"));
+    EXPECT_FALSE(storage.container.contains("/from_snap5"));
+    EXPECT_FALSE(storage.container.contains("/old"));
+    EXPECT_EQ(state_machine->last_commit_index(), 3);
+    ASSERT_NE(state_machine->last_snapshot(), nullptr);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
+
+    /// Replay continues from idx 4.
+    auto tail_entry = makeCreateEntry(*state_machine, "/tail", "tail");
+    state_machine->pre_commit(4, tail_entry->get_buf());
+    state_machine->commit(4, tail_entry->get_buf());
+    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/tail"));
+    EXPECT_EQ(state_machine->last_commit_index(), 4);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)
+/// A stale duplicate install at a lower index must not regress the high-water mark or clobber the
+/// cached snapshot size.
+TEST(KeeperMemorySnapshotApplyTest, StaleDuplicateInstallKeepsHighWaterMarkAndSize)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "snapshot_50_", SnapshotDiskFailureMode::OpenFileAfterCreate));
+    auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
+    state_machine->pre_commit(1, e1->get_buf());
+    state_machine->commit(1, e1->get_buf());
+    auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
+    state_machine->pre_commit(2, e2->get_buf());
+    state_machine->commit(2, e2->get_buf());
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
-    addNode(storage, "/hello", "world");
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
+    nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
+    {
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2);
+        ASSERT_NE(info, nullptr);
+    }
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
+    const uint64_t expected_size = state_machine->getLatestSnapshotSize();
+    EXPECT_GT(expected_size, 0u);
 
-    EXPECT_THROW(manager.serializeSnapshotToDisk(snapshot), std::exception);
-    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 50);
+    /// Save a stale install of 1 -> map {1,2}, pending 1, mark still 2, size unchanged.
+    saveInstallSnapshot(*state_machine, ctx, 1, "/stale");
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
+    EXPECT_EQ(state_machine->getLatestSnapshotSize(), expected_size);
+
+    /// A later local create at 3 still works and advances the mark.
+    auto e3 = makeCreateEntry(*state_machine, "/n3", "v3");
+    state_machine->pre_commit(3, e3->get_buf());
+    state_machine->commit(3, e3->get_buf());
+    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
+    {
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s3);
+        ASSERT_NE(info, nullptr);
+    }
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1u);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
+/// After a restart, a snapshot that was saved but never applied is the newest disk snapshot and
+/// `init` recovers from it (a fully saved snapshot is a valid committed prefix).
+TEST(KeeperMemorySnapshotApplyTest, RestartAfterSavedButNotAppliedRecoversNewestDiskSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    {
+        auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+        DB::SnapshotsQueue snapshots_queue{1};
+        auto sm1 = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+        sm1->init();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "snapshot_51_", SnapshotDiskFailureMode::SyncFile));
+        auto e1 = makeCreateEntry(*sm1, "/old", "old");
+        sm1->pre_commit(1, e1->get_buf());
+        sm1->commit(1, e1->get_buf());
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
-    addNode(storage, "/hello", "world");
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 51, nullptr, this->keeper_context->getWriteSnapshotVersion());
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        saveInstallSnapshot(*sm1, ctx, 5, "/from_snap5");
+        EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u);
+        /// sm1 destroyed without applying snapshot 5.
+    }
 
-    EXPECT_THROW(manager.serializeSnapshotBufferToDisk(*buf, 51), std::exception);
-    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 51);
+    {
+        auto ctx2 = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+        DB::SnapshotsQueue snapshots_queue2{1};
+        auto sm2 = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue2, ctx2, nullptr);
+        sm2->init();
+
+        ASSERT_NE(sm2->last_snapshot(), nullptr);
+        EXPECT_EQ(sm2->last_snapshot()->get_last_log_idx(), 5);
+        auto & storage = sm2->getStorageUnsafe();
+        EXPECT_TRUE(storage.container.contains("/from_snap5"));
+        EXPECT_FALSE(storage.container.contains("/old"));
+        EXPECT_EQ(sm2->last_commit_index(), 5);
+
+        /// A stale save at 3 after restart does not regress the mark.
+        saveInstallSnapshot(*sm2, ctx2, 3, "/from_snap3");
+        EXPECT_EQ(sm2->last_snapshot()->get_last_log_idx(), 5);
+    }
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCannotRemoveDataFile)
+/// The high-water mark's backing file stays servable (protected from retention) and the mark never
+/// regresses under a sequence of saved-but-not-applied installs.
+TEST(KeeperMemorySnapshotApplyTest, HighWaterMarkStaysServableAndNeverRegressesUnderReceiveSequences)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "snapshot_56_", SnapshotDiskFailureMode::SyncFileAndCleanupDataFileRemoveFailure));
+    /// (1) commits 1-2, create win at 2 -> map {2}, mark/protected 2.
+    auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
+    state_machine->pre_commit(1, e1->get_buf());
+    state_machine->commit(1, e1->get_buf());
+    auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
+    state_machine->pre_commit(2, e2->get_buf());
+    state_machine->commit(2, e2->get_buf());
+    nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
+    {
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2);
+        ASSERT_NE(info, nullptr);
+    }
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
-    addNode(storage, "/hello", "world");
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 56, nullptr, this->keeper_context->getWriteSnapshotVersion());
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    /// (2) save full 5 then 3 -> {2,3,5}, mark 2 after each.
+    saveInstallSnapshot(*state_machine, ctx, 5, "/snap5");
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
+    saveInstallSnapshot(*state_machine, ctx, 3, "/snap3");
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 
-    EXPECT_THROW(manager.serializeSnapshotBufferToDisk(*buf, 56), std::exception);
-    /// The data file could not be removed, so its marker must stay too: data + marker.
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 56).size(), 1);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 56, /*include_tmp_markers=*/true).size(), 2);
-    EXPECT_EQ(manager.totalSnapshots(), 0);
-    EXPECT_EQ(manager.getLatestSnapshotIndex(), 0);
-    EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
+    /// (3) save 4 -> {2,3,4,5}: candidate 2 pinned, 4 <= keep(3)+1 -> nothing pruned.
+    saveInstallSnapshot(*state_machine, ctx, 4, "/snap4");
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2).size(), 1u);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1u);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 4).size(), 1u);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u);
+
+    /// (4) save 6 -> remove 3 -> {2,4,5,6}; the mark's file (2) stays servable.
+    saveInstallSnapshot(*state_machine, ctx, 6, "/snap6");
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 3).empty());
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2).size(), 1u);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
+
+    /// (5) create-skip servability: returns the mark's file (snapshot_2), not the map max.
+    {
+        nuraft::snapshot s2_again(2, 0, std::make_shared<nuraft::cluster_config>());
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2_again);
+        ASSERT_NE(info, nullptr);
+        EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(info->path), 2u);
+    }
+
+    /// (6) apply snapshot 6 -> mark advances to 6.
+    {
+        nuraft::snapshot s6(6, 0, std::make_shared<nuraft::cluster_config>());
+        EXPECT_TRUE(state_machine->apply_snapshot(s6));
+        EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 6);
+    }
+
+    /// (7) protection moved to 6: save 7 -> remove 2 then 4 -> {5,6,7}; mark 6 + its file survive.
+    saveInstallSnapshot(*state_machine, ctx, 7, "/snap7");
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 2).empty());
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 4).empty());
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 6).size(), 1u);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 6);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCreationFails)
+/// A covered stale apply (s.idx < pending, but local commits already cover s.idx) skips without
+/// divergence and leaves the pending intact for its own apply.
+TEST(KeeperMemorySnapshotApplyTest, CoveredStaleApplySkipsWithoutDivergence)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "tmp_snapshot_52_", SnapshotDiskFailureMode::OpenFileAfterCreate));
+    for (uint64_t idx = 1; idx <= 3; ++idx)
+    {
+        auto entry = makeCreateEntry(*state_machine, fmt::format("/n{}", idx), "v");
+        state_machine->pre_commit(idx, entry->get_buf());
+        state_machine->commit(idx, entry->get_buf());
+    }
+    EXPECT_EQ(state_machine->last_commit_index(), 3);
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
-    addNode(storage, "/hello", "world");
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 52, nullptr, this->keeper_context->getWriteSnapshotVersion());
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    saveInstallSnapshot(*state_machine, ctx, 5, "/from_snap5"); /// pending 5, mark null
 
-    EXPECT_THROW(manager.serializeSnapshotBufferToDisk(*buf, 52), std::exception);
-    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 52);
+    /// Covered skip: 3 < pending 5, but last committed (3) >= 3.
+    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
+    EXPECT_TRUE(state_machine->apply_snapshot(s3));
+    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/n1"));
+    EXPECT_FALSE(state_machine->getStorageUnsafe().container.contains("/from_snap5"));
+    EXPECT_EQ(state_machine->last_commit_index(), 3);
+    EXPECT_EQ(state_machine->last_snapshot(), nullptr);
+
+    /// The pending survived the covered skip and applies its own snapshot.
+    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
+    EXPECT_TRUE(state_machine->apply_snapshot(s5));
+    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/from_snap5"));
+    EXPECT_EQ(state_machine->last_commit_index(), 5);
+    ASSERT_NE(state_machine->last_snapshot(), nullptr);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerRemovalFails)
+/// A queued same-index create that drains after a state-equivalent install at the same index was
+/// saved (but not applied) writes a fresh unique file, then publish adopts the registered install
+/// entry and retires+unlinks the loser. The armed disk (failing any write whose path matches the
+/// registered file's name) is the discriminator: a regression that rewrites it in place would throw.
+TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstallSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    {
+        auto settings = std::make_shared<DB::CoordinationSettings>();
+#if USE_ROCKSDB
+        (*settings)[DB::CoordinationSetting::experimental_use_rocksdb] = false;
+#endif
+        (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = true;
+        auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+        ctx->setLocalLogsPreprocessed();
+        ctx->setDigestEnabled(true);
+        /// The registered idx-5 file gets a unique name; its prefix is set after the install save.
+        auto throwing_disk = std::make_shared<ThrowingSnapshotDisk>(
+            "SnapshotDisk", "./snapshots", "__placeholder_set_after_install__", SnapshotDiskFailureMode::OpenFileAfterCreate);
+        ctx->setSnapshotDisk(throwing_disk);
+        ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("RocksDisk", "./rocksdb"));
+        ctx->setRocksDBOptions();
+        throwing_disk->disarm();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "tmp_snapshot_53_", SnapshotDiskFailureMode::RemoveFileOnce));
+        DB::SnapshotsQueue snapshots_queue{1};
+        auto sm1 = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+        sm1->init();
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
-    addNode(storage, "/hello", "world");
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 53, nullptr, this->keeper_context->getWriteSnapshotVersion());
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        for (uint64_t idx = 1; idx <= 5; ++idx)
+        {
+            auto entry = makeCreateEntry(*sm1, fmt::format("/n{}", idx), "v");
+            sm1->pre_commit(idx, entry->get_buf());
+            sm1->commit(idx, entry->get_buf());
 
-    EXPECT_THROW(manager.serializeSnapshotBufferToDisk(*buf, 53), std::exception);
-    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 53);
+            if (idx == 1)
+            {
+                /// Local create win at 1 -> mark 1.
+                nuraft::snapshot s1(1, 0, std::make_shared<nuraft::cluster_config>());
+                auto info = executeCreateSnapshotTask(*sm1, snapshots_queue, s1);
+                ASSERT_NE(info, nullptr);
+            }
+        }
+        EXPECT_EQ(sm1->last_snapshot()->get_last_log_idx(), 1);
+
+        /// Save a state-equivalent install of 5 (committed prefix /n1../n5); no apply (NuRaft covered skip).
+        DB::KeeperMemoryStorage install5(500, "", ctx);
+        for (uint64_t idx = 1; idx <= 5; ++idx)
+            addNode(install5, fmt::format("/n{}", idx), "v");
+        TSA_SUPPRESS_WARNING_FOR_WRITE(install5.zxid) = 5;
+        nuraft::snapshot s5_save(5, 0, std::make_shared<nuraft::cluster_config>());
+        auto buf5 = makeInstallBuffer(install5, 5, ctx);
+        saveSingleObjectSnapshot(*sm1, s5_save, buf5);
+        EXPECT_EQ(sm1->last_snapshot()->get_last_log_idx(), 1); /// mark still 1, pending 5
+
+        /// Capture the install's unique file name and arm the disk to fail any write to it.
+        auto registered_files = snapshotFilesForIdx("./snapshots", 5);
+        ASSERT_EQ(registered_files.size(), 1u);
+        const std::string registered_name = registered_files.at(0);
+        throwing_disk->setFailPathPrefix(registered_name);
+        throwing_disk->arm();
+        nuraft::snapshot s5_create(5, 0, std::make_shared<nuraft::cluster_config>());
+        auto info = executeCreateSnapshotTask(*sm1, snapshots_queue, s5_create);
+        ASSERT_NE(info, nullptr); /// adopted the registered install; the fresh write lost and was retired
+        EXPECT_EQ(fs::path(info->path).filename().string(), registered_name);
+        EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u); /// loser unlinked, registered file present
+        ASSERT_NE(sm1->last_snapshot(), nullptr);
+        EXPECT_EQ(sm1->last_snapshot()->get_last_log_idx(), 5);
+
+        auto & storage = sm1->getStorageUnsafe();
+        for (uint64_t idx = 1; idx <= 5; ++idx)
+            EXPECT_TRUE(storage.container.contains(fmt::format("/n{}", idx)));
+    }
+
+    /// Restart with a plain disk: the adopted snapshot 5 is the newest and recovers cleanly.
+    {
+        auto ctx2 = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+        DB::SnapshotsQueue snapshots_queue2{1};
+        auto sm2 = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue2, ctx2, nullptr);
+        sm2->init();
+        ASSERT_NE(sm2->last_snapshot(), nullptr);
+        EXPECT_EQ(sm2->last_snapshot()->get_last_log_idx(), 5);
+        auto & storage = sm2->getStorageUnsafe();
+        for (uint64_t idx = 1; idx <= 5; ++idx)
+            EXPECT_TRUE(storage.container.contains(fmt::format("/n{}", idx)));
+    }
 }
 
-TYPED_TEST(CoordinationTest, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenException)
+/// A create at or below the mark returns the file backing the high-water mark, not the manager's
+/// map max (which may be a saved-but-not-applied install feeding S3/shutdown uploads).
+TEST(KeeperMemorySnapshotApplyTest, CreateSkipReturnsHighWaterMarkFileNotMapMax)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "snapshot_54_", SnapshotDiskFailureMode::OpenFileAfterCreate));
+    auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
+    state_machine->pre_commit(1, e1->get_buf());
+    state_machine->commit(1, e1->get_buf());
+    auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
+    state_machine->pre_commit(2, e2->get_buf());
+    state_machine->commit(2, e2->get_buf());
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+    nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
+    {
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2);
+        ASSERT_NE(info, nullptr);
+    }
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 
-    EXPECT_THROW(manager.beginSnapshotReceiveToDisk(54), std::exception);
-    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 54);
+    saveInstallSnapshot(*state_machine, ctx, 5, "/from_snap5"); /// map {2,5}, pending 5, mark 2
+
+    /// Saved index 5 is the map max -> the size cache reflects snapshot_5.
+    EXPECT_EQ(
+        state_machine->getLatestSnapshotSize(),
+        fs::file_size(fs::path("./snapshots") / snapshotFilesForIdx("./snapshots", 5).at(0)));
+
+    nuraft::snapshot s2_again(2, 0, std::make_shared<nuraft::cluster_config>());
+    auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2_again);
+    ASSERT_NE(info, nullptr);
+    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(info->path), 2u); /// not snapshot_5
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 }
 
-TYPED_TEST(CoordinationTest, FinalizeSnapshotReceiveToDiskCleansPartialFilesOnSyncException)
+/// A local create below saved-but-not-applied installs survives its own retention pass (the
+/// just-written pin) and does not clobber the size cache (map-max guard).
+TEST(KeeperMemorySnapshotApplyTest, LocalCreateBelowSavedInstallsSurvivesRetention)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
-    using Storage = typename TestFixture::Storage;
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
 
-    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "snapshot_55_", SnapshotDiskFailureMode::SyncFile));
+    /// (1) commits 1-2, create win at 2 -> mark/protected 2.
+    auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
+    state_machine->pre_commit(1, e1->get_buf());
+    state_machine->commit(1, e1->get_buf());
+    auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
+    state_machine->pre_commit(2, e2->get_buf());
+    state_machine->commit(2, e2->get_buf());
+    nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
+    {
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2);
+        ASSERT_NE(info, nullptr);
+    }
 
-    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
-    auto receive_ctx = manager.beginSnapshotReceiveToDisk(55);
-    /// The receive context knows its own unique file name.
-    const std::string snapshot_file_name = receive_ctx->snapshot_file_name;
-    const std::string partial_snapshot_bytes = "partial snapshot bytes";
-    receive_ctx->write_buf->write(partial_snapshot_bytes.data(), partial_snapshot_bytes.size());
+    /// (2) save full 10,11,12 -> {2,10,11,12}; baseline size is snapshot_12's.
+    saveInstallSnapshot(*state_machine, ctx, 10, "/snap10");
+    saveInstallSnapshot(*state_machine, ctx, 11, "/snap11");
+    saveInstallSnapshot(*state_machine, ctx, 12, "/snap12");
+    const uint64_t size_12 = state_machine->getLatestSnapshotSize();
+    EXPECT_EQ(size_12, fs::file_size(fs::path("./snapshots") / snapshotFilesForIdx("./snapshots", 12).at(0)));
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 
-    EXPECT_THROW(manager.finalizeSnapshotReceiveToDisk(*receive_ctx), std::exception);
-    EXPECT_FALSE(receive_ctx->write_buf);
-    EXPECT_FALSE(fs::exists("./snapshots/" + snapshot_file_name));
-    EXPECT_FALSE(fs::exists("./snapshots/tmp_" + snapshot_file_name));
-    EXPECT_EQ(manager.totalSnapshots(), 0);
-    EXPECT_EQ(manager.getLatestSnapshotIndex(), 0);
-    EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
+    /// (3) commits 3-5.
+    for (uint64_t idx = 3; idx <= 5; ++idx)
+    {
+        auto entry = makeCreateEntry(*state_machine, fmt::format("/n{}", idx), "v");
+        state_machine->pre_commit(idx, entry->get_buf());
+        state_machine->commit(idx, entry->get_buf());
+    }
+
+    /// (4) local create at 5: write wins, advancing the mark (and protection) to 5 inside
+    /// publishWrittenSnapshot before this pass's maintenance. The old mark's entry (idx 2) is
+    /// therefore no longer protected and is pruned now -> {5,10,11,12}; the just-written 5 survives.
+    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
+    {
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s5);
+        ASSERT_NE(info, nullptr);
+    }
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u);
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 2).empty());
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
+    /// Size guard: the create at 5 is below the map max (12) -> must not clobber the cache.
+    EXPECT_EQ(state_machine->getLatestSnapshotSize(), size_12);
+
+    /// (5) servability: a create at 5 again hits the skip branch and returns a live pin.
+    {
+        nuraft::snapshot s5_again(5, 0, std::make_shared<nuraft::cluster_config>());
+        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s5_again);
+        ASSERT_NE(info, nullptr);
+        EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(info->path), 5u);
+    }
+
+    /// (6) convergence: save full 13 -> remove 10 -> {5,11,12,13}; idx 5 survives (protected).
+    saveInstallSnapshot(*state_machine, ctx, 13, "/snap13");
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 2).empty());
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 10).empty());
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 13).size(), 1u);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
+    EXPECT_EQ(
+        state_machine->getLatestSnapshotSize(),
+        fs::file_size(fs::path("./snapshots") / snapshotFilesForIdx("./snapshots", 13).at(0)));
 }
 
 TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterFailedWrite)
@@ -1855,12 +2122,17 @@ TEST(KeeperSnapshotManagerCleanupTest, SameIndexReceiveDuringLocalCreate)
         /*is_last_obj=*/true);
     EXPECT_EQ(obj_id, 1);
     EXPECT_EQ(block_state->getSyncCalls(), 1);
-    ASSERT_NE(state_machine->last_snapshot(), nullptr);
-    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 1);
+    /// The receive stamps `pending_snapshot_to_apply`, not the mark, so `last_snapshot` stays null
+    /// until the still-blocked create publishes.
+    EXPECT_EQ(state_machine->last_snapshot(), nullptr);
 
     block_state->release();
     auto snapshot_file_info = create_future.get();
     ASSERT_NE(snapshot_file_info, nullptr);
+
+    /// The create adopted the receive's registered entry and advanced the mark to 1.
+    ASSERT_NE(state_machine->last_snapshot(), nullptr);
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 1);
 
     EXPECT_TRUE(callback_called);
     EXPECT_TRUE(callback_result);
@@ -2109,6 +2381,10 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateLosesRaceToNewerSnapshotRetiresWrit
     /// `snapshot_2_*` never matches the already-consumed blocking matcher.
     nuraft::snapshot received_snapshot(2, 0, std::make_shared<nuraft::cluster_config>());
     saveSingleObjectSnapshot(*state_machine, received_snapshot, snapshot_buf);
+    /// The receive stamps pending, not the mark; apply it so the mark advances to 2 and the
+    /// blocked create at 1 loses the race (otherwise it would legitimately win at 1).
+    EXPECT_EQ(state_machine->last_snapshot(), nullptr);
+    EXPECT_TRUE(state_machine->apply_snapshot(received_snapshot));
     ASSERT_NE(state_machine->last_snapshot(), nullptr);
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 
@@ -2123,174 +2399,6 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateLosesRaceToNewerSnapshotRetiresWrit
     EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 1, /*include_tmp_markers=*/true).empty());
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2).size(), 1);
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
-}
-
-TEST(KeeperSnapshotManagerCleanupTest, CreateAfterMetadataRegressionAdoptsPublishedSameIndexEntry)
-{
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
-
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    auto buf_idx_5 = makeSingleNodeSnapshotBuffer(ctx, 5, "/from_receive_5", "five");
-    auto buf_idx_3 = makeSingleNodeSnapshotBuffer(ctx, 3, "/from_receive_3", "three");
-
-    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, s5, buf_idx_5);
-    ASSERT_NE(state_machine->last_snapshot(), nullptr);
-    ASSERT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
-
-    /// Master-inherited regression: the receive tail re-stamps the metadata
-    /// unconditionally, so a later receive of an OLDER snapshot regresses it.
-    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, s3, buf_idx_3);
-    ASSERT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
-
-    bool callback_called = false;
-    bool callback_result = false;
-    nuraft::async_result<bool>::handler_type when_done
-        = [&](bool & ret, nuraft::ptr<std::exception> &)
-    {
-        callback_called = true;
-        callback_result = ret;
-    };
-
-    nuraft::snapshot create_s5(5, 0, std::make_shared<nuraft::cluster_config>());
-    state_machine->create_snapshot(create_s5, when_done);
-    DB::CreateSnapshotTask snapshot_task;
-    ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
-    auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
-
-    EXPECT_TRUE(callback_called);
-    EXPECT_TRUE(callback_result);
-    ASSERT_NE(snapshot_file_info, nullptr);
-    /// Phase-1 same-index adoption: the registered idx-5 entry is reused without a
-    /// write and the NuRaft-visible metadata is re-synced.
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 5);
-    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1);
-}
-
-TEST(KeeperSnapshotManagerCleanupTest, CreateForIntermediateIndexAfterMetaRegressionWritesFresh)
-{
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
-
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    auto buf_idx_5 = makeSingleNodeSnapshotBuffer(ctx, 5, "/from_receive_5", "five");
-    auto buf_idx_3 = makeSingleNodeSnapshotBuffer(ctx, 3, "/from_receive_3", "three");
-
-    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, s5, buf_idx_5);
-    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, s3, buf_idx_3);
-    ASSERT_NE(state_machine->last_snapshot(), nullptr);
-    ASSERT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
-
-    bool callback_called = false;
-    bool callback_result = false;
-    nuraft::async_result<bool>::handler_type when_done
-        = [&](bool & ret, nuraft::ptr<std::exception> &)
-    {
-        callback_called = true;
-        callback_result = ret;
-    };
-
-    /// An intermediate index (meta 3 < requested 4 < registered 5) misses both adopt
-    /// branches by design (adopting idx 5 could not re-sync the meta); the create writes
-    /// and publishes a fresh idx-4 snapshot while idx 5 stays registered.
-    nuraft::snapshot create_s4(4, 0, std::make_shared<nuraft::cluster_config>());
-    state_machine->create_snapshot(create_s4, when_done);
-    DB::CreateSnapshotTask snapshot_task;
-    ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
-    auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
-
-    EXPECT_TRUE(callback_called);
-    EXPECT_TRUE(callback_result);
-    ASSERT_NE(snapshot_file_info, nullptr);
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 4);
-    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 4);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 4).size(), 1);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1);
-}
-
-TEST(KeeperSnapshotManagerCleanupTest, CreateRacingReceiveWithMetadataRegressionResyncsLatestMeta)
-{
-    using namespace std::chrono_literals;
-
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
-    auto block_state = std::make_shared<BlockingSnapshotWriteState>();
-    ctx->setSnapshotDisk(std::make_shared<BlockingSnapshotDisk>(
-        "SnapshotDisk", "./snapshots", "snapshot_5_", block_state));
-
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    auto buf_idx_5 = makeSingleNodeSnapshotBuffer(ctx, 5, "/from_receive_5", "five");
-    auto buf_idx_3 = makeSingleNodeSnapshotBuffer(ctx, 3, "/from_receive_3", "three");
-
-    bool callback_called = false;
-    bool callback_result = false;
-    nuraft::async_result<bool>::handler_type when_done
-        = [&](bool & ret, nuraft::ptr<std::exception> &)
-    {
-        callback_called = true;
-        callback_result = ret;
-    };
-
-    nuraft::snapshot local_snapshot(5, 0, std::make_shared<nuraft::cluster_config>());
-    state_machine->create_snapshot(local_snapshot, when_done);
-    DB::CreateSnapshotTask snapshot_task;
-    ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
-
-    auto create_future = std::async(
-        std::launch::async,
-        [task = std::move(snapshot_task)]() mutable
-        {
-            return task.create_snapshot(std::move(task.snapshot), /*execute_only_cleanup=*/false);
-        });
-    SCOPE_EXIT({ block_state->release(); });
-
-    ASSERT_TRUE(block_state->waitUntilBlocked(5s));
-
-    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, s5, buf_idx_5);
-    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, s3, buf_idx_3);
-    ASSERT_NE(state_machine->last_snapshot(), nullptr);
-    ASSERT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
-
-    block_state->release();
-    auto snapshot_file_info = create_future.get();
-    ASSERT_NE(snapshot_file_info, nullptr);
-    EXPECT_TRUE(callback_called);
-    EXPECT_TRUE(callback_result);
-
-    /// Phase-3 same-index adoption: own file retired and removed, the receive's
-    /// idx-5 entry adopted, the regressed metadata re-synced.
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 5);
-    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5, /*include_tmp_markers=*/true).size(), 1);
-    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1);
 }
 
 TEST(KeeperSnapshotManagerCleanupTest, CreateForOlderRetainedIndexAdoptsLatestSnapshot)
@@ -2310,8 +2418,11 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateForOlderRetainedIndexAdoptsLatestSn
 
     nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
     saveSingleObjectSnapshot(*state_machine, s3, buf_idx_3);
+    EXPECT_TRUE(state_machine->apply_snapshot(s3));
+    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
     nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
     saveSingleObjectSnapshot(*state_machine, s5, buf_idx_5);
+    EXPECT_TRUE(state_machine->apply_snapshot(s5));
     ASSERT_NE(state_machine->last_snapshot(), nullptr);
     ASSERT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
 
@@ -2390,6 +2501,10 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateRacingNewerReceiveWithRetainedSameI
     saveSingleObjectSnapshot(*state_machine, s3, buf_idx_3);
     nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
     saveSingleObjectSnapshot(*state_machine, s5, buf_idx_5);
+    /// Saves stamp pending (3 then 5), not the mark; apply 5 so the mark reaches 5 and the
+    /// blocked create at 3 adopts the mark's idx-5 pin via branch (a).
+    EXPECT_EQ(state_machine->last_snapshot(), nullptr);
+    EXPECT_TRUE(state_machine->apply_snapshot(s5));
     ASSERT_NE(state_machine->last_snapshot(), nullptr);
     ASSERT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
 

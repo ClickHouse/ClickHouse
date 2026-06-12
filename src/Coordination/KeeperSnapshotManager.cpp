@@ -901,7 +901,9 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
         }
     }
 
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks());
+    /// Runs before `init` sets the mark, so `protected_snapshot_log_idx == 0` here — nothing
+    /// to pin yet. With `snapshots_to_keep == 0` retention keeps none at startup (pre-existing).
+    runMaintenanceInline(prepareSnapshotMaintenanceTasks(/*just_written_log_idx=*/0));
 }
 
 template<typename Storage>
@@ -969,7 +971,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, snapshot_file_info);
     if (published_snapshot_file_info != snapshot_file_info)
         retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks());
+    runMaintenanceInline(prepareSnapshotMaintenanceTasks(up_to_log_idx));
     return published_snapshot_file_info;
 }
 
@@ -1030,7 +1032,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
     auto published_snapshot_file_info = publishSnapshotFile(ctx.log_idx, snapshot_file_info);
     if (published_snapshot_file_info != snapshot_file_info)
         retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks());
+    runMaintenanceInline(prepareSnapshotMaintenanceTasks(ctx.log_idx));
     return published_snapshot_file_info;
 }
 
@@ -1175,6 +1177,12 @@ DiskPtr KeeperSnapshotManager<Storage>::getLatestSnapshotDisk() const
 }
 
 template<typename Storage>
+void KeeperSnapshotManager<Storage>::setProtectedSnapshotIndex(uint64_t log_idx)
+{
+    protected_snapshot_log_idx = log_idx;
+}
+
+template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::detachSnapshotForRemoval(uint64_t log_idx)
 {
     auto itr = existing_snapshots.find(log_idx);
@@ -1188,11 +1196,27 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::detachSnapshotForRemoval(uin
 }
 
 template<typename Storage>
-std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::detachOutdatedSnapshotsIfNeeded()
+std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::detachOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx)
 {
+    /// Keep the `snapshots_to_keep` newest snapshots, plus the protected (mark-backing)
+    /// entry and the just-written entry. Worst-case retained files: snapshots_to_keep + 2.
     std::vector<SnapshotFileInfoPtr> retired_snapshots;
     while (existing_snapshots.size() > snapshots_to_keep)
-        retired_snapshots.push_back(detachSnapshotForRemoval(existing_snapshots.begin()->first));
+    {
+        auto candidate = existing_snapshots.begin();
+        size_t pinned_below = 0;
+        while (candidate != existing_snapshots.end()
+               && (candidate->first == protected_snapshot_log_idx || candidate->first == just_written_log_idx))
+        {
+            ++candidate;
+            ++pinned_below;
+        }
+        /// Remove the lowest unpinned entry only while it is not among the newest `snapshots_to_keep`.
+        if (candidate == existing_snapshots.end()
+            || existing_snapshots.size() <= snapshots_to_keep + pinned_below)
+            break;
+        retired_snapshots.push_back(detachSnapshotForRemoval(candidate->first));
+    }
     return retired_snapshots;
 }
 
@@ -1235,10 +1259,10 @@ std::vector<SnapshotMoveCandidate> KeeperSnapshotManager<Storage>::selectSnapsho
 }
 
 template<typename Storage>
-SnapshotMaintenanceTasks KeeperSnapshotManager<Storage>::prepareSnapshotMaintenanceTasks()
+SnapshotMaintenanceTasks KeeperSnapshotManager<Storage>::prepareSnapshotMaintenanceTasks(uint64_t just_written_log_idx)
 {
     SnapshotMaintenanceTasks tasks;
-    tasks.retired_snapshots = detachOutdatedSnapshotsIfNeeded();
+    tasks.retired_snapshots = detachOutdatedSnapshotsIfNeeded(just_written_log_idx);
     tasks.move_candidates = selectSnapshotsToMove();
     return tasks;
 }
@@ -1320,7 +1344,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, snapshot_file_info);
     if (published_snapshot_file_info != snapshot_file_info)
         retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks());
+    runMaintenanceInline(prepareSnapshotMaintenanceTasks(up_to_log_idx));
     return published_snapshot_file_info;
 }
 
@@ -1501,6 +1525,12 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
         tryLogCurrentException(log);
     }
     return nullptr;
+}
+
+template<typename Storage>
+std::map<uint64_t, SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const
+{
+    return existing_snapshots;
 }
 
 template<typename Storage>
