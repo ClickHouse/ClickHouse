@@ -31,15 +31,11 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
-/// ReadPipeline: a declarative specification for creating a read buffer chain.
+/// Declarative specification for a read buffer chain: subsystems annotate the
+/// pipeline with their requirements (stages) and `build` assembles the chain.
 ///
-/// Instead of imperatively nesting read buffers (the "matryoshka" pattern),
-/// subsystems annotate a ReadPipeline with their requirements (stages).
-/// The `build` method assembles the actual buffer chain in a fixed order.
-///
-/// Usage:
 ///   ReadPipeline pipeline;
-///   disk->prepareRead(path, settings, read_hint, pipeline);  // sets source, settings, stages
+///   disk->prepareRead(path, settings, read_hint, pipeline);
 ///   auto buf = pipeline.build();
 ///
 /// Stage ordering (innermost to outermost, fixed at build time):
@@ -145,13 +141,10 @@ public:
         String custom_file_version,
         PageCacheSettings page_cache_settings);
 
-    /// Sits between Gather and MemoryCache. Reads go through the distributed
-    /// cache with fallback to Gather. Also alters the `use_page_cache`
-    /// condition and the `min_bytes_for_seek` value used in AsyncPrefetch.
-    /// @param include_credentials_in_cache_key  When true, object storage
-    ///        credentials are mixed into the cache key. Set for table-engine
-    ///        reads (`s3(...)` etc.) where different users may access the
-    ///        same path with different credentials.
+    /// Sits between Gather and MemoryCache, with fallback to Gather. Mix
+    /// credentials into the cache key for table-engine reads (`s3(...)` etc.)
+    /// where different users may access the same path with different
+    /// credentials.
     void needDistributedCache(bool include_credentials_in_cache_key = false);
 
     void needAsyncPrefetch(
@@ -227,6 +220,18 @@ private:
         bool include_credentials_in_cache_key = false;
     };
 
+    /// `ReaderExecutor` path. Returns nullptr when the setting is off or the
+    /// source variant is not supported (the caller falls back to the legacy
+    /// matryoshka pipeline). When it returns a buffer, `build` must NOT apply
+    /// the wrap stages - the executor handles them internally. `query_id` is
+    /// captured once on the calling thread before any stage runs.
+    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+
     std::optional<SourceStage> source;
     bool gather = false;
     VectorWithMemoryTracking<FilesystemCacheStage> filesystem_caches;
@@ -238,21 +243,6 @@ private:
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
     LoggerPtr log = getLogger("ReadPipeline");
-
-    /// `query_id` is captured once on the calling thread before any stage
-    /// runs, then threaded into helpers (which may run on a worker).
-    ///
-    /// Experimental `ReaderExecutor` path. Returns nullptr when the setting is off
-    /// or the source variant is not supported, so the caller falls back to the
-    /// legacy matryoshka pipeline. When it returns a buffer, `build` must NOT
-    /// apply `wrapMemoryCache` / `wrapAsyncPrefetch` / `wrapDecryption` — the
-    /// executor handles those stages internally.
-    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor(const std::string & query_id) const;
-    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
-    std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
-    std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
-    std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;
-    std::unique_ptr<ReadBufferFromFileBase> wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const;
 };
 
 }

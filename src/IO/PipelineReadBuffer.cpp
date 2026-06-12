@@ -21,51 +21,13 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 
-bool PipelineReadBuffer::nextImpl()
+String PipelineReadBuffer::getFileName() const
 {
-    /// Tell the rope that the bytes we exposed last time are now fully
-    /// consumed (the caller would not have called us otherwise). This is
-    /// where the rope releases nodes whose data we no longer need.
-    /// `working_buffer.size()` is 0 right after construction or right
-    /// after `seek` — so the first call and post-seek calls don't
-    /// over-advance.
-    rope.advance(working_buffer.size());
-
-    if (rope.atEnd())
-    {
-        LOG_TRACE(log, "nextImpl: rope exhausted, requesting next window at position {}", read_position);
-        rope = executor->readNextWindow();
-        if (rope.atEnd())
-        {
-            LOG_TRACE(log, "nextImpl: EOF");
-            return false;
-        }
-        LOG_TRACE(log, "nextImpl: got window [{}, {}), {} nodes",
-            rope.range().offset, rope.range().end(), rope.getNodes().size());
-    }
-
-    auto span = rope.peek();
-    if (executor->needsDecryption())
-    {
-        /// Decrypt only the span we are about to serve - read-ahead/prefetched
-        /// bytes never peeked are never decrypted. Decrypt into a scratch buffer
-        /// so the rope stays encrypted and a rewind that re-serves this span
-        /// re-decrypts it cleanly (CTR is position-addressable).
-        decrypt_buf.resize(span.size);
-        std::memcpy(decrypt_buf.data(), span.data, span.size);
-        executor->decryptInPlace(decrypt_buf.data(), span.size, span.logical_offset);
-        internal_buffer = Buffer(decrypt_buf.data(), decrypt_buf.data() + span.size);
-    }
-    else
-    {
-        internal_buffer = Buffer(span.data, span.data + span.size);
-    }
-    working_buffer = internal_buffer;
-    pos = working_buffer.begin();
-    read_position = span.logical_offset + span.size;
-    LOG_TRACE(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
-        span.size, span.logical_offset, read_position);
-    return true;
+    /// Surface the object path so format/decompression diagnostics
+    /// (`getFileNameFromReadBuffer`) name the failing object instead of this
+    /// wrapper. Falls back to the wrapper name only when no path is known.
+    String name = executor->getFileName();
+    return name.empty() ? "PipelineReadBuffer" : name;
 }
 
 off_t PipelineReadBuffer::seek(off_t off, int whence)
@@ -117,6 +79,20 @@ off_t PipelineReadBuffer::getPosition()
     return read_position - available();
 }
 
+std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
+{
+    /// Unknown-size sources (S3 HEAD without Content-Length) must surface as
+    /// `nullopt`, not as `executor->totalSize()` (which returns
+    /// `UnknownSize - data_start_offset ≈ uint64_t::max`). The downstream
+    /// `FormatFactory::wrapReadBufferIfNeeded` compares this to
+    /// `max_download_buffer_size` to decide whether to wrap with
+    /// `ParallelReadBuffer`; a max-valued size enables parallel reads that
+    /// can't be satisfied and trip `UNEXPECTED_END_OF_FILE`.
+    if (executor->hasUnknownSize())
+        return std::nullopt;
+    return executor->totalSize();
+}
+
 void PipelineReadBuffer::setReadUntilPosition(size_t position)
 {
     /// `position` is in this buffer's coordinates - the executor's logical file
@@ -132,29 +108,6 @@ void PipelineReadBuffer::setReadUntilEnd()
     executor->setReadExtent(std::nullopt);
 }
 
-std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
-{
-    /// Unknown-size sources (S3 HEAD without Content-Length) must surface as
-    /// `nullopt`, not as `executor->totalSize()` (which returns
-    /// `UnknownSize - data_start_offset ≈ uint64_t::max`). The downstream
-    /// `FormatFactory::wrapReadBufferIfNeeded` compares this to
-    /// `max_download_buffer_size` to decide whether to wrap with
-    /// `ParallelReadBuffer`; a max-valued size enables parallel reads that
-    /// can't be satisfied and trip `UNEXPECTED_END_OF_FILE`.
-    if (executor->hasUnknownSize())
-        return std::nullopt;
-    return executor->totalSize();
-}
-
-String PipelineReadBuffer::getFileName() const
-{
-    /// Surface the object path so format/decompression diagnostics
-    /// (`getFileNameFromReadBuffer`) name the failing object instead of this
-    /// wrapper. Falls back to the wrapper name only when no path is known.
-    String name = executor->getFileName();
-    return name.empty() ? "PipelineReadBuffer" : name;
-}
-
 bool PipelineReadBuffer::supportsReadAt()
 {
     /// A `true` answer tells random-read formats (Parquet/ORC/Arrow) the source
@@ -163,13 +116,6 @@ bool PipelineReadBuffer::supportsReadAt()
     /// the size is unknown. Don't advertise random reads for unknown-size sources
     /// - they stream through `nextImpl` instead.
     return !executor->hasUnknownSize() && executor->canReadAt();
-}
-
-bool PipelineReadBuffer::checkIfActuallySeekable()
-{
-    /// Same reason as `supportsReadAt`: a seekable probe also leads formats to
-    /// `getFileSizeFromReadBuffer`. Unknown-size sources are not seekable here.
-    return !executor->hasUnknownSize();
 }
 
 size_t PipelineReadBuffer::readBigAt(
@@ -226,6 +172,60 @@ size_t PipelineReadBuffer::readBigAt(
             return total_copied;
     }
     return total_copied;
+}
+
+bool PipelineReadBuffer::checkIfActuallySeekable()
+{
+    /// Same reason as `supportsReadAt`: a seekable probe also leads formats to
+    /// `getFileSizeFromReadBuffer`. Unknown-size sources are not seekable here.
+    return !executor->hasUnknownSize();
+}
+
+bool PipelineReadBuffer::nextImpl()
+{
+    /// Tell the rope that the bytes we exposed last time are now fully
+    /// consumed (the caller would not have called us otherwise). This is
+    /// where the rope releases nodes whose data we no longer need.
+    /// `working_buffer.size()` is 0 right after construction or right
+    /// after `seek` — so the first call and post-seek calls don't
+    /// over-advance.
+    rope.advance(working_buffer.size());
+
+    if (rope.atEnd())
+    {
+        LOG_TRACE(log, "nextImpl: rope exhausted, requesting next window at position {}", read_position);
+        rope = executor->readNextWindow();
+        if (rope.atEnd())
+        {
+            LOG_TRACE(log, "nextImpl: EOF");
+            return false;
+        }
+        LOG_TRACE(log, "nextImpl: got window [{}, {}), {} nodes",
+            rope.range().offset, rope.range().end(), rope.getNodes().size());
+    }
+
+    auto span = rope.peek();
+    if (executor->needsDecryption())
+    {
+        /// Decrypt only the span we are about to serve - read-ahead/prefetched
+        /// bytes never peeked are never decrypted. Decrypt into a scratch buffer
+        /// so the rope stays encrypted and a rewind that re-serves this span
+        /// re-decrypts it cleanly (CTR is position-addressable).
+        decrypt_buf.resize(span.size);
+        std::memcpy(decrypt_buf.data(), span.data, span.size);
+        executor->decryptInPlace(decrypt_buf.data(), span.size, span.logical_offset);
+        internal_buffer = Buffer(decrypt_buf.data(), decrypt_buf.data() + span.size);
+    }
+    else
+    {
+        internal_buffer = Buffer(span.data, span.data + span.size);
+    }
+    working_buffer = internal_buffer;
+    pos = working_buffer.begin();
+    read_position = span.logical_offset + span.size;
+    LOG_TRACE(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
+        span.size, span.logical_offset, read_position);
+    return true;
 }
 
 }

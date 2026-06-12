@@ -269,6 +269,53 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     return impl;
 }
 
+String ReadPipeline::describe() const
+{
+    String result;
+    auto append = [&](const char * name)
+    {
+        if (!result.empty())
+            result += " -> ";
+        result += name;
+    };
+
+    if (source)
+    {
+        std::visit(Overloaded{
+            [&](const ObjectStorageSource &) { append("Source(ObjectStorage)"); },
+            [&](const LocalFileSource &) { append("Source(LocalFile)"); },
+            [&](const BackupSource &) { append("Source(Backup)"); },
+            [&](const CustomSource &) { append("Source(Custom)"); }
+        }, source->source);
+    }
+    for (size_t i = 0; i < filesystem_caches.size(); ++i)
+        append("FilesystemCache");
+    if (gather)
+        append("Gather");
+    if (distributed_cache)
+        append("DistributedCache");
+    if (memory_cache)
+        append("MemoryCache");
+    if (async_prefetch)
+        append("AsyncPrefetch");
+    if (!decryption_stages.empty())
+        append("Decrypt");
+
+    return result.empty() ? "(empty)" : result;
+}
+
+ReadPipeline ReadPipeline::clone() const
+{
+    return *this;
+}
+
+const StoredObjects & ReadPipeline::getStoredObjects() const
+{
+    if (!source)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set");
+    return source->objects;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(const std::string & query_id) const
 {
     const auto & settings = source->read_settings;
@@ -856,53 +903,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
     }
 #endif
     return impl;
-}
-
-String ReadPipeline::describe() const
-{
-    String result;
-    auto append = [&](const char * name)
-    {
-        if (!result.empty())
-            result += " -> ";
-        result += name;
-    };
-
-    if (source)
-    {
-        std::visit(Overloaded{
-            [&](const ObjectStorageSource &) { append("Source(ObjectStorage)"); },
-            [&](const LocalFileSource &) { append("Source(LocalFile)"); },
-            [&](const BackupSource &) { append("Source(Backup)"); },
-            [&](const CustomSource &) { append("Source(Custom)"); }
-        }, source->source);
-    }
-    for (size_t i = 0; i < filesystem_caches.size(); ++i)
-        append("FilesystemCache");
-    if (gather)
-        append("Gather");
-    if (distributed_cache)
-        append("DistributedCache");
-    if (memory_cache)
-        append("MemoryCache");
-    if (async_prefetch)
-        append("AsyncPrefetch");
-    if (!decryption_stages.empty())
-        append("Decrypt");
-
-    return result.empty() ? "(empty)" : result;
-}
-
-ReadPipeline ReadPipeline::clone() const
-{
-    return *this;
-}
-
-const StoredObjects & ReadPipeline::getStoredObjects() const
-{
-    if (!source)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set");
-    return source->objects;
 }
 
 }
