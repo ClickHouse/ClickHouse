@@ -30,3 +30,10 @@ $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep.msgpack', MsgPack) S
 python3 -c "open('${TMP_DIR}/deep_big.msgpack','wb').write(b'\x91'*300000 + b'\x00')"
 $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep_big.msgpack', MsgPack) SETTINGS input_format_msgpack_number_of_columns=1, max_parser_depth=10000000, schema_inference_make_columns_nullable=1" 2>&1 \
     | grep -qF 'TOO_DEEP_RECURSION' && echo 'stack_backstop OK' || echo 'stack_backstop FAIL'
+
+# Case 3 - multi-row inference merges per-row types via chooseResultColumnType -> IDataType::equals,
+# another recursion over the inferred type. Two deep objects back-to-back, with the limit raised and
+# nullable finalization on, must still be rejected as TOO_DEEP_RECURSION, never crash (exit 139).
+python3 -c "obj = b'\x91'*300000 + b'\x00'; open('${TMP_DIR}/deep_two.msgpack','wb').write(obj + obj)"
+$CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep_two.msgpack', MsgPack) SETTINGS input_format_msgpack_number_of_columns=1, max_parser_depth=10000000, schema_inference_make_columns_nullable=1, input_format_max_rows_to_read_for_schema_inference=10" 2>&1 \
+    | grep -qF 'TOO_DEEP_RECURSION' && echo 'multirow_merge OK' || echo 'multirow_merge FAIL'
