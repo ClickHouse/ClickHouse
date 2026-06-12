@@ -128,7 +128,7 @@ SQLQueryPiece applyHistogramQuantile(
         ASTPtr quantile_expr;
         if (std::isnan(phi) || phi < 0.0 || phi > 1.0)
         {
-            Float64 out_of_range_value;
+            Float64 out_of_range_value = 0;
             if (std::isnan(phi))
                 out_of_range_value = std::numeric_limits<Float64>::quiet_NaN();
             else if (phi < 0.0)
