@@ -160,4 +160,56 @@ TEST(ThreadGroupSwitcher, LinkThreadFailureDoesNotCorruptCounter)
            "thread clean for the next attachment";
 }
 
+/// allow_existing_group=true callers (ExceptionKeepingTransform, merge/mutate tasks)
+/// start the switcher already attached to a group. If the new attachment fails, the
+/// constructor must best-effort restore the original group so the caller does not
+/// continue without query/merge accounting and cancellation context.
+TEST(ThreadGroupSwitcher, AllowExistingGroupRestoresOnFailure)
+{
+    auto context = getContext().context;
+
+    std::exception_ptr ex;
+    bool original_group_restored = false;
+
+    std::thread t([&]
+    {
+        try
+        {
+            ThreadStatus ts;
+
+            auto G0 = std::make_shared<ThreadGroup>(context, 0);
+            auto G1 = std::make_shared<ThreadGroup>(context, 0);
+
+            /// Start attached to G0, simulating a merge/pipeline executor thread.
+            CurrentThread::attachToGroupIfDetached(G0);
+            ASSERT_EQ(getCurrentThreadGroup(), G0);
+
+            FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_attach_failure);
+
+            {
+                /// allow_existing_group=true: constructor detaches G0, attachToGroupImpl
+                /// then throws (failpoint), its rollback detaches the partial G1 state.
+                /// The constructor catch block must restore G0.
+                ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+            }
+
+            original_group_restored = (getCurrentThreadGroup() == G0);
+
+            CurrentThread::detachFromGroupIfNotDetached();
+        }
+        catch (...)
+        {
+            ex = std::current_exception();
+        }
+    });
+    t.join();
+
+    if (ex)
+        std::rethrow_exception(ex);
+
+    EXPECT_TRUE(original_group_restored)
+        << "Failed allow_existing_group switch must restore the original group; "
+           "otherwise the thread loses its query/merge accounting and cancellation context";
+}
+
 } // namespace DB
