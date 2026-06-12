@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -145,6 +146,15 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.offsetAt(start + length) - nested_offset;
+
+    /// Diagnostic guard: the source column must keep offsets consistent with its chars array
+    /// (the same invariant the copy constructor enforces). A source whose offsets claim more
+    /// bytes than chars holds would make the memcpy below read out of bounds.
+    if (nested_offset + nested_length > src_concrete.chars.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+            "nested_offset: {}, nested_length: {}, source chars size: {}",
+            nested_offset, nested_length, src_concrete.chars.size());
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);

@@ -2,8 +2,14 @@
 
 #include <Columns/ColumnString.h>
 
+#include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 using namespace DB;
 
@@ -82,4 +88,59 @@ TEST(ColumnString, CompressibleCharsAndCompressibleOffsets)
     ASSERT_LE(compressed->allocatedBytes(), col->allocatedBytes());
     ASSERT_EQ(decompressed->size(), col->size());
     ASSERT_LE(decompressed->allocatedBytes(), col->allocatedBytes());
+}
+
+/// Build a ColumnString whose offsets claim more bytes than its `chars` array actually holds.
+/// This is the inconsistent state produced upstream (e.g. a nested String column inside
+/// Object/Dynamic/Variant after a serialization desync) that the copy constructor rejects but
+/// that previously slipped into insertRangeFrom unchecked.
+static ColumnString::MutablePtr makeStringColumnWithOffsetsBeyondChars(size_t last_offset_overshoot)
+{
+    auto column = ColumnString::create();
+    column->insertData("aaaa", 4);
+    column->insertData("bbbb", 4);
+    column->insertData("cccc", 4);
+
+    /// At this point offsets.back() == chars.size(). Push the final offset past the end of `chars`
+    /// without growing `chars`, so the last string claims `last_offset_overshoot` extra bytes.
+    auto & offsets = column->getOffsets();
+    offsets.back() += last_offset_overshoot;
+
+    return column;
+}
+
+/// Reproduces the heap-buffer-overflow in ColumnString::insertRangeFrom: when the source column's
+/// offsets are inconsistent with its `chars` array, the internal memcpy reads past the end of
+/// `chars`. The crash observed in CI / production has the stack
+///   ColumnString::doInsertRangeFrom <- ColumnVariant::insertRangeFromImpl
+///     <- ColumnDynamic::doInsertRangeFrom <- ColumnObject::doInsertRangeFrom <- merge
+/// where the innermost over-read is exactly this memcpy.
+///
+/// Without the consistency guard this test triggers an ASan heap-buffer-overflow (it must abort on
+/// the unfixed code). With the guard it throws a LOGICAL_ERROR instead of reading out of bounds.
+TEST(ColumnString, InsertRangeFromInconsistentOffsetsThrows)
+{
+    auto source = makeStringColumnWithOffsetsBeyondChars(/*last_offset_overshoot=*/8);
+    auto destination = ColumnString::create();
+
+    try
+    {
+        destination->insertRangeFrom(*source, 0, source->size());
+        FAIL() << "insertRangeFrom did not detect offsets inconsistent with chars";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
+
+/// Same defect with a large overshoot, matching the magnitude seen in the symbolized CI crash
+/// (a nested String over-read of hundreds of KB past a ~128 KB chars buffer).
+TEST(ColumnString, InsertRangeFromInconsistentOffsetsLargeOvershoot)
+{
+    auto source = makeStringColumnWithOffsetsBeyondChars(/*last_offset_overshoot=*/256 * 1024);
+    auto destination = ColumnString::create();
+
+    EXPECT_THROW(destination->insertRangeFrom(*source, 0, source->size()), DB::Exception);
 }
