@@ -786,4 +786,35 @@ SELECT count() FROM tab WHERE hasAny(val, ['xyz']);          -- 0
 
 DROP TABLE tab;
 
+SELECT '30. hasToken / hasAnyTokens / hasAllTokens results are independent of query_plan_direct_read_from_text_index.';
+-- The postprocessor is applied to the haystack at row level, so each query returns the same count
+-- whether the index is read directly (=1) or the rows are scanned (=0). Every pair below must match.
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'Hello World'), (2, 'FOO bar'), (3, 'baz QUX'), (4, 'Hello FOO'), (5, 'WORLD baz');
+
+SELECT count() FROM tab WHERE hasToken(val, 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 1;             -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 0;             -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'qux') SETTINGS query_plan_direct_read_from_text_index = 1;               -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'qux') SETTINGS query_plan_direct_read_from_text_index = 0;               -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'xyz') SETTINGS query_plan_direct_read_from_text_index = 1;               -- 0
+SELECT count() FROM tab WHERE hasToken(val, 'xyz') SETTINGS query_plan_direct_read_from_text_index = 0;               -- 0
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['HELLO', 'qux']) SETTINGS query_plan_direct_read_from_text_index = 1; -- 3
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['HELLO', 'qux']) SETTINGS query_plan_direct_read_from_text_index = 0; -- 3
+SELECT count() FROM tab WHERE hasAllTokens(val, 'Hello World') SETTINGS query_plan_direct_read_from_text_index = 1;    -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, 'Hello World') SETTINGS query_plan_direct_read_from_text_index = 0;    -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello', 'foo']) SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello', 'foo']) SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['xyz', 'abc']) SETTINGS query_plan_direct_read_from_text_index = 1;   -- 0
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['xyz', 'abc']) SETTINGS query_plan_direct_read_from_text_index = 0;   -- 0
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

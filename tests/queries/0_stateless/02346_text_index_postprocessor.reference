@@ -180,3 +180,18 @@ wo	1
 1
 0
 0
+30. hasToken / hasAnyTokens / hasAllTokens results are independent of query_plan_direct_read_from_text_index.
+2
+2
+1
+1
+0
+0
+3
+3
+1
+1
+1
+1
+0
+0
