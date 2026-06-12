@@ -505,9 +505,8 @@ ColumnPtr extractCombinedColumn(
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
-    /// If sub-object contains only empty objects, just use literal.
-    const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
-    if (!sub_object_typed_column->hasNonEmptyRows())
+    /// If sub-object is all defaults, just use literal.
+    if (sub_object_column->getNumberOfDefaultRows() == sub_object_column->size())
         return literal_column;
 
     /// Cast sub-object to Dynamic.
@@ -520,7 +519,7 @@ ColumnPtr extractCombinedColumn(
     {
         if (!literal_column->isDefaultAt(i))
             merged->insertFrom(*literal_column, i);
-        else if (!sub_object_typed_column->isEmptyAt(i))
+        else if (!sub_object_column->isDefaultAt(i))
             merged->insertFrom(*casted_sub_object, i);
         else
             merged->insertDefault();
@@ -740,21 +739,12 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     for (const auto & argument : arguments->children)
     {
         const auto * object_type_argument = argument->as<ASTObjectTypeArgument>();
-        /// The AST may be structurally invalid, so we cannot assume that every child is an
-        /// `ASTObjectTypeArgument`. Validate the cast before use.
-        if (!object_type_argument)
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in {} type arguments: {}", magic_enum::enum_name(schema_format), argument->formatForErrorMessage());
         if (object_type_argument->parameter)
         {
             const auto * function = object_type_argument->parameter->as<ASTFunction>();
 
             if (!function || function->name != "equals")
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}", magic_enum::enum_name(schema_format), object_type_argument->parameter->formatForErrorMessage());
-
-            /// The `equals` function expects exactly two children: an identifier and a literal.
-            /// Validate the argument list shape before indexing.
-            if (!function->arguments || function->arguments->children.size() != 2)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 
             const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
             if (!identifier)
@@ -777,8 +767,6 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         else if (object_type_argument->path_with_type)
         {
             const auto * path_with_type = object_type_argument->path_with_type->as<ASTObjectTypedPathArgument>();
-            if (!path_with_type)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in {} type path with type argument: {}. Expected 'path data_type'", magic_enum::enum_name(schema_format), object_type_argument->path_with_type->formatForErrorMessage());
             auto data_type = DataTypeFactory::instance().get(path_with_type->type);
             if (typed_paths.contains(path_with_type->path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->path);
@@ -799,7 +787,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         {
             const auto * literal = object_type_argument->skip_path_regexp->as<ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SKIP REGEXP section of {} type arguments: {}. Expected string literal with path regexp", magic_enum::enum_name(schema_format), object_type_argument->skip_path_regexp->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SKIP section of {} type arguments: {}. Expected identifier with path name", magic_enum::enum_name(schema_format), object_type_argument->skip_path->formatForErrorMessage());
 
             path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }
