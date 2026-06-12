@@ -90,7 +90,8 @@ def _wait_for(predicate, timeout=30, interval=0.5):
 def test_metrics_published_and_zero_before_first_call(started_cluster):
     _skip_msan()
     # Restart kills pool workers left by other tests, so the zero baseline
-    # holds regardless of execution order (e.g. pytest --count --random-order).
+    # holds regardless of execution order. (Tests that spawn pool workers
+    # still assume a single pass per module, e.g. no pytest --count.)
     node.restart_clickhouse()
     assert _wait_for(lambda: _memory_resident() is not None)
     assert _memory_resident() == 0
@@ -183,15 +184,18 @@ def test_timed_out_executable_is_killed_and_leaves_metrics(started_cluster):
     thread = threading.Thread(target=run_query)
     thread.start()
     try:
+        # Both deltas in one predicate: a separate count snapshot could land
+        # after the timeout kill when the memory check passes late.
         assert _wait_for(
-            lambda: _memory_resident() - mem_before >= 100 * MiB,
-            timeout=12,
+            lambda: _memory_resident() - mem_before >= 100 * MiB
+            and _processes() - procs_before >= 1,
+            timeout=25,
             interval=0.3,
-        ), f"hanging memory increase {_memory_resident() - mem_before} is below 100 MiB"
-        assert _processes() - procs_before >= 1
+        ), f"hanging UDF not observed, memory increase {_memory_resident() - mem_before}"
     finally:
         thread.join(timeout=60)
 
+    assert not thread.is_alive(), "query did not finish"
     assert errors, "query unexpectedly succeeded, expected a read timeout"
     assert "TIMEOUT_EXCEEDED" in str(errors[0]), f"unexpected error: {errors[0]}"
 

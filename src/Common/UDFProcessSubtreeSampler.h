@@ -226,9 +226,9 @@ private:
 /// seccomp profile denies `open`, malformed contents), but they are NOT
 /// `noexcept`: a memory-limit `exception` thrown while allocating a
 /// `/proc/<pid>` path string is allowed to propagate. The callers in this
-/// file (`recordPidAcquired`, `recordReleased`) run them inside a try/catch,
-/// so such an `exception` is logged and sampling is skipped, instead of
-/// hitting `std::terminate` at a `noexcept` boundary.
+/// file (`recordPidAcquired`, `recordReleased`, `sampleExecutablePeak`) run
+/// them inside a try/catch, so such an `exception` is logged and sampling is
+/// skipped, instead of hitting `std::terminate` at a `noexcept` boundary.
 /// `UDFProcessRegistry::sample` lets the `exception` propagate instead; the
 /// asynchronous metrics thread catches and logs it, skipping that update cycle.
 namespace UDFProcfs

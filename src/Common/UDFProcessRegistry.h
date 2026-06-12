@@ -12,8 +12,8 @@
 namespace DB
 {
 
-/** Global registry of live executable UDF child processes, powering the
-  * point-in-time asynchronous metrics `ExecutableUserDefinedFunctionMemoryResident`
+/** Global registry of executable UDF child pids, powering the point-in-time
+  * asynchronous metrics `ExecutableUserDefinedFunctionMemoryResident`
   * and `ExecutableUserDefinedFunctionProcesses`.
   *
   * `ShellCommand` adds the pid at spawn (opt-in via

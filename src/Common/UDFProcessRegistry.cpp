@@ -48,14 +48,6 @@ UDFProcessRegistry::Sample UDFProcessRegistry::sample() const
 
     for (pid_t root : roots)
     {
-        /// A root reaped after the snapshot may have been reused by an
-        /// unrelated process; re-check membership to narrow that window.
-        {
-            std::lock_guard lock(mutex);
-            if (!pids.contains(root))
-                continue;
-        }
-
         bool truncated = false;
         for (pid_t pid : UDFProcfs::walkSubtree(root, truncated))
         {
