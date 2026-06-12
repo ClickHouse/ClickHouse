@@ -90,7 +90,6 @@ namespace ProfileEvents
     extern const Event DataLakeRestCatalogUpdateSchemaMicroseconds;
     extern const Event DataLakeRestCatalogDropTable;
     extern const Event DataLakeRestCatalogDropTableMicroseconds;
-    extern const Event DataLakeRestCatalogTokenExpired;
 }
 
 namespace DataLake
@@ -649,7 +648,6 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
              || status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
         {
             ProfileEvents::increment(event);
-            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogTokenExpired);
             return create_buffer(true);
         }
         throw;

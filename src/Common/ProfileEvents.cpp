@@ -1480,7 +1480,6 @@ The server successfully detected this situation and will download merged part fr
     M(DataLakeRestCatalogUpdateSchemaMicroseconds, "Total time of 'update schema' requests to Iceberg REST catalog.", ValueType::Microseconds) \
     M(DataLakeRestCatalogDropTable, "Number of 'drop table' requests to Iceberg REST catalog.", ValueType::Number) \
     M(DataLakeRestCatalogDropTableMicroseconds, "Total time of 'drop table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
-    M(DataLakeRestCatalogTokenExpired, "Number of updates of expired token for Iceberg REST catalog.", ValueType::Number) \
     \
     M(DataLakeGlueCatalogGetDatabases, "Number of 'get databases' requests to Iceberg Glue catalog.", ValueType::Number) \
     M(DataLakeGlueCatalogGetDatabasesMicroseconds, "Total time of 'get databases' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
