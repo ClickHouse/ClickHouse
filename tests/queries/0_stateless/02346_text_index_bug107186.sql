@@ -113,3 +113,15 @@ INSERT INTO tab VALUES ('ABC');
 SELECT '- preprocessor + empty index tokens, with index', count() FROM tab WHERE hasToken(s, 'abc');
 SELECT '- preprocessor + empty index tokens, no index', count() FROM tab WHERE hasToken(s, 'abc') SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
+
+SELECT 'coarse + preprocessor, non-prunable hasToken ANDed with a matching atom (was a false negative)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByString([', ']), preprocessor = lower(s))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('aaa bbb, zzz');
+-- splitByString(', ') over lower(s) stores ['aaa bbb', 'zzz']. The hasToken('aaa') atom is kept only to drive the
+-- preprocessor rewrite (non-prunable), but 'aaa' is not an index token, so it must not fail the whole AND in the
+-- text index analyzer: the ANDed hasAllTokens('zzz') matches, so the granule must not be dropped (must be 1).
+SELECT '- non-prunable hasToken AND matching atom, with index', count() FROM tab WHERE hasToken(s, 'aaa') AND hasAllTokens(s, 'zzz');
+SELECT '- non-prunable hasToken AND matching atom, no index', count() FROM tab WHERE hasToken(s, 'aaa') AND hasAllTokens(s, 'zzz') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;

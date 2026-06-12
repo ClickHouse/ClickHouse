@@ -50,6 +50,13 @@ struct TextSearchQuery
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
 
+    /// When false, the index tokens are not a necessary condition for a row-level match, so this query
+    /// must neither prune a granule (mayBeTrueOnGranule treats it as may-be-true) nor mark an All-mode
+    /// condition always-false in TextIndexAnalyzer when its tokens are missing. Set for a hasToken atom
+    /// on a coarser tokenizer that is kept only to drive the preprocessor rewrite. Not part of getHash():
+    /// it is a deterministic function of (function, tokenizer, preprocessor), so equal hashes share it.
+    bool prunable = true;
+
     SipHash getHash() const;
 };
 
@@ -124,12 +131,6 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
-
-        /// When false, this atom must not prune a granule (mayBeTrueOnGranule treats it as may-be-true).
-        /// Set for a hasToken condition whose index tokens are not a necessary condition for a row-level
-        /// match (a coarser tokenizer): the condition still drives the preprocessor rewrite, but the
-        /// preprocessed row-level predicate, not the posting lists, decides the result.
-        bool prunable = true;
     };
 
     using RPN = std::vector<RPNElement>;

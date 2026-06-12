@@ -390,7 +390,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             /// tokens are not a necessary condition for the row-level match, so treat it as may-be-true
             /// and leave the decision to the (preprocessed) row-level predicate.
             const auto & text_search_query = element.text_search_queries.front();
-            bool exists_in_granule = !element.prunable || granule->hasAllQueryTokensOrEmpty(*text_search_query);
+            bool exists_in_granule = !text_search_query->prunable || granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -958,8 +958,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// so the index neither prunes a granule nor replaces the predicate; the preprocessed row-level
             /// hasToken decides. Same shape as the coarse-tokenizer preprocessor path below.
             out.function = RPNElement::FUNCTION_EQUALS;
-            out.prunable = false;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
+            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens));
+            query->prunable = false;
+            out.text_search_queries.emplace_back(std::move(query));
             return true;
         }
 
@@ -976,8 +977,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// the condition so that rewrite runs, but mark it non-prunable so granule pruning cannot drop
             /// a row the preprocessed row-level predicate would match.
             out.function = RPNElement::FUNCTION_EQUALS;
-            out.prunable = false;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens));
+            query->prunable = false;
+            out.text_search_queries.emplace_back(std::move(query));
             return true;
         }
 
