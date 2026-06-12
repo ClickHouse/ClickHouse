@@ -44,11 +44,22 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 
 UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_)
 {
+    /// The dictionary type name alone is not enough: a type whose default
+    /// serialization depends on session settings (DateTime under session_timezone)
+    /// needs a distinct pool entry per effective serialization.
+    auto nested_serialization = dictionary_type_->getDefaultSerialization();
+    auto dict_inner_serialization = removeNullable(dictionary_type_)->getDefaultSerialization();
+
     SipHash hash;
     hash.update("LowCardinality");
     auto dict_type_name = dictionary_type_->getName();
     hash.update(dict_type_name.size());
     hash.update(dict_type_name);
+    if (nested_serialization->supportsPooling())
+        hash.update(nested_serialization->getHash());
+    if (dict_inner_serialization->supportsPooling()
+        && dict_inner_serialization.get() != nested_serialization.get())
+        hash.update(dict_inner_serialization->getHash());
     return hash.get128();
 }
 
