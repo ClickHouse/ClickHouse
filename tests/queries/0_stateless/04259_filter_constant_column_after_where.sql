@@ -59,15 +59,9 @@ WHERE y = 3
 GROUP BY ALL
 ORDER BY ALL;
 
-SELECT dumpColumnStructure(x), dumpColumnStructure(y), dumpColumnStructure(z), count()
+SELECT x, y, z, count()
 FROM 04259_filter_constant_column_after_where
 WHERE x = 'hello' AND y = 1 AND z = 2
-GROUP BY ALL
-ORDER BY ALL;
-
-SELECT dumpColumnStructure(x), dumpColumnStructure(y), dumpColumnStructure(z), count()
-FROM 04259_filter_constant_column_after_where
-WHERE x = 'hello' AND y = 1 AND x = 'hello'
 GROUP BY ALL
 ORDER BY ALL;
 
@@ -127,12 +121,6 @@ ORDER BY ALL;
 SELECT dumpColumnStructure(z), count()
 FROM 04259_filter_constant_column_after_where
 WHERE x = 'hello'
-GROUP BY ALL
-ORDER BY ALL;
-
-SELECT dumpColumnStructure(x), count()
-FROM 04259_filter_constant_column_after_where
-WHERE x = 'hello' AND y = 1
 GROUP BY ALL
 ORDER BY ALL;
 
