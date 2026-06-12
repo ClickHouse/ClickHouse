@@ -1027,7 +1027,7 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     const ActionsDAG::Node & node,
     const String & op_name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & /* inputs_mapping */,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context)
 {
     if (node.children.size() != 2)
@@ -1093,7 +1093,10 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     if (!function_builder)
         return nullptr;
 
-    ActionsDAG::NodeRawConstPtrs args = {col_node, const_node};
+    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false);
+    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
+
+    ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
     return &inverted_dag.addFunction(function_builder, args, "");
 }
 
