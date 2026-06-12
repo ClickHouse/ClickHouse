@@ -23,6 +23,9 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Transitive predicates would derive `la.hub_id = ra.hub_id` and turn this tree topology
+-- into a cyclic graph; keep them off to preserve the tree shape this test is about.
+SET enable_join_transitive_predicates = 0;
 
 CREATE TABLE tree_hub (id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE tree_la  (id UInt32, hub_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
