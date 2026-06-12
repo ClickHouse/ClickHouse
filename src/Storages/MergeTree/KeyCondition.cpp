@@ -2249,7 +2249,9 @@ static bool tryPrepareSetColumnsForIndex(
         /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
         /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
         /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
-        auto key_column_type = recursiveRemoveLowCardinality(data_types[indexes_mapping_index]);
+        /// Also strip explicit tuple element names so the cast of set columns to key column types
+        /// converts the elements of tuples positionally, consistently with `Set::execute`.
+        auto key_column_type = recursiveRemoveTupleElementNames(recursiveRemoveLowCardinality(data_types[indexes_mapping_index]));
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
@@ -2417,58 +2419,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
             {
                 set_columns = {ColumnTuple::create(set_columns)};
                 set_types = {std::make_shared<DataTypeTuple>(set_types)};
-            }
-        }
-    }
-
-    /// If the set is a single packed tuple column with explicit element names (e.g. built from
-    /// `SELECT tuple(...)` with `enable_named_columns_in_function_tuple`), `Set::execute` matches
-    /// the elements of the left hand side of IN by name when both sides are named tuples with the
-    /// same set of names (see the accurate cast between named tuples in `createTupleWrapper`).
-    /// `tryPrepareSetColumnsForIndex` below unpacks the set tuple positionally, so reorder its
-    /// elements to the order of the left hand side first. If the type of the left hand side
-    /// cannot be determined, do not use the index rather than risk a positional mismatch.
-    if (set_columns.size() == 1 && left_args_count > 1)
-    {
-        if (const auto * set_tuple_type = typeid_cast<const DataTypeTuple *>(set_types[0].get());
-            set_tuple_type && set_tuple_type->hasExplicitNames())
-        {
-            const auto * left_dag_node = left_arg.getDAGNode();
-            if (!left_dag_node)
-                return false;
-
-            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_dag_node->result_type.get());
-            if (left_tuple_type && left_tuple_type->hasExplicitNames())
-            {
-                const auto & left_names = left_tuple_type->getElementNames();
-                const auto & set_names = set_tuple_type->getElementNames();
-
-                std::unordered_map<std::string_view, size_t> set_positions;
-                for (size_t i = 0; i < set_names.size(); ++i)
-                    set_positions[set_names[i]] = i;
-
-                if (left_names.size() == set_positions.size()
-                    && std::all_of(left_names.begin(), left_names.end(), [&](const String & name) { return set_positions.contains(name); })
-                    && left_names != set_names)
-                {
-                    const auto & set_tuple_column = assert_cast<const ColumnTuple &>(*set_columns[0]);
-                    const auto & set_element_types = set_tuple_type->getElements();
-
-                    Columns reordered_columns;
-                    DataTypes reordered_types;
-                    reordered_columns.reserve(left_names.size());
-                    reordered_types.reserve(left_names.size());
-
-                    for (const auto & name : left_names)
-                    {
-                        size_t set_position = set_positions.at(name);
-                        reordered_columns.push_back(set_tuple_column.getColumnPtr(set_position));
-                        reordered_types.push_back(set_element_types[set_position]);
-                    }
-
-                    set_columns = {ColumnTuple::create(std::move(reordered_columns))};
-                    set_types = {std::make_shared<DataTypeTuple>(reordered_types, left_names)};
-                }
             }
         }
     }

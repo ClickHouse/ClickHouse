@@ -457,6 +457,14 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
+        /// The elements of tuples are compared positionally, regardless of element names (consistent
+        /// with the comparison functions, e.g. `equals`). Remove explicit tuple element names from the
+        /// cast target, so that the cast between two named tuples (e.g. the left hand side `(a, b)` and
+        /// a set built from `SELECT tuple(x, y) ...`, which are both named tuples with
+        /// `enable_named_columns_in_function_tuple`) converts the elements positionally instead of
+        /// matching them by name and filling the absent ones with default values.
+        const auto target_type = recursiveRemoveTupleElementNames(data_types[i]);
+
         /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
         /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
         /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
@@ -468,7 +476,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (use_cast_accurate_or_null)
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+            result = castColumnAccurateOrNull(column_to_cast, target_type, cast_cache.get());
         }
         else
         {
@@ -481,7 +489,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             {
                 auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
                 const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), target_type, cast_cache.get());
                 if (!null_map_holder)
                 {
                     null_map_holder = column_nullable.getNullMapColumnPtr();
@@ -502,7 +510,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             }
             else
             {
-                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+                result = castColumnAccurate(column_to_cast, target_type, cast_cache.get());
             }
         }
 

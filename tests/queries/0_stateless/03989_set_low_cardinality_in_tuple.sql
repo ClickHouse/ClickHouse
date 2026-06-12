@@ -9,10 +9,7 @@ DROP TABLE IF EXISTS table2__fuzz_36;
 DROP TABLE IF EXISTS table1__fuzz_47;
 CREATE TABLE table2__fuzz_36 (id1 Nullable(Date), id2 LowCardinality(Int8)) ENGINE = Memory AS SELECT 1, 1;
 CREATE TABLE table1__fuzz_47 (id1 Nullable(Int8), id2 Decimal(76, 58)) ENGINE = MergeTree ORDER BY id1 SETTINGS allow_nullable_key = 1 AS SELECT 1, 1;
--- With enable_named_columns_in_function_tuple, both sides of IN are named tuples with the same set of
--- names (id1, id2), so the elements would be matched by name instead of positionally and the query
--- would succeed. Disable it to keep exercising the positional code path this regression test targets.
-SELECT * FROM table1__fuzz_47 WHERE (id1, id2) IN (SELECT tuple(id2, id1) FROM table2__fuzz_36) SETTINGS enable_named_columns_in_function_tuple = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT * FROM table1__fuzz_47 WHERE (id1, id2) IN (SELECT tuple(id2, id1) FROM table2__fuzz_36); -- { serverError ILLEGAL_COLUMN }
 DROP TABLE table2__fuzz_36;
 DROP TABLE table1__fuzz_47;
 

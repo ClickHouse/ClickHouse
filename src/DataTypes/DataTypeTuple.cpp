@@ -7,6 +7,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
@@ -497,6 +500,64 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create);
+}
+
+DataTypePtr recursiveRemoveTupleElementNames(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & elements = tuple_type->getElements();
+
+        DataTypes new_elements;
+        new_elements.reserve(elements.size());
+
+        bool changed = tuple_type->hasExplicitNames();
+        for (const auto & element : elements)
+        {
+            auto new_element = recursiveRemoveTupleElementNames(element);
+            changed |= new_element.get() != element.get();
+            new_elements.push_back(std::move(new_element));
+        }
+
+        if (!changed)
+            return type;
+        return std::make_shared<DataTypeTuple>(new_elements);
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto new_nested = recursiveRemoveTupleElementNames(array_type->getNestedType());
+        if (new_nested.get() == array_type->getNestedType().get())
+            return type;
+        return std::make_shared<DataTypeArray>(std::move(new_nested));
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto new_key = recursiveRemoveTupleElementNames(map_type->getKeyType());
+        auto new_value = recursiveRemoveTupleElementNames(map_type->getValueType());
+        if (new_key.get() == map_type->getKeyType().get() && new_value.get() == map_type->getValueType().get())
+            return type;
+        return std::make_shared<DataTypeMap>(std::move(new_key), std::move(new_value));
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto new_nested = recursiveRemoveTupleElementNames(nullable_type->getNestedType());
+        if (new_nested.get() == nullable_type->getNestedType().get())
+            return type;
+        return std::make_shared<DataTypeNullable>(std::move(new_nested));
+    }
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        auto new_nested = recursiveRemoveTupleElementNames(low_cardinality_type->getDictionaryType());
+        if (new_nested.get() == low_cardinality_type->getDictionaryType().get())
+            return type;
+        return std::make_shared<DataTypeLowCardinality>(std::move(new_nested));
+    }
+
+    return type;
 }
 
 }

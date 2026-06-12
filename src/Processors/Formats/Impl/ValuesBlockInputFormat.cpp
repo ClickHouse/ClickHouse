@@ -442,6 +442,53 @@ namespace
     }
 }
 
+/// With the explicit named tuple syntax (e.g. `tuple('b', 'a')(1, 2)`), the evaluated expression
+/// carries the element names in its type. Convert such a value to a destination named tuple with
+/// the same set of element names by matching the names (the source may list them in a different
+/// order), consistently with the CAST performed by `INSERT ... SELECT`. The value and its type are
+/// permuted into the destination order, and the positional `convertFieldToType` does the rest.
+/// If the sets of names differ, the conversion stays positional.
+static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr & src_type, const IDataType & dst_type)
+{
+    if (value.getType() != Field::Types::Tuple)
+        return;
+
+    const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type.get());
+    const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(&dst_type);
+    if (!src_tuple_type || !dst_tuple_type || !src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+        return;
+
+    const auto & src_names = src_tuple_type->getElementNames();
+    const auto & dst_names = dst_tuple_type->getElementNames();
+    if (src_names.size() != dst_names.size() || src_names == dst_names)
+        return;
+
+    const auto & src_value = value.safeGet<Tuple>();
+    if (src_value.size() != src_names.size())
+        return;
+
+    std::unordered_map<std::string_view, size_t> src_positions;
+    for (size_t i = 0; i < src_names.size(); ++i)
+        src_positions[src_names[i]] = i;
+
+    Tuple reordered_value(dst_names.size());
+    DataTypes reordered_types;
+    reordered_types.reserve(dst_names.size());
+
+    for (size_t i = 0; i < dst_names.size(); ++i)
+    {
+        auto it = src_positions.find(dst_names[i]);
+        if (it == src_positions.end())
+            return;
+
+        reordered_value[i] = src_value[it->second];
+        reordered_types.push_back(src_tuple_type->getElements()[it->second]);
+    }
+
+    value = std::move(reordered_value);
+    src_type = std::make_shared<DataTypeTuple>(reordered_types, dst_names);
+}
+
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -585,6 +632,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
+
+    reorderNamedTupleValueToDestinationOrder(expression_value, value_raw.second, type);
 
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 

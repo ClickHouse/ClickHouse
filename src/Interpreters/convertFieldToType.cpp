@@ -545,43 +545,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
-            /// If both the source and the destination are named tuples with the same set of element
-            /// names, match the elements by name (the source may list them in a different order),
-            /// consistently with CAST between named tuples. Otherwise the conversion is positional.
-            std::optional<std::vector<size_t>> src_position_by_name;
-            const auto * src_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
-            if (src_type_tuple && src_type_tuple->hasExplicitNames() && type_tuple->hasExplicitNames())
-            {
-                const auto & src_names = src_type_tuple->getElementNames();
-                const auto & dst_names = type_tuple->getElementNames();
-                std::unordered_map<std::string_view, size_t> src_positions;
-                for (size_t i = 0; i < src_names.size(); ++i)
-                    src_positions[src_names[i]] = i;
-
-                if (src_positions.size() == dst_names.size())
-                {
-                    src_position_by_name.emplace();
-                    src_position_by_name->reserve(dst_names.size());
-                    for (const auto & name : dst_names)
-                    {
-                        auto it = src_positions.find(name);
-                        if (it == src_positions.end())
-                        {
-                            src_position_by_name.reset();
-                            break;
-                        }
-                        src_position_by_name->push_back(it->second);
-                    }
-                }
-            }
-
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
-                size_t src_index = src_position_by_name ? (*src_position_by_name)[i] : i;
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[src_index], element_type, nullptr, format_settings, strict);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
