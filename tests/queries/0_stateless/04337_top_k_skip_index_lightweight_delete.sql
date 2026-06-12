@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-replicated-database
+-- no-replicated-database: lightweight updates add a shard, disturbing the deterministic part layout.
 -- The minmax skip index reflects all physical rows including ones hidden by a lightweight
 -- delete. The top-k granule optimization (use_skip_indexes_for_top_k) keeps only the globally
 -- extreme granules, so a part whose stale minmax advertises the extreme value can displace and
@@ -69,3 +70,58 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%TopK%';
 
 DROP TABLE topk_clean;
+
+-- A lightweight UPDATE / patch part that rewrites the indexed sort column makes the base part's
+-- minmax stale in the same way a lightweight delete does: the part still advertises the old extreme
+-- value. The optimization must skip such parts too.
+SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
+SET apply_patch_parts = 1;
+
+-- Materialized patch: decoy part advertises max 1000000, but its row was updated down to -1.
+-- The live max (50000) lives in the other part and must not be pruned.
+DROP TABLE IF EXISTS topk_lwu;
+CREATE TABLE topk_lwu (c0 Int32, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+             enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO topk_lwu VALUES (1000000);
+INSERT INTO topk_lwu SELECT toInt32(number) FROM numbers(50001) SETTINGS max_insert_threads = 1;
+UPDATE topk_lwu SET c0 = -1 WHERE c0 = 1000000;
+
+SELECT 'lwu count', count() FROM topk_lwu;
+SELECT 'lwu DESC LIMIT 1', c0 FROM topk_lwu ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 1;
+SELECT 'lwu DESC LIMIT 1 no-opt', c0 FROM topk_lwu ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
+DROP TABLE topk_lwu;
+
+-- Pending (on-the-fly) ALTER UPDATE of the indexed column: same correctness before materialization.
+DROP TABLE IF EXISTS topk_lwu_otf;
+CREATE TABLE topk_lwu_otf (c0 Int32, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+SYSTEM STOP MERGES topk_lwu_otf;
+INSERT INTO topk_lwu_otf VALUES (1000000);
+INSERT INTO topk_lwu_otf SELECT toInt32(number) FROM numbers(50001) SETTINGS max_insert_threads = 1;
+SET mutations_sync = 0;
+SET apply_mutations_on_fly = 1;
+ALTER TABLE topk_lwu_otf UPDATE c0 = -1 WHERE c0 = 1000000;
+
+SELECT 'otf-upd DESC LIMIT 1', c0 FROM topk_lwu_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 1;
+SELECT 'otf-upd DESC LIMIT 1 no-opt', c0 FROM topk_lwu_otf ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
+SET apply_mutations_on_fly = 0;
+DROP TABLE topk_lwu_otf;
+
+-- A patch that updates a column OTHER than the indexed sort column must NOT disable the optimization.
+DROP TABLE IF EXISTS topk_lwu_other;
+CREATE TABLE topk_lwu_other (c0 Int32, x Int32, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS index_granularity = 1000, min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+             enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO topk_lwu_other SELECT toInt32(number), 0 FROM numbers(100000) SETTINGS max_insert_threads = 1;
+UPDATE topk_lwu_other SET x = 7 WHERE c0 = 0;
+
+SELECT 'other-col DESC LIMIT 1', c0 FROM topk_lwu_other ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 1;
+SELECT 'EXPLAIN other-col: TopK optimization still active';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT c0 FROM topk_lwu_other ORDER BY c0 DESC LIMIT 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0)
+WHERE explain LIKE '%TopK%';
+DROP TABLE topk_lwu_other;

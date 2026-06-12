@@ -18,3 +18,11 @@ mixed DESC LIMIT 3	49997
 clean DESC LIMIT 1	99999
 EXPLAIN clean: TopK optimization still active
 Description: Filter TopK Granules
+lwu count	50002
+lwu DESC LIMIT 1	50000
+lwu DESC LIMIT 1 no-opt	50000
+otf-upd DESC LIMIT 1	50000
+otf-upd DESC LIMIT 1 no-opt	50000
+other-col DESC LIMIT 1	99999
+EXPLAIN other-col: TopK optimization still active
+Description: Filter TopK Granules
