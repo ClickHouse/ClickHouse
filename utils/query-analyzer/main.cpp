@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <numeric>
 #include <sstream>
@@ -69,13 +70,14 @@ ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 /// Mirrors the minimal context bootstrap from src/Interpreters/fuzzers/execute_query_fuzzer.cpp.
 ContextMutablePtr createGlobalContext()
 {
-    static SharedContextHolder shared_context = Context::createShared();
+    static SharedContextHolder shared_context = Context::createShared(); /// static: the shared context must outlive the returned context pointer.
     auto context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
     context->setConfig(getConfigurationFromXMLString("<clickhouse></clickhouse>"));
 
     fs::path work_dir = fs::temp_directory_path() / ("query-analyzer-" + std::to_string(getpid()));
     fs::create_directories(work_dir);
+    /// The directory is intentionally left behind on exit, so data of setup-created tables can be inspected.
     context->setPath(work_dir.string() + "/");
     context->setTemporaryStoragePath((work_dir / "tmp" / "").string(), 0);
 
@@ -191,10 +193,11 @@ void printTimings(std::vector<UInt64> times_ns, UInt64 build_ns)
         return times_ns[static_cast<size_t>(q * static_cast<double>(times_ns.size() - 1))];
     };
 
-    std::cout << "Query tree build time: " << to_ms(build_ns) << " ms\n"
+    std::cout << std::fixed << std::setprecision(3)
+              << "Query tree build time: " << to_ms(build_ns) << " ms\n"
               << "Analysis iterations: " << times_ns.size() << '\n'
               << "  total:  " << to_ms(total) << " ms\n"
-              << "  avg:    " << to_ms(total / times_ns.size()) << " ms\n"
+              << "  avg:    " << to_ms(total) / static_cast<double>(times_ns.size()) << " ms\n"
               << "  min:    " << to_ms(times_ns.front()) << " ms\n"
               << "  median: " << to_ms(quantile(0.5)) << " ms\n"
               << "  p90:    " << to_ms(quantile(0.9)) << " ms\n"
@@ -225,7 +228,7 @@ try
     po::store(po::command_line_parser(argc, argv).options(description).positional(positional).run(), options);
     po::notify(options);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         std::cout << "Runs QueryAnalysisPass on a SELECT query in a loop and reports timings.\n"
                   << "Usage: query-analyzer [options] [query]\n" << description << '\n';
@@ -240,7 +243,7 @@ try
     }
 
     std::string queries_text;
-    if (options.count("query"))
+    if (options.contains("query"))
     {
         queries_text = options["query"].as<std::string>();
     }
@@ -252,7 +255,7 @@ try
 
     auto global_context = createGlobalContext();
 
-    if (options.count("setting"))
+    if (options.contains("setting"))
     {
         Settings settings;
         for (const auto & key_value : options["setting"].as<std::vector<std::string>>())
@@ -290,7 +293,7 @@ try
     auto unresolved_tree = buildQueryTree(statements.back().first, global_context);
     UInt64 build_ns = build_watch.elapsedNanoseconds();
 
-    const bool only_analyze = options.count("only-analyze");
+    const bool only_analyze = options.contains("only-analyze");
     std::vector<UInt64> times_ns(iterations);
     QueryTreeNodePtr last_resolved_tree;
 
@@ -319,10 +322,10 @@ try
 
     printTimings(std::move(times_ns), build_ns);
 
-    if (options.count("dump-tree"))
+    if (options.contains("dump-tree"))
         std::cout << "\nResolved query tree:\n" << last_resolved_tree->dumpTree() << '\n';
 
-    if (options.count("dump-ast"))
+    if (options.contains("dump-ast"))
         std::cout << "\nResolved query AST:\n" << last_resolved_tree->toAST()->formatWithSecretsMultiLine() << '\n';
 
     return 0;
