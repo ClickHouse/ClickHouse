@@ -367,6 +367,13 @@ def main():
             clickhouse_bin_path,
             *CH.prepare_logs(info=info, all=True),
         ]
+        # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
+        # dumps it writes on a timeout / hung check land here. Attach them so
+        # the report links the full dumps (stdout keeps only a trimmed preview).
+        for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+            path = f"{temp_dir}/{stacktrace_log}"
+            if os.path.exists(path):
+                attach_files.append(path)
 
     CH.terminate(force=True)
 

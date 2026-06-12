@@ -163,6 +163,19 @@ def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
             timeout=timeout,
         )
         return res.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        # stdout here is the merged stdout+stderr captured above. For a
+        # diagnostic like lldb the failure reason lives in that output, so
+        # print it — otherwise the log keeps only "returned non-zero exit
+        # status N" and the actual cause is lost. Bound it with trim_for_log:
+        # a command that prints many lines (e.g. lldb dumping thread
+        # backtraces) and only then exits non-zero must not flood job.log,
+        # and trim_for_log keeps the tail where the failure reason lives.
+        print(
+            f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
+            file=sys.stderr,
+        )
+        return ""
     except Exception as e:
         print(f"Error running command {cmd!r}: {e}", file=sys.stderr)
         return ""
@@ -1009,8 +1022,16 @@ def get_stacktraces_from_lldb(pid):
     # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
     # leaves the server process untouched.
     _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
+    # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
+    # attach to the server on a CI runner (the user is not in the _developer
+    # group and there is no interactive authorization), so it exits 1. The
+    # runner grants passwordless sudo and root holds task_for_pid rights, so
+    # attach as root there. Linux ptrace of a same-uid process needs none of
+    # this. shutil.which resolves the absolute path because sudo resets PATH.
+    lldb = shutil.which("lldb") or "lldb"
+    sudo = "sudo " if platform.system() == "Darwin" else ""
     return shell_get_output(
-        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
     )
 
@@ -1033,7 +1054,14 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
             "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
-            'ORDER BY host, thread_id FORMAT Vertical"'
+            # query-bearing threads first: on a timeout the wedged query is
+            # what matters, idle pool threads are noise. Within each group the
+            # newest threads first (thread_id DESC) — system.stack_trace has no
+            # timestamp, and TIDs are assigned monotonically, so the highest
+            # TID is the best-effort "last thread" (only approximate: TIDs are
+            # reused after a thread exits).
+            "ORDER BY query_id <> '' DESC, host, thread_id DESC "
+            'FORMAT Vertical"'
         )
     elif args.shared_catalog:
         msg = (
@@ -1043,7 +1071,14 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
             "FROM clusterAllReplicas('test_cluster_shared_catalog', 'system.stack_trace') "
-            'ORDER BY host, thread_id FORMAT Vertical"'
+            # query-bearing threads first: on a timeout the wedged query is
+            # what matters, idle pool threads are noise. Within each group the
+            # newest threads first (thread_id DESC) — system.stack_trace has no
+            # timestamp, and TIDs are assigned monotonically, so the highest
+            # TID is the best-effort "last thread" (only approximate: TIDs are
+            # reused after a thread exits).
+            "ORDER BY query_id <> '' DESC, host, thread_id DESC "
+            'FORMAT Vertical"'
         )
     else:
         msg = (
@@ -1051,7 +1086,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
-            'FROM system.stack_trace FORMAT Vertical"'
+            # query-bearing threads first (idle pool threads are noise on a
+            # timeout), newest threads next (thread_id DESC, best-effort "last
+            # thread" — no timestamp exists and TIDs are reused).
+            "FROM system.stack_trace ORDER BY query_id <> '' DESC, thread_id DESC "
+            'FORMAT Vertical"'
         )
 
     # Bound the dump so timeout_handler / hung-check callers cannot wedge
@@ -1101,6 +1140,24 @@ def is_asan_build(args):
         return bool(os.environ.get("ASAN_OPTIONS"))
 
 
+# Full server stacktraces are written here — one file per collector, not per
+# test: print_*_stacktraces also run from the end-of-run hung check, where no
+# single test owns the dump. The CI job runs clickhouse-test from its output
+# dir and attaches these files to the report, while stdout keeps only a
+# trimmed preview. Append-only with a per-block header, so the rare case of two
+# --jobs workers timing out at once stays readable instead of corrupting data.
+SQL_STACKTRACES_LOG = "sql_stacktraces.log"
+C_STACKTRACES_LOG = "c_stacktraces.log"
+
+
+def _append_stacktrace_log(filename: str, block: str) -> None:
+    try:
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(block if block.endswith("\n") else block + "\n")
+    except OSError as e:
+        print(f"Could not write {filename}: {e}", file=sys.stderr)
+
+
 def print_c_stacktraces(args) -> None:
     """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
@@ -1144,7 +1201,10 @@ def print_c_stacktraces(args) -> None:
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
         bt = get_stacktraces_from_lldb(pid)
         if bt and len(bt) >= 1000:
-            print(f"=== PID {pid} ({label}) ===\n{bt}")
+            block = f"=== PID {pid} ({label}) ===\n{bt}"
+            _append_stacktrace_log(C_STACKTRACES_LOG, block)
+            print(trim_for_log(block))
+            print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
 
@@ -1167,7 +1227,9 @@ def print_sql_stacktraces(args) -> None:
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
-        print(bt)
+        _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
+        print(trim_for_log(bt))
+        print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
 
 
 def get_server_pid():
@@ -4492,8 +4554,12 @@ def run_tests_array(
                 description += "\n"
 
             if cleanup_output.getvalue():
-                description += cleanup_output.getvalue()
-                if not cleanup_output.getvalue().endswith("\n"):
+                # Bound the timeout/cleanup diagnostic like every other dump in
+                # this file: lldb "thread backtrace all" over every server
+                # process is unbounded and otherwise floods the log/report.
+                trimmed_cleanup = trim_for_log(cleanup_output.getvalue())
+                description += trimmed_cleanup
+                if not trimmed_cleanup.endswith("\n"):
                     description += "\n"
 
             if is_concurrent:
