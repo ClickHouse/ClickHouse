@@ -1,13 +1,10 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -42,7 +39,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
         {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
         }
@@ -263,23 +260,19 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
 ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
 {
-    chassert(prewhere_info || row_level_filter);
+    chassert(prewhere_info);
 
-    if (info.prewhere_info)
+    if (info.prewhere_info || info.row_level_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
-    new_info.row_level_filter = row_level_filter;
 
     /// Removes columns that are only used as prewhere input.
     /// Adds prewhere outputs (the actual prewhere filter column is only added if
     /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
     /// expression and preserved for use further down the query pipeline).
-    /// If row_level_filter was already applied in a previous call, don't re-apply it;
-    /// only apply the new prewhere_info on top.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
-        info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
+    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, row_level_filter, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
     /// don't need to replace subcolumns with their nested columns etc.
@@ -320,9 +313,8 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     if (!storage_ptr)
         return SerializationInfoByName{{}};
 
-    const auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
     const auto & our_columns = metadata_snapshot->getColumns();
-    const auto & storage_columns = storage_metadata_snapshot->getColumns();
+    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
     SerializationInfoByName res({});
 
@@ -386,7 +378,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
-    bool has_prewhere_info = false;
+    bool has_prewhere_info;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
@@ -394,38 +386,6 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     return result;
-}
-
-Block buildAllowedFilterInputs(
-    const StorageSnapshotPtr & storage_snapshot,
-    const Block & source_header,
-    const PrewhereInfoPtr & prewhere_info,
-    const FilterDAGInfoPtr & row_level_filter)
-{
-    Block base = storage_snapshot->metadata->getSampleBlock();
-    for (const auto & col : source_header)
-        if (!base.has(col.name))
-            base.insert(col);
-    return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
-}
-
-void prepareEagerKeyConditionSets(
-    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
-    const StorageSnapshotPtr & storage_snapshot,
-    const Block & source_header,
-    const PrewhereInfoPtr & prewhere_info,
-    const FilterDAGInfoPtr & row_level_filter,
-    const ContextPtr & context)
-{
-    if (!filter_actions_dag)
-        return;
-
-    auto allowed_inputs = buildAllowedFilterInputs(
-        storage_snapshot, source_header, prewhere_info, row_level_filter);
-    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
-            filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
-            /*allow_partial_result=*/ true))
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
 }
 
 }

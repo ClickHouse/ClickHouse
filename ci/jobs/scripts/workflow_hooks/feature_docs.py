@@ -20,11 +20,8 @@ inline_doc_paths = [
 
 # File name suffixes that indicate embedded documentation
 # (e.g. settings files with DECLARE macros containing description strings)
-# Settings.cpp files declare the per-setting DECLARE(...) macros for Settings/ServerSettings,
-# whereas the format settings put DECLARE(...) blocks in FormatFactorySettings.h.
 embedded_doc_suffixes = [
     "Settings.cpp",
-    "Settings.h",
 ]
 
 
@@ -51,10 +48,7 @@ def check_docs():
             )
             or (
                 any(file.endswith(suffix) for suffix in embedded_doc_suffixes)
-                and (
-                    file_contains_marker(file, "DECLARE_SETTING")
-                    or file_contains_marker(file, "DECLARE(")
-                )
+                and file_contains_marker(file, "DECLARE_SETTING")
             )
             for file in changed_files
         )

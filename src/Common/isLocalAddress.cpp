@@ -25,7 +25,7 @@ namespace
 
 struct NetworkInterfaces : public boost::noncopyable
 {
-    ifaddrs * ifaddr{};
+    ifaddrs * ifaddr;
     NetworkInterfaces()
     {
         if (getifaddrs(&ifaddr) == -1)
@@ -34,7 +34,7 @@ struct NetworkInterfaces : public boost::noncopyable
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
     {
-        ifaddrs * iface = nullptr;
+        ifaddrs * iface;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
         {
             /// Point-to-point (VPN) addresses may have NULL ifa_addr
