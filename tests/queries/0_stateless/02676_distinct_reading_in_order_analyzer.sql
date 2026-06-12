@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 drop table if exists t;
 
 set enable_analyzer=1;

@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 -- encrypt function doesn't exist in the fastest build
-SET explain_query_plan_default = 'legacy';
 
 -- { echoOn }
 SET enable_analyzer = 1;

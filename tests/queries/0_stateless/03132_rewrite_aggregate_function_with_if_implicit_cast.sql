@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_rewrite_aggregate_function_with_if = 1;
 -- { echoOn }

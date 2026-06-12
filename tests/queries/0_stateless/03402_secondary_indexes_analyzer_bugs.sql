@@ -1,7 +1,7 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
+--- #65607
 SET explain_query_plan_default = 'legacy';
 
---- #65607
 select 'index is applied while using column alias';
 
 drop table if exists t;

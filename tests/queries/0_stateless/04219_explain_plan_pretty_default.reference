@@ -18,3 +18,12 @@ Limit (preliminary LIMIT)
                   Read type: Default
                   Parts: 1 | Granules: 1
                   Output: b, c, a
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Filter (HAVING)
+          Aggregating
+            Expression (Before GROUP BY)
+              Filter ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_explain_default)

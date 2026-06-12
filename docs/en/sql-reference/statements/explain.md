@@ -35,26 +35,27 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE
 Example:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 ## EXPLAIN Types {#explain-types}
@@ -182,41 +183,44 @@ Settings:
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
+- `actions` — Prints detailed information about step actions. Default: 0. (see the note below).
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
-- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
+- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json` or `graph`. Default: 0.
+- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 0(see the note below).
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 0 (see the note below).
 
 :::note
-Starting from ClickHouse 26.6, the server setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Specifying these options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this.
+Starting from ClickHouse 26.6, the setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Specifying these options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this.
 
 To restore the pre-26.6 verbose output, either run `SET explain_query_plan_default = 'legacy'` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.6`.
+
+The `json` and `distributed` options do not enable the `pretty` defaults (`actions`, `compact`, and `pretty`), even when `explain_query_plan_default = 'pretty'`. So, to include action details in their output, you need to set `actions = 1` manually.
 :::
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 
 Example:
 
-The examples below use `SETTINGS explain_query_plan_default = 'legacy'` to show the verbose, indented output. This is the baseline that the `compact`, `distributed`, and `pretty` sections further down build upon. With the default `pretty` value, `EXPLAIN PLAN` renders the compact, pretty form shown in the `pretty = 1` examples further down.
-
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4
-SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 :::note
@@ -228,7 +232,7 @@ When `json = 1`, the query plan is represented in JSON format. Every node is a d
 Example:
 
 ```sql
-EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ```
 
 ```json
@@ -278,7 +282,7 @@ With `header` = 1, the `Header` key is added to the step as an array of columns.
 Example:
 
 ```sql
-EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ```
 
 ```json
@@ -414,7 +418,7 @@ With `actions` = 1, added keys depend on step type.
 Example:
 
 ```sql
-EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ```
 
 ```json
@@ -487,11 +491,14 @@ Skip merging: 0
 
 With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
 
+:::note
+`distributed` is rendered only in the legacy (non-`pretty`) form, because the `pretty` output does not integrate the remote shard plans into the plan tree. For this reason, enabling `distributed` automatically disables the `pretty` defaults (`actions`, `compact`, and `pretty`), regardless of `explain_query_plan_default`. You can still set `actions` manually. The `distributed` option is also not supported together with `json`.
+:::
+
 Example with distributed table:
 
 ```sql
-EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1
-SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
 ```
 
 ```sql
@@ -511,8 +518,7 @@ Example with parallel replicas:
 ```sql
 SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
 
-EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4
-SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
 ```
 
 ```sql
@@ -566,6 +572,8 @@ EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMA
 ```
 
 ```text
+Output: sum(number)
+
 Expression ((Project names + Projection))
 └──Aggregating
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
@@ -585,24 +593,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}

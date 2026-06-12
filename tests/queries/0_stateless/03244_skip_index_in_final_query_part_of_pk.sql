@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Testcase for bug #85897
 -- If skip index is part of primary key, then optimization 'use_skip_indexes_if_final_exact_mode' should
 -- not perform additional primary key intersection expand step.
+SET explain_query_plan_default = 'legacy';
 
 SET use_skip_indexes_if_final = 1;
 SET use_skip_indexes_if_final_exact_mode = 1;

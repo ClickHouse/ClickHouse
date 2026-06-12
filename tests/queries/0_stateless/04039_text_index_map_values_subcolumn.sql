@@ -1,8 +1,8 @@
 -- Tags: no-random-settings
-SET explain_query_plan_default = 'legacy';
 
 -- Tests that text indexes built on mapValues(m) work correctly when the analyzer
 -- rewrites arrayElement(m, 'key') into the map.key_* subcolumn form.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 

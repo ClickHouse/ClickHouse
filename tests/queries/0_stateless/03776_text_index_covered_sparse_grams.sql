@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tsts that covered sparse grams are filtered out.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

@@ -56,7 +56,7 @@ struct ExplainPlanOptions
     /// Add description of step.
     bool description = true;
     /// Add detailed information about step actions.
-    bool actions = true;
+    bool actions = false;
     /// Add information about indexes actions.
     bool indexes = false;
     /// Add information about projections.
@@ -70,9 +70,9 @@ struct ExplainPlanOptions
     /// Print structure of columns instead of just their names and types.
     bool column_structure = false;
     /// Hide expression steps and detailed action info
-    bool compact = true;
+    bool compact = false;
     /// Print query plan with pretty formatting
-    bool pretty = true;
+    bool pretty = false;
 
 
     SettingsChanges toSettingsChanges() const;

@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
-SET explain_query_plan_default = 'legacy';
-
 -- Tests if a text index ILIKE evaluation by scanning the inverted index dictionary is properly applied.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 

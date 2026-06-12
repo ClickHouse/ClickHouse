@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tests that text indexes built on mapValues(m) work with the IN operator.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 

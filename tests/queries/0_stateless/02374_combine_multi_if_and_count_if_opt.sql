@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 drop table if exists m;
 
 create table m (a int) engine Log;

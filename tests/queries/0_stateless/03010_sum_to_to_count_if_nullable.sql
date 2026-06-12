@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET optimize_rewrite_sum_if_to_count_if = 1;
 
 SET enable_analyzer = 0;

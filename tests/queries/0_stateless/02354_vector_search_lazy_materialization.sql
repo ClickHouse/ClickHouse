@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-parallel-replicas
-SET explain_query_plan_default = 'legacy';
-
 -- Verify that vector search queries on multiple parts use lazy materialization
+SET explain_query_plan_default = 'legacy';
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 SET enable_analyzer = 1;

@@ -1,12 +1,12 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
-SET explain_query_plan_default = 'legacy';
 
 -- Test that empty() and notEmpty() use the primary key for string columns.
 -- With optimize_empty_string_comparisons=1 (default), `s = ''` is rewritten
 -- to `empty(s)`. This test verifies that empty() and notEmpty() report
 -- monotonicity for String arguments so granules can be skipped.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_empty_pk;
 

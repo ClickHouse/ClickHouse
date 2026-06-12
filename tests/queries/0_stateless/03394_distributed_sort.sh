@@ -5,8 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "SET explain_query_plan_default = 'legacy'"
-
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test(src_ip UInt32, dst_ip UInt32, bytes UInt64) ENGINE MergeTree() ORDER BY src_ip"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO test SELECT number%3, number%4, number FROM numbers(10)"
@@ -26,7 +24,7 @@ EXPLAIN SELECT dst_ip, src_ip, bytes
 FROM test
 WHERE bytes > 5 AND src_ip > 2
 ORDER BY dst_ip, src_ip, bytes
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0" | sed 's/Filter ((WHERE/Expression ((WHERE/'
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0, explain_query_plan_default = 'legacy'" | sed 's/Filter ((WHERE/Expression ((WHERE/'
 
 echo '------------------'
 
@@ -35,4 +33,4 @@ EXPLAIN SELECT dst_ip, src_ip, bytes
 FROM test
 WHERE bytes > 5 AND src_ip > 2
 ORDER BY dst_ip, src_ip, bytes
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=1" | sed 's/Filter ((WHERE/Expression ((WHERE/'
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=1, explain_query_plan_default = 'legacy'" | sed 's/Filter ((WHERE/Expression ((WHERE/'

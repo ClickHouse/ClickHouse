@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 -- Tests that text indexes on mapKeys(m) and mapValues(m) handle empty string values
 -- correctly with IN operator. When a map key does not exist, map['key'] returns ''
 -- (the default value). The index must not incorrectly skip granules in this case.
@@ -8,6 +7,7 @@ SET explain_query_plan_default = 'legacy';
 --   rows 50000-99999:   {'other': 'beta'}               -- 'key' absent, map['key'] = ''
 --   rows 100000-149999: {'key': 'gamma', 'other': 'delta'}
 --   rows 150000-199999: {'another': 'epsilon'}           -- 'key' absent, map['key'] = ''
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 

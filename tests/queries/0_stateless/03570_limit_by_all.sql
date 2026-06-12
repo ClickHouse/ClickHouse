@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET max_threads = 1;
 SET max_insert_threads = 1;
 SET max_block_size = 65536;

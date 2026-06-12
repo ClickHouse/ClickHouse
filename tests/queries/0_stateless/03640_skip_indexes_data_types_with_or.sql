@@ -1,12 +1,12 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: funny EXPLAIN PLAN output
 -- add_minmax_index_for_numeric_columns=0: Different plan
-SET explain_query_plan_default = 'legacy';
 
 -- Test that the skip indexes are utilized for AND and OR connected filter conditions
 -- This test uses all the skip index types - minmax, set, bloom filter, text
 
 -- Settings needed to achieve stable EXPLAIN PLAN output
+SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;

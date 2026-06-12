@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Test: read-in-order optimization should use InReverseOrder when constant ORDER BY columns are skipped
+SET explain_query_plan_default = 'legacy';
 
 -- This test specifically tests read-in-order optimization, so we need to ensure it's enabled
 SET optimize_read_in_order = 1;

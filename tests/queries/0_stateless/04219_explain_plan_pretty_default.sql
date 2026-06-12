@@ -25,4 +25,15 @@ HAVING s > 50
 ORDER BY s DESC
 LIMIT 5;
 
+SET explain_query_plan_default = 'legacy';
+
+EXPLAIN
+SELECT b, sum(c) AS s, count() AS n, avg(c) AS m
+FROM t_explain_default
+WHERE a > 10 AND c < 100
+GROUP BY b
+HAVING s > 50
+ORDER BY s DESC
+LIMIT 5;
+
 DROP TABLE t_explain_default;

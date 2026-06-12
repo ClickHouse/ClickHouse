@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 --- Verifies that tokenizer is properly passed to supported functions when a text index is partially materialized.
+SET explain_query_plan_default = 'legacy';
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;

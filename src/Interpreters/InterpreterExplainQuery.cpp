@@ -515,17 +515,31 @@ struct QuerySyntaxSettings
 };
 
 template <typename Settings>
-ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool set_default_legacy_explain_settings = false)
+ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool set_default_pretty_explain_settings = true)
 {
     ExplainSettings<Settings> settings;
 
     if constexpr (std::is_same_v<Settings, QueryPlanSettings>)
     {
-        if (set_default_legacy_explain_settings)
+        /// We keep the old (legacy) version of EXPLAIN in case the json or distributed setting was enabled.
+        /// The pretty output does not integrate the remote shard plans into the tree, so distributed
+        /// is only rendered correctly in the legacy mode.
+        bool json_requested = false;
+        bool distributed_requested = false;
+        if (ast_settings)
+            for (const auto & change : ast_settings->as<ASTSetQuery &>().changes)
+            {
+                if (change.name == "json")
+                    json_requested = change.value.safeGet<UInt64>() != 0;
+                else if (change.name == "distributed")
+                    distributed_requested = change.value.safeGet<UInt64>() != 0;
+            }
+
+        if (set_default_pretty_explain_settings && !json_requested && !distributed_requested)
         {
-            settings.query_plan_options.actions = false;
-            settings.query_plan_options.compact = false;
-            settings.query_plan_options.pretty  = false;
+            settings.query_plan_options.actions = true;
+            settings.query_plan_options.compact = true;
+            settings.query_plan_options.pretty  = true;
         }
     }
 
@@ -718,8 +732,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
-            bool legacy = query_context->getSettingsRef()[Setting::explain_query_plan_default] == ExplainQueryPlanDefault::LEGACY;
-            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings(), legacy);
+            bool pretty_version = query_context->getSettingsRef()[Setting::explain_query_plan_default] == ExplainQueryPlanDefault::PRETTY;
+            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings(), pretty_version);
 
             QueryPlan plan;
 

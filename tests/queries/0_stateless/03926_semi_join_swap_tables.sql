@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Test for swapping the build and probe sides of a SEMI join
+SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE lhs(a UInt32)
 ENGINE = MergeTree
