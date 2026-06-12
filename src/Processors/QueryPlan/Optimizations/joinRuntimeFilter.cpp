@@ -1,4 +1,6 @@
 #include <memory>
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -83,11 +85,9 @@ static const ActionsDAG::Node & createRuntimeFilterCondition(
     const ColumnWithTypeAndName & key_column,
     const DataTypePtr & filter_element_type)
 {
-    const auto & filter_name_node = actions_dag.addColumn(
-        ColumnWithTypeAndName(
-            DataTypeString().createColumnConst(0, filter_name),
-            std::make_shared<DataTypeString>(),
-            filter_name));
+    auto string_type = std::make_shared<DataTypeString>();
+    auto filter_name_column = string_type->createColumnConst(0, filter_name);
+    const auto & filter_name_node = actions_dag.addColumn(std::move(filter_name_column), std::move(string_type), filter_name);
 
     const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
     const auto * filter_argument = &key_column_node;
@@ -307,11 +307,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
             /// Build __applyFilter(filter_name, tuple_node) condition directly,
             /// since the tuple node is freshly created and not yet in the DAG outputs
-            const auto & filter_name_node = filter_dag.addColumn(
-                ColumnWithTypeAndName(
-                    DataTypeString().createColumnConst(0, filter_name),
-                    std::make_shared<DataTypeString>(),
-                    filter_name));
+            auto string_type = std::make_shared<DataTypeString>();
+            auto filter_name_column = string_type->createColumnConst(0, filter_name);
+            const auto & filter_name_node = filter_dag.addColumn(std::move(filter_name_column), std::move(string_type), filter_name);
             auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
             const auto & condition = filter_dag.addFunction(filter_function, {&filter_name_node, &tuple_node}, {});
 
@@ -361,6 +359,16 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 new_build_filter_node->children = {build_filter_node};
 
                 build_filter_node = new_build_filter_node;
+            }
+
+            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
+            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
+            /// otherwise the Set/BloomFilter stays as fallback.
+            if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
+                && !check_left_does_not_contain)
+            {
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(
+                    filter_name, join_key_build_side.name);
             }
         }
 

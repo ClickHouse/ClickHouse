@@ -84,6 +84,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
+    bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
@@ -178,9 +179,6 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
-
-    size_t min_columns_for_join_lazy_indexing = 0;
-    size_t max_limit_for_join_lazy_indexing = 0;
 
     /// Please, avoid using this
     ///

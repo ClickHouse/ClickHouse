@@ -25,18 +25,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-#if USE_MULTITARGET_CODE
-/// Widen 16 packed `BFloat16` to `Float32` without AVX512-BF16: a `BFloat16` is the upper 16 bits of the
-/// corresponding `Float32`, so zero-extend each 16-bit value to 32 bits and shift it into the high half.
-/// Uses only AVX-512F/BW, so it is available at `x86-64-v4` (not just AVX512-BF16 CPUs), and it is faster
-/// than the native AVX512-BF16 convert / `dpbf16` instructions, which are throughput-limited.
-X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static inline __m512 loadBFloat16AsFloat32(const BFloat16 * p)
-{
-    const __m256i raw = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p));
-    return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(raw), 16));
-}
-#endif
-
 struct L1Distance
 {
     static constexpr auto name = "L1";
@@ -60,83 +48,6 @@ struct L1Distance
     {
         state.sum += other_state.sum;
     }
-
-#if USE_MULTITARGET_CODE
-    template <typename ResultType>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
-        const ResultType * __restrict data_x,
-        const ResultType * __restrict data_y,
-        size_t i_max,
-        size_t & i_x,
-        size_t & i_y,
-        State<ResultType> & state)
-    {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
-
-        /// `abs(x - y)` = clear the sign bit (the mask -0.0 has only the sign bit set), then sum.
-        /// Four independent accumulators break the `add` dependency chain so the kernel is throughput-
-        /// rather than latency-bound: a single accumulator regresses on CPUs with deeper FP-add latency.
-        if constexpr (is_float32)
-        {
-            const __m512 sign = _mm512_set1_ps(-0.0f);
-            __m512 a0 = _mm512_setzero_ps(), a1 = _mm512_setzero_ps(), a2 = _mm512_setzero_ps(), a3 = _mm512_setzero_ps();
-            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
-            {
-                a0 = _mm512_add_ps(a0, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x),         _mm512_loadu_ps(data_y + i_y))));
-                a1 = _mm512_add_ps(a1, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + n),     _mm512_loadu_ps(data_y + i_y + n))));
-                a2 = _mm512_add_ps(a2, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 2 * n), _mm512_loadu_ps(data_y + i_y + 2 * n))));
-                a3 = _mm512_add_ps(a3, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 3 * n), _mm512_loadu_ps(data_y + i_y + 3 * n))));
-            }
-            __m512 sums = _mm512_add_ps(_mm512_add_ps(a0, a1), _mm512_add_ps(a2, a3));
-            for (; i_x + n < i_max; i_x += n, i_y += n)
-                sums = _mm512_add_ps(sums, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x), _mm512_loadu_ps(data_y + i_y))));
-            state.sum = _mm512_reduce_add_ps(sums);
-        }
-        else
-        {
-            const __m512d sign = _mm512_set1_pd(-0.0);
-            __m512d a0 = _mm512_setzero_pd(), a1 = _mm512_setzero_pd(), a2 = _mm512_setzero_pd(), a3 = _mm512_setzero_pd();
-            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
-            {
-                a0 = _mm512_add_pd(a0, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x),         _mm512_loadu_pd(data_y + i_y))));
-                a1 = _mm512_add_pd(a1, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + n),     _mm512_loadu_pd(data_y + i_y + n))));
-                a2 = _mm512_add_pd(a2, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 2 * n), _mm512_loadu_pd(data_y + i_y + 2 * n))));
-                a3 = _mm512_add_pd(a3, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 3 * n), _mm512_loadu_pd(data_y + i_y + 3 * n))));
-            }
-            __m512d sums = _mm512_add_pd(_mm512_add_pd(a0, a1), _mm512_add_pd(a2, a3));
-            for (; i_x + n < i_max; i_x += n, i_y += n)
-                sums = _mm512_add_pd(sums, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x), _mm512_loadu_pd(data_y + i_y))));
-            state.sum = _mm512_reduce_add_pd(sums);
-        }
-    }
-
-    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`). No AVX512-BF16
-    /// instruction is needed for `L1`, so this runs at `x86-64-v4` rather than `sapphirerapids`.
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16V4(
-        const BFloat16 * __restrict data_x,
-        const BFloat16 * __restrict data_y,
-        size_t i_max,
-        size_t & i_x,
-        size_t & i_y,
-        State<Float32> & state)
-    {
-        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
-        const __m512 sign = _mm512_set1_ps(-0.0f);
-        __m512 a0 = _mm512_setzero_ps(), a1 = _mm512_setzero_ps(), a2 = _mm512_setzero_ps(), a3 = _mm512_setzero_ps();
-        for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
-        {
-            a0 = _mm512_add_ps(a0, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x),         loadBFloat16AsFloat32(data_y + i_y))));
-            a1 = _mm512_add_ps(a1, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x + n),     loadBFloat16AsFloat32(data_y + i_y + n))));
-            a2 = _mm512_add_ps(a2, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x + 2 * n), loadBFloat16AsFloat32(data_y + i_y + 2 * n))));
-            a3 = _mm512_add_ps(a3, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x + 3 * n), loadBFloat16AsFloat32(data_y + i_y + 3 * n))));
-        }
-        __m512 sums = _mm512_add_ps(_mm512_add_ps(a0, a1), _mm512_add_ps(a2, a3));
-        for (; i_x + n < i_max; i_x += n, i_y += n)
-            sums = _mm512_add_ps(sums, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x), loadBFloat16AsFloat32(data_y + i_y))));
-        state.sum = _mm512_reduce_add_ps(sums);
-    }
-#endif
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
@@ -213,10 +124,7 @@ struct L2Distance
             state.sum = _mm512_reduce_add_pd(sums);
     }
 
-    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`), then the usual
-    /// `Float32` FMA path. Used on all `x86-64-v4` CPUs: it is faster than the native AVX512-BF16
-    /// instructions (which are throughput-limited) even on `sapphirerapids` where those are available.
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16V4(
+    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -225,12 +133,22 @@ struct L2Distance
         State<Float32> & state)
     {
         __m512 sums = _mm512_setzero_ps();
-        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
+
+        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            __m512 differences = _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x), loadBFloat16AsFloat32(data_y + i_y));
-            sums = _mm512_fmadd_ps(differences, differences, sums);
+            __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
+            __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
+            __m512 y1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
+            __m512 y2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
+
+            __m512 differences1 = _mm512_sub_ps(x1, y1);
+            __m512 differences2 = _mm512_sub_ps(x2, y2);
+            sums = _mm512_fmadd_ps(differences1, differences1, sums);
+            sums = _mm512_fmadd_ps(differences2, differences2, sums);
         }
+
         state.sum = _mm512_reduce_add_ps(sums);
     }
 #endif
@@ -311,82 +229,6 @@ struct LinfDistance
     {
         state.dist = std::fmax(state.dist, other_state.dist);
     }
-
-#if USE_MULTITARGET_CODE
-    template <typename ResultType>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
-        const ResultType * __restrict data_x,
-        const ResultType * __restrict data_y,
-        size_t i_max,
-        size_t & i_x,
-        size_t & i_y,
-        State<ResultType> & state)
-    {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
-
-        /// `max(|x - y|)`. Four independent max-accumulators break the dependency chain (latency-bound
-        /// with one). `|x - y|` clears the sign bit; running maxima start at 0 (distances are non-negative).
-        if constexpr (is_float32)
-        {
-            const __m512 sign = _mm512_set1_ps(-0.0f);
-            __m512 a0 = _mm512_setzero_ps(), a1 = _mm512_setzero_ps(), a2 = _mm512_setzero_ps(), a3 = _mm512_setzero_ps();
-            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
-            {
-                a0 = _mm512_max_ps(a0, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x),         _mm512_loadu_ps(data_y + i_y))));
-                a1 = _mm512_max_ps(a1, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + n),     _mm512_loadu_ps(data_y + i_y + n))));
-                a2 = _mm512_max_ps(a2, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 2 * n), _mm512_loadu_ps(data_y + i_y + 2 * n))));
-                a3 = _mm512_max_ps(a3, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 3 * n), _mm512_loadu_ps(data_y + i_y + 3 * n))));
-            }
-            __m512 m = _mm512_max_ps(_mm512_max_ps(a0, a1), _mm512_max_ps(a2, a3));
-            for (; i_x + n < i_max; i_x += n, i_y += n)
-                m = _mm512_max_ps(m, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x), _mm512_loadu_ps(data_y + i_y))));
-            state.dist = std::fmax(state.dist, _mm512_reduce_max_ps(m));
-        }
-        else
-        {
-            const __m512d sign = _mm512_set1_pd(-0.0);
-            __m512d a0 = _mm512_setzero_pd(), a1 = _mm512_setzero_pd(), a2 = _mm512_setzero_pd(), a3 = _mm512_setzero_pd();
-            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
-            {
-                a0 = _mm512_max_pd(a0, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x),         _mm512_loadu_pd(data_y + i_y))));
-                a1 = _mm512_max_pd(a1, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + n),     _mm512_loadu_pd(data_y + i_y + n))));
-                a2 = _mm512_max_pd(a2, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 2 * n), _mm512_loadu_pd(data_y + i_y + 2 * n))));
-                a3 = _mm512_max_pd(a3, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 3 * n), _mm512_loadu_pd(data_y + i_y + 3 * n))));
-            }
-            __m512d m = _mm512_max_pd(_mm512_max_pd(a0, a1), _mm512_max_pd(a2, a3));
-            for (; i_x + n < i_max; i_x += n, i_y += n)
-                m = _mm512_max_pd(m, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x), _mm512_loadu_pd(data_y + i_y))));
-            state.dist = std::fmax(state.dist, _mm512_reduce_max_pd(m));
-        }
-    }
-
-    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`). No AVX512-BF16
-    /// instruction is needed for `Linf`, so this runs at `x86-64-v4` rather than `sapphirerapids`.
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16V4(
-        const BFloat16 * __restrict data_x,
-        const BFloat16 * __restrict data_y,
-        size_t i_max,
-        size_t & i_x,
-        size_t & i_y,
-        State<Float32> & state)
-    {
-        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
-        const __m512 sign = _mm512_set1_ps(-0.0f);
-        __m512 a0 = _mm512_setzero_ps(), a1 = _mm512_setzero_ps(), a2 = _mm512_setzero_ps(), a3 = _mm512_setzero_ps();
-        for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
-        {
-            a0 = _mm512_max_ps(a0, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x),         loadBFloat16AsFloat32(data_y + i_y))));
-            a1 = _mm512_max_ps(a1, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x + n),     loadBFloat16AsFloat32(data_y + i_y + n))));
-            a2 = _mm512_max_ps(a2, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x + 2 * n), loadBFloat16AsFloat32(data_y + i_y + 2 * n))));
-            a3 = _mm512_max_ps(a3, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x + 3 * n), loadBFloat16AsFloat32(data_y + i_y + 3 * n))));
-        }
-        __m512 m = _mm512_max_ps(_mm512_max_ps(a0, a1), _mm512_max_ps(a2, a3));
-        for (; i_x + n < i_max; i_x += n, i_y += n)
-            m = _mm512_max_ps(m, _mm512_andnot_ps(sign, _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x), loadBFloat16AsFloat32(data_y + i_y))));
-        state.dist = std::fmax(state.dist, _mm512_reduce_max_ps(m));
-    }
-#endif
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
@@ -490,10 +332,7 @@ struct CosineDistance
         }
     }
 
-    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`), then the usual
-    /// `Float32` FMA path. Used on all `x86-64-v4` CPUs: it is faster than the native AVX512-BF16
-    /// `dpbf16` instruction (which is throughput-limited) even on `sapphirerapids` where it is available.
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16V4(
+    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -504,15 +343,18 @@ struct CosineDistance
         __m512 dot_products = _mm512_setzero_ps();
         __m512 x_squareds = _mm512_setzero_ps();
         __m512 y_squareds = _mm512_setzero_ps();
-        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
+
+        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            __m512 x = loadBFloat16AsFloat32(data_x + i_x);
-            __m512 y = loadBFloat16AsFloat32(data_y + i_y);
-            dot_products = _mm512_fmadd_ps(x, y, dot_products);
-            x_squareds = _mm512_fmadd_ps(x, x, x_squareds);
-            y_squareds = _mm512_fmadd_ps(y, y, y_squareds);
+            __m512 x = _mm512_loadu_ps(data_x + i_x);
+            __m512 y = _mm512_loadu_ps(data_y + i_y);
+            dot_products = _mm512_dpbf16_ps(dot_products, x, y);
+            x_squareds = _mm512_dpbf16_ps(x_squareds, x, x);
+            y_squareds = _mm512_dpbf16_ps(y_squareds, y, y);
         }
+
         state.dot_prod = _mm512_reduce_add_ps(dot_products);
         state.x_squared = _mm512_reduce_add_ps(x_squareds);
         state.y_squared = _mm512_reduce_add_ps(y_squareds);
@@ -526,32 +368,343 @@ struct CosineDistance
     }
 };
 
-#if USE_MULTITARGET_CODE
-/// Generic v4 distance kernel for integer inputs (widened to `Float64`). Unlike the hand-written float and
-/// BFloat16 kernels, this leans on the auto-vectorizer: the per-lane independent-accumulator loop and the
-/// `static_cast<ResultType>` integer->double widening both vectorize under the `x86-64-v4` target attribute,
-/// while the final horizontal `combine` reduction stays scalar (strict FP forbids reassociating it). This
-/// brings integer distances from the file's `x86-64-v2` baseline up to AVX-512 without a per-type kernel.
-template <typename Kernel, typename ResultType, typename ArgumentType>
-X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineIntegerV4(
-    const ArgumentType * __restrict data_x,
-    const ArgumentType * __restrict data_y,
-    size_t i_max,
-    size_t & i_x,
-    size_t & i_y,
-    typename Kernel::template State<ResultType> & state,
+template <typename ResultType, typename LeftType, typename RightType>
+constexpr bool is_native_distance_type = std::is_same_v<ResultType, LeftType> && std::is_same_v<ResultType, RightType>;
+
+template <typename LeftType, typename RightType, typename A, typename B>
+constexpr bool is_unordered_pair = (std::is_same_v<LeftType, A> && std::is_same_v<RightType, B>)
+    || (std::is_same_v<LeftType, B> && std::is_same_v<RightType, A>);
+
+/// Common mixed-type pairs that warrant SIMD specialisation. Selection mirrors
+/// real-world vector-search workloads:
+///   - UInt8 <-> Float32/Float64: quantised embeddings stored as UInt8 to save
+///     space, queried against Float32/Float64 query vectors (typical for ANN).
+///   - Float32 <-> Float64: cross-precision lookup (e.g. Float64 client query
+///     against Float32 server-side storage).
+/// Other mixed pairs fall through to the baseline (non-MULTITARGET) instantiation
+/// of executeDistanceMixedImpl. The set is deliberately tiny: extending to the
+/// full 11x11 numeric Cartesian product would explode MULTITARGET instantiations
+/// to 11*11*6*2*3 = 4356 .text copies and push arrayDistance.o past the 50 MB
+/// CI object-size limit.
+template <typename LeftType, typename RightType>
+constexpr bool is_common_mixed_pair = is_unordered_pair<LeftType, RightType, UInt8, Float32>
+    || is_unordered_pair<LeftType, RightType, UInt8, Float64>
+    || is_unordered_pair<LeftType, RightType, Float32, Float64>;
+
+/// Per-row accumulator unroll width for the four distance hot loops below.
+///
+/// Fixed at 8, not the wider `128 / sizeof(ResultType)`. These loops run once
+/// per row, so the per-row fixed cost (scalar remainder tail + horizontal
+/// reduction over the partial states) grows with the unroll width. For the
+/// short vectors typical of vector search (e.g. 150 dims) a width of 32 leaves
+/// ~15% of each row in the scalar tail and regresses L1/L2/Linf/cosine on both
+/// x86 and ARM; widths >= 16 also overflow the register file for the
+/// three-accumulator cosineDistance kernel. 8 was the measured sweet spot over
+/// dims 150..1024 on both ISAs, matching the previous hand-tuned const-path
+/// value. See PR #101310.
+constexpr size_t distance_unroll_count = 8;
+
+/// Multi-target hot loop for the native same-type path (LeftType == RightType == ResultType).
+/// The MULTITARGET macro generates _x86_64_v4, _x86_64_v3, and default versions
+/// so the compiler can auto-vectorize with the best available ISA.
+///
+/// Mixed-type pairs do NOT use this kernel; they go through `executeDistanceMixed` which casts
+/// per element inside the hot loop instead of pre-converting full columns. Templating only on
+/// <Kernel, ResultType> here keeps the LeftType x RightType x arch instantiation explosion bounded.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType>
+    void NO_INLINE
+), executeDistanceImpl, MULTITARGET_FUNCTION_BODY((
+    const ResultType * __restrict data_x,
+    const ResultType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-    constexpr size_t unroll_count = 16;
-    typename Kernel::template State<ResultType> partial_results[unroll_count]{};
-    for (; i_x + unroll_count < i_max; i_x += unroll_count, i_y += unroll_count)
-        for (size_t s = 0; s < unroll_count; ++s)
+    constexpr size_t unroll_count = distance_unroll_count;
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+
+        typename Kernel::template State<ResultType> partial[unroll_count];
+        size_t i = 0;
+        const size_t unrolled_end = count / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                Kernel::template accumulate<ResultType>(
+                    partial[s],
+                    data_x[prev + i + s],
+                    data_y[prev + i + s],
+                    params);
+
+        typename Kernel::template State<ResultType> state;
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
+
+        for (; i < count; ++i)
             Kernel::template accumulate<ResultType>(
-                partial_results[s], static_cast<ResultType>(data_x[i_x + s]), static_cast<ResultType>(data_y[i_y + s]), params);
-    for (auto & partial_result : partial_results)
-        Kernel::template combine<ResultType>(state, partial_result, params);
-}
+                state,
+                data_x[prev + i],
+                data_y[prev + i],
+                params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType>
+void executeDistance(
+    const ResultType * __restrict data_x,
+    const ResultType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return executeDistanceImpl_x86_64_v4<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return executeDistanceImpl_x86_64_v3<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
 #endif
+    executeDistanceImpl<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
+}
+
+/// Streaming mixed-type path. It casts individual elements inside the hot loop
+/// and never materialises converted full-column buffers.
+///
+/// One MULTITARGET definition serves both common and uncommon pairs:
+///   - Common pairs (see is_common_mixed_pair) call executeDistanceMixedImpl_x86_64_v3/v4
+///     for SIMD acceleration.
+///   - Other mixed pairs fall back to the baseline (non-MULTITARGET) instantiation
+///     of executeDistanceMixedImpl, keeping LeftType x RightType x ISA explosion bounded.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+    void NO_INLINE
+), executeDistanceMixedImpl, MULTITARGET_FUNCTION_BODY((
+    const LeftType * __restrict data_x,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = distance_unroll_count;
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+
+        typename Kernel::template State<ResultType> partial[unroll_count];
+        size_t i = 0;
+        const size_t unrolled_end = count / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                Kernel::template accumulate<ResultType>(
+                    partial[s],
+                    static_cast<ResultType>(data_x[prev + i + s]),
+                    static_cast<ResultType>(data_y[prev + i + s]),
+                    params);
+
+        typename Kernel::template State<ResultType> state;
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
+
+        for (; i < count; ++i)
+            Kernel::template accumulate<ResultType>(
+                state,
+                static_cast<ResultType>(data_x[prev + i]),
+                static_cast<ResultType>(data_y[prev + i]),
+                params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+void executeDistanceMixed(
+    const LeftType * __restrict data_x,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if constexpr (is_common_mixed_pair<LeftType, RightType>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return executeDistanceMixedImpl_x86_64_v4<Kernel, ResultType, LeftType, RightType>(
+                data_x, data_y, offsets, result, row_count, params);
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return executeDistanceMixedImpl_x86_64_v3<Kernel, ResultType, LeftType, RightType>(
+                data_x, data_y, offsets, result, row_count, params);
+    }
+#endif
+    executeDistanceMixedImpl<Kernel, ResultType, LeftType, RightType>(data_x, data_y, offsets, result, row_count, params);
+}
+
+
+/// Multi-target hot loop for const x non-const path.
+/// data_x is the constant array (repeated for every row), data_y varies per row.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType>
+    void NO_INLINE
+), executeDistanceConstImpl, MULTITARGET_FUNCTION_BODY((
+    const ResultType * __restrict data_x,
+    size_t array_size,
+    const ResultType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = distance_unroll_count;
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+        chassert(count == array_size);
+
+        typename Kernel::template State<ResultType> partial[unroll_count];
+        size_t i = 0;
+        const size_t unrolled_end = array_size / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                Kernel::template accumulate<ResultType>(
+                    partial[s],
+                    data_x[i + s],
+                    data_y[prev + i + s],
+                    params);
+
+        typename Kernel::template State<ResultType> state;
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
+
+        for (; i < array_size; ++i)
+            Kernel::template accumulate<ResultType>(
+                state,
+                data_x[i],
+                data_y[prev + i],
+                params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType>
+void executeDistanceConst(
+    const ResultType * __restrict data_x,
+    size_t array_size,
+    const ResultType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return executeDistanceConstImpl_x86_64_v4<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return executeDistanceConstImpl_x86_64_v3<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
+#endif
+    executeDistanceConstImpl<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
+}
+
+/// const-left mirror of executeDistanceMixedImpl. Same MULTITARGET strategy:
+/// common pairs get x86_64_v3/v4 instances, other pairs reuse the baseline.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+    void NO_INLINE
+), executeDistanceConstMixedImpl, MULTITARGET_FUNCTION_BODY((
+    const LeftType * __restrict data_x,
+    size_t array_size,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = distance_unroll_count;
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+        chassert(count == array_size);
+
+        typename Kernel::template State<ResultType> partial[unroll_count];
+        size_t i = 0;
+        const size_t unrolled_end = array_size / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                Kernel::template accumulate<ResultType>(
+                    partial[s],
+                    static_cast<ResultType>(data_x[i + s]),
+                    static_cast<ResultType>(data_y[prev + i + s]),
+                    params);
+
+        typename Kernel::template State<ResultType> state;
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
+
+        for (; i < array_size; ++i)
+            Kernel::template accumulate<ResultType>(
+                state,
+                static_cast<ResultType>(data_x[i]),
+                static_cast<ResultType>(data_y[prev + i]),
+                params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+void executeDistanceConstMixed(
+    const LeftType * __restrict data_x,
+    size_t array_size,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if constexpr (is_common_mixed_pair<LeftType, RightType>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return executeDistanceConstMixedImpl_x86_64_v4<Kernel, ResultType, LeftType, RightType>(
+                data_x, array_size, data_y, offsets, result, row_count, params);
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return executeDistanceConstMixedImpl_x86_64_v3<Kernel, ResultType, LeftType, RightType>(
+                data_x, array_size, data_y, offsets, result, row_count, params);
+    }
+#endif
+    executeDistanceConstMixedImpl<Kernel, ResultType, LeftType, RightType>(
+        data_x, array_size, data_y, offsets, result, row_count, params);
+}
+
 
 template <typename Kernel>
 class FunctionArrayDistance : public IFunction
@@ -714,34 +867,13 @@ private:
         auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        ColumnArray::Offset prev = 0;
-        size_t row = 0;
+        if constexpr (is_native_distance_type<ResultType, LeftType, RightType>)
+            executeDistance<Kernel, ResultType>(
+                data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+            executeDistanceMixed<Kernel, ResultType, LeftType, RightType>(
+                data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
 
-        for (auto off : offsets_x)
-        {
-            /// Process chunks in vectorized manner
-            static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
-            typename Kernel::template State<ResultType> states[VEC_SIZE];
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
-            {
-                for (size_t s = 0; s < VEC_SIZE; ++s)
-                    Kernel::template accumulate<ResultType>(
-                        states[s], static_cast<ResultType>(data_x[prev + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
-            }
-
-            typename Kernel::template State<ResultType> state;
-            for (const auto & other_state : states)
-                Kernel::template combine<ResultType>(state, other_state, kernel_params);
-
-            /// Process the tail
-            for (; prev < off; ++prev)
-            {
-                Kernel::template accumulate<ResultType>(
-                    state, static_cast<ResultType>(data_x[prev]), static_cast<ResultType>(data_y[prev]), kernel_params);
-            }
-            result_data[row] = Kernel::finalize(state, kernel_params);
-            ++row;
-        }
         return col_res;
     }
 
@@ -774,85 +906,63 @@ private:
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
 
-        size_t prev = 0;
-        size_t row = 0;
-
-        for (auto off : offsets_y)
-        {
-            size_t i = 0;
-            typename Kernel::template State<ResultType> state;
-
-            /// SIMD optimization: process multiple elements in both input arrays at once.
-            /// To avoid combinatorial explosion of SIMD kernels, focus on
-            /// - the three most common input/output types (BFloat16 x BFloat16) --> Float32,
-            ///   (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64
-            ///   instead of 11 x 11 input types x 2 output types,
-            /// - const/non-const inputs instead of non-const/non-const inputs
-            /// - the two most common metrics L2 and cosine distance,
-            /// - the most powerful SIMD instruction set (AVX-512).
-            bool processed_with_simd = false;
+        /// Hand-written AVX-512 intrinsics for L2/Cosine with Float32/Float64/BFloat16.
+        /// These outperform compiler auto-vectorization for these specific kernels.
 #if USE_MULTITARGET_CODE
-            if constexpr (std::is_same_v<Kernel, L1Distance> || std::is_same_v<Kernel, LinfDistance>
-                       || std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
+        if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
+        {
+            if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                       || (std::is_same_v<ResultType, Float64> && std::is_same_v<LeftType, Float64> && std::is_same_v<RightType, Float64>))
             {
-                if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
-                           || (std::is_same_v<ResultType, Float64> && std::is_same_v<LeftType, Float64> && std::is_same_v<RightType, Float64>))
+                if (isArchSupported(TargetArch::x86_64_v4))
                 {
-                    if (isArchSupported(TargetArch::x86_64_v4))
+                    size_t prev = 0;
+                    for (size_t row = 0; row < input_rows_count; ++row)
                     {
-                        Kernel::template accumulateCombineF32F64<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                        processed_with_simd = true;
+                        const auto off = offsets_y[row];
+                        size_t i = 0;
+                        size_t j = prev;
+                        typename Kernel::template State<ResultType> state;
+                        Kernel::template accumulateCombineF32F64<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, j, state);
+                        for (; j < off; ++i, ++j)
+                            Kernel::template accumulate<ResultType>(
+                                state, data_x[i], data_y[j], kernel_params);
+                        result_data[row] = Kernel::finalize(state, kernel_params);
+                        prev = off;
                     }
-                }
-                else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
-                {
-                    /// All `BFloat16` metrics widen to `Float32` in a `v4` kernel and use the normal FMA path.
-                    /// This beats the native AVX512-BF16 instructions (`vdpbf16ps` for `Cosine`, the BF16->
-                    /// `Float32` up-convert for `L2`), which are throughput-limited, even on `sapphirerapids`
-                    /// where they are available; plain AVX-512 CPUs (AMD Zen4/5, Skylake-X, Ice Lake) too.
-                    if (isArchSupported(TargetArch::x86_64_v4))
-                    {
-                        Kernel::accumulateCombineBF16V4(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                        processed_with_simd = true;
-                    }
-                }
-                else if constexpr (is_integer<LeftType> && std::is_same_v<LeftType, RightType>)
-                {
-                    /// Same-type integer inputs (widened to `Float64`): a generic v4 kernel auto-vectorizes
-                    /// the accumulation, lifting integer distances from `x86-64-v2` to AVX-512.
-                    if (isArchSupported(TargetArch::x86_64_v4))
-                    {
-                        accumulateCombineIntegerV4<Kernel, ResultType, LeftType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state, kernel_params);
-                        processed_with_simd = true;
-                    }
+                    return result;
                 }
             }
-#endif
-            if (!processed_with_simd)
+            else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
             {
-                /// Process chunks in a vectorized manner.
-                static constexpr size_t VEC_SIZE = 8; /// the choice of the constant has no huge performance impact. 16 breaks interleaving with clang-21. 8 is ok.
-                typename Kernel::template State<ResultType> states[VEC_SIZE];
-                for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
+                if (isArchSupported(TargetArch::x86_64_sapphirerapids))
                 {
-                    for (size_t s = 0; s < VEC_SIZE; ++s)
-                        Kernel::template accumulate<ResultType>(
-                            states[s], static_cast<ResultType>(data_x[i + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
+                    size_t prev = 0;
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                    {
+                        const auto off = offsets_y[row];
+                        size_t i = 0;
+                        size_t j = prev;
+                        typename Kernel::template State<Float32> state;
+                        Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, j, state);
+                        for (; j < off; ++i, ++j)
+                            Kernel::template accumulate<Float32>(
+                                state, static_cast<Float32>(data_x[i]), static_cast<Float32>(data_y[j]), kernel_params);
+                        result_data[row] = Kernel::finalize(state, kernel_params);
+                        prev = off;
+                    }
+                    return result;
                 }
-
-                for (const auto & other_state : states)
-                    Kernel::template combine<ResultType>(state, other_state, kernel_params);
             }
-
-            /// Process the tail.
-            for (; prev < off; ++i, ++prev)
-            {
-                Kernel::template accumulate<ResultType>(
-                    state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[prev]), kernel_params);
-            }
-            result_data[row] = Kernel::finalize(state, kernel_params);
-            row++;
         }
+#endif
+
+        if constexpr (is_native_distance_type<ResultType, LeftType, RightType>)
+            executeDistanceConst<Kernel, ResultType>(
+                data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+            executeDistanceConstMixed<Kernel, ResultType, LeftType, RightType>(
+                data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
 
         return result;
     }
