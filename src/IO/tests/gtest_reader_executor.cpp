@@ -118,6 +118,40 @@ struct TestThreadGroup
 namespace
 {
 
+/// Mock prefetch pool whose `submitJob` always returns nullptr ("queue full"
+/// fallback). The executor still calls `ensurePreAcquiredSlot` before the
+/// submit attempt, so the pre-acquired slot DOES get set — exposing the
+/// leak path we want to exercise without needing real worker threads.
+class FakePrefetchPool : public PrefetchThreadPool
+{
+public:
+    FakePrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
+    std::shared_ptr<JobHandle> submitJob(std::function<void()> /*task*/) override
+    {
+        return nullptr;
+    }
+};
+
+/// Mock pool that runs every submitted job synchronously on the calling
+/// thread and returns a `Done`-state handle (the machine then holds the
+/// produced rope). Eliminates worker-thread timing from prefetch-related tests.
+class SyncPrefetchPool : public PrefetchThreadPool
+{
+public:
+    SyncPrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
+    std::shared_ptr<JobHandle> submitJob(std::function<void()> task) override
+    {
+        task();
+        return makeCompletedJobHandleForTest();
+    }
+};
+
+}
+
+
+namespace
+{
+
 /// In-memory source reader for testing.
 /// open() materializes the requested object into a temp file and returns a
 /// file-backed ReadBufferFromFileBase. Temp files are cleaned up on destruction.
@@ -1887,12 +1921,15 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
 {
     TestThreadGroup tg;
 
-    /// With a REAL prefetch pool, windows >= 2 arrive via the prefetch CONSUME path,
-    /// where the foreground (not the worker, which now only fetches the source) rebuilds
-    /// the Strategy-A pin under the new frontier. Two 2000-byte segments, window 1000:
-    /// W3 is the first window of segment 1 - the consume must re-pin that fresh partial
-    /// segment, or an eviction sweep right after drops it. A missing consume-path re-pin
-    /// would leave it `use_count()==1` and `evictUnpinned` would zero `downloaded[1]`.
+    /// Windows >= 2 arrive via the machine COLLECT path, where the foreground
+    /// rebuilds the Strategy-A pin under the new frontier. Two 2000-byte
+    /// segments, window 1000: W3 is the first window of segment 1 - the collect
+    /// must re-pin that fresh partial segment, or an eviction sweep right after
+    /// drops it. The INLINE pool keeps the deferred fills synchronous in this
+    /// test, so `downloaded[1]` is deterministic at the eviction point (with a
+    /// real pool the put may not have landed yet - the segment would be
+    /// pinned-but-empty, which the eviction also survives, but the byte assert
+    /// would race).
     String content(4000, 'Q');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"file", content}});
@@ -1903,7 +1940,7 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    auto pool = std::make_shared<SyncPrefetchPool>();
     auto limit = std::make_shared<LiveConnectionLimit>(10);
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
     executor->setPrefetchPool(pool);
@@ -1916,16 +1953,18 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
             result.append(node.data(), node.size);
     };
 
-    /// W1 [0,1000) sync (no prefetch in flight yet) -> launches the prefetch for [1000,2000).
+    /// W1 [0,1000) sync (no machine in flight yet) -> launches the machine for [1000,2000).
     consume(executor->readNextWindow());
-    /// W2 [1000,2000) consume -> fills segment 0 to 2000 (full).
+    /// W2 [1000,2000) collect -> fills segment 0 to 2000 (full).
     consume(executor->readNextWindow());
-    /// W3 [2000,3000) consume -> first window of segment 1: fills it to cwo=1000 (partial)
-    /// and must RE-PIN it at consume; launches the prefetch for [3000,4000).
+    /// W3 [2000,3000) collect -> first window of segment 1: fills it to cwo=1000 (partial)
+    /// and must RE-PIN it at collect; launches the machine for [3000,4000).
     consume(executor->readNextWindow());
 
-    /// Evict everything unpinned. Segment 1 is the partial in-flight segment the consume
-    /// just pinned (the pin now rides the in-flight job's connection), so it must survive.
+    /// Evict everything unpinned. Segment 1 is the partial in-flight segment whose
+    /// fill just landed; the PUT-side `fill_pin` (held until the machine's reap)
+    /// protects it - the foreground finalize pinned before the deferred fill landed
+    /// and so could not.
     cache->evictUnpinned();
     EXPECT_EQ(cache->downloaded[1], 1000u) << "consume-path pin did not protect the in-flight segment";
 
@@ -3479,39 +3518,6 @@ TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
     EXPECT_EQ(limit->getActiveCount(), 1u) << "must not accumulate leases across cross-object seeks";
 }
 
-namespace
-{
-
-/// Mock prefetch pool whose `submitJob` always returns nullptr ("queue full"
-/// fallback). The executor still calls `ensurePreAcquiredSlot` before the
-/// submit attempt, so the pre-acquired slot DOES get set — exposing the
-/// leak path we want to exercise without needing real worker threads.
-class FakePrefetchPool : public PrefetchThreadPool
-{
-public:
-    FakePrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::shared_ptr<JobHandle> submitJob(std::function<void()> /*task*/) override
-    {
-        return nullptr;
-    }
-};
-
-/// Mock pool that runs every submitted job synchronously on the calling
-/// thread and returns a `Done`-state handle (the machine then holds the
-/// produced rope). Eliminates worker-thread timing from prefetch-related tests.
-class SyncPrefetchPool : public PrefetchThreadPool
-{
-public:
-    SyncPrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::shared_ptr<JobHandle> submitJob(std::function<void()> task) override
-    {
-        task();
-        return makeCompletedJobHandleForTest();
-    }
-};
-
-}
-
 TEST(ReaderExecutor, PreAcquiredSlotReleasedWhenPrefetchNotSubmitted)
 {
     /// `maybeTriggerPrefetch` pre-acquires a slot before it submits the prefetch.
@@ -3701,10 +3707,10 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
         EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u);
     }
 
-    /// `SyncPrefetchPool` runs each submitted job inline: every window after the
-    /// first is machine-collected, so its fill goes through a put step (async);
-    /// only the first (sync-path) window populates synchronously. Together they
-    /// still cover the whole file.
+    /// `SyncPrefetchPool` runs each submitted job inline: machine-collected
+    /// windows defer their fill to put steps, and with pools present the
+    /// sync-path windows defer through put-only machines too - so EVERY
+    /// populate is deferred (async) and together they still cover the file.
     {
         const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
         const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
@@ -3717,8 +3723,8 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
         }
         const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before;
         const auto async_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before;
-        EXPECT_EQ(sync_delta, window) << "only the first (sync-path) window populates synchronously";
-        EXPECT_EQ(async_delta, file_size - window) << "machine-collected windows defer their fill to put steps";
+        EXPECT_EQ(sync_delta, 0u) << "with pools present no populate runs on the client thread";
+        EXPECT_EQ(async_delta, file_size) << "every window defers its fill to a put step";
     }
 }
 
@@ -4256,8 +4262,8 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
         EXPECT_EQ(cold, content);
         EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u)
             << "machine-collected windows must defer their fill to put steps";
-        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheSync), 0u)
-            << "the first (sync-path) window still writes synchronously";
+        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheSync), 0u)
+            << "with pools present even the sync-path window defers (put-only machine)";
         EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u);
     }
     /// Cold executor destroyed: its teardown joined every deferred fill, so the

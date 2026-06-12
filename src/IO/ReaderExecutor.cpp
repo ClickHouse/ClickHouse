@@ -1750,12 +1750,19 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, ConnState & c
     /// the end needs its writers home.
     joinPutMachinesOverlapping(fetch_window, /*writers_too=*/true);
 
+    /// With pools present the sync path defers its cache fill exactly like a
+    /// machine collect: assemble only, then hand the writers + rope to a
+    /// put-only machine below. Transients and pool-less executors keep the
+    /// synchronous push.
+    const bool defer_fill = runner != nullptr;
+
     /// Serve resident bytes over the ALIGNED window: a byte that is a miss on the tier
     /// driving the alignment but resident on a faster tier is covered here, so the gap
     /// read below never re-fetches it.
     serveResidentFromPlan(fetch_window, result, covered, geometry, out_stats);
     const bool fetched_from_source = fetchAndBackfillGaps(
-        fetch_window, physical_window, result, covered, conn, eof_latch, geometry.pressure_level, out_stats);
+        fetch_window, physical_window, result, covered, conn, eof_latch, geometry.pressure_level,
+        /*push_to_writers=*/!defer_fill, out_stats);
 
     /// A cache-only window (no source read) leaves the live connection idle; keep
     /// it only if the next window bridges, else drop it (see the helper). The logical
@@ -1763,8 +1770,21 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, ConnState & c
     if (!fetched_from_source)
         maybeKeepLiveConnectionBefore(physical_window.end(), conn, eof_latch, out_stats);
 
-    return finalizeAssembledWindow(physical_window, fetch_window.end(),
+    auto sliced = finalizeAssembledWindow(physical_window, fetch_window.end(),
         result, conn, eof_latch);
+
+    /// The deferred write side (after finalize - the pin was just taken from the
+    /// plan's writers while they were still home). A put-only machine: no fetch
+    /// step ever ran, it exists only to borrow the writers and run the put.
+    if (defer_fill && fetched_from_source)
+    {
+        auto pm = std::make_shared<FetchMachine>();
+        pm->requested_range = physical_window;
+        pm->physical_window = fetch_window;
+        schedulePutStep(std::move(pm), result);
+    }
+
+    return sliced;
 }
 
 Rope ReaderExecutor::finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, Rope & result,
@@ -2050,6 +2070,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     ConnState & conn,
     bool & eof_latch,
     MemoryPressureLevel pressure_level,
+    bool push_to_writers,
     Stats & out_stats)
 {
     /// Synchronous foreground gap path: serve any grown committed prefix and late cache hit
@@ -2118,7 +2139,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
         }
     }
 
-    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, /*push_to_writers=*/true, out_stats);
+    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
     return !fetch_ranges.empty();
 }
 
@@ -2332,8 +2353,23 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
     m->run_step = [this, self = m.get()]
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
+        const size_t fill_end = self->fill_rope.empty()
+            ? self->physical_window.offset
+            : std::min(self->physical_window.end(), self->fill_rope.range().end());
         pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
             /*async=*/true, &self->interrupt_requested, self->stats);
+        /// Pin the partial segment under the just-written frontier until the
+        /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
+        /// fill landed, so a fresh segment was not pinnable there.
+        for (const auto & w : self->writers)
+        {
+            if (w.writer && fill_end >= w.writer->range().offset && fill_end < w.writer->range().end())
+                if (auto pin = w.writer->pin(fill_end))
+                {
+                    self->fill_pin = std::move(pin);
+                    break;
+                }
+        }
         /// The writers are NOT released here - the reap returns them home (a
         /// writer spans many windows and the next one needs it). Only the rope
         /// is dropped: the fill is committed (or abandoned on interrupt).

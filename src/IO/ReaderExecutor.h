@@ -296,6 +296,7 @@ private:
         ConnState & conn,
         bool & eof_latch,
         MemoryPressureLevel pressure_level,
+        bool push_to_writers,
         Stats & out_stats);
 
     /// PURE source fetch: read the WHOLE `physical_window` from the source as one
@@ -1193,6 +1194,12 @@ private:
         /// One reschedule is granted to a `ParkedPoolFull` put before it is
         /// abandoned (the park -> reschedule once -> abandon ladder).
         bool put_rescheduled = false;
+        /// Strategy-A pin taken by the PUT step over the partial segment it just
+        /// filled, held until the machine's reap: the foreground finalize runs
+        /// BEFORE the deferred fill, so its `writerPinAt` finds a fresh segment
+        /// still empty (null by the pin's own guard) - without this, an eviction
+        /// sweep between the fill landing and the next read would drop it.
+        CacheWriter::CacheSegmentPin fill_pin;
         /// Queue-wait probe for the put step: started at schedule, read at the
         /// step's entry into `PutWaitMicroseconds`.
         Stopwatch put_wait;
