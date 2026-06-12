@@ -45,7 +45,6 @@
 #include <Common/getExecutablePath.h>
 #include <Common/Elf.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
@@ -638,8 +637,6 @@ void BaseDaemon::setupWatchdog()
 
         /// Change short thread name and process name.
         DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
-        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
         if (argv0)
         {
             const char * new_process_name = "clickhouse-watchdog";

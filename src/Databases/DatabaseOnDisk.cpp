@@ -38,7 +38,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/ThreadPool.h>
 
 
@@ -738,7 +737,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
                 DB::setThreadName(ThreadName::DATABASE_ON_DISK);
-                DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);

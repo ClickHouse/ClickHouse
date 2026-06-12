@@ -15,7 +15,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -129,8 +128,6 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
     DB::setThreadName(ThreadName::WORKLOAD_ENTRY_WATCH);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::processWatchQueue");
     UInt64 handled = 0;
     while (watching_flag)

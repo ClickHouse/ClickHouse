@@ -15,7 +15,6 @@
 #include <Common/randomSeed.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/ThreadGroupSwitcher.h>
 
 
@@ -1300,8 +1299,6 @@ private:
     void doPeriodicUpdates()
     {
         DB::setThreadName(ThreadName::EXTERNAL_LOADER);
-        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
         LOG_DEBUG(log, "Starting periodic updates");
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Stopped periodic updates (enabled: {})", enabled);

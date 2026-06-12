@@ -11,7 +11,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Core/Settings.h>
@@ -841,7 +840,6 @@ namespace
         try
         {
             DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
-            DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
             receiveQuery();
             executeQuery();
             processInput();
@@ -1926,8 +1924,6 @@ private:
     void run()
     {
         DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
-        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
         bool ok = false;
         void * tag = nullptr;
 

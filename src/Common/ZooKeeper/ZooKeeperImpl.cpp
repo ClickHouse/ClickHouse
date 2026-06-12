@@ -32,7 +32,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -830,8 +829,6 @@ void ZooKeeper::sendThread()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_SEND);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     scope_guard os_thread_nice_value_guard;
     if (send_receive_os_threads_nice_value != 0)
     {
@@ -932,8 +929,6 @@ void ZooKeeper::receiveThread()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_RECV);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     scope_guard os_thread_nice_value_guard;
     if (send_receive_os_threads_nice_value != 0)
     {

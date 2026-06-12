@@ -4,8 +4,8 @@
 
 #include <Poco/Net/NetException.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -37,8 +37,7 @@ HTTPServerConnection::HTTPServerConnection(
 
 void HTTPServerConnection::run()
 {
-    /// Poco's HTTP server pool reuses this OS thread across connections.
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
+    DB::setThreadName(ThreadName::HTTP_SERVER_CONN);
 
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);

@@ -5,7 +5,6 @@
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 
 #include <Disks/IDisk.h>
 
@@ -295,8 +294,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 void KeeperSnapshotManagerS3::snapshotS3Thread()
 {
     DB::setThreadName(ThreadName::KEEPER_SNAPSHOT_S3);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     while (!shutdown_called)
     {
         SnapshotFileInfoPtr snapshot_file_info;

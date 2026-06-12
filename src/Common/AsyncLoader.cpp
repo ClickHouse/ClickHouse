@@ -16,7 +16,6 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 
 #include <fmt/ranges.h>
 
@@ -917,9 +916,6 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> & lock)
 
 void AsyncLoader::worker(Pool & pool)
 {
-    /// Registered before denying allocations: the first registration on a thread allocates.
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     DENY_ALLOCATIONS_IN_SCOPE;
 
     size_t pool_id = &pool - &*pools.begin();

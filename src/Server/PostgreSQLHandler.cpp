@@ -19,7 +19,6 @@
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
@@ -173,8 +172,6 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 void PostgreSQLHandler::run()
 {
     DB::setThreadName(ThreadName::POSTGRES_HANDLER);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
 

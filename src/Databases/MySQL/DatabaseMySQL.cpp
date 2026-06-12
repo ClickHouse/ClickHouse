@@ -1,7 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
-#include <Common/ThreadStackRegistry.h>
 #if USE_MYSQL
 #    include <filesystem>
 #    include <string>
@@ -406,8 +405,6 @@ void DatabaseMySQL::drop(ContextPtr)
 void DatabaseMySQL::cleanOutdatedTables()
 {
     DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     std::unique_lock lock{mutex};
 
     while (!quit.load(std::memory_order_relaxed))

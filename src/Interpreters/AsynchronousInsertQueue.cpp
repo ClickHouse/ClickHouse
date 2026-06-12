@@ -10,7 +10,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Core/Settings.h>
 #include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
@@ -953,8 +952,6 @@ try
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
     DB::setThreadName(ThreadName::ASYNC_INSERT_QUEUE);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 

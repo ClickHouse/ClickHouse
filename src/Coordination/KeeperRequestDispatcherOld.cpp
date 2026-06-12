@@ -18,7 +18,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
@@ -284,8 +283,6 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
 void KeeperRequestDispatcherOld::requestThread()
 {
     DB::setThreadName(ThreadName::KEEPER_REQUEST);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
     /// Requests from previous iteration. We store them to be able
@@ -648,8 +645,6 @@ void KeeperRequestDispatcherOld::requestThread()
 void KeeperRequestDispatcherOld::responseThread()
 {
     DB::setThreadName(ThreadName::KEEPER_RESPONSE);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {

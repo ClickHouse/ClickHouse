@@ -17,6 +17,11 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryTracker.h>
+#include <Common/logger_useful.h>
+#include <base/scope_guard.h>
+
+#include <atomic>
 
 constexpr size_t THREAD_NAME_SIZE = 16;
 
@@ -72,8 +77,75 @@ static ThreadName parseThreadName(const std::string_view & name)
 /// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
 static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
+/// `PR_SET_VMA_ANON_NAME` was introduced in Linux 5.17. On older kernels
+/// `prctl` returns EINVAL and the `MemoryThreadStacks*` async metrics will
+/// not populate. The warning is emitted once per process to avoid log spam.
+#ifndef PR_SET_VMA
+#define PR_SET_VMA 0x53564d41
+#endif
+#ifndef PR_SET_VMA_ANON_NAME
+#define PR_SET_VMA_ANON_NAME 0
+#endif
+
+static void nameCurrentThreadStackVMA() noexcept
+{
+    /// `pthread_getattr_np` may call `realloc` on the main thread to read
+    /// `/proc/self/maps` for guard-size detection. The main thread sets its
+    /// name at server startup, outside any `DENY_ALLOCATIONS_IN_SCOPE`. For
+    /// pthread-created child threads the stack range is recorded at clone()
+    /// time, so no allocation happens. The wrapper here covers the edge
+    /// cases (debug builds, unusual contexts).
+    ALLOW_ALLOCATIONS_IN_SCOPE;
+
+    try
+    {
+        pthread_attr_t attr;
+        if (pthread_getattr_np(pthread_self(), &attr) != 0)
+            return;
+        SCOPE_EXIT({ pthread_attr_destroy(&attr); });
+
+        void * addr = nullptr;
+        size_t size = 0;
+        if (pthread_attr_getstack(&attr, &addr, &size) != 0 || addr == nullptr)
+            return;
+
+        if (prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, addr, size, THREAD_STACK_VMA_NAME.data()) == 0)
+            return;
+
+        /// Older kernels (< 5.17) return EINVAL. Warn once process-wide and
+        /// stay silent on subsequent threads.
+        if (errno == EINVAL)
+        {
+            static std::atomic<bool> warned{false};
+            bool expected = false;
+            if (warned.compare_exchange_strong(expected, true))
+                LOG_WARNING(
+                    getLogger("setThreadName"),
+                    "PR_SET_VMA_ANON_NAME is not supported by the kernel; MemoryThreadStacks* async metrics will not populate. "
+                    "This feature requires Linux 5.17 or newer.");
+        }
+    }
+    catch (...) /// NOLINT(bugprone-empty-catch) Ok, stack-naming is best-effort.
+    {
+    }
+}
+#endif
+
 void setThreadName(ThreadName name)
 {
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
+    /// First-call hook per thread: tag the stack VMA so `AsynchronousMetrics`
+    /// can recognize it in `/proc/self/smaps`. Subsequent calls are skipped
+    /// via TLS flag to avoid repeating a no-op syscall.
+    thread_local bool stack_vma_named = false;
+    if (!stack_vma_named)
+    {
+        stack_vma_named = true;
+        nameCurrentThreadStackVMA();
+    }
+#endif
+
     // Skip rename on no-op.
     if (thread_name == name)
         return;

@@ -7,7 +7,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/UniqueLock.h>
@@ -442,8 +441,6 @@ void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<
 void BackgroundSchedulePool::threadFunction()
 {
     DB::setThreadName(thread_name);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     while (!shutdown)
     {
         UInt64 task_type_to_run = 0;
@@ -517,8 +514,6 @@ void BackgroundSchedulePool::threadFunction()
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     DB::setThreadName(ThreadName::POOL_DELAYED_EXECUTION);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     while (!shutdown)
     {
         TaskInfoPtr task;

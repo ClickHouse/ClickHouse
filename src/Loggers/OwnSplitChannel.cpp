@@ -9,7 +9,6 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/ThreadStackRegistry.h>
 #include <Common/setThreadName.h>
 
 #include <Poco/Message.h>
@@ -499,7 +498,6 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
     DB::setThreadName(ThreadName::ASYNC_LOGGER);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
@@ -564,8 +562,6 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 void OwnAsyncSplitChannel::runTextLog()
 {
     DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
         if (const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(message.get()))

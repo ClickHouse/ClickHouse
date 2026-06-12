@@ -39,7 +39,6 @@
 #include <Common/randomSeed.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/sort.h>
@@ -522,7 +521,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
                 DB::setThreadName(ThreadName::DDL_WORKER_EXECUTER);
-                DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
                 processTask(saved_task, zookeeper, /*internal_query=*/ false);
             });
         }
@@ -1196,7 +1194,6 @@ bool DDLWorker::initializeMainThread()
 {
     chassert(!initialized);
     DB::setThreadName(ThreadName::DDL_WORKER);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
     auto component_guard = Coordination::setCurrentComponent("DDLWorker::initializeMainThread");
@@ -1265,7 +1262,6 @@ void DDLWorker::runMainThread()
 
 
     DB::setThreadName(ThreadName::DDL_WORKER);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     LOG_INFO(log, "Starting DDLWorker thread");
     auto component_guard = Coordination::setCurrentComponent("DDLWorker::runMainThread");
     while (!stop_flag)
@@ -1545,7 +1541,6 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
 void DDLWorker::runCleanupThread()
 {
     DB::setThreadName(ThreadName::DDL_WORKER_CLEANUP);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     LOG_DEBUG(log, "Started DDLWorker cleanup thread");
 
     auto component_guard = Coordination::setCurrentComponent("DDLWorker::cleanupThread");

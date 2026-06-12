@@ -65,6 +65,7 @@ namespace DB
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
+    M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
@@ -145,6 +146,8 @@ namespace DB
     M(S3_LIST_POOL, "ListObjectS3") \
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
+    M(SIGNAL_LISTENER, "SignalListnr") \
+    M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \
@@ -181,9 +184,18 @@ enum class ThreadName : uint8_t
   *  which will be visible in ps, gdb, /proc,
   *  for convenience of observation and debugging.
   *
+  *  On Linux 5.17+ also names the current thread's stack VMA via
+  *  `prctl(PR_SET_VMA_ANON_NAME, ..., THREAD_STACK_VMA_NAME)`, so
+  *  `AsynchronousMetrics` can attribute the matching `/proc/self/smaps`
+  *  entry to thread stacks (`MemoryThreadStacks*`).
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
 
 std::string_view toString(ThreadName name);
+
+/// Tag attached to every named thread's stack VMA via
+/// `prctl(PR_SET_VMA_ANON_NAME)`. Appears in `/proc/self/smaps` as
+/// `[anon:<name>]` on the VMA header line.
+constexpr std::string_view THREAD_STACK_VMA_NAME = "clickhouse_stack";
 }

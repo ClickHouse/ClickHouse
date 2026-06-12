@@ -6,7 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/FramePointers.h>
 #include <Common/ErrnoException.h>
-#include <Common/ThreadStackRegistry.h>
+#include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -301,7 +301,7 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 
 void SignalListener::run()
 {
-    ThreadStackRegistry::ensureCurrentThreadRegistered();
+    setThreadName(ThreadName::SIGNAL_LISTENER);
 
     if (daemon)
     {

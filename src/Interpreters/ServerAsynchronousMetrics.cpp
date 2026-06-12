@@ -19,7 +19,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
-#include <Common/ThreadStackRegistry.h>
+#include <Common/setThreadName.h>
 
 
 #include "config.h"
@@ -647,19 +647,11 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
 
     try
     {
-        /// Snapshot the thread-stack registry once, then walk /proc/self/smaps
-        /// and match each VMA's start address against the snapshot.
-        ///
-        /// /proc/self/smaps is a seq_file iterated across many read() syscalls,
-        /// and the kernel releases mmap_lock between them. In a busy
-        /// multi-threaded process, new VMAs from jemalloc chunks and new
-        /// pthread stacks may appear during the walk and get appended to later
-        /// records. By matching against the snapshot taken before the walk,
-        /// the match count is bounded by the thread count at snapshot time
-        /// regardless of churn. Stacks created during the walk are correctly
-        /// ignored (their addresses aren't in the snapshot). Stacks that exit
-        /// during the walk before the iterator reaches their address are
-        /// undercounted; that residual error is the price of the snapshot.
+        /// Walk /proc/self/smaps and sum `Size:` / `Rss:` of every VMA whose
+        /// header line ends with `[anon:clickhouse_stack]` — the tag added by
+        /// `setThreadName` via `prctl(PR_SET_VMA_ANON_NAME)` on Linux 5.17+.
+        /// On older kernels the tag is absent and the metric reports zero
+        /// stacks; setThreadName emits a one-shot warning in that case.
         ///
         /// The parse is allocation-free: we walk the ReadBuffer's internal
         /// buffer byte-by-byte and accumulate the current line into a small
@@ -670,15 +662,12 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
         /// `show_smap`, `__show_smap`):
         ///   - The VMA header line begins with `<start>-<end>` written by
         ///     `seq_put_hex_ll(...)` — lowercase hex, '-' separator.
+        ///   - When a VMA has an anonymous name set via PR_SET_VMA_ANON_NAME,
+        ///     the kernel appends `[anon:<name>]` to that same header line.
         ///   - Detail lines are written by `SEQ_PUT_DEC(str, val)` which is
         ///     `seq_put_decimal_ull_width(m, str, val >> 10, 8)`, so every
         ///     `Size:` / `Rss:` / `Pss:` / etc. value is an integer kB
         ///     right-aligned in width 8, followed by " kB\n".
-        ///   - `Size:` is the first detail line after the header (set by
-        ///     show_smap), `Rss:` is emitted a few lines later by
-        ///     __show_smap. We don't depend on a specific relative order,
-        ///     just that both appear before the next header.
-        const auto stack_snapshot = ThreadStackRegistry::snapshot();
 
         vm_smaps->rewind();
 
@@ -691,6 +680,9 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
         char line_buf[line_buf_size];
         size_t line_len = 0;
 
+        const std::string_view stack_tag = THREAD_STACK_VMA_NAME;
+        const std::string_view needle_prefix = "[anon:";
+
         auto process_line = [&](const char * data, size_t len)
         {
             if (len == 0)
@@ -699,27 +691,22 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
             bool is_header = ((first >= '0' && first <= '9') || (first >= 'a' && first <= 'f'));
             if (is_header)
             {
-                uintptr_t start = 0;
-                bool parsed = false;
-                for (size_t i = 0; i < len; ++i)
+                /// Look for `[anon:<stack_tag>]` at the end of the line.
+                std::string_view header{data, len};
+                bool tagged = false;
+                if (header.size() > needle_prefix.size() + stack_tag.size() + 1)
                 {
-                    char d = data[i];
-                    if (d == '-')
+                    auto pos = header.rfind('[');
+                    if (pos != std::string_view::npos
+                        && header.compare(pos, needle_prefix.size(), needle_prefix) == 0
+                        && header.compare(pos + needle_prefix.size(), stack_tag.size(), stack_tag) == 0
+                        && pos + needle_prefix.size() + stack_tag.size() < header.size()
+                        && header[pos + needle_prefix.size() + stack_tag.size()] == ']')
                     {
-                        parsed = true;
-                        break;
-                    }
-                    if (d >= '0' && d <= '9')
-                        start = (start << 4) | static_cast<uintptr_t>(d - '0');
-                    else if (d >= 'a' && d <= 'f')
-                        start = (start << 4) | static_cast<uintptr_t>(d - 'a' + 10);
-                    else
-                    {
-                        parsed = false;
-                        break;
+                        tagged = true;
                     }
                 }
-                current_is_stack = parsed && stack_snapshot.contains(start);
+                current_is_stack = tagged;
                 if (current_is_stack)
                     ++stack_count;
             }
@@ -868,25 +855,28 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
 #if defined(OS_LINUX)
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
-    /// present between heavy-cadence refreshes. They are emitted only after a
-    /// successful /proc/self/smaps sample; in environments where smaps cannot
-    /// be read the metrics stay absent rather than reporting a fake zero.
+    /// present between heavy-cadence refreshes. They are emitted only after
+    /// a successful /proc/self/smaps sample; in environments where smaps
+    /// cannot be read the metrics stay absent rather than reporting a fake
+    /// zero. On kernels older than Linux 5.17 the kernel does not support
+    /// `PR_SET_VMA_ANON_NAME`, so no VMA carries the `clickhouse_stack` tag
+    /// and the metrics report 0; `setThreadName` warns once in that case.
     if (thread_stack_stats.available)
     {
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
             "Approximate resident set size of pthread stacks, summed from `Rss:`"
-            " of /proc/self/smaps VMAs whose start address matches the snapshot"
-            " of currently-registered thread stack bases at the start of the"
-            " scrape. Refreshed on the heavy-metrics cadence. May slightly"
-            " undercount under heavy thread churn (Linux only)." };
+            " of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]` via"
+            " `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics"
+            " cadence. Requires Linux 5.17 or newer; older kernels report 0." };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from `Size:`"
-            " of matching /proc/self/smaps VMAs. Refreshed on the heavy-metrics"
-            " cadence (Linux only)." };
+            "Approximate virtual size of pthread stacks, summed from `Size:` of"
+            " /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`."
+            " Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or"
+            " newer; older kernels report 0." };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of pthread stack VMAs matched in /proc/self/smaps against"
-            " the snapshot taken at the start of the scrape. Refreshed on the"
-            " heavy-metrics cadence (Linux only)." };
+            "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]`"
+            " in /proc/self/smaps. Refreshed on the heavy-metrics cadence."
+            " Requires Linux 5.17 or newer; older kernels report 0." };
     }
 #endif
 }

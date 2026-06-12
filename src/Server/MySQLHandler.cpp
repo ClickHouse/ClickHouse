@@ -31,7 +31,6 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStackRegistry.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -241,8 +240,6 @@ MySQLHandler::~MySQLHandler() = default;
 void MySQLHandler::run()
 {
     DB::setThreadName(ThreadName::MYSQL_HANDLER);
-    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
-
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
 
