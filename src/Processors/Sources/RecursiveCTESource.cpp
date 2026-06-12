@@ -25,6 +25,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -47,6 +48,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsBool transform_null_in;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -285,9 +287,9 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     return std::vector<Field>(unique_values.begin(), unique_values.end());
 }
 
-/// Build a resolved query-tree expression equivalent to `real_column IN (values...)`.
+/// Build the RHS tuple constant for the generated `IN`.
 ///
-/// The RHS tuple elements are typed using the CTE column's type (the type the
+/// The tuple elements are typed using the CTE column's type (the type the
 /// values were originally produced with), not the real column's type. This
 /// matches the semantics of `JOIN ... ON real_col = cte_col`: the join is
 /// resolved over a common comparison type, and values that are valid under
@@ -295,11 +297,7 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
 /// `Int64(-1)` against a `UInt8` column, or `NULL` against a non-nullable
 /// column) are correctly evaluated as no-match rather than triggering a
 /// conversion exception while the filter is being built.
-QueryTreeNodePtr buildInFilterNode(
-    ColumnNode & real_column,
-    const DataTypePtr & cte_column_type,
-    const std::vector<Field> & values,
-    const ContextPtr & context)
+std::shared_ptr<ConstantNode> buildInRhsConstantNode(const DataTypePtr & cte_column_type, const std::vector<Field> & values)
 {
     Tuple tuple_values;
     tuple_values.reserve(values.size());
@@ -312,10 +310,17 @@ QueryTreeNodePtr buildInFilterNode(
         tuple_element_types.push_back(cte_column_type);
     }
 
-    auto rhs_node = std::make_shared<ConstantNode>(
+    return std::make_shared<ConstantNode>(
         Field(std::move(tuple_values)),
         std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+}
 
+/// Build a resolved query-tree expression equivalent to `real_column IN (rhs...)`.
+QueryTreeNodePtr buildInFilterNode(
+    ColumnNode & real_column,
+    std::shared_ptr<ConstantNode> rhs_node,
+    const ContextPtr & context)
+{
     auto in_function_node = std::make_shared<FunctionNode>("in");
     in_function_node->markAsOperator();
     in_function_node->getArguments().getNodes() = {real_column.clone(), std::move(rhs_node)};
@@ -324,9 +329,9 @@ QueryTreeNodePtr buildInFilterNode(
     return in_function_node;
 }
 
-/// Returns true if an `IN (values...)` set built from `values` (typed by the
-/// CTE column's resolved type) would stay within the user's configured set-size
-/// limits (`max_rows_in_set` / `max_bytes_in_set`).
+/// Returns true if the set the planner will build for `real_column IN (rhs...)`
+/// would stay within the user's configured set-size limits
+/// (`max_rows_in_set` / `max_bytes_in_set`).
 ///
 /// The planner lowers the injected `IN` through `FutureSetFromTuple`, which
 /// enforces these limits via `PreparedSets::getSizeLimitsForSet`: under
@@ -337,11 +342,17 @@ QueryTreeNodePtr buildInFilterNode(
 /// when the generated set would not fit, the caller skips injection for this
 /// step and the physical table is scanned without the generated predicate.
 ///
-/// The set is measured exactly the way the planner would build it — including
-/// the hashed byte count — rather than by predicting its size from `values`.
+/// The set is measured exactly the way the planner would build it. `CollectSets`
+/// converts the RHS constant to the `IN` left-hand side's type — the joined real
+/// column's type, not the CTE column's type the tuple elements carry — via
+/// `getSetElementsForConstantValue`, and that conversion changes both the row
+/// count (non-representable values are dropped as no-match) and the per-row byte
+/// size (e.g. a `UInt8` CTE key joined against a `UInt64` storage key). So the
+/// preflight replays exactly that: the same conversion of the same constant,
+/// then a `Set` built the way `FutureSetFromTuple` builds it.
 bool generatedInSetFitsLimits(
-    const DataTypePtr & cte_column_type,
-    const std::vector<Field> & values,
+    const DataTypePtr & real_column_type,
+    const std::shared_ptr<ConstantNode> & rhs_node,
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -352,17 +363,30 @@ bool generatedInSetFitsLimits(
     if (max_rows == 0 && max_bytes == 0)
         return true;
 
-    auto column = cte_column_type->createColumn();
-    column->reserve(values.size());
-    for (const auto & value : values)
-        column->insert(value);
+    auto set_columns = getSetElementsForConstantValue(
+        real_column_type,
+        rhs_node->getValue(),
+        rhs_node->getResultType(),
+        GetSetElementParams{
+            .transform_null_in = settings[Setting::transform_null_in],
+            .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+        });
+
+    ColumnsWithTypeAndName header = set_columns;
+    for (auto & elem : header)
+        elem.column = elem.column->cloneEmpty();
+
+    Columns columns;
+    columns.reserve(set_columns.size());
+    for (const auto & elem : set_columns)
+        columns.push_back(elem.column);
 
     /// Build the set with unlimited (non-throwing) limits, then compare its
     /// measured size against the user's limits using the same `>` boundary the
     /// `throw` path uses, so the decision is exact for both overflow modes.
     Set set(SizeLimits{}, 0, settings[Setting::transform_null_in]);
-    set.setHeader({ColumnWithTypeAndName{cte_column_type->createColumn(), cte_column_type, "_"}});
-    set.insertFromColumns({std::move(column)});
+    set.setHeader(header);
+    set.insertFromColumns(columns);
     set.finishInsert();
 
     if (max_rows != 0 && set.getTotalRowCount() > max_rows)
@@ -568,9 +592,9 @@ private:
     /// user's `max_rows_in_set` / `max_bytes_in_set` limits — in that case the
     /// recursive step runs without any CTE-derived filter (the caller restores
     /// original clauses).
-    bool injectFiltersIntoRecursiveQuery(size_t max_in_filter_cardinality)
+    bool injectFiltersIntoRecursiveQuery()
     {
-        if (cte_join_keys.empty() || max_in_filter_cardinality == 0)
+        if (cte_join_keys.empty())
             return false;
 
         /// Group join keys by their containing `QueryNode`. A `QueryNode` may
@@ -580,6 +604,27 @@ private:
 
         for (const auto & key : cte_join_keys)
         {
+            /// The injected `IN` set is lowered by the planner using the
+            /// settings of the `QueryNode` that contains the join, not the
+            /// outer recursive context. For a recursive CTE with more than two
+            /// branches the recursive part is a synthetic `UnionNode` whose
+            /// context can differ from an individual branch's (e.g. a branch
+            /// carrying `SETTINGS max_rows_in_set = 1`, or disabling the
+            /// optimization via `recursive_cte_max_in_filter_cardinality = 0`).
+            /// So the cardinality cap, the set-limit guard, and the filter
+            /// construction must all use the containing query's own context to
+            /// match what the planner will later see for that branch.
+            const auto containing_query_context = key.containing_query_node->getContext();
+
+            const UInt64 max_in_filter_cardinality
+                = containing_query_context->getSettingsRef()[Setting::recursive_cte_max_in_filter_cardinality];
+
+            /// The optimization is disabled for this branch — skip its filter.
+            /// Other branches keep theirs: each generated predicate is
+            /// independently semantics-preserving.
+            if (max_in_filter_cardinality == 0)
+                continue;
+
             auto values = readColumnValuesFromMemoryStorage(
                 working_temporary_table_storage, key.cte_column_name, recursive_query_context, max_in_filter_cardinality);
 
@@ -589,26 +634,17 @@ private:
             if (values->empty())
                 continue;
 
-            /// The injected `IN` set is lowered by the planner using the
-            /// settings of the `QueryNode` that contains the join, not the
-            /// outer recursive context. For a recursive CTE with more than two
-            /// branches the recursive part is a synthetic `UnionNode` whose
-            /// context can be more permissive than an individual branch's
-            /// (e.g. a branch carrying `SETTINGS max_rows_in_set = 1`). So both
-            /// the set-limit guard and the filter construction must use the
-            /// containing query's own context to match what `CollectSets` will
-            /// later see.
-            const auto containing_query_context = key.containing_query_node->getContext();
+            auto rhs_node = buildInRhsConstantNode(key.cte_column_type, *values);
 
             /// Fail closed if the generated `IN` set would exceed the user's
             /// `max_rows_in_set` / `max_bytes_in_set` limits: injecting it would
             /// either throw `SET_SIZE_LIMIT_EXCEEDED` or silently truncate the
             /// set, neither of which can happen on the unoptimized scan path.
-            if (!generatedInSetFitsLimits(key.cte_column_type, *values, containing_query_context))
+            if (!generatedInSetFitsLimits(key.real_column_node->getColumnType(), rhs_node, containing_query_context))
                 return false;
 
             predicates_by_query[key.containing_query_node]
-                .push_back(buildInFilterNode(*key.real_column_node, key.cte_column_type, *values, containing_query_context));
+                .push_back(buildInFilterNode(*key.real_column_node, std::move(rhs_node), containing_query_context));
         }
 
         bool injected_any = false;
@@ -671,12 +707,7 @@ private:
         /// recursive_step was already incremented above — `>1` means we are
         /// executing the recursive query (the seed query is step `1`).
         if (recursive_step > 1)
-        {
-            const auto max_in_filter_cardinality
-                = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
-
-            injectFiltersIntoRecursiveQuery(max_in_filter_cardinality);
-        }
+            injectFiltersIntoRecursiveQuery();
 
         try
         {

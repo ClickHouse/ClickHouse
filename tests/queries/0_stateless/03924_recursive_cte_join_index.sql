@@ -1,6 +1,6 @@
 -- Tags: long
 -- The `long` tag exempts the test from the 180s flaky-check per-run timeout:
--- it contains 8 distinct `WITH RECURSIVE` queries, each exercising a different
+-- it contains many distinct `WITH RECURSIVE` queries, each exercising a different
 -- planner edge case, and under pathological random-settings combinations
 -- (notably `max_threads = 32` with split-range injection) a single recursive
 -- step can take several seconds, putting the whole test over budget even
@@ -279,6 +279,127 @@ WITH RECURSIVE walk_tree AS
 SELECT current_id FROM walk_tree ORDER BY current_id;
 
 DROP TABLE tree;
+
+-- `recursive_cte_max_in_filter_cardinality` must be read from the containing
+-- branch's context, not the synthetic recursive `UnionNode` context, for the
+-- same reason as the set limits above. Two disjoint chains: `chain_big`
+-- (0 -> ... -> 10, plus 5000 filler rows) and `chain_small`
+-- (100 -> ... -> 110, no filler), each walked by its own recursive branch.
+DROP TABLE IF EXISTS chain_big;
+DROP TABLE IF EXISTS chain_small;
+CREATE TABLE chain_big (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
+CREATE TABLE chain_small (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id;
+INSERT INTO chain_big SELECT number, number + 1 FROM numbers(10);
+INSERT INTO chain_big SELECT number + 1000, number + 1000000 FROM numbers(5000);
+INSERT INTO chain_small SELECT number + 100, number + 101 FROM numbers(10);
+
+-- A branch-local `recursive_cte_max_in_filter_cardinality = 0` must disable
+-- the optimization for that branch (the `chain_big` walk full-scans on every
+-- step), while the other branch keeps its filter. Results are unaffected.
+WITH RECURSIVE walk_branch_cap AS
+(
+    SELECT CAST(number, 'UInt64') * 100 + 1 AS id FROM numbers(2)
+  UNION ALL
+    SELECT e.to_id AS id
+    FROM chain_big AS e
+    INNER JOIN walk_branch_cap AS t ON e.from_id = t.id
+    SETTINGS recursive_cte_max_in_filter_cardinality = 0
+  UNION ALL
+    SELECT e.to_id AS id
+    FROM chain_small AS e
+    INNER JOIN walk_branch_cap AS t ON e.from_id = t.id
+)
+SELECT id FROM walk_branch_cap ORDER BY id;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The disabled branch must really scan `chain_big` (5010 rows) on each of the
+-- ~10 recursive steps, so the total is far above the fully-optimized count.
+SELECT
+    read_rows > 10000 AS branch_local_disable_respected
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE walk_branch_cap AS%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- The converse: the optimization is disabled on the outer query level, but the
+-- `chain_big` branch re-enables it locally. The branch's own setting must win,
+-- so `chain_big` is read through the index (`chain_small`'s unoptimized walk
+-- contributes only ~10 rows per step).
+WITH RECURSIVE walk_branch_cap2 AS
+(
+    SELECT CAST(number, 'UInt64') * 100 + 1 AS id FROM numbers(2)
+  UNION ALL
+    SELECT e.to_id AS id
+    FROM chain_big AS e
+    INNER JOIN walk_branch_cap2 AS t ON e.from_id = t.id
+    SETTINGS recursive_cte_max_in_filter_cardinality = 10000
+  UNION ALL
+    SELECT e.to_id AS id
+    FROM chain_small AS e
+    INNER JOIN walk_branch_cap2 AS t ON e.from_id = t.id
+)
+SELECT id FROM walk_branch_cap2 ORDER BY id
+SETTINGS recursive_cte_max_in_filter_cardinality = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    read_rows < 10000 AS branch_local_enable_respected
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE walk_branch_cap2%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE chain_big;
+DROP TABLE chain_small;
+
+-- The set-limit preflight must measure the set the planner will actually
+-- build: `CollectSets` converts the generated RHS constant to the joined
+-- *storage* column's type, dropping values that are not representable in it.
+-- Here the working table holds `Int64` keys `{-1, 0}`, but the storage key is
+-- `UInt16`, so the planner's set contains only `{0}` — one row, within
+-- `max_rows_in_set = 1`. A preflight that measured the unconverted `Int64`
+-- set would see two rows and needlessly fall back to a full scan on the
+-- first recursive step.
+DROP TABLE IF EXISTS conv_edges;
+CREATE TABLE conv_edges (parent UInt16, child UInt16) ENGINE = MergeTree ORDER BY parent SETTINGS index_granularity = 8192;
+INSERT INTO conv_edges VALUES (0, 1), (1, 2);
+INSERT INTO conv_edges SELECT number + 1000, number + 30000 FROM numbers(5000);
+
+WITH RECURSIVE walk_conv AS
+(
+    SELECT CAST(number, 'Int64') - 1 AS id FROM numbers(2)
+  UNION ALL
+    SELECT toInt64(e.child) AS id
+    FROM conv_edges AS e
+    INNER JOIN walk_conv AS t ON e.parent = t.id
+)
+SELECT id FROM walk_conv ORDER BY id
+SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    read_rows < 3000 AS conversion_preflight_ok
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE walk_conv%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE conv_edges;
 
 DROP TABLE edges;
 DROP TABLE two_hop;
