@@ -209,7 +209,6 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    StorageObjectStorageConfigurationPtr getConfiguration() const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

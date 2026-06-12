@@ -1,4 +1,3 @@
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
@@ -67,8 +66,8 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
 
 bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_block_index, const Columns & threshold_columns, const SortDescription & sort_description)
 {
-    assert(raw_block_columns.size() == threshold_columns.size());
-    assert(raw_block_columns.size() == sort_description.size());
+    chassert(raw_block_columns.size() == threshold_columns.size());
+    chassert(raw_block_columns.size() == sort_description.size());
 
     size_t raw_block_columns_size = raw_block_columns.size();
     for (size_t i = 0; i < raw_block_columns_size; ++i)
@@ -95,7 +94,7 @@ PartialSortingTransform::PartialSortingTransform(
     , threshold_tracker(threshold_tracker_)
 {
     // Sorting by no columns doesn't make sense.
-    assert(!description_.empty());
+    chassert(!description_.empty());
 
     for (const auto & column_sort_desc : description)
         description_with_positions.emplace_back(column_sort_desc, header_->getPositionByName(column_sort_desc.column_name));
@@ -108,20 +107,13 @@ void PartialSortingTransform::transform(Chunk & chunk)
         // The following code works with Blocks and will lose the number of
         // rows when there are no columns. We shouldn't get such block, because
         // we have to sort by at least one column.
-        assert(chunk.getNumColumns());
+        chassert(chunk.getNumColumns());
     }
 
     if (read_rows)
         read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-
-    /// Materialize sort key columns that are ColumnReplicated to avoid index indirection during comparison and sorting.
-    for (const auto & col_desc : description)
-    {
-        auto & column_entry = block.getByName(col_desc.column_name);
-        column_entry.column = convertToFullColumnIfReplicationNotUseful(column_entry.column);
-    }
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
