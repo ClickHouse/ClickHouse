@@ -75,10 +75,11 @@ void FetchMachineRunner::waitReleased(MachineBase & machine)
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// Only a revoked step's handle throws here ("task was cancelled");
-        /// step-body exceptions are captured into `machine.failure` by the
-        /// schedule wrapper. Either way the handle resolved - the release
-        /// (happens-before) edge over the payload is established.
+        /// Swallowing is Ok here: only a revoked step's handle throws ("task
+        /// was cancelled" - an expected outcome, not an error); step-body
+        /// exceptions are captured into `machine.failure` by the schedule
+        /// wrapper and handled by the executor. Either way the handle resolved
+        /// - the release (happens-before) edge over the payload is established.
     }
     /// Joined exactly once: drop the consumed handle (see the header note).
     machine.current_step.reset();
