@@ -1,6 +1,6 @@
 import re
 
-from ci.defs.defs import BuildTypes, JobNames
+from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -125,13 +125,6 @@ def should_skip_job(job_name):
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
-
-    if (
-        job_name in (JobNames.SMOKE_TEST_MACOS, f"{JobNames.FAST_TEST} ({BuildTypes.ARM_DARWIN})")
-        and _info_cache.pr_number
-        and Labels.NO_CI_MACOS in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, labeled with '{Labels.NO_CI_MACOS}'"
 
     if (
         JobNames.BUILD_TOOLCHAIN in job_name
