@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -146,6 +147,10 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
+        /// Only a genuine parse failure means "this value did not parse"; other errors
+        /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
+        /// failed parse and silently turned into a default/skip.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 

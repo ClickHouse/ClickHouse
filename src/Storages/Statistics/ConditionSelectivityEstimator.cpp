@@ -17,7 +17,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Processors/Formats/IRowInputFormat.h>
+#include <Formats/ParseError.h>
 
 
 namespace DB

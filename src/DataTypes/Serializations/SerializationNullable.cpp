@@ -8,6 +8,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -237,6 +238,8 @@ ReturnType safeAppendToNullMap(ColumnNullable & column, bool is_null)
         column.getNestedColumn().popBack(1);
         if constexpr (std::is_same_v<ReturnType, void>)
             throw;
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 

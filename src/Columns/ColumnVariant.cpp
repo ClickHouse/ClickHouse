@@ -1984,13 +1984,15 @@ bool ColumnVariant::hasStatistics() const
 
 void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    /// Iterate by global discriminator: source columns are addressed by global discriminator,
+    /// so the destination variant must be too (local order may differ from global order).
     for (size_t i = 0; i != variants.size(); ++i)
     {
         VectorWithMemoryTracking<ColumnPtr> variant_source_columns;
         variant_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             variant_source_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        variants[i]->takeOrCalculateStatisticsFrom(variant_source_columns);
+        getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variant_source_columns);
     }
 }
 
