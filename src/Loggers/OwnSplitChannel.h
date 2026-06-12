@@ -3,11 +3,10 @@
 #include <base/strong_typedef.h>
 
 #include <atomic>
-#include <condition_variable>
 #include <memory>
 
-#include <Common/DequeWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/NonblockingBoundedQueue.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <boost/noncopyable.hpp>
@@ -100,41 +99,51 @@ struct OwnRunnableForTextLog;
 class AsyncLogMessage;
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
+/// A lock-free bounded MPSC queue of log messages with drop-on-overflow semantics.
+/// Producers are the threads calling `log`, the single consumer is the background thread
+/// passing the messages to the channel (or to the system.text_log queue).
 class AsyncLogMessageQueue
 {
 public:
     explicit AsyncLogMessageQueue(
         size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_);
 
-    using Queue = DequeWithMemoryTracking<AsyncLogMessagePtr>;
-
-    /// Enqueues a single message notification
+    /// Enqueues a single message notification. If the queue is full, the message is dropped,
+    /// and a warning about the dropped messages is enqueued later, when there is room again.
     void enqueueMessage(AsyncLogMessagePtr message);
 
-    /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
-    /// or a spurious wakeup occurs
+    /// Dequeues a single message notification. If the queue is empty, sleeps for a bit and tries once more,
+    /// so it might return an empty notification; this gives the caller a chance to react to shutdown and flush requests.
     AsyncLogMessagePtr waitDequeueMessage();
 
-    /// Gets the full queue including all pending notifications and clears it. It might return an empty queue if no messages were available
-    Queue getCurrentQueueAndClear();
+    /// Dequeues a single message notification without sleeping on an empty queue (returns an empty
+    /// notification instead). Unlike waitDequeueMessage, if the message at the head of the queue is still
+    /// being written by a producer, waits for it to appear, so a flush cannot skip a fully enqueued message.
+    AsyncLogMessagePtr dequeueMessage();
 
-    /// Wakes up any threads waiting for a message notification.
-    void wakeUp();
+    /// Gets the current size of the queue (imprecise if called in parallel with other operations).
+    size_t getCurrentMessageSize() const;
 
-    /// Gets the current size of the queue.
-    size_t getCurrentMessageSize();
-
+    /// Set externally to request the consumer to flush the whole queue; the consumer resets it once done.
+    /// Only used for the system.text_log queue (see `OwnAsyncSplitChannel::flushTextLogs`).
     std::atomic<bool> request_flush = false;
 
 private:
-    Queue message_queue;
-    std::condition_variable condition;
+    /// How long the consumer sleeps when the queue is empty before checking it again.
+    /// The queue serves the logging subsystem, which is rarely silent for long, so we expect the queue
+    /// to be non-empty most of the time. Therefore, instead of futex-based waiting (which would also make
+    /// pushing into an empty queue more expensive for producers), the consumer just polls the queue,
+    /// sleeping in between when it has nothing to do.
+    static constexpr size_t sleep_on_empty_queue_ms = 10;
+
+    /// The capacity is fixed at construction (max_size rounded up to a power of two);
+    /// when the consumer doesn't keep up and the queue overflows, new messages are dropped.
+    NonblockingBoundedQueue<AsyncLogMessagePtr> queue;
     const ProfileEvents::Event & event_on_passed_message;
     const ProfileEvents::Event & event_on_drop_message;
-    /// Default queue limit, to prevent memory overflow
-    const size_t max_size = 10000;
-    size_t dropped_messages = 0;
-    std::mutex mutex;
+    /// The number of messages dropped due to overflow so far. Reported (and reset) by enqueueing
+    /// a warning message once there is room in the queue again.
+    std::atomic<size_t> dropped_messages = 0;
 };
 
 

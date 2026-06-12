@@ -3,6 +3,7 @@
 #include <atomic>
 #include <vector>
 #include <Common/BitHelpers.h>
+#include <Common/CacheLine.h>
 
 /// Vyukov queue.
 /// https://web.archive.org/web/20170205113402/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
