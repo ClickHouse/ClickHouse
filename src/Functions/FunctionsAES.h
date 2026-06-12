@@ -49,6 +49,33 @@ using EVP_CIPHER_ptr = std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)>;
 /// EVP_DecryptInit_ex invocation in OpenSSL 3.x. Returns nullptr for an unknown cipher name.
 EVP_CIPHER_ptr fetchCipher(std::string_view name);
 
+/// Remembers the key an EVP_CIPHER_CTX has been initialized with, so rows repeating the
+/// same key can re-initialize only the IV (passing a null cipher and key), skipping the
+/// cipher setup and key schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+struct CachedKeyState
+{
+    bool matches(std::string_view key_value) const
+    {
+        return initialized && key_value.size() == key_size
+            && memcmp(key_value.data(), key.data(), key_size) == 0;
+    }
+
+    void remember(std::string_view key_value)
+    {
+        chassert(key_value.size() <= key.size());
+        memcpy(key.data(), key_value.data(), key_value.size());
+        key_size = key_value.size();
+        initialized = true;
+    }
+
+    void reset() { initialized = false; }
+
+private:
+    bool initialized = false;
+    size_t key_size = 0;
+    std::array<char, EVP_MAX_KEY_LENGTH> key{};
+};
+
 enum class CompatibilityMode : uint8_t
 {
     MySQL,
@@ -311,6 +338,7 @@ private:
         auto * encrypted = encrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder{};
+        [[maybe_unused]] CachedKeyState ctx_key_state;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -374,10 +402,28 @@ private:
                     // 1.b: Init CTX
                     validateIV<mode>(iv_value, iv_size);
 
-                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_EncryptInit_ex");
+                    /// A fresh full initialization starts from a zero IV when no IV is
+                    /// given, while an IV-only re-initialization with a null IV pointer
+                    /// would keep the previous row's advanced IV state, so an absent IV
+                    /// is passed as an explicit zero IV.
+                    static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH]{};
+                    const auto * iv_ptr = iv_value.empty() ? zero_iv : reinterpret_cast<const unsigned char *>(iv_value.data());
+
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr, iv_ptr) != 1)
+                            onError("EVP_EncryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()), iv_ptr) != 1)
+                            onError("EVP_EncryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
                 }
 
                 int output_len = 0;
@@ -600,6 +646,7 @@ private:
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder{};
+        [[maybe_unused]] CachedKeyState ctx_key_state;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -680,10 +727,28 @@ private:
                     // 1.b: Init CTX
                     validateIV<mode>(iv_value, iv_size);
 
-                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_DecryptInit_ex");
+                    /// A fresh full initialization starts from a zero IV when no IV is
+                    /// given, while an IV-only re-initialization with a null IV pointer
+                    /// would keep the previous row's advanced IV state, so an absent IV
+                    /// is passed as an explicit zero IV.
+                    static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH]{};
+                    const auto * iv_ptr = iv_value.empty() ? zero_iv : reinterpret_cast<const unsigned char *>(iv_value.data());
+
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr, iv_ptr) != 1)
+                            onError("EVP_DecryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()), iv_ptr) != 1)
+                            onError("EVP_DecryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
                 }
 
                 // 2: Feed the data to the cipher
@@ -722,6 +787,11 @@ private:
                     }
                 }
             }
+
+            /// A failed EVP_DecryptUpdate / EVP_DecryptFinal_ex can leave buffered input
+            /// in the context, so force a full re-initialization on the next row.
+            if (decrypt_fail)
+                ctx_key_state.reset();
 
             decrypted_result_column_offsets.push_back(decrypted - decrypted_result_column_data.data());
             if constexpr (use_null_when_decrypt_fail)
