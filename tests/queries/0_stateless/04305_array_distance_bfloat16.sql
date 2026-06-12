@@ -1,11 +1,12 @@
--- Tests the AVX-512 BFloat16 kernels of arrayDistance (accumulateCombineBF16 / accumulateCombineBF16V4).
--- Results are checked against an independent Float64 computation within a tolerance, so the reference is
--- stable across architectures (the kernels compute in Float32 and may reduce in a different order).
+-- Tests BFloat16 arrayDistance: L2/Cosine use the AVX-512 widen kernel (accumulateCombineBF16, BFloat16
+-- widened to Float32), L1/Linf use the auto-vectorized fallback. Results are checked against an
+-- independent Float64 computation within a tolerance, so the reference is stable across architectures
+-- (the kernels compute in Float32 and may reduce in a different order than the scalar reference).
 
 DROP TABLE IF EXISTS bf16_vectors;
 CREATE TABLE bf16_vectors (id UInt64, v Array(BFloat16)) ENGINE = Memory;
 
--- 200 rows of length-80 vectors (80 > 64 exercises the main 4-accumulator loop and the scalar tail).
+-- 200 rows of length-80 vectors (80 > the SIMD width exercises both the vectorized loop and the scalar tail).
 INSERT INTO bf16_vectors
 SELECT number, arrayMap(i -> toBFloat16(((number * 7 + i * 13) % 97) / 7.0 - 7.0), range(80))
 FROM numbers(200);
