@@ -1114,3 +1114,57 @@ TEST(Rope, CopyToAfterPartialAdvance)
     for (size_t i = 0; i < 40; ++i)
         ASSERT_EQ(out[i], static_cast<char>('A' + ((30 + i) % 26))) << "byte " << i;
 }
+
+TEST(Rope, PeekOnEmptyRope)
+{
+    Rope rope;
+    auto s = rope.peek();
+    EXPECT_EQ(s.data, nullptr);
+    EXPECT_EQ(s.size, 0u);
+    EXPECT_EQ(s.logical_offset, 0u);
+    EXPECT_TRUE(rope.atEnd());
+}
+
+TEST(Rope, AppendEmptyRopeIsNoOp)
+{
+    auto rope = makeAdjacentRope(/*count=*/1, /*node_size=*/10);
+    rope.append(Rope{});
+    EXPECT_EQ(rope.getNodes().size(), 1u);
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.range().size, 10u);
+}
+
+TEST(Rope, ZeroSizeCoverageQueries)
+{
+    auto rope = makeAdjacentRope(/*count=*/2, /*node_size=*/10);  /// [0, 20)
+    EXPECT_EQ(rope.coveredBytes({5, 0}), 0u);
+    EXPECT_TRUE(rope.gaps({5, 0}).empty());
+    EXPECT_TRUE(rope.covers({5, 0}));
+}
+
+TEST(Rope, SliceAndCopyToSkipNodesOutsideRequest)
+{
+    /// A sub-range request over a multi-node rope: nodes entirely before the request are
+    /// skipped, the first node past it stops the walk -- for both slice and copyTo.
+    auto rope = makeAdjacentRope(/*count=*/3, /*node_size=*/10);  /// 0x10 | 0x11 | 0x12
+
+    Rope s = rope.slice({12, 5});  /// inside the middle node only
+    ASSERT_EQ(s.getNodes().size(), 1u);
+    EXPECT_EQ(s.range().offset, 12u);
+    EXPECT_EQ(s.range().size, 5u);
+    EXPECT_EQ(static_cast<unsigned char>(s.peek().data[0]), 0x11u);
+
+    std::vector<char> out(5, '\0');
+    EXPECT_EQ(rope.copyTo(out.data(), {12, 5}), 5u);
+    for (size_t i = 0; i < out.size(); ++i)
+        EXPECT_EQ(static_cast<unsigned char>(out[i]), 0x11u) << "byte " << i;
+}
+
+TEST(OwnedRopeBuffer, ConstDataOverload)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(8);
+    std::memset(buf->data(), 'Z', 8);
+    const OwnedRopeBuffer & cref = *buf;
+    EXPECT_EQ(cref.data(), buf->data());
+    EXPECT_EQ(cref.data()[7], 'Z');
+}
