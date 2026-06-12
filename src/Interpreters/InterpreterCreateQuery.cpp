@@ -56,6 +56,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -2620,19 +2621,19 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.storage && create.storage->engine)
     {
-        if (!create.table && Poco::toLower(create.storage->engine->name) == "overlay")
+        if (!create.table && create.storage && create.storage->engine
+            && Poco::toLower(create.storage->engine->name) == "overlay")
         {
+            /// Overlay re-exposes the tables of the databases it unions, so creating it
+            /// requires SELECT on each source database.
             if (create.storage->engine->arguments)
             {
                 for (const auto & arg : create.storage->engine->arguments->children)
                 {
-                    const auto * literal = arg->as<ASTLiteral>();
-                    if (literal && literal->value.getType() == Field::Types::String)
-                    {
-                        const String source_db = literal->value.safeGet<String>();
-                        required_access.emplace_back(AccessType::SELECT, source_db);
-                        required_access.emplace_back(AccessType::SHOW_TABLES, source_db);
-                    }
+                    auto resolved = evaluateConstantExpressionOrIdentifierAsLiteral(arg, getContext());
+                    const auto & literal = resolved->as<ASTLiteral &>();
+                    const String source_db = literal.value.safeGet<String>();
+                    required_access.emplace_back(AccessType::SELECT, source_db);
                 }
             }
         }

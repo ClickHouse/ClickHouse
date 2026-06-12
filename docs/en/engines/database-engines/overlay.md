@@ -49,7 +49,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overlay `CREATE`/`ATTACH`/`RENAME`/`DROP`/`DETACH TABLE` | `BAD_ARGUMENTS` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
+| Overlay `CREATE`/`ATTACH`/`RENAME`/`DROP`/`DETACH TABLE`/`OPTIMIZE`/ | `BAD_ARGUMENTS` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay `ALTER`/`TRUNCATE` | `TABLE_IS_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on any lookup through an affected Overlay; `DROP DATABASE` still works to break the cycle |
@@ -118,11 +118,11 @@ for queries that go through the facade. Conversely, a `SELECT` grant on an under
 database allows reading that database directly but does not grant access to the same
 table through the `Overlay`.
 
-Creating an `Overlay` database requires `SELECT` and `SHOW TABLES` privileges on each
-underlying database it unions. A user who cannot read a source database therefore cannot
-expose it through a new `Overlay`. Creating an `Overlay` confers no privileges on the
-overlay database itself: as with any database engine, the creator must be granted
-`SELECT` on the `Overlay` before they can read through it.
+Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
+it unions. A user who cannot read a source database therefore cannot expose it through a
+new `Overlay`. Creating an `Overlay` confers no privileges on the overlay database itself;
+as with any database engine, the creator must be granted `SELECT` on the `Overlay` before
+they can read through it.
 
 ```sql
 GRANT SELECT ON dboverlay.* TO some_user;  -- allows reading any table exposed by `dboverlay`

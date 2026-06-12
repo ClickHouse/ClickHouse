@@ -1,6 +1,7 @@
 #include <future>
 #include <string>
 #include <vector>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -423,7 +424,17 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     /// For table functions we check access while executing
     /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
     if (insert_query.table_id)
-        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+    {
+        /// INSERT through an Overlay facade resolves to a table owned by an underlying database.
+        /// Check INSERT access against that owning database, not the facade name, so a grant on
+        /// the Overlay cannot be used to write into a source the user has no INSERT privilege on.
+        auto access_table_id = insert_query.table_id;
+        if (const auto target_db = DatabaseCatalog::instance().tryGetDatabase(insert_query.table_id.getDatabaseName());
+            target_db && typeid_cast<const DatabaseOverlay *>(target_db.get()))
+            access_table_id = table->getStorageID();
+
+        query_context->checkAccess(AccessType::INSERT, access_table_id, sample_block.getNames());
+    }
 
     insert_query.columns = make_intrusive<ASTExpressionList>();
     for (const auto & column : sample_block)

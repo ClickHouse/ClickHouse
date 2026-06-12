@@ -1,3 +1,4 @@
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -1036,7 +1037,23 @@ BlockIO InterpreterInsertQuery::execute()
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
-        context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+    {
+        const auto target_database = DatabaseCatalog::instance().tryGetDatabase(query.table_id.getDatabaseName());
+        if (const auto * overlay = typeid_cast<const DatabaseOverlay *>(target_database.get());
+            overlay && overlay->isReadOnly())
+        {
+            /// INSERT through an Overlay facade resolves to a table owned by an underlying
+            /// database. Check INSERT access against that owning database, not the facade name,
+            /// so a grant on the Overlay cannot be used to write into a source database the user
+            /// has no INSERT privilege on.
+            const auto source_table_id = table->getStorageID();
+            context->checkAccess(AccessType::INSERT, source_table_id, query_sample_block.getNames());
+        }
+        else
+        {
+            context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+        }
+    }
 
     if (!allow_materialized)
     {
