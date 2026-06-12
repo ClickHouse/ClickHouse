@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
@@ -309,7 +310,11 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
+<<<<<<< type_json_skip_null_typed_paths
                     if (!treat_typed_as_always_present && merged->isNullAt(i))
+=======
+                    if (!is_typed_path && merged->isNullAt(i))
+>>>>>>> master
                     {
                         raw_col->insertDefault();
                     }
