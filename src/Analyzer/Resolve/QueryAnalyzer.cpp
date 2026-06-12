@@ -2347,7 +2347,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -3121,6 +3121,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 ? mat_subquery->as<QueryNode>()->getProjectionColumns()
                                 : mat_subquery->as<UnionNode>()->computeProjectionColumns();
 
+
                             NamesAndTypesList columns;
                             for (const auto & col : proj_cols)
                                 columns.emplace_back(col.name, col.type);
@@ -3387,10 +3388,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     /// Lambda can be inside the aggregate function, so we should check parent scopes.
     /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
-    bool in_aggregate_function_scope = false;
+    bool in_aggregate_or_grouping_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
     {
-        in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+        in_aggregate_or_grouping_function_scope
+            = in_aggregate_or_grouping_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
 
         /// Check parent scopes until find current query scope.
         if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
@@ -3407,7 +3409,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// bindings would all be built with the pre-Nullable type and later fail
     /// with a type mismatch at runtime.
     ///
-    /// The `in_aggregate_function_scope` guard is also bypassed for correlated
+    /// The `in_aggregate_or_grouping_function_scope` guard is also bypassed for correlated
     /// columns: a `local` aggregate computes over pre-aggregation rows, but an
     /// aggregate inside an inner correlated subquery operates on rows produced
     /// by the outer post-aggregation step, where the correlated column has
@@ -3438,7 +3440,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
     }
 
-    if (!in_aggregate_function_scope || is_correlated_column_node)
+    if (!in_aggregate_or_grouping_function_scope || is_correlated_column_node)
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
@@ -3454,7 +3456,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
                     || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
 
-            if (!is_correlated_column_node || at_source_scope)
+            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
             {
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
