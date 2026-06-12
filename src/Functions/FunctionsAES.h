@@ -85,6 +85,12 @@ struct CachedKeyState
         initialized = true;
     }
 
+    /// Whether the context has been initialized with the cipher at least once. After
+    /// that, a key change only needs the new key (with a null cipher), which replaces
+    /// the key schedule but keeps the provider context and its parameters; re-passing
+    /// the cipher would repeat the full context setup.
+    bool hasContext() const { return initialized; }
+
     void reset() { initialized = false; }
 
 private:
@@ -418,7 +424,7 @@ private:
                 }
                 else
                 {
-                    if (EVP_EncryptInit_ex(cbc_ctx, evp_cipher, nullptr,
+                    if (EVP_EncryptInit_ex(cbc_ctx, cbc_key_state.hasContext() ? nullptr : evp_cipher, nullptr,
                             reinterpret_cast<const unsigned char *>(key_value.data()), iv_ptr) != 1)
                         onError("EVP_EncryptInit_ex");
                     cbc_key_state.remember(key_value);
@@ -436,11 +442,13 @@ private:
             {
                 if (!ecb_key_state.matches(key_value))
                 {
-                    if (EVP_EncryptInit_ex(ecb_ctx, ecb_cipher, nullptr,
+                    const bool first_init = !ecb_key_state.hasContext();
+                    if (EVP_EncryptInit_ex(ecb_ctx, first_init ? ecb_cipher : nullptr, nullptr,
                             reinterpret_cast<const unsigned char *>(key_value.data()), nullptr) != 1)
                         onError("EVP_EncryptInit_ex");
                     /// The context produces raw blocks; PKCS#7 padding is applied manually below.
-                    if (EVP_CIPHER_CTX_set_padding(ecb_ctx, 0) != 1)
+                    /// Key-only re-initialization keeps the setting.
+                    if (first_init && EVP_CIPHER_CTX_set_padding(ecb_ctx, 0) != 1)
                         onError("EVP_CIPHER_CTX_set_padding");
                     ecb_key_state.remember(key_value);
                 }
@@ -621,7 +629,7 @@ private:
                     }
                     else
                     {
-                        if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                        if (EVP_EncryptInit_ex(evp_ctx, ctx_key_state.hasContext() ? nullptr : evp_cipher, nullptr,
                                 reinterpret_cast<const unsigned char*>(key_value.data()), iv_ptr) != 1)
                             onError("EVP_EncryptInit_ex");
                         ctx_key_state.remember(key_value);
@@ -895,11 +903,13 @@ private:
                 {
                     if (!ecb_key_state.matches(key_value))
                     {
-                        if (EVP_DecryptInit_ex(ecb_ctx, ecb_cipher, nullptr,
+                        const bool first_init = !ecb_key_state.hasContext();
+                        if (EVP_DecryptInit_ex(ecb_ctx, first_init ? ecb_cipher : nullptr, nullptr,
                                 reinterpret_cast<const unsigned char *>(key_value.data()), nullptr) != 1)
                             onError("EVP_DecryptInit_ex");
                         /// The context consumes raw blocks; PKCS#7 padding is validated manually below.
-                        if (EVP_CIPHER_CTX_set_padding(ecb_ctx, 0) != 1)
+                        /// Key-only re-initialization keeps the setting.
+                        if (first_init && EVP_CIPHER_CTX_set_padding(ecb_ctx, 0) != 1)
                             onError("EVP_CIPHER_CTX_set_padding");
                         ecb_key_state.remember(key_value);
                     }
@@ -1113,7 +1123,7 @@ private:
                     }
                     else
                     {
-                        if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                        if (EVP_DecryptInit_ex(evp_ctx, ctx_key_state.hasContext() ? nullptr : evp_cipher, nullptr,
                                 reinterpret_cast<const unsigned char*>(key_value.data()), iv_ptr) != 1)
                             onError("EVP_DecryptInit_ex");
                         ctx_key_state.remember(key_value);
