@@ -13,8 +13,10 @@ DROP TABLE IF EXISTS orj_r;
 CREATE TABLE orj_l (a UInt16, b UInt16, c UInt32, d UInt32, e UInt32, v UInt64) ENGINE = Memory;
 CREATE TABLE orj_r (a UInt16, b UInt16, c UInt32, d UInt32, e UInt32, w UInt64) ENGINE = Memory;
 
-INSERT INTO orj_l SELECT number % 100, number % 50, number % 1000, number % 500, number % 30, number FROM numbers(5000);
-INSERT INTO orj_r SELECT number % 100, number % 50, number % 1000, number % 500, number % 30, number FROM numbers(4000);
+-- Kept small: the oracle is a cross join (O(left * right)), and the flaky check runs this test many
+-- times under a per-run time limit in the debug build, so a larger product times out.
+INSERT INTO orj_l SELECT number % 100, number % 50, number % 1000, number % 500, number % 30, number FROM numbers(1000);
+INSERT INTO orj_r SELECT number % 100, number % 50, number % 1000, number % 500, number % 30, number FROM numbers(800);
 
 -- (UInt16, UInt16) clause [keys32] OR (UInt32, UInt32) clause [keys64] -> merged to keys64.
 SELECT 'keys32_or_keys64',
