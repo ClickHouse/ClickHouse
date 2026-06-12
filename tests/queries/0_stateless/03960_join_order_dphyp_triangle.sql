@@ -18,6 +18,8 @@ SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
+-- The EXPLAIN below pins one of several equal-cost plans, so the choice must not be randomized.
+SET query_plan_optimize_join_order_randomize = 0;
 
 CREATE TABLE tri_hub  (id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE tri_arm1 (id UInt32, hub_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';

@@ -9,6 +9,8 @@ SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
+-- The EXPLAINs below pin equal-cost plans, so the choice must not be randomized.
+SET query_plan_optimize_join_order_randomize = 0;
 
 -- A has a foreign key to D to close the cycle.
 CREATE TABLE cy4_a (id UInt32, d_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
