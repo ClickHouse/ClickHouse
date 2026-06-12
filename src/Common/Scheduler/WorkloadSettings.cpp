@@ -173,6 +173,8 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             if (!std::isfinite(value))
                 throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
                     "Float setting value must be finite, got {} for workload setting '{}'", value, name);
+            if (value < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative Float64 value for workload setting '{}'", name);
             return value;
         }
 

@@ -18,6 +18,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
+#include <array>
 #include <chrono>
 #include <memory>
 
