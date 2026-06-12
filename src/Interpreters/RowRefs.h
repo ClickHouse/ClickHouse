@@ -103,7 +103,14 @@ inline UInt32 refWordBlockNo(UInt64 word) { return static_cast<UInt32>(word >> 3
 inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 
 /// Thrown when an arena pointer does not fit in the low 48 bits of a BuildRefList word, which would
-/// make the count-tagged encoding ambiguous. Should never happen on Linux x86-64/aarch64.
+/// make the count-tagged encoding ambiguous. Cannot happen on Linux x86-64/aarch64 today: even with
+/// 5-level paging (`CONFIG_X86_5LEVEL`, 57-bit VA) or arm64 52-bit LVA, the kernel hands out
+/// mappings above the 47-bit boundary only when the mmap address hint explicitly requests them,
+/// which our allocators never do. If that ever changes, the contingency is to shrink the count
+/// field from 15 to 7 bits (bits 62..56, saturation at 127 instead of 32767), making the pointer
+/// field 56-bit-safe; that does NOT limit rows per key (the saturated count already falls back to
+/// the node's 56-bit `total_rows`), it only lowers the load-free `rows()` fast path from keys with
+/// up to 32766 rows to keys with up to 126 rows - still covering most practical duplication.
 [[noreturn]] void throwBuildRefPointerTooLarge();
 
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
@@ -116,6 +123,8 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 struct BuildRefList
 {
     /// Low 48 bits of a list word hold the node pointer; bits 62..48 hold the saturating count.
+    /// See the comment of `throwBuildRefPointerTooLarge` for why 48 bits are enough and for the
+    /// contingency if user-space mappings ever cross the 47-bit boundary.
     static constexpr UInt64 PTR_MASK = (1ull << 48) - 1;
     static constexpr UInt32 COUNT_SHIFT = 48;
     /// Sentinel stored in the count field meaning "count >= COUNT_SAT, load total_rows from the node".
@@ -400,6 +409,10 @@ public:
     const ColumnsInfo * at(UInt32 block_no) const
     {
         chassert(block_no < blocks.size());
+        /// A cleared entry (see `clearEntry`) must never be reached: no refs to such a block exist.
+        /// In debug builds a stale ref trips this assertion; in release builds it dereferences
+        /// nullptr at a deterministic, near-zero address instead of reading freed memory.
+        chassert(blocks[block_no] != nullptr);
         return blocks[block_no];
     }
 

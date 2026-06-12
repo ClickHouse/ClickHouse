@@ -884,8 +884,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->allocated_size -= data_allocated_bytes;
                 data->rows_to_join -= rows;
-                /// Nothing was inserted, so no refs to this block exist; null the index entry
-                /// so that a stale ref fails loudly instead of reading freed memory.
+                /// Nothing was inserted, so no refs to this block exist; null the index entry so
+                /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
+                /// (and dereferences nullptr deterministically in release builds) instead of
+                /// silently reading freed memory.
                 data->stored_columns_index->clearEntry(stored_columns->block_no);
                 data->columns.pop_back();
                 doDebugAsserts();
