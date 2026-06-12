@@ -323,9 +323,24 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
 void ColumnTuple::insertDefault()
 {
+    /// Must be exception-safe: if some nested column throws (e.g. on a memory limit),
+    /// the already modified nested columns have to be rolled back, otherwise the tuple
+    /// is left with nested columns of different sizes, which later leads to over-popping
+    /// in popBack during rollback of a partially read row.
+    size_t i = 0;
+    try
+    {
+        for (; i < columns.size(); ++i)
+            columns[i]->insertDefault();
+    }
+    catch (...)
+    {
+        for (size_t rollback = 0; rollback < i; ++rollback)
+            columns[rollback]->popBack(1);
+        throw;
+    }
+
     ++column_length;
-    for (auto & column : columns)
-        column->insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)

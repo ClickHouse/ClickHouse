@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Interpreters/ArrayJoinAction.h>
@@ -1440,36 +1441,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         && allow_parallel_replicas_for_join_tree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
-                        QueryPlan::Node * node = query_plan.getRootNode();
-                        ReadFromMergeTree * reading = nullptr;
-                        while (node)
+
+                        const bool allow_view_over_mergetree = settings[Setting::parallel_replicas_allow_view_over_mergetree];
+                        auto reading_steps = findReadingSteps(query_plan.getRootNode(), allow_view_over_mergetree);
+                        QueryPlan::Node * reading_node = nullptr;
+                        if (!reading_steps.empty())
                         {
-                            reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
-                            if (reading)
-                                break;
-
-                            /// Empty table or all data pruned — nothing to read, skip parallel replicas.
-                            if (typeid_cast<ReadNothingStep *>(node->step.get()))
-                                break;
-
-                            QueryPlan::Node * prev_node = node;
-                            if (!node->children.empty())
-                            {
-                                node = node->children.at(0);
-                            }
-                            else
-                            {
-                                throw Exception(
-                                    ErrorCodes::LOGICAL_ERROR,
-                                    "Step is expected to be ReadFromMergeTree but it's {}",
-                                    prev_node->step->getName());
-                            }
+                            if (typeid_cast<ReadFromMergeTree*>(reading_steps.front()->step.get()))
+                                reading_node = reading_steps.front();
                         }
 
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                        if (reading && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        // Note: reading_steps can have several steps in case of reading from view with UNION
+                        // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
+                        // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
+                        if (reading_node && reading_steps.size() == 1
+                            && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
-                            auto result_ptr = reading->selectRangesToRead();
+                            const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
+                            auto result_ptr = reading_step->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
@@ -1501,11 +1491,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
 
                         // (3) if parallel replicas still enabled - replace reading step
-                        if (reading && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
+                        if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
                             till_stage = QueryProcessingStage::WithMergeableState;
                             QueryPlan query_plan_parallel_replicas;
-                            QueryPlanStepPtr reading_step = std::move(node->step);
+                            QueryPlanStepPtr reading_step = std::move(reading_node->step);
                             ClusterProxy::executeQueryWithParallelReplicas(
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
