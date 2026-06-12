@@ -414,12 +414,11 @@ private:
     void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
-    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out);
+    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, RPN & out);
     void extractBinaryComparisonAtoms(
         const RPNBuilderTreeNode & node,
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        const std::string & original_func_name,
         const std::string & func_name,
         bool allow_constant_transformation,
         RPN & out);
@@ -461,8 +460,7 @@ private:
         const BuildInfo & info,
         const Field & value,
         const DataTypePtr & type,
-        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function,
-        bool allow_modulo_legacy) const;
+        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
     /// Transform a constant through all applicable deterministic key-expression DAGs.
     std::vector<TransformedConstant> transformConstantByDeterministicFunctions(
@@ -482,14 +480,6 @@ private:
     std::vector<DeterministicKeyDag> extractAllDeterministicFunctionsDagsFromKey(
         const String & expr_name,
         const BuildInfo & info) const;
-
-    /// Convenience wrapper: returns the first match only (used by `canSetValuesBeWrappedByDeterministicFunctions`).
-    bool extractDeterministicFunctionsDagFromKey(
-        const String & expr_name,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        DeterministicKeyTransformDag & out_functions_chain) const;
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and

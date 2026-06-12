@@ -1679,29 +1679,15 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantFo
     const BuildInfo & info,
     const Field & value,
     const DataTypePtr & type,
-    std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function,
-    bool allow_modulo_legacy) const
+    std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
 {
     String expr_name = node.getColumnName();
 
+    /// Unlike the deterministic transforms, this does not try the `moduloLegacy`
+    /// replacement: the case `f(modulo(...))` for totally monotonic `f` is considered
+    /// to be rare.
     if (!info.key_subexpr_names.contains(expr_name))
-    {
-        if (!allow_modulo_legacy)
-            return {};
-
-        /// Let's check another one case.
-        /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
-        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
-        ///
-        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-        if (!info.key_subexpr_names.contains(expr_name))
-            return {};
-    }
+        return {};
 
     if (value.isNull())
         return {};
@@ -1842,25 +1828,6 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::extractAllDetermini
 
     return result;
 }
-
-/// Convenience wrapper: returns the first match only.
-bool KeyCondition::extractDeterministicFunctionsDagFromKey(
-    const String & expr_name,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    DeterministicKeyTransformDag & out) const
-{
-    auto all = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
-    if (all.empty())
-        return false;
-
-    out_key_column_num = all.front().key_column_num;
-    out_key_column_type = std::move(all.front().key_column_type);
-    out = std::move(all.front().dag);
-    return true;
-}
-
 
 /// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
 /// `out_column`/`out_type`.
@@ -3261,8 +3228,8 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
         /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
         /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
         ///
-        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
+        /// We do not check this in transformConstantForKeyColumns.
+        /// The case `f(modulo(...))` for totally monotonic `f` is considered to be rare.
         ///
         /// Note: for negative values, we can filter more partitions than needed.
         expr_name = node.getColumnNameWithModuloLegacy();
@@ -3271,8 +3238,15 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
             return false;
     }
 
-    if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_res_column_type, out_transform))
+    auto dags = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+    if (dags.empty())
         return false;
+
+    /// The set-tuple mapping needs exactly one key column per tuple component, so keep
+    /// the first match only.
+    out_key_column_num = dags.front().key_column_num;
+    out_key_res_column_type = std::move(dags.front().key_column_type);
+    out_transform = std::move(dags.front().dag);
 
     out_is_injective = isDeterministicTransformInjective(out_transform.actions->getActionsDAG(), out_transform.input_name, out_transform.output_name);
     return true;
@@ -3563,7 +3537,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
 
     if (func_name == "pointInPolygon")
     {
-        extractPointInPolygonAtom(func, func_name, out);
+        extractPointInPolygonAtom(func, out);
         return;
     }
 
@@ -3663,12 +3637,11 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
             return;
         }
 
-        extractBinaryComparisonAtoms(
-            node, func, info, func_name, func_name, allow_constant_transformation, out);
+        extractBinaryComparisonAtoms(node, func, info, func_name, allow_constant_transformation, out);
     }
 }
 
-void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out)
+void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, RPN & out)
 {
     /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
     /// For polygons with holes, we will ignore the holes for the index analysis.
@@ -3687,8 +3660,6 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
     DataTypePtr polygon_type;
     if (!func.getArgumentAt(1).tryGetConstant(polygon_field, polygon_type))
         return;
-
-    const auto atom_it = atom_map.find(func_name);
 
     RPNElement element;
 
@@ -3711,7 +3682,7 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
         element.key_columns.push_back(it->second);
     }
 
-    element.point_in_polygon_function_name = func_name;
+    element.point_in_polygon_function_name = "pointInPolygon";
 
     /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
     chassert(WhichDataType(polygon_type).isArray());
@@ -3735,8 +3706,7 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
     /// costly `intersects` checks
     boost::geometry::envelope(element.polygon->ring, element.polygon->bbox);
 
-    if (!atom_it->second(element, polygon_field))
-        return;
+    element.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
 
     out.emplace_back(std::move(element));
 }
@@ -3745,7 +3715,6 @@ void KeyCondition::extractBinaryComparisonAtoms(
     const RPNBuilderTreeNode & node,
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    const std::string & original_func_name,
     const std::string & func_name,
     bool allow_constant_transformation,
     RPN & out)
@@ -3880,14 +3849,13 @@ void KeyCondition::extractBinaryComparisonAtoms(
                 /// Range is irrelevant in this case.
                 auto monotonicity = func_base.getMonotonicityForRange(type, Field(), Field());
                 return monotonicity.is_always_monotonic;
-            },
-            /*allow_modulo_legacy*/ false);
+            });
 
         for (const auto & transformed : transformed_candidates)
             add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
     }
 
-    if (candidates.empty() && (original_func_name == "equals" || original_func_name == "notEquals"))
+    if (candidates.empty() && (func_name == "equals" || func_name == "notEquals"))
     {
         auto transformed_candidates = transformConstantByDeterministicFunctions(
             key_arg, info, const_value, const_type);
