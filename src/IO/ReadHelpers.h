@@ -892,6 +892,19 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     if (!(s[4] == s[7] && (s[4] < '0' || s[4] > '9')))
     {
         /// Not a YYYY-MM-DD date, so it is a unix timestamp, possibly with a fractional part that is handled by the caller.
+
+        /// A value that starts with a character that can be neither a date nor a timestamp is an error.
+        /// Do not leave zero (as readIntText would), because not every caller checks that the buffer
+        /// was fully consumed, and would silently turn garbage into the unix epoch
+        /// (e.g. the `timestamp` function or the binary formats).
+        if (!isNumericASCII(s[0]) && s[0] != '-' && s[0] != '+')
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+            else
+                return ReturnType(false);
+        }
+
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }

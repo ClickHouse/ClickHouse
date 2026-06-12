@@ -1613,15 +1613,27 @@ ReturnType readDateTimeTextFallback(
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         /// The value can be a date, or a small unix timestamp with a fractional part (e.g. 1234.5)
-        /// or with other characters after it. Check the date layout character by character without
-        /// consuming a character that does not match it, so that on a mismatch the digits read so far
-        /// can still be interpreted as a timestamp.
+        /// or with other characters after it (e.g. a field delimiter of a row-based format).
         const char date_delimiter = *buf.position();
 
+        /// Probe for the YYYY-MM-DD layout only if the next character can plausibly delimit the parts
+        /// of a date. Otherwise the value is a unix timestamp, and the next character belongs to the
+        /// caller, so it must not be consumed (it can be a field delimiter of a row-based format).
+        const bool may_be_date = date_delimiter == '-' || date_delimiter == '/' || date_delimiter == '.'
+            || (allowed_date_delimiters != nullptr && isSymbolIn(date_delimiter, allowed_date_delimiters));
+
+        /// Check the date layout character by character. The characters consumed while probing can be
+        /// returned to the buffer on a mismatch, unless the probe had to refill the buffer.
+        char * probe_start = buf.position();
+        bool can_rollback = true;
+
         size_t pos = 4;
-        bool is_date = true;
-        while (pos < date_broken_down_length)
+        bool is_date = may_be_date;
+        while (is_date && pos < date_broken_down_length)
         {
+            if (!buf.hasPendingData())
+                can_rollback = false;
+
             if (buf.eof())
             {
                 is_date = false;
@@ -1651,15 +1663,25 @@ ReturnType readDateTimeTextFallback(
 
         if (!is_date)
         {
+            datetime = 0;
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                datetime = datetime * 10 + *digit_pos - '0';
+
+            if (can_rollback)
+            {
+                /// The value is a small unix timestamp; return the characters consumed while probing,
+                /// and let the caller handle whatever follows the digits (a fractional part, a field
+                /// delimiter, or an error), the same as the optimistic path does.
+                buf.position() = probe_start;
+                return ReturnType(true);
+            }
+
             /// In DateTime64 mode, a string like 1234.5 is a valid timestamp with a fractional part.
             /// While checking for the date layout, the dot and up to two fractional digits could have
-            /// been consumed from the buffer; pass them to the caller.
+            /// been consumed from the buffer and cannot be returned because the buffer was refilled;
+            /// pass them to the caller.
             if (dt64_mode && date_delimiter == '.' && pos <= 7 && fraction_prefix != nullptr)
             {
-                datetime = 0;
-                for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
-                    datetime = datetime * 10 + *digit_pos - '0';
-
                 fraction_prefix->has_fraction = true;
                 for (size_t i = 5; i < pos; ++i)
                 {
@@ -1773,10 +1795,14 @@ ReturnType readDateTimeTextFallback(
                     return false;
             }
 
-            /// The value starts with a character that is not a number. Match readIntText, which
-            /// leaves the value zero; the caller will fail when it finds the unparsed characters.
-            datetime = 0;
-            return ReturnType(true);
+            /// The value starts with a character that can be neither a date nor a timestamp.
+            /// Fail instead of leaving zero, because not every caller checks that the buffer
+            /// was fully consumed, and would silently turn garbage into the unix epoch
+            /// (e.g. the `timestamp` function or the binary formats).
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+            else
+                return false;
         }
 
         /// A unix timestamp. Not very efficient.
