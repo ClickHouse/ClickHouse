@@ -427,8 +427,13 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 
     /// `max_read_buffer_size` can be configured with an arbitrarily large value; bound the
     /// eagerly allocated buffer so it does not throw std::length_error. See #84279.
-    const size_t read_buffer_size
+    size_t read_buffer_size
         = std::min<UInt64>(DBMS_MAX_READ_BUFFER_SIZE, context->getSettingsRef()[Setting::max_read_buffer_size]);
+
+    /// We never need a buffer larger than the file itself. Shrinking to the known size avoids the
+    /// eager over-allocation when the configured size dwarfs the file (a tiny backup lock file, say).
+    if (S_ISREG(file_stat.st_mode) && file_stat.st_size > 0)
+        read_buffer_size = std::min<UInt64>(read_buffer_size, file_stat.st_size);
 
     /** Using mmap on server-side is unsafe for the following reasons:
       * - concurrent modifications of a file will result in SIGBUS;

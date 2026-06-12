@@ -20,8 +20,10 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
-/// Upper bound for the size of a single read buffer that we eagerly allocate.
-static constexpr auto DBMS_MAX_READ_BUFFER_SIZE = 1ULL << 30; /// 1 GiB
+/// Upper bound for the size of a single read buffer that we eagerly allocate. `max_read_buffer_size`
+/// and its variants can be configured with arbitrarily large values; this backstop bounds the
+/// worst-case allocation so it does not throw (e.g. std::length_error). See #84279.
+static constexpr auto DBMS_MAX_READ_BUFFER_SIZE = 128ULL << 20; /// 128 MiB
 
 /// The initial size of adaptive I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
