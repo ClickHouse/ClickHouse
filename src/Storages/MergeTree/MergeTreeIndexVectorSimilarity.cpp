@@ -27,13 +27,18 @@
 #include <Interpreters/castColumn.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <map>
+#include <mutex>
 #include <numbers>
 #include <ranges>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include <fmt/ranges.h>
@@ -1035,6 +1040,363 @@ inline float turboQuantDistanceFast(const TurboQuantQuery & q, const char * code
     return 1.0f - cosine;
 }
 
+/// ----------------------------- 'e8' quantization (data-independent lattice product quantization) -----------------------------
+/// Product quantization whose codebook is the fixed E8 lattice instead of a trained (k-means) codebook. After the same
+/// random rotation used by the other projection-based methods, each 8-dimensional sub-vector is quantized to the nearest
+/// point of a truncated, scaled E8 lattice. E8 is the optimal lattice quantizer in 8 dimensions, and because the random
+/// rotation makes the sub-vectors approximately isotropic, this fixed lattice is near-optimal WITHOUT any data-dependent
+/// training - so, exactly like `generateRandomProjection`, the codebook is regenerated deterministically from
+/// (dimensions, bits) at build and query time and never stored (no dictionary, no codebook persistence).
+///
+/// Unlike 'rabitq'/'turboquant' this supports both cosineDistance and L2Distance. The scan estimates the asymmetric
+/// inner product <q_hat, x_hat> of the unit (rotated) query and data directions via an ADC lookup table, and the stored
+/// per-vector L2 norm reconstructs the true distance for either metric:
+///   cosineDistance: 1 - <q_hat, x_hat>
+///   L2Distance:     ||q||^2 + ||x||^2 - 2 ||q|| ||x|| <q_hat, x_hat>
+/// Layout per vector: M = dimensions/8 sub-quantizer codes (1 byte each for bits <= 8, else 2 bytes), then the 4-byte
+/// L2 norm of the original vector.
+constexpr size_t E8_SUBDIM = 8;
+
+/// Nearest point of D8 = { integer vectors with even coordinate sum } to `y` (8 doubles), returned as integers in `out`.
+inline void nearestD8(const double * y, int * out)
+{
+    long long isum = 0;
+    size_t worst = 0;
+    double worst_delta = -1.0;
+    for (size_t i = 0; i < E8_SUBDIM; ++i)
+    {
+        const double r = std::nearbyint(y[i]);
+        const int ri = static_cast<int>(r);
+        out[i] = ri;
+        isum += ri;
+        const double delta = std::abs(y[i] - r);
+        if (delta > worst_delta)
+        {
+            worst_delta = delta;
+            worst = i;
+        }
+    }
+    /// Odd sum -> not in D8; flip the worst-rounded coordinate to its second-nearest integer to restore an even sum.
+    if ((isum & 1) != 0)
+        out[worst] += (y[worst] >= static_cast<double>(out[worst])) ? 1 : -1;
+}
+
+/// Nearest E8 point to `y`, written to `out2` as 2*coordinate integers (so all-integer: even entries = the integer
+/// coset, odd entries = the half-integer coset). The half-integer coset is handled by quantizing y - 1/2 to D8 and
+/// shifting back. Returns nothing; this is O(d).
+inline void nearestE8(const double * y, int * out2)
+{
+    int a[E8_SUBDIM];
+    nearestD8(y, a);
+    double da = 0.0;
+    for (size_t i = 0; i < E8_SUBDIM; ++i)
+    {
+        const double d = y[i] - a[i];
+        da += d * d;
+    }
+
+    double yshift[E8_SUBDIM];
+    for (size_t i = 0; i < E8_SUBDIM; ++i)
+        yshift[i] = y[i] - 0.5;
+    int b[E8_SUBDIM];
+    nearestD8(yshift, b);
+    double db = 0.0;
+    for (size_t i = 0; i < E8_SUBDIM; ++i)
+    {
+        const double d = yshift[i] - b[i];
+        db += d * d;
+    }
+
+    if (da <= db)
+        for (size_t i = 0; i < E8_SUBDIM; ++i)
+            out2[i] = 2 * a[i];          /// integer coset -> even entries
+    else
+        for (size_t i = 0; i < E8_SUBDIM; ++i)
+            out2[i] = 2 * b[i] + 1;      /// half-integer coset -> odd entries
+}
+
+/// Pack the 8 (2*coordinate) integers of a lattice point into a 64-bit key. Entries are small (|2*coord| <= 7 for the
+/// shells we enumerate), so int8 per entry is exact.
+inline UInt64 e8Key(const int * coord2)
+{
+    UInt64 k = 0;
+    for (size_t i = 0; i < E8_SUBDIM; ++i)
+        k = (k << 8) | static_cast<UInt8>(static_cast<int8_t>(coord2[i]));
+    return k;
+}
+
+struct E8Codebook
+{
+    size_t bits = 0;
+    size_t num_points = 0;                              /// 2^bits
+    float scale = 0.0f;                                 /// alpha: lattice units -> real (rotated, unit-normalized) space
+    bool use_clamp = false;                             /// whether to clamp query points into the fully-contained region
+    float clamp_radius = 0.0f;                          /// clamp radius (lattice units); guarantees decode lands in-set
+    std::vector<float> coords;                          /// num_points * 8, already multiplied by `scale`
+    std::unordered_map<UInt64, UInt32> point_to_index;  /// e8Key(2*coord) -> codebook index
+};
+
+/// Recursively enumerate all E8 lattice points (in 2*coordinate units, so all entries share parity `parity`) whose
+/// squared norm (in 2*coordinate units) is <= `max_sumsq`. E8 membership reduces to: all entries same parity and the
+/// sum of the 2*coordinates is divisible by 4.
+void e8Collect(int depth, long long sumsq, long long max_sumsq, int parity, std::array<int, E8_SUBDIM> & cur, std::vector<std::pair<int, std::array<int, E8_SUBDIM>>> & out)
+{
+    if (depth == static_cast<int>(E8_SUBDIM))
+    {
+        long long s = 0;
+        for (size_t i = 0; i < E8_SUBDIM; ++i)
+            s += cur[i];
+        if (((s % 4) + 4) % 4 != 0)
+            return;
+        out.emplace_back(static_cast<int>(sumsq), cur);
+        return;
+    }
+    const long long remaining = max_sumsq - sumsq;
+    const int maxc = static_cast<int>(std::floor(std::sqrt(static_cast<double>(remaining))));
+    for (int v = -maxc; v <= maxc; ++v)
+    {
+        if ((((v % 2) + 2) % 2) != parity)
+            continue;
+        const long long ns = sumsq + static_cast<long long>(v) * v;
+        if (ns > max_sumsq)
+            continue;
+        cur[static_cast<size_t>(depth)] = v;
+        e8Collect(depth + 1, ns, max_sumsq, parity, cur, out);
+    }
+}
+
+/// Build the (data-independent) E8 codebook of 2^bits points for a given vector dimensionality. The lattice is truncated
+/// to the 2^bits points closest to the origin (deterministic tie-break by squared norm then lexicographic coordinates)
+/// and scaled so its RMS radius matches that of an 8-dim sub-vector of a unit vector (sqrt(8 / dimensions)).
+std::shared_ptr<const E8Codebook> buildE8Codebook(size_t dimensions, size_t bits)
+{
+    const size_t num_points = static_cast<size_t>(1) << bits;
+
+    std::vector<std::pair<int, std::array<int, E8_SUBDIM>>> pts;
+    long long max_sumsq = 8;
+    while (true)
+    {
+        pts.clear();
+        std::array<int, E8_SUBDIM> cur{};
+        e8Collect(0, 0, max_sumsq, 0, cur, pts); /// integer coset
+        e8Collect(0, 0, max_sumsq, 1, cur, pts); /// half-integer coset
+        if (pts.size() >= num_points)
+            break;
+        max_sumsq *= 2;
+    }
+
+    std::sort(pts.begin(), pts.end(),
+        [](const auto & x, const auto & y)
+        {
+            if (x.first != y.first)
+                return x.first < y.first;
+            return x.second < y.second;
+        });
+
+    /// `complete_q` is the squared norm (in 2*coordinate units) of the largest shell that is ENTIRELY contained in the
+    /// truncated set. Inside the corresponding radius the E8 decoder is guaranteed to land on a stored point, so we can
+    /// avoid the (expensive) brute-force fallback entirely by clamping query points there. The set keeps the
+    /// `num_points` points closest to the origin; the outermost shell may be only partially included.
+    const int last_q = pts[num_points - 1].first;
+    int complete_q = last_q;
+    if (num_points < pts.size() && pts[num_points].first == last_q)
+    {
+        size_t i = num_points;
+        while (i > 0 && pts[i - 1].first == last_q)
+            --i;
+        complete_q = (i > 0) ? pts[i - 1].first : 0;
+    }
+    const double r_complete = std::sqrt(static_cast<double>(complete_q) / 4.0);
+    const double r_ref = (r_complete > 0.5) ? r_complete : std::sqrt(static_cast<double>(last_q) / 4.0);
+
+    pts.resize(num_points);
+
+    auto cb = std::make_shared<E8Codebook>();
+    cb->bits = bits;
+    cb->num_points = num_points;
+
+    /// Scale so a typical sub-vector norm (sqrt(8/dimensions) for a unit rotated vector) maps to r_ref / 1.75. The
+    /// sub-vector norm is concentrated, so r_ref then corresponds to roughly +3 sigma and almost every point decodes
+    /// inside the fully-contained region.
+    const double target_rms = std::sqrt(static_cast<double>(E8_SUBDIM) / static_cast<double>(dimensions));
+    cb->scale = static_cast<float>(1.75 * target_rms / std::max(r_ref, 1e-6));
+    const double typical_radius = static_cast<double>(target_rms) / std::max(static_cast<double>(cb->scale), 1e-12);
+
+    /// Clamp query points to (r_complete - covering_radius) when that comfortably exceeds the typical data radius (the
+    /// E8 covering radius is 1). The clamp then guarantees every decode lands on a stored point WITHOUT collapsing the
+    /// (concentrated) data onto the origin - which is only possible for codebooks large enough to have inner room
+    /// (otherwise the small codebook's brute-force fallback is cheap anyway).
+    if (r_complete - 1.0 > typical_radius)
+    {
+        cb->use_clamp = true;
+        cb->clamp_radius = static_cast<float>(r_complete - 1.0);
+    }
+
+    cb->coords.resize(num_points * E8_SUBDIM);
+    cb->point_to_index.reserve(num_points * 2);
+    for (size_t k = 0; k < num_points; ++k)
+    {
+        int c2[E8_SUBDIM];
+        for (size_t i = 0; i < E8_SUBDIM; ++i)
+        {
+            c2[i] = pts[k].second[i];
+            cb->coords[k * E8_SUBDIM + i] = cb->scale * (static_cast<float>(c2[i]) * 0.5f);
+        }
+        cb->point_to_index[e8Key(c2)] = static_cast<UInt32>(k);
+    }
+    return cb;
+}
+
+/// Process-wide cache of E8 codebooks keyed by (dimensions, bits). The codebook depends only on these two values (it is
+/// not data-dependent), so build and query threads share one immutable instance.
+std::shared_ptr<const E8Codebook> getE8Codebook(size_t dimensions, size_t bits)
+{
+    static std::mutex mutex;
+    static std::map<std::pair<size_t, size_t>, std::shared_ptr<const E8Codebook>> cache;
+    std::lock_guard lock(mutex);
+    const auto key = std::make_pair(dimensions, bits);
+    auto it = cache.find(key);
+    if (it != cache.end())
+        return it->second;
+    auto cb = buildE8Codebook(dimensions, bits);
+    cache.emplace(key, cb);
+    return cb;
+}
+
+/// Encode one rotated, unit-normalized vector `rhat` (`dimensions` floats) into M = dimensions/8 sub-quantizer codes
+/// written to `dst` (`code_bytes` each), followed by the 4-byte original L2 norm `norm`.
+inline void encodeE8(const E8Codebook & cb, const float * rhat, size_t dimensions, size_t code_bytes, float norm, char * dst)
+{
+    const size_t M = dimensions / E8_SUBDIM;
+    const double inv_scale = (cb.scale > 0.0f) ? 1.0 / static_cast<double>(cb.scale) : 0.0;
+    for (size_t m = 0; m < M; ++m)
+    {
+        const float * sub = rhat + m * E8_SUBDIM;
+        double y[E8_SUBDIM];
+        double yn2 = 0.0;
+        for (size_t i = 0; i < E8_SUBDIM; ++i)
+        {
+            y[i] = static_cast<double>(sub[i]) * inv_scale; /// to lattice units
+            yn2 += y[i] * y[i];
+        }
+
+        /// Clamp into the fully-contained region so the decode is guaranteed to hit a stored point (no fallback scan).
+        if (cb.use_clamp && yn2 > static_cast<double>(cb.clamp_radius) * static_cast<double>(cb.clamp_radius))
+        {
+            const double f = static_cast<double>(cb.clamp_radius) / std::sqrt(yn2);
+            for (size_t i = 0; i < E8_SUBDIM; ++i)
+                y[i] *= f;
+        }
+
+        int c2[E8_SUBDIM];
+        nearestE8(y, c2);
+
+        UInt32 idx = 0;
+        auto it = cb.point_to_index.find(e8Key(c2));
+        if (it != cb.point_to_index.end())
+        {
+            idx = it->second;
+        }
+        else
+        {
+            /// The nearest lattice point fell outside the truncated codebook (a rare large-norm sub-vector): fall back
+            /// to a brute-force nearest search over the stored points.
+            float best = std::numeric_limits<float>::max();
+            for (size_t k = 0; k < cb.num_points; ++k)
+            {
+                const float * c = cb.coords.data() + k * E8_SUBDIM;
+                float d = 0.0f;
+                for (size_t i = 0; i < E8_SUBDIM; ++i)
+                {
+                    const float e = sub[i] - c[i];
+                    d += e * e;
+                }
+                if (d < best)
+                {
+                    best = d;
+                    idx = static_cast<UInt32>(k);
+                }
+            }
+        }
+
+        if (code_bytes == 1)
+            dst[m] = static_cast<char>(static_cast<UInt8>(idx));
+        else
+        {
+            const UInt16 v = static_cast<UInt16>(idx);
+            std::memcpy(dst + m * 2, &v, sizeof(UInt16));
+        }
+    }
+    std::memcpy(dst + M * code_bytes, &norm, sizeof(float));
+}
+
+/// The query side of the E8 estimator, prepared once per query: a per-subspace ADC table of inner products between the
+/// (rotated, unit-normalized) query sub-vectors and every codebook point.
+struct E8Query
+{
+    std::vector<float> lut;     /// M * num_points inner products, subspace m at offset m * num_points
+    size_t M = 0;
+    size_t num_points = 0;
+    size_t code_bytes = 0;
+    bool is_l2 = false;
+    float q_norm = 0.0f;        /// ||q|| of the original query (L2 only)
+    float q_norm_sq = 0.0f;
+};
+
+E8Query buildE8Query(const E8Codebook & cb, const float * rqhat, size_t dimensions, size_t code_bytes, bool is_l2, float q_norm)
+{
+    E8Query q;
+    q.M = dimensions / E8_SUBDIM;
+    q.num_points = cb.num_points;
+    q.code_bytes = code_bytes;
+    q.is_l2 = is_l2;
+    q.q_norm = q_norm;
+    q.q_norm_sq = q_norm * q_norm;
+    q.lut.resize(q.M * q.num_points);
+    for (size_t m = 0; m < q.M; ++m)
+    {
+        const float * sub = rqhat + m * E8_SUBDIM;
+        float * lut_m = q.lut.data() + m * q.num_points;
+        for (size_t k = 0; k < q.num_points; ++k)
+        {
+            const float * c = cb.coords.data() + k * E8_SUBDIM;
+            float d = 0.0f;
+            for (size_t i = 0; i < E8_SUBDIM; ++i)
+                d += sub[i] * c[i];
+            lut_m[k] = d;
+        }
+    }
+    return q;
+}
+
+/// ADC scan: sum the per-subspace inner products for this vector's codes, then map to the requested distance.
+inline float e8Distance(const E8Query & q, const char * code)
+{
+    float ip = 0.0f;
+    if (q.code_bytes == 1)
+    {
+        const UInt8 * c = reinterpret_cast<const UInt8 *>(code);
+        for (size_t m = 0; m < q.M; ++m)
+            ip += q.lut[m * q.num_points + c[m]];
+    }
+    else
+    {
+        for (size_t m = 0; m < q.M; ++m)
+        {
+            UInt16 idx = 0;
+            std::memcpy(&idx, code + m * 2, sizeof(UInt16));
+            ip += q.lut[m * q.num_points + idx];
+        }
+    }
+
+    float norm_x = 0.0f;
+    std::memcpy(&norm_x, code + q.M * q.code_bytes, sizeof(float));
+
+    if (q.is_l2)
+        return q.q_norm_sq + norm_x * norm_x - 2.0f * q.q_norm * norm_x * ip;
+    return 1.0f - ip;
+}
+
 }
 
 MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimilarityFlat(
@@ -1045,7 +1407,9 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     unum::usearch::scalar_kind_t scalar_kind_,
     bool projected_,
     bool turboquant_,
-    bool rabitq_)
+    bool rabitq_,
+    bool e8_,
+    size_t e8_bits_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
@@ -1054,9 +1418,13 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     , projected(projected_)
     , turboquant(turboquant_)
     , rabitq(rabitq_)
-    /// turboquant: 2 bits/coord (1-bit MSE + 1-bit QJL) + a 4-byte residual norm; rabitq: 1 bit/coord + a 4-byte factor;
-    /// else 1 bit/coord
-    , bytes_per_vector(turboquant_ ? dimensions_ / 4 + sizeof(float) : (rabitq_ ? dimensions_ / 8 + sizeof(float) : dimensions_ / 8))
+    , e8(e8_)
+    , e8_bits(e8_bits_)
+    /// e8: M = dim/8 sub-quantizer codes (1 byte for bits <= 8, else 2) + a 4-byte norm; turboquant: 2 bits/coord
+    /// (1-bit MSE + 1-bit QJL) + a 4-byte residual norm; rabitq: 1 bit/coord + a 4-byte factor; else 1 bit/coord
+    , bytes_per_vector(
+          e8_ ? (dimensions_ / E8_SUBDIM) * (e8_bits_ <= 8 ? 1 : 2) + sizeof(float)
+              : (turboquant_ ? dimensions_ / 4 + sizeof(float) : (rabitq_ ? dimensions_ / 8 + sizeof(float) : dimensions_ / 8)))
 {
 }
 
@@ -1081,7 +1449,8 @@ template <typename Column>
 void quantizeRowsToBinary(
     const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
     size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows,
-    const std::vector<float> & projection, const std::vector<float> & projection_qjl, bool turboquant, bool rabitq)
+    const std::vector<float> & projection, const std::vector<float> & projection_qjl, bool turboquant, bool rabitq,
+    bool e8, size_t e8_code_bytes, const E8Codebook * e8_codebook)
 {
     const auto & data = typeid_cast<const Column &>(column_array->getData()).getData();
 
@@ -1093,8 +1462,8 @@ void quantizeRowsToBinary(
     codes.resize((base + rows) * bytes_per_vector);
     num_vectors = base + rows;
 
-    /// `projection` is non-empty for all three projection-based methods; `projected` means specifically 'b1_projected'.
-    const bool projected = !projection.empty() && !turboquant && !rabitq;
+    /// `projection` is non-empty for all projection-based methods; `projected` means specifically 'b1_projected'.
+    const bool projected = !projection.empty() && !turboquant && !rabitq && !e8;
     const size_t padded = projection.empty() ? 0 : projection.size() / PROJECTION_ROUNDS;
 
     /// Encode one row into its (disjoint) packed code slot. `work`/`work2` are per-thread scratch buffers of `padded`
@@ -1115,6 +1484,25 @@ void quantizeRowsToBinary(
         {
             /// 'rabitq': project, sign-binarize, and append the per-vector correction factor.
             encodeRaBitQ(projection, src, dimensions, work, dst);
+        }
+        else if (e8)
+        {
+            /// 'e8': rotate, unit-normalize the rotated direction, then quantize each 8-dim sub-vector to the nearest
+            /// E8 lattice point. The original L2 norm is appended (used by the L2Distance scan).
+            double norm_sq = 0.0;
+            for (size_t i = 0; i < dimensions; ++i)
+                norm_sq += static_cast<double>(src[i]) * static_cast<double>(src[i]);
+            const float norm = static_cast<float>(std::sqrt(norm_sq));
+
+            applyRandomProjection(projection, src, dimensions, work);
+            double rnorm_sq = 0.0;
+            for (size_t i = 0; i < dimensions; ++i)
+                rnorm_sq += static_cast<double>(work[i]) * static_cast<double>(work[i]);
+            const float inv_rnorm = (rnorm_sq > 0.0) ? static_cast<float>(1.0 / std::sqrt(rnorm_sq)) : 0.0f;
+            for (size_t i = 0; i < dimensions; ++i)
+                work[i] *= inv_rnorm;
+
+            encodeE8(*e8_codebook, work, dimensions, e8_code_bytes, norm, dst);
         }
         else if (projected)
         {
@@ -1146,7 +1534,7 @@ void quantizeRowsToBinary(
 
     /// Only the projection-based paths are expensive enough to be worth parallelizing; raw-sign is cheap.
     static constexpr size_t min_rows_for_parallel = 256;
-    const size_t num_threads = ((projected || turboquant || rabitq) && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
+    const size_t num_threads = ((projected || turboquant || rabitq || e8) && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
 
     if (num_threads <= 1)
     {
@@ -1213,21 +1601,29 @@ void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, s
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float32|Float64|BFloat16)");
 
-    /// For 'b1_projected', 'turboquant', and 'rabitq', build the (deterministic) random projection once and reuse it.
+    /// For 'b1_projected', 'turboquant', 'rabitq', and 'e8', build the (deterministic) random projection once and reuse it.
     /// 'turboquant' additionally needs the second, independent QJL projection.
-    if ((projected || turboquant || rabitq) && projection.empty())
+    if ((projected || turboquant || rabitq || e8) && projection.empty())
         projection = generateRandomProjection(dimensions);
     if (turboquant && projection_qjl.empty())
         projection_qjl = generateRandomProjection(dimensions, RANDOM_PROJECTION_SEED_QJL);
 
+    /// 'e8': resolve the (deterministic, cached) E8 codebook for this (dimensions, bits). `code_bytes` packs the
+    /// sub-quantizer index into 1 byte (bits <= 8) or 2 bytes (bits <= 16).
+    std::shared_ptr<const E8Codebook> e8_codebook;
+    const size_t e8_code_bytes = (e8_bits <= 8) ? 1 : 2;
+    if (e8)
+        e8_codebook = getE8Codebook(dimensions, e8_bits);
+    const E8Codebook * e8_codebook_ptr = e8_codebook.get();
+
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (which.isFloat32())
-        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq);
+        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq, e8, e8_code_bytes, e8_codebook_ptr);
     else if (which.isFloat64())
-        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq);
+        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq, e8, e8_code_bytes, e8_codebook_ptr);
     else if (which.isBFloat16())
-        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq);
+        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq, e8, e8_code_bytes, e8_codebook_ptr);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
@@ -1241,6 +1637,8 @@ MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimila
     bool projected_,
     bool turboquant_,
     bool rabitq_,
+    bool e8_,
+    size_t e8_bits_,
     ContextPtr context)
     : parameters(parameters_)
     , index_column(index_column_)
@@ -1248,6 +1646,8 @@ MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimila
     , projected(projected_)
     , turboquant(turboquant_)
     , rabitq(rabitq_)
+    , e8(e8_)
+    , e8_bits(e8_bits_)
     , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
@@ -1305,7 +1705,34 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     std::vector<UInt8> query_code(bytes_per_vector);
     TurboQuantQuery turboquant_query; /// turboquant only: the two bit-sliced query projections for the popcount scan
     RaBitQQuery rabitq_query;         /// rabitq only: the bit-sliced query for the popcount scan
-    if (turboquant)
+    E8Query e8_query;                 /// e8 only: the per-subspace ADC lookup table
+    if (e8)
+    {
+        /// Rotate the query with the same fixed-seed transform, unit-normalize the rotated direction, and build the ADC
+        /// inner-product table against the (deterministic) E8 codebook. For L2Distance the query's L2 norm is kept.
+        const std::vector<float> projection = generateRandomProjection(granule->dimensions);
+        const size_t padded = projection.size() / PROJECTION_ROUNDS;
+        std::vector<float> query_rotated(padded);
+        applyRandomProjection(projection, parameters->reference_vector.data(), granule->dimensions, query_rotated.data());
+
+        double q_norm_sq = 0.0;
+        for (size_t i = 0; i < granule->dimensions; ++i)
+            q_norm_sq += static_cast<double>(parameters->reference_vector[i]) * static_cast<double>(parameters->reference_vector[i]);
+        const float q_norm = static_cast<float>(std::sqrt(q_norm_sq));
+
+        double rnorm_sq = 0.0;
+        for (size_t i = 0; i < granule->dimensions; ++i)
+            rnorm_sq += static_cast<double>(query_rotated[i]) * static_cast<double>(query_rotated[i]);
+        const float inv_rnorm = (rnorm_sq > 0.0) ? static_cast<float>(1.0 / std::sqrt(rnorm_sq)) : 0.0f;
+        for (size_t i = 0; i < granule->dimensions; ++i)
+            query_rotated[i] *= inv_rnorm;
+
+        const size_t e8_code_bytes = (e8_bits <= 8) ? 1 : 2;
+        auto codebook = getE8Codebook(granule->dimensions, e8_bits);
+        const bool is_l2 = (granule->metric_kind == unum::usearch::metric_kind_t::l2sq_k);
+        e8_query = buildE8Query(*codebook, query_rotated.data(), granule->dimensions, e8_code_bytes, is_l2, q_norm);
+    }
+    else if (turboquant)
     {
         const std::vector<float> p1 = generateRandomProjection(granule->dimensions);
         const std::vector<float> p2 = generateRandomProjection(granule->dimensions, RANDOM_PROJECTION_SEED_QJL);
@@ -1341,7 +1768,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// usearch's punned metric computes Hamming over b1x8 codes using AVX popcount (not used for turboquant,
     /// which uses its own dequantized squared-L2).
     unum::usearch::metric_punned_t metric;
-    if (!turboquant && !rabitq)
+    if (!turboquant && !rabitq && !e8)
         metric = unum::usearch::metric_punned_t(granule->dimensions, granule->metric_kind, granule->scalar_kind);
 
     const char * base = reinterpret_cast<const char *>(granule->codes.data());
@@ -1378,7 +1805,9 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             if ((i & 0xFFFFu) == 0)
                 throw_if_killed();
             float dist = NAN;
-            if (turboquant)
+            if (e8)
+                dist = e8Distance(e8_query, reinterpret_cast<const char *>(base + i * bytes_per_vector));
+            else if (turboquant)
                 dist = turboQuantDistanceFast(turboquant_query, base + i * bytes_per_vector, use_icelake_turboquant);
             else if (rabitq)
                 dist = raBitQDistanceFast(rabitq_query, base + i * bytes_per_vector, use_icelake_rabitq);
@@ -1444,6 +1873,8 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     bool projected_,
     bool turboquant_,
     bool rabitq_,
+    bool e8_,
+    size_t e8_bits_,
     UsearchHnswParams usearch_hnsw_params_)
     : IMergeTreeIndex(index_)
     , method(method_)
@@ -1453,6 +1884,8 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     , projected(projected_)
     , turboquant(turboquant_)
     , rabitq(rabitq_)
+    , e8(e8_)
+    , e8_bits(e8_bits_)
     , usearch_hnsw_params(usearch_hnsw_params_)
 {
 }
@@ -1467,7 +1900,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected, turboquant, rabitq);
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected, turboquant, rabitq, e8, e8_bits);
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
@@ -1480,7 +1913,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 {
     const String & index_column = index.column_names[0];
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, turboquant, rabitq, context);
+        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, turboquant, rabitq, e8, e8_bits, context);
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
@@ -1498,6 +1931,8 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     bool projected = false;
     bool turboquant = false;
     bool rabitq = false;
+    bool e8 = false;
+    size_t e8_bits = 8;
 
     /// Optional parameters:
     const bool has_six_args = (args.size() == 6);
@@ -1507,8 +1942,8 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         usearch_hnsw_params = {.connectivity  = args[4].safeGet<UInt64>(),
                                .expansion_add = args[5].safeGet<UInt64>()};
 
-        /// 'turboquant'/'rabitq' (fastknn only) are not usearch scalar_kinds: they store their own codes and use their
-        /// own scan kernels. Keep the metric as the requested distance (cosineDistance -> cos_k).
+        /// 'turboquant'/'rabitq'/'e8' (fastknn only) are not usearch scalar_kinds: they store their own codes and use
+        /// their own scan kernels. Keep the metric as the requested distance (cosineDistance -> cos_k, L2Distance -> l2sq_k).
         if (quantization == "turboquant")
         {
             turboquant = true;
@@ -1518,6 +1953,13 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         {
             rabitq = true;
             scalar_kind = unum::usearch::scalar_kind_t::f32_k; /// unused by the rabitq scan
+        }
+        else if (quantization == "e8")
+        {
+            /// 'e8' (fastknn only): the fifth argument carries the number of bits per 8-dim sub-quantizer.
+            e8 = true;
+            e8_bits = args[4].safeGet<UInt64>();
+            scalar_kind = unum::usearch::scalar_kind_t::f32_k; /// unused by the e8 scan
         }
         else
         {
@@ -1532,7 +1974,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         }
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, turboquant, rabitq, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, turboquant, rabitq, e8, e8_bits, usearch_hnsw_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -1578,11 +2020,28 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         const String quantization = args[3].safeGet<String>();
         const bool is_turboquant = (quantization == "turboquant");
         const bool is_rabitq = (quantization == "rabitq");
+        const bool is_e8 = (quantization == "e8");
 
-        if (!is_turboquant && !is_rabitq && !quantizationToScalarKind.contains(quantization))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {} (and 'turboquant', 'rabitq' for the 'fastknn' method)", joinByComma(quantizationToScalarKind));
+        if (!is_turboquant && !is_rabitq && !is_e8 && !quantizationToScalarKind.contains(quantization))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {} (and 'turboquant', 'rabitq', 'e8' for the 'fastknn' method)", joinByComma(quantizationToScalarKind));
 
-        if (is_turboquant)
+        if (is_e8)
+        {
+            /// 'e8': fastknn-only lattice product quantization. Supports both cosineDistance and L2Distance; dimension
+            /// must be a multiple of 8 (one E8 sub-quantizer per 8 coordinates). The fifth argument is the number of
+            /// bits per sub-quantizer (1..16); it sets the codebook size (2^bits points) and hence the storage.
+            if (!is_fastknn)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'e8' quantization is only supported by the 'fastknn' method");
+            const auto e8_metric = distanceFunctionToMetricKind.at(args[1].safeGet<String>());
+            if (e8_metric != unum::usearch::metric_kind_t::cos_k && e8_metric != unum::usearch::metric_kind_t::l2sq_k)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'e8' quantization can only be used with cosineDistance or L2Distance as distance function");
+            if (args[2].safeGet<UInt64>() % 8 != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'e8' quantization requires that the dimension is a multiple of 8");
+            const UInt64 e8_bits = args[4].safeGet<UInt64>();
+            if (e8_bits < 1 || e8_bits > 16)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'e8' quantization requires that the fifth argument (bits per sub-quantizer) is between 1 and 16");
+        }
+        else if (is_turboquant)
         {
             /// 'turboquant': fastknn-only, cosine distance, dimension multiple of 8 (two 1-bit sign planes -> dim/8 bytes each).
             if (!is_fastknn)

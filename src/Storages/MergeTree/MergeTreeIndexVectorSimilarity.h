@@ -218,7 +218,9 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
         unum::usearch::scalar_kind_t scalar_kind_,
         bool projected_,
         bool turboquant_,
-        bool rabitq_);
+        bool rabitq_,
+        bool e8_,
+        size_t e8_bits_);
 
     ~MergeTreeIndexAggregatorVectorSimilarityFlat() override = default;
 
@@ -234,10 +236,12 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
     const bool projected;          /// 'b1_projected' quantization: random-project before sign-binarizing
     const bool turboquant;         /// 'turboquant' quantization: random-project, then 2-bit Lloyd-Max per coordinate
     const bool rabitq;             /// 'rabitq' quantization: random-project, sign-binarize, store a per-vector correction factor
+    const bool e8;                 /// 'e8' quantization: random-project, then quantize each 8-dim sub-vector to the fixed E8 lattice
+    const size_t e8_bits;          /// 'e8' quantization: bits per 8-dim sub-quantizer (codebook size 2^bits)
     size_t bytes_per_vector = 0;
     size_t num_vectors = 0;
     std::vector<UInt8> codes;
-    std::vector<float> projection;     /// sign-flip diagonals for the fast (Walsh-Hadamard) random projection, lazily generated ('b1_projected'/'turboquant'/'rabitq')
+    std::vector<float> projection;     /// sign-flip diagonals for the fast (Walsh-Hadamard) random projection, lazily generated ('b1_projected'/'turboquant'/'rabitq'/'e8')
     std::vector<float> projection_qjl; /// second, independent projection for the 'turboquant' QJL stage, lazily generated
 };
 
@@ -252,6 +256,8 @@ public:
         bool projected_,
         bool turboquant_,
         bool rabitq_,
+        bool e8_,
+        size_t e8_bits_,
         ContextPtr context);
 
     ~MergeTreeIndexConditionVectorSimilarityFlat() override = default;
@@ -268,6 +274,8 @@ private:
     const bool projected;          /// 'b1_projected' quantization: random-project the query before sign-binarizing
     const bool turboquant;         /// 'turboquant' quantization: random-project + 2-bit Lloyd-Max
     const bool rabitq;             /// 'rabitq' quantization: random-project + sign + per-vector correction factor (asymmetric estimator)
+    const bool e8;                 /// 'e8' quantization: random-project + per-8-dim E8 lattice product quantization (ADC scan)
+    const size_t e8_bits;          /// 'e8' quantization: bits per 8-dim sub-quantizer
     const float index_fetch_multiplier;
     const size_t max_limit;
     const bool is_rescoring;
@@ -286,6 +294,8 @@ public:
         bool projected_,
         bool turboquant_,
         bool rabitq_,
+        bool e8_,
+        size_t e8_bits_,
         UsearchHnswParams usearch_hnsw_params_);
 
     ~MergeTreeIndexVectorSimilarity() override = default;
@@ -304,6 +314,8 @@ private:
     const bool projected;        /// fastknn + 'b1_projected' quantization (random projection before sign)
     const bool turboquant;       /// fastknn + 'turboquant' quantization (random projection + 2-bit Lloyd-Max)
     const bool rabitq;           /// fastknn + 'rabitq' quantization (random projection + sign + per-vector correction factor)
+    const bool e8;               /// fastknn + 'e8' quantization (random projection + per-8-dim E8 lattice product quantization)
+    const size_t e8_bits;        /// 'e8' quantization: bits per 8-dim sub-quantizer
     const UsearchHnswParams usearch_hnsw_params;
 };
 
