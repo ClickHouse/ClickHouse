@@ -33,12 +33,8 @@
 #include <Common/MemoryTracker.h>
 
 #include <Common/DNSResolver.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-
-#include <fmt/ranges.h>
 
 
 namespace CurrentMetrics
@@ -1522,6 +1518,45 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
+    DECLARE(Bool, oom_canary_enable, false, R"(
+    Experimental. Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
+    before the main ClickHouse server process, giving the server a chance to shed load.
+    Requires Linux >= 5.3 (for `pidfd_open`); the canary is disabled at startup on older kernels.
+    The OOM response requires cgroup v2 `memory.events.local` OOM-kill evidence and may run global
+    query cancellation, merge cancellation, and `system.crash_log` writes.
+    The canary cannot protect the server when cgroup v2 `memory.oom.group` is enabled for the
+    server's cgroup: the kernel then kills the whole cgroup as one unit, including the server,
+    so the OOM response never runs. A warning is logged at startup in this mode.
+    Behavior may change between ClickHouse versions until production validation is complete.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, oom_canary_size, 104857600, R"(
+    Size in bytes of the memory region that the OOM canary child process allocates and touches.
+    Locking the region with `mlock` is best-effort: it requires `CAP_IPC_LOCK` or a sufficient
+    `RLIMIT_MEMLOCK`, and when locking fails the canary logs a warning and the memory remains
+    allocated but may be swapped out.
+    Default is 100 MB (104857600). Larger values make the canary a more attractive OOM target.
+    )", 0) \
+    DECLARE(Bool, oom_canary_relaunch, true, R"(
+    When true, the OOM canary is automatically relaunched after the canary process dies for any
+    reason other than a permanent setup failure or server shutdown — including OOM kills, other
+    signals, and transient exits — subject to `oom_canary_max_rapid_relaunches` and the backoff
+    settings. The OOM response sequence itself runs only when cgroup v2 `memory.events.local`
+    provides OOM-kill evidence.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
+    Maximum number of consecutive rapid OOM canary relaunches before automatic relaunch is disabled
+    to avoid thrashing under sustained memory pressure. The counter and the relaunch backoff reset
+    once a canary survives longer than `oom_canary_max_backoff_seconds`, so a canary that dies only
+    sporadically over a long uptime is not eventually disabled.
+    Applies only when `oom_canary_relaunch` is true.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_initial_backoff_seconds, 1, R"(
+    Initial backoff delay in seconds between consecutive OOM canary relaunches.
+    The delay doubles on each relaunch up to `oom_canary_max_backoff_seconds`.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_backoff_seconds, 60, R"(
+    Maximum backoff delay in seconds between consecutive OOM canary relaunches.
+    )", 0) \
     DECLARE(Bool, remap_executable, false, R"(
     Setting to reallocate memory for machine code ("text") using huge pages.
 
@@ -1671,7 +1706,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
 // clang-format on
 
-/// If you add a setting which can be updated at runtime, please update the 'changeable_settings' map in collectChangeableServerSettings below
+/// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
 DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, SERVER_SETTINGS_SUPPORTED_TYPES)
 
@@ -1751,19 +1786,15 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
 }
 
 
-namespace
+void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
 {
+    MutableColumns & res_columns = params.res_columns;
+    ContextPtr context = params.context;
 
-using ChangeableSettingsMap = std::unordered_map<String, std::pair<String, ServerSettings::ChangeableWithoutRestart>>;
-
-/// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
-/// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
-/// current setting values, one needs to ask the components directly.
-ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
-{
-    using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
-
-    ChangeableSettingsMap changeable_settings
+    /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
+    /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
+    /// current setting values, one needs to ask the components directly.
+    std::unordered_map<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
@@ -1825,8 +1856,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
-            {"s3queue_disable_streaming",
-             {std::to_string(context->getServerSettings().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
+            {"s3queue_disable_streaming", {"0", ChangeableWithoutRestart::Yes}},
             {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
@@ -1936,29 +1966,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
-
-    /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
-    /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.
-    const auto & config = context->getConfigRef();
-    if (zkutil::hasZooKeeperConfig(config))
-    {
-        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
-        changeable_settings.insert(
-            {"keeper_hosts", {fmt::format("{}", fmt::join(args.hosts, ",")), ChangeableWithoutRestart::Yes}});
-    }
-
-    return changeable_settings;
-}
-
-}
-
-void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
-{
-    MutableColumns & res_columns = params.res_columns;
-    ContextPtr context = params.context;
-
-    const auto changeable_settings = collectChangeableServerSettings(context);
-
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
@@ -1976,14 +1983,5 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         res_columns[6]->insert(is_changeable ? changeable_settings_it->second.second : ChangeableWithoutRestart::No);
         res_columns[7]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
     }
-}
-
-std::optional<String> ServerSettings::tryGetLiveValueAsString(ContextPtr context, std::string_view name) const
-{
-    const auto changeable_settings = collectChangeableServerSettings(context);
-    auto it = changeable_settings.find(String{name});
-    if (it == changeable_settings.end())
-        return std::nullopt;
-    return it->second.first;
 }
 }

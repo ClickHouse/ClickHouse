@@ -75,18 +75,25 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorSourceRequests;
+    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorModeledCostMicroseconds;
+    extern const Event ReaderExecutorCacheGetRequests;
+    extern const Event ReaderExecutorCachePopulateRequests;
+    extern const Event ReaderExecutorIncompleteConnections;
 }
 
 namespace
 {
 
-/// RAII helper: creates a ThreadGroup with its own ProfileEvents counters,
-/// attaches the current thread to it, detaches in destructor.
-/// Lets us read per-test ProfileEvents without interference from other tests.
+/// RAII helper: creates a ThreadGroup with its own ProfileEvents counters, attaches the
+/// current thread to it, detaches in the destructor -- so a test reads the executor's
+/// ProfileEvents in isolation, without interference from other tests.
 struct TestThreadGroup
 {
-    /// Create ThreadStatus if none exists (debug build has one, ASan may not).
-    std::optional<DB::ThreadStatus> thread_status_holder{current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
+    /// Create a ThreadStatus only if none exists (the debug build attaches a
+    /// MainThreadStatus; ASan/release may not), else ThreadStatus's ctor asserts.
+    std::optional<DB::ThreadStatus> thread_status_holder{
+        current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
     DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
     DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
 
@@ -3909,4 +3916,90 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
     executor.reset();
     EXPECT_EQ(profile_events[ProfileEvents::ReaderExecutorSourceRequests].load() - src_before, 1u);
     EXPECT_EQ(profile_events[ProfileEvents::LiveSourceBufferCreated].load() - created_before, 1);
+}
+
+/// The metrics tests read the executor's ProfileEvents from a fresh per-test ThreadGroup
+/// (starts at zero) -- the same path that feeds `system.events`.
+TEST(ReaderExecutor, ProfileEventsCountSourceReadsAndBytes)
+{
+    TestThreadGroup tg;
+
+    /// 1 MiB file read in 256 KiB windows -> 4 stateless source opens, all bytes served.
+    constexpr size_t size = 1024 * 1024;
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(size, 'M')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    {
+        ReaderExecutor executor(source, objects, {}, /*window_size=*/256 * 1024);
+        while (!executor.readNextWindow().empty()) {}
+    }
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorRequestedBytes), size);
+    /// No cache tiers configured and no live connection kept: these stay 0.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST(ReaderExecutor, ModeledCostMatchesFormula)
+{
+    TestThreadGroup tg;
+
+    /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache/conn terms 0):
+    /// 4 window-sized requests + 1 MiB transferred.
+    constexpr size_t size = 1024 * 1024;
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(size, 'C')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    {
+        ReaderExecutor executor(source, objects, {}, /*window_size=*/256 * 1024);
+        while (!executor.readNextWindow().empty()) {}
+    }
+
+    const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
+    const auto requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
+    EXPECT_EQ(cost, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
+    EXPECT_EQ(requested, size);
+
+    /// The KPI: modeled ms per requested MiB.
+    const double ms_per_mib = (static_cast<double>(cost) / 1000.0)
+        / (static_cast<double>(requested) / (1024.0 * 1024.0));
+    EXPECT_DOUBLE_EQ(ms_per_mib, 140.0);
+}
+
+TEST(ReaderExecutor, ModeledCostScalesWithSourceRequests)
+{
+    TestThreadGroup tg;
+
+    /// Smaller windows over the same data -> more source requests -> higher modeled cost,
+    /// so the KPI (cost per requested MiB) rises even though the bytes are unchanged.
+    constexpr size_t size = 1024 * 1024;
+    {
+        auto source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"a.bin", String(size, 'a')}});
+        StoredObjects objects;
+        objects.emplace_back("a.bin", "", size);
+        ReaderExecutor coarse(source, objects, {}, /*window_size=*/1024 * 1024);
+        while (!coarse.readNextWindow().empty()) {}
+    }
+    const auto cost_after_coarse = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
+    const auto requests_after_coarse = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
+    {
+        auto source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"b.bin", String(size, 'b')}});
+        StoredObjects objects;
+        objects.emplace_back("b.bin", "", size);
+        ReaderExecutor fine(source, objects, {}, /*window_size=*/64 * 1024);
+        while (!fine.readNextWindow().empty()) {}
+    }
+    const auto cost_after_fine = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
+    const auto requests_after_fine = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
+
+    EXPECT_EQ(requests_after_coarse, 1u);
+    EXPECT_EQ(requests_after_fine - requests_after_coarse, 16u);
+    EXPECT_GT(cost_after_fine - cost_after_coarse, cost_after_coarse);
 }

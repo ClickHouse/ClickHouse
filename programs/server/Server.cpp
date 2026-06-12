@@ -33,6 +33,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
+#include <Common/OOMCanary/OOMCanary.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -114,16 +115,14 @@
 #include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadStackSize.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Server/CloudPlacementInfo.h>
-#include <Server/DistributedQuery/ExchangeConnections.h>
-#include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
-#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -424,6 +423,12 @@ namespace ServerSetting
     extern const ServerSettingsString google_protos_path;
     extern const ServerSettingsString filesystem_caches_path;
     extern const ServerSettingsInt32 oom_score;
+    extern const ServerSettingsBool oom_canary_enable;
+    extern const ServerSettingsUInt64 oom_canary_size;
+    extern const ServerSettingsBool oom_canary_relaunch;
+    extern const ServerSettingsUInt64 oom_canary_max_rapid_relaunches;
+    extern const ServerSettingsUInt64 oom_canary_initial_backoff_seconds;
+    extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
@@ -1511,7 +1516,7 @@ try
         /* minCapacity */3,
         /* maxCapacity */server_settings[ServerSetting::max_connections],
         /* idleTime */60,
-        /* stackSize */POCO_THREAD_STACK_SIZE,
+        /* stackSize */DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
@@ -1870,6 +1875,27 @@ try
         setOOMScore(oom_score, log);
 #endif
 
+#if defined(OS_LINUX)
+    std::optional<OOMCanary> oom_canary;
+    if (server_settings[ServerSetting::oom_canary_enable])
+    {
+        OOMCanary::Config canary_config;
+        canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
+        canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
+        canary_config.max_rapid_relaunches = server_settings[ServerSetting::oom_canary_max_rapid_relaunches];
+        canary_config.initial_backoff_seconds = server_settings[ServerSetting::oom_canary_initial_backoff_seconds];
+        canary_config.max_backoff_seconds = server_settings[ServerSetting::oom_canary_max_backoff_seconds];
+        oom_canary.emplace(global_context, std::move(canary_config));
+    }
+    else
+    {
+        LOG_INFO(log, "OOM canary is disabled");
+    }
+#else
+    if (server_settings[ServerSetting::oom_canary_enable])
+        LOG_WARNING(log, "OOM canary is only supported on Linux, ignoring");
+#endif
+
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
 
     SCOPE_EXIT({
@@ -2044,82 +2070,6 @@ try
 
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
-
-    std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
-    String stateless_worker_endpoint_name;
-    if (config().getBool("stateless_worker_server.enabled", false))
-    {
-        String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
-        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();
-        stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
-        global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
-        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
-    }
-
-    SCOPE_EXIT({
-        if (stateless_worker_endpoint_ptr)
-        {
-            /// Remove the same endpoint that was registered (the configured name may differ from "localhost").
-            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
-            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
-
-            stateless_worker_endpoint_ptr->blocker.cancelForever();
-            stateless_worker_endpoint_ptr->shutdown();
-            /// Acquire the lock to wait for all in-flight requests to finish.
-            std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
-        }
-        stateless_worker_endpoint_ptr.reset();
-    });
-
-    #ifdef OS_LINUX
-    ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
-    std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
-    if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
-    {
-        if (streaming_exchange_port > 65535)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
-
-        /// The exchange handshake is unauthenticated, so the listener is never bound to all interfaces
-        /// implicitly: the streaming exchange is enabled only when explicit listen host(s) are given.
-        Strings exchange_listen_hosts = DB::getMultipleValuesFromConfig(config(), "distributed_query", "streaming_exchange_listen_host");
-        if (exchange_listen_hosts.empty())
-        {
-            LOG_ERROR(log, "`distributed_query.streaming_exchange_port` is set but no "
-                "`distributed_query.streaming_exchange_listen_host` is configured; the streaming exchange "
-                "server is not started. Specify a listen host to enable it.");
-        }
-        else
-        {
-            for (const auto & listen_host : exchange_listen_hosts)
-            {
-                try
-                {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
-                    exchange_servers.back()->start();
-                }
-                catch (Poco::Exception & e)
-                {
-                    LOG_INFO(log, "Failed to start exchange server on {}:{}: {}",
-                        listen_host, streaming_exchange_port, e.displayText());
-                }
-            }
-            if (exchange_servers.empty())
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to start ExchangeServer on port {}", streaming_exchange_port);
-        }
-    }
-
-    SCOPE_EXIT({
-        for (auto & exchange_server_ptr : exchange_servers)
-        {
-            exchange_server_ptr->stop();
-            exchange_server_ptr.reset();
-        }
-    });
-    #else
-    if (config().getUInt("distributed_query.streaming_exchange_port", 0))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
-    #endif
 
     /// Set up caches.
 
@@ -3118,6 +3068,11 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
 
+#if defined(OS_LINUX)
+        if (oom_canary)
+            oom_canary->start();
+#endif
+
         global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
 
         /// Build loggers before tables startup to make log messages from tables
@@ -3345,6 +3300,16 @@ try
 #endif
         };
 
+        /// Wrapping the call to OOM canary stop in a lambda lets us write
+        /// the OS_LINUX guard outside the SCOPE_EXIT_SAFE macro argument list,
+        /// avoiding -Wembedded-directive.
+        auto stop_oom_canary = [&]{
+#if defined(OS_LINUX)
+            if (oom_canary)
+                oom_canary->stop();
+#endif
+        };
+
         SCOPE_EXIT_SAFE({
             const auto & logger_shutdown_level_setting = server_settings[ServerSetting::logger_shutdown_level];
             if (logger_shutdown_level_setting.changed && !logger_shutdown_level_setting.value.empty())
@@ -3407,6 +3372,8 @@ try
                 global_context->waitAllBackupsAndRestores();
             else
                 global_context->cancelAllBackupsAndRestores();
+
+            stop_oom_canary();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])

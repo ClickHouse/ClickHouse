@@ -7,6 +7,7 @@
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LiveConnectionLimit.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Stopwatch.h>
@@ -1015,6 +1016,7 @@ private:
             DecryptMicroseconds,
             PrefetchWaitMicroseconds,
             SyncReadMicroseconds,
+            WorkMicroseconds,
             PrefetchHits,
             PrefetchCancelled,
             PrefetchPoolFull,
@@ -1098,6 +1100,8 @@ private:
         bool leased = false;
         bool reached_eof = false;
     };
+
+    CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };

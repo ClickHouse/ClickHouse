@@ -843,6 +843,7 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorDecryptMicroseconds, "Time spent in ReaderExecutor decryption layers.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchWaitMicroseconds, "Time the consumer thread blocked on a not-yet-ready prefetch future. Contributes directly to query latency.", ValueType::Microseconds) \
     M(ReaderExecutorSyncReadMicroseconds, "Time the consumer thread spent in an in-line synchronous read because no usable prefetch was available. Contributes directly to query latency.", ValueType::Microseconds) \
+    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (planning, cache reads, source reads and prefetch waits for the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchHits, "Number of times a ReaderExecutor read was served by an in-flight prefetch.", ValueType::Number) \
     M(ReaderExecutorPrefetchCancelled, "Number of times a ReaderExecutor prefetch was cancelled before its worker started.", ValueType::Number) \
     M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submit returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \

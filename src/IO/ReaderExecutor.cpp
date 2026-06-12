@@ -9,6 +9,7 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <Interpreters/ReaderExecutorLog.h>
 #include <chrono>
@@ -40,6 +41,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorDecryptMicroseconds;
     extern const Event ReaderExecutorPrefetchWaitMicroseconds;
     extern const Event ReaderExecutorSyncReadMicroseconds;
+    extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorPrefetchHits;
     extern const Event ReaderExecutorPrefetchCancelled;
     extern const Event ReaderExecutorPrefetchPoolFull;
@@ -143,6 +145,7 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case DecryptMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorDecryptMicroseconds, value); break;
         case PrefetchWaitMicroseconds:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWaitMicroseconds, value); break;
         case SyncReadMicroseconds:      ProfileEvents::increment(ProfileEvents::ReaderExecutorSyncReadMicroseconds, value); break;
+        case WorkMicroseconds:          ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value); break;
         case PrefetchHits:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchHits, value); break;
         case PrefetchCancelled:         ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, value); break;
         case PrefetchPoolFull:          ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, value); break;
@@ -177,17 +180,14 @@ ReaderExecutor::ReaderExecutor(
     , max_tail_for_drain(max_tail_for_drain_)
     , live_connection_min_read_bytes(window_size_)
     , plan_look_ahead_window(std::max(plan_look_ahead_window_, window_size_))
+    , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     if (window_size == 0 || block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "reader_executor_window_size and reader_executor_block_size must be > 0, "
             "got window_size={}, block_size={}", window_size, block_size);
 
-    /// `build` can throw (e.g. an `UnknownSize` object in a multi-object
-    /// pipeline). Bump the live-instance gauge only after it succeeds: a ctor
-    /// that throws skips `~ReaderExecutor`, so an earlier bump would leak.
     offset_map.build(stored_objects);
-    CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
     creator_query_id = String(CurrentThread::getQueryId());
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, block_size, caches.size());
@@ -200,7 +200,6 @@ ReaderExecutor::~ReaderExecutor()
     /// allocates - safe from this `noexcept` destructor.
     discardPrefetch(/*cancelled=*/false);
     drainAbandonedPrefetches(/*wait_finished=*/true);
-    CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
     /// A transient `readBigAt` executor rolls its stats into the parent via
     /// mergeTransientStats; emitting ProfileEvents / a reader_executor_log row
@@ -218,7 +217,7 @@ ReaderExecutor::~ReaderExecutor()
         "pushed_to_cache_sync={} pushed_to_cache_async={} "
         "get_reqs={} populate_reqs={} src_reqs={} "
         "get_us={} populate_us={} src_us={} decrypt_us={} "
-        "prefetch_wait_us={} sync_read_us={} "
+        "prefetch_wait_us={} sync_read_us={} work_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
         "prefetch_discarded_running={} prefetch_discard_wait_us={} "
         "prefetch_issued_source_bytes={} prefetch_issued_cache_bytes={} "
@@ -229,7 +228,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.get(Stats::CacheGetRequests), stats.get(Stats::CachePopulateRequests), stats.get(Stats::SourceRequests),
         stats.get(Stats::CacheGetMicroseconds), stats.get(Stats::CachePopulateMicroseconds),
         stats.get(Stats::SourceReadMicroseconds), stats.get(Stats::DecryptMicroseconds),
-        stats.get(Stats::PrefetchWaitMicroseconds), stats.get(Stats::SyncReadMicroseconds),
+        stats.get(Stats::PrefetchWaitMicroseconds), stats.get(Stats::SyncReadMicroseconds), stats.get(Stats::WorkMicroseconds),
         stats.get(Stats::PrefetchHits), stats.get(Stats::PrefetchCancelled), stats.get(Stats::PrefetchPoolFull),
         stats.get(Stats::PrefetchDiscardedRunning), stats.get(Stats::PrefetchDiscardWaitMicroseconds),
         stats.get(Stats::PrefetchIssuedSourceBytes), stats.get(Stats::PrefetchIssuedCacheBytes),
@@ -1021,6 +1020,10 @@ void ReaderExecutor::decryptInPlace(
 /// window ahead.
 Rope ReaderExecutor::readNextWindow()
 {
+    /// Total foreground time in the read call (planning, cache reads, source reads,
+    /// prefetch waits) - the executor's direct contribution to query read latency.
+    StatTimer work_timer(stats, Stats::WorkMicroseconds);
+
     const size_t logical_size = totalSize();
 
     /// EOF return - but a prefetch launched before EOF can have its worker latch
