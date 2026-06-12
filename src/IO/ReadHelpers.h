@@ -138,7 +138,11 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
-inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
+/// Templated on the allocator so this works with both `std::string` and
+/// `StringWithMemoryTracking` (and any other `std::basic_string<char>` with
+/// a custom allocator).
+template <typename Allocator>
+inline void readStringBinary(std::basic_string<char, std::char_traits<char>, Allocator> & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -402,6 +406,7 @@ void skipStringUntilWhitespace(ReadBuffer & buf);
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
+void readStringUntilColon(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
@@ -769,7 +774,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), std::min(buf.available(), 15uz))); /// 15 = max IPv4 address length
+        throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), buf.available()));
     else
         return ReturnType(false);
 }
@@ -791,8 +796,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), std::min(buf.available(), 45uz))); /// 45 = max IPv6 address length
-                                                                                                                                                   /// https://stackoverflow.com/a/166157
+        throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), buf.available()));
     else
         return ReturnType(false);
 }
@@ -2104,10 +2108,6 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
-
-/// Skip whitespace and SQL-style comments (-- to end of line, /* */ blocks).
-/// Used so that trailing comments after the last row in VALUES format do not cause parse errors.
-void skipWhitespaceAndSQLComments(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);

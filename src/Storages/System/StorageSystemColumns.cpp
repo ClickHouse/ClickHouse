@@ -27,7 +27,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -146,6 +146,8 @@ protected:
 
                 auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
                 columns = metadata_snapshot->getColumns();
+                if (auto hints = storage->tryGetSerializationHints())
+                    serialization_hints = std::move(*hints);
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
@@ -162,12 +164,6 @@ protected:
                     cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
-
-                if (columns_mask[21])
-                {
-                    if (auto hints = storage->tryGetSerializationHints())
-                        serialization_hints = std::move(*hints);
-                }
             }
 
             /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
@@ -444,7 +440,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

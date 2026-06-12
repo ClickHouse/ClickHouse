@@ -323,6 +323,10 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
             start_idx = idx - 1;
             total_length_of_covered_ranges += r.length();
             start_offset = std::min(start_offset, r.start);
+            /// A range found to the left may extend past the current end (e.g. when ranges
+            /// share the same start offset but have different lengths, and the sort placed
+            /// the longer range first). We must extend end_offset to cover it.
+            end_offset = std::max(end_offset, r.end);
         }
         else if (s != RequestState::State::Cancelled)
         {
@@ -353,6 +357,8 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
             end_idx = idx + 1;
             total_length_of_covered_ranges += r.length();
             end_offset = std::max(end_offset, r.end);
+            /// (This currently doesn't do anything because ranges are sorted by `start`, but why not.)
+            start_offset = std::min(start_offset, r.start);
         }
         else if (s != RequestState::State::Cancelled)
         {

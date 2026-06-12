@@ -176,9 +176,9 @@ if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
 endif()
 
-if (SANITIZE MATCHES "address")
+if (SANITIZE STREQUAL "address")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_ASAN)
-elseif (SANITIZE MATCHES "thread")
+elseif (SANITIZE STREQUAL "thread")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_TSAN)
 endif()
 

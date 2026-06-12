@@ -2,7 +2,6 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/CacheLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
@@ -48,13 +47,6 @@ private:
 
 class Runner
 {
-private:
-    struct alignas(DB::CH_CACHE_LINE_SIZE) ThreadState
-    {
-        size_t thread_idx;
-        Stats thread_info;
-    };
-
 public:
     Runner(
         std::optional<size_t> concurrency_,
@@ -67,12 +59,14 @@ public:
         std::optional<bool> continue_on_error_,
         std::optional<size_t> max_iterations_);
 
-    void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers, ThreadState & thread_state);
+    void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers);
 
     void printNumberOfRequestsExecuted(size_t num)
     {
         std::cerr << "Requests executed: " << num << ".\n";
     }
+
+    bool tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener);
 
     void runBenchmark();
 
@@ -103,26 +97,23 @@ private:
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
     std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
 
-    std::shared_ptr<Stats> mergeThreadInfos();
-
     std::string input_request_log;
     std::string setup_nodes_snapshot_path;
 
     size_t concurrency = 1;
+    size_t queue_depth = 1;
     size_t pipeline_depth = 1;
 
     std::optional<ThreadPool> pool;
 
-    DB::ConfigurationPtr config_ptr;
-
+    std::optional<Generator> generator;
     double max_time = 0;
     double delay = 1;
     bool continue_on_error = false;
     bool enable_tracing = false;
     size_t max_iterations = 0;
 
-    /// Iteration counter, excluding requests during warmup. This is what max_iterations limits.
-    std::atomic<size_t> requests_started = 0;
+    std::atomic<size_t> requests_executed = 0;
     std::atomic<bool> shutdown = false;
 
     double warmup_seconds = 0;
@@ -136,9 +127,10 @@ private:
     Stopwatch total_watch;
     Stopwatch delay_watch;
 
-    std::vector<ThreadState> threads;
+    std::mutex mutex;
 
-    std::mutex mutex; // for writing to stdout
+    using Queue = ConcurrentBoundedQueue<ZooKeeperRequestWithCallbacks>;
+    std::optional<Queue> queue;
 
     std::mutex connection_mutex;
     ConnectionInfo default_connection_info;

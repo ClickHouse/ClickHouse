@@ -1,5 +1,4 @@
 #include <Access/ViewDefinerDependencies.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -354,17 +353,6 @@ void registerStorageView(StorageFactory & factory)
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });
-}
-
-ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
-{
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettingsCopy();
-    view_settings[Setting::max_result_rows] = 0;
-    view_settings[Setting::max_result_bytes] = 0;
-    view_settings[Setting::extremes] = false;
-    view_context->setSettings(view_settings);
-    return view_context;
 }
 
 }

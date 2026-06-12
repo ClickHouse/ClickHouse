@@ -184,7 +184,6 @@ private:
         size_t offset,
         ReadFromFileSegmentState & state,
         ReadInfo & info,
-        bool skip_cache_on_disk_failure,
         LoggerPtr log);
 
     static size_t readFromFileSegment(
@@ -194,7 +193,6 @@ private:
         ReadFromFileSegmentState & state,
         ReadInfo & info,
         bool & implementation_buffer_can_be_reused,
-        bool skip_cache_on_disk_failure,
         LoggerPtr log);
 
     static bool writeCache(
@@ -202,7 +200,6 @@ private:
         size_t size,
         size_t offset,
         FileSegment & file_segment,
-        bool skip_on_disk_failure,
         LoggerPtr log);
 
     static std::string getInfoForLog(
@@ -236,7 +233,6 @@ private:
 
     bool initialized = false;
     size_t file_offset_of_buffer_end = 0;
-    const bool skip_cache_on_disk_failure;
 
     ReadFromFileSegmentStatePtr state;
     ReadInfo info;

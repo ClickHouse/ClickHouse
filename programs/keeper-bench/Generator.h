@@ -199,9 +199,9 @@ private:
 class Generator
 {
 public:
-    Generator() = default;
+    explicit Generator(const Poco::Util::AbstractConfiguration & config);
 
-    void startup(const Poco::Util::AbstractConfiguration & config, Coordination::ZooKeeper & zookeeper, size_t thread_idx);
+    void startup(Coordination::ZooKeeper & zookeeper);
     ZooKeeperRequestWithCallbacks generate();
 
     uint64_t getSeed() const { return seed; }

@@ -251,11 +251,12 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
                 ObjectMetadata{
-                    static_cast<uint64_t>(ls.file_info[i].mSize),
-                    Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    "",
-                    {},
-                    {}}));
+                    .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
+                    .etag = {},
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (max_keys && children.size() >= max_keys)

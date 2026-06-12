@@ -55,8 +55,11 @@ namespace ProfileEvents
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
     extern const Event KeeperLiveSessionsLockWaitMicroseconds;
+    extern const Event KeeperLiveSessionsLockHoldMicroseconds;
     extern const Event KeeperSessionCallbackLockWaitMicroseconds;
+    extern const Event KeeperSessionCallbackLockHoldMicroseconds;
     extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
+    extern const Event KeeperReadRequestQueueLockHoldMicroseconds;
 }
 
 namespace HistogramMetrics
@@ -215,7 +218,7 @@ void KeeperDispatcher::requestThread()
                     if (req.request->getOpNum() != Coordination::OpNum::Close
                         && req.request->getOpNum() != Coordination::OpNum::SessionID)
                     {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
                         if (!live_sessions.contains(req.session_id))
                         {
                             ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
@@ -297,7 +300,7 @@ void KeeperDispatcher::requestThread()
                             {
                                 const auto & last_request = current_batch.back();
                                 ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+                                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
                                 read_request_queue[{last_request.session_id, last_request.request->xid}].push_back(request);
                             }
                             else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
@@ -430,7 +433,7 @@ void KeeperDispatcher::requestThread()
                 {
                     bool is_live;
                     {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
                         is_live = live_sessions.contains(request.session_id);
                     }
                     if (is_live)
@@ -549,7 +552,7 @@ bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
     /// KeeperOverDispatcher's CallbackState is protected by its own mutex.
     ZooKeeperResponseCallback callback;
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
 
         /// Special new session response.
         if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
@@ -595,7 +598,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 {
     {
         /// If session was already disconnected than we will ignore requests
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         if (!session_to_response_callback.contains(session_id))
             return false;
     }
@@ -629,7 +632,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
         if (!live_sessions.contains(session_id))
         {
             ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
@@ -639,7 +642,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
 
     {
         /// If session was already disconnected than we will ignore requests
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         if (!session_to_response_callback.contains(session_id))
             return false;
     }
@@ -686,7 +689,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             {
                 /// check if we have queue of read requests depending on this request to be committed
                 SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
                 if (auto it = read_request_queue.find(key); it != read_request_queue.end())
                 {
                     pending_reads = std::move(it->second);
@@ -700,7 +703,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             {
                 /// Skip reads whose session is no longer live
                 {
-                    ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+                    ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
                     if (!live_sessions.contains(read_request.session_id))
                     {
                         ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
@@ -751,7 +754,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             /// how followers learn about closed sessions.
             if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
             {
-                ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+                ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
                 live_sessions.erase(request_for_session.session_id);
             }
         });
@@ -836,7 +839,7 @@ void KeeperDispatcher::shutdown()
         KeeperRequestsForSessions close_requests;
         {
             /// Clear all registered sessions
-            ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+            ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
 
             if (server && hasLeader())
             {
@@ -918,13 +921,13 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 {
     bool inserted = false;
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
         inserted = live_sessions.insert(session_id).second;
     }
 
     try
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         if (!session_to_response_callback.try_emplace(session_id, callback).second)
             throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
         CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
@@ -933,7 +936,7 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
     {
         if (inserted)
         {
-            ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+            ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
             live_sessions.erase(session_id);
         }
         throw;
@@ -1006,7 +1009,7 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
     ZooKeeperResponseCallback callback;
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
@@ -1026,7 +1029,7 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     /// Remove from live_sessions so `requestThread` can skip stale requests
     /// still sitting in the queue for this session.
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds, ProfileEvents::KeeperLiveSessionsLockHoldMicroseconds);
         live_sessions.erase(session_id);
     }
 
@@ -1062,7 +1065,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         if (may_have_dependent_reads)
         {
             SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
             if (auto it = read_request_queue.find(key); it != read_request_queue.end())
             {
                 dependent_reads.insert(dependent_reads.end(), std::move_iterator(it->second.begin()), std::move_iterator(it->second.end()));
@@ -1122,7 +1125,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     auto future = promise->get_future();
 
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         new_session_id_response_callback[request->internal_id]
             = [promise, internal_id = request->internal_id](
                   const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr /*request*/)

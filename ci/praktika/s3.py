@@ -451,48 +451,22 @@ class S3:
     @classmethod
     def upload_asset_streaming(cls, local_path: Path, s3_path: str):
         """
-        Uploads a single asset to S3 with optional gzip compression.
-
-        Uses boto3 in-memory gzip when available (no subprocess overhead).
-        Falls back to piped `gzip | aws s3 cp` when boto3 is not available.
+        Uploads assets using streaming gzip to AWS S3. Detects mimetypes automatically.
         """
-        import gzip as _gzip
-
         assert isinstance(local_path, Path)
         content_type, _ = mimetypes.guess_type(local_path)
         content_type = content_type or "application/octet-stream"
 
-        compressible = {".html", ".css", ".js", ".json", ".svg", ".txt"}
+        compressible = [".html", ".css", ".js", ".json", ".svg", ".txt"]
         use_gzip = local_path.suffix.lower() in compressible
 
-        if BOTO3_AVAILABLE and cls._get_boto3_client():
-            s3_path_clean = str(s3_path).removeprefix("s3://")
-            bucket, key = s3_path_clean.split("/", maxsplit=1)
-            extra_args = {
-                "ContentType": content_type,
-                "CacheControl": "max-age=604800, public",
-            }
-            if use_gzip:
-                data = _gzip.compress(local_path.read_bytes(), compresslevel=8)
-                extra_args["ContentEncoding"] = "gzip"
-
-                def _upload():
-                    cls._get_boto3_client().put_object(
-                        Bucket=bucket, Key=key, Body=data, **extra_args
-                    )
-            else:
-                def _upload():
-                    cls._get_boto3_client().upload_file(
-                        str(local_path), bucket, key, ExtraArgs=extra_args
-                    )
-
-            cls._retry_on_no_credentials(_upload)
+        if use_gzip:
+            cmd = f'gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control "max-age=604800, public"'
         else:
-            if use_gzip:
-                cmd = f'gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control "max-age=604800, public"'
-            else:
-                cmd = f'aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control "max-age=604800, public"'
-            cls.run_command_with_retries(cmd, retries=3)
+            cmd = f'aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control "max-age=604800, public"'
+
+        print("Execute:", cmd)
+        cls.run_command_with_retries(cmd, retries=3)
 
     @classmethod
     def copy_file_from_s3_with_version(cls, s3_path, local_path):

@@ -168,7 +168,7 @@ Field convertDecimalType(const Field & from, const To & type)
 }
 
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict_bool)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
     if (from_type_hint && from_type_hint->equals(type))
     {
@@ -252,26 +252,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
-        /// Bool is not represented in which_type, so we need to handle it separately.
-        /// See the comment for `strict_bool` in convertFieldToType.h for details.
+        /// Bool is not represented in which_type, so we need to type it separately
         if (isInt64OrUInt64orBoolFieldType(src.getType()) && type.getName() == "Bool")
-        {
-            if (strict_bool)
-            {
-                if (src.getType() == Field::Types::Int64)
-                {
-                    Int64 val = src.safeGet<Int64>();
-                    if (val == 0 || val == 1)
-                        return bool(val);
-                    return {};
-                }
-                UInt64 val = src.safeGet<UInt64>();
-                if (val <= 1)
-                    return bool(val);
-                return {};
-            }
             return bool(src.safeGet<bool>());
-        }
 
         if (which_type.isUInt8())
             return convertNumericType<UInt8>(src, type);
@@ -318,15 +301,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and DateTime
-            return src;
+            /// Date is UInt16 under the hood; range-check so out-of-range integers
+            /// don't get silently truncated by the Date serializer downstream.
+            return convertNumericType<UInt16>(src, type);
         }
 
-        if ((which_type.isDate() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and Time
+            /// We don't need any conversion UInt64 is under type of DateTime and Time
             return src;
         }
 
@@ -393,11 +377,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
+        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
+        /// range-check so out-of-range integers don't get silently truncated
+        /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt64>(src, type);
+            return convertNumericType<UInt16>(src, type);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
@@ -487,7 +472,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict_bool);
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -519,7 +504,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict_bool);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -667,12 +652,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict_bool);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict_bool);
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
@@ -783,7 +768,7 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     }
 }
 
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict_bool)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
     if (from_value.isNull())
         return from_value;
@@ -792,7 +777,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict_bool);
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings);
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
@@ -803,9 +788,9 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict_bool);
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings);
     }
-    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict_bool);
+    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings);
 }
 
 
@@ -854,11 +839,11 @@ static bool decimalEqualsFloatByType(const Field & decimal_field, Float64 float_
 
 std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings, /*strict_bool=*/ true);
+    Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
 
-    /// `convertFieldToType` with strict_bool returns NULL on failed conversion (out-of-range, loss
-    /// of precision, non-representable Bool values like 10, etc). For strict conversions we treat
-    /// it as "not representable" and return empty optional, but keep NULL -> NULL conversion valid.
+    /// `convertFieldToType` returns NULL on failed conversion (out-of-range, loss of precision, etc).
+    /// For strict conversions we treat it as "not representable" and return empty optional,
+    /// but keep NULL -> NULL conversion valid.
     if (!from_value.isNull() && result_value.isNull())
         return std::nullopt;
 
