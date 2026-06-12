@@ -130,8 +130,11 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Arrow')"
 echo "=== Export Time64 to Arrow – out of time-of-day range ==="
 
 # Far out of range (also exceeds the builder width).
-$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
-$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# `INTERVAL ... YEAR` is calendar arithmetic evaluated in the session timezone, so for the
+# resulting pre-1900 / far-future dates the value picks up that timezone's historical (LMT)
+# offset. Pin UTC so the rejected out-of-range value is deterministic across CI timezones.
+$CLICKHOUSE_LOCAL --session_timezone UTC -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+$CLICKHOUSE_LOCAL --session_timezone UTC -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
 # In Int32 range but outside a valid time-of-day: >= 24h and negative, for each export path.
 # Time64(3) -> Arrow time32[ms] (no rescale):
@@ -146,8 +149,9 @@ $CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 4) + INTERVAL 25 HOUR INTO OUTFILE '$DA
 # Nullable(Time64(6)) -> Arrow time64[us], per-element path because of the null bytemap:
 $CLICKHOUSE_LOCAL -q "SELECT (toTime64(0, 6) + INTERVAL 25 HOUR)::Nullable(Time64(6)) INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 # A value that would overflow the rescale multiply must still report the time-of-day error
-# (the raw value is checked before rescaling), not DECIMAL_OVERFLOW:
-$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 8) + INTERVAL 500 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# (the raw value is checked before rescaling), not DECIMAL_OVERFLOW. Pin UTC (calendar
+# `INTERVAL YEAR` arithmetic is timezone-dependent) so the reported value is deterministic.
+$CLICKHOUSE_LOCAL --session_timezone UTC -q "SELECT toTime64(0, 8) + INTERVAL 500 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 # Time -> Arrow time32[s]:
 $CLICKHOUSE_LOCAL -q "SELECT '25:00:00'::Time AS t INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
