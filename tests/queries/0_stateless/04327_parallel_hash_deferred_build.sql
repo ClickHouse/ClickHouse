@@ -69,13 +69,13 @@ SELECT 'any_left_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe
 SELECT 'any_left_skip', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l ANY LEFT JOIN t_build_dup r ON l.k = r.k;
 
 -- Positive control: all parallel_hash queries above must have used the deferred exact-size
--- reserve (`HashJoinPreallocatedElementsInHashTables` is incremented only by the reserve; the
--- statistics-driven reserve is off because statistics collection is disabled).
+-- reserve (`HashJoinDeferredPreallocatedElementsInHashTables` is incremented only by that reserve;
+-- the statistics-driven reserve is off because statistics collection is disabled).
 SYSTEM FLUSH LOGS query_log;
 SELECT
     'deferred build engaged',
     count() > 0,
-    countIf(ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0) = count()
+    countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0) = count()
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'

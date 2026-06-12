@@ -46,13 +46,13 @@ FROM t_probe_lim l INNER JOIN t_build_lim r ON l.k = r.k
 SETTINGS join_algorithm = 'parallel_hash', join_overflow_mode = 'break', max_rows_in_join = 1000;
 
 -- Positive control: the benign-limit parallel_hash query must have used the deferred exact-size
--- reserve (`HashJoinPreallocatedElementsInHashTables` is incremented only by the reserve; the
--- statistics-driven reserve is off because statistics collection is disabled).
+-- reserve (`HashJoinDeferredPreallocatedElementsInHashTables` is incremented only by that reserve;
+-- the statistics-driven reserve is off because statistics collection is disabled).
 SYSTEM FLUSH LOGS query_log;
 SELECT
     'deferred build engaged with limits',
     count() > 0,
-    countIf(ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0) = count()
+    countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0) = count()
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'

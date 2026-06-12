@@ -58,6 +58,7 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event HashJoinDeferredPreallocatedElementsInHashTables;
 }
 
 namespace CurrentMetrics
@@ -105,13 +106,16 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
 /// Reserve the buckets owned by `HashJoin` instance `ind` so that, summed across all slots and
 /// buckets, the maps hold `reserve_size` entries without rehashing. `reserve_size` is the global
 /// total (matching the statistics `ht_size` semantics): each owned bucket gets `reserve_size /
-/// NUM_BUCKETS`. Used both for statistics-driven preallocation and for the exact-size deferred build.
+/// NUM_BUCKETS`. Used both for statistics-driven preallocation and for the exact-size deferred
+/// build; the two report under distinct profile events (`prealloc_event`) so that the
+/// statistics-cache behaviour stays observable in isolation.
 void reserveBucketsBySize(
     HashJoin & hash_join,
     size_t ind,
     size_t reserve_size,
     size_t slots,
-    size_t external_join_threshold)
+    size_t external_join_threshold,
+    ProfileEvents::Event prealloc_event)
 {
     /// Each `HashJoin` instance "owns" a subset of buckets during the build phase, so we preallocate
     /// only in the specific buckets of this instance.
@@ -148,7 +152,7 @@ void reserveBucketsBySize(
 
     const auto & right_data = hash_join.getJoinedData();
     std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-    ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
+    ProfileEvents::increment(prealloc_event, actual_reserve_size / slots);
 }
 
 void reserveSpaceInHashMaps(
@@ -161,7 +165,8 @@ void reserveSpaceInHashMaps(
     /// Hash map is shared between all `HashJoin` instances, so the hinted `ht_size` is the total size
     /// we need to preallocate across all buckets of all hash maps.
     if (auto hint = getSizeHint(stats_collecting_params))
-        reserveBucketsBySize(hash_join, ind, hint->ht_size, slots, external_join_threshold);
+        reserveBucketsBySize(
+            hash_join, ind, hint->ht_size, slots, external_join_threshold, ProfileEvents::HashJoinPreallocatedElementsInHashTables);
 }
 
 /// Bytes the buffers of the two-level map buckets will occupy (summed across all slots; every bucket
@@ -957,7 +962,13 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
                     auto & hash_join = hash_joins[i];
                     if (global_total_rows && hash_join->data->twoLevelMapIsUsed())
-                        reserveBucketsBySize(*hash_join->data, i, global_total_rows, slots, external_join_threshold);
+                        reserveBucketsBySize(
+                            *hash_join->data,
+                            i,
+                            global_total_rows,
+                            slots,
+                            external_join_threshold,
+                            ProfileEvents::HashJoinDeferredPreallocatedElementsInHashTables);
 
                     for (auto & scattered_block : hash_join->buffered_blocks)
                     {
