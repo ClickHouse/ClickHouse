@@ -1904,6 +1904,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+    if (context->getPaimonMetadataFilesCache())
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_size",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())

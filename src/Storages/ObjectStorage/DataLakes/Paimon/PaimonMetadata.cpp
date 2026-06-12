@@ -372,15 +372,6 @@ void PaimonMetadata::update(const ContextPtr & /*local_context*/)
         new_state->snapshot_id);
 }
 
-void PaimonMetadata::drop(ContextPtr /*local_context*/)
-{
-    if (persistent_components.hasMetadataCache())
-    {
-        LOG_DEBUG(log, "Invalidating Paimon metadata cache entries with prefix: {}", persistent_components.table_cache_key_prefix);
-        persistent_components.metadata_cache->removeByPrefix(persistent_components.table_cache_key_prefix);
-    }
-}
-
 NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) const
 {
     auto state = getCurrentState();
