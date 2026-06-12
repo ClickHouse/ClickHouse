@@ -106,6 +106,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
+    CurrentMetrics::METRIC
     CurrentMetrics::values
     CurrentMetrics::Value
     CurrentMetrics::keeper_metrics

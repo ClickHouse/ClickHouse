@@ -7,42 +7,12 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric IOThreads;
-    extern const Metric IOThreadsActive;
-    extern const Metric IOThreadsScheduled;
-    extern const Metric BackupsIOThreads;
-    extern const Metric BackupsIOThreadsActive;
-    extern const Metric BackupsIOThreadsScheduled;
-    extern const Metric MergeTreeFetchPartitionThreads;
-    extern const Metric MergeTreeFetchPartitionThreadsActive;
-    extern const Metric MergeTreeFetchPartitionThreadsScheduled;
-    extern const Metric MergeTreePartsLoaderThreads;
-    extern const Metric MergeTreePartsLoaderThreadsActive;
-    extern const Metric MergeTreePartsLoaderThreadsScheduled;
-    extern const Metric MergeTreePartsCleanerThreads;
-    extern const Metric MergeTreePartsCleanerThreadsActive;
-    extern const Metric MergeTreePartsCleanerThreadsScheduled;
-    extern const Metric MergeTreeOutdatedPartsLoaderThreads;
-    extern const Metric MergeTreeOutdatedPartsLoaderThreadsActive;
-    extern const Metric MergeTreeOutdatedPartsLoaderThreadsScheduled;
-    extern const Metric MergeTreeUnexpectedPartsLoaderThreads;
-    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsActive;
-    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsScheduled;
-    extern const Metric DatabaseCatalogThreads;
-    extern const Metric DatabaseCatalogThreadsActive;
-    extern const Metric DatabaseCatalogThreadsScheduled;
-    extern const Metric DatabaseReplicatedCreateTablesThreads;
-    extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
-    extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
-    extern const Metric MergeTreeSubcolumnsReaderThreads;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
-    extern const Metric FormatParsingThreads;
-    extern const Metric FormatParsingThreadsActive;
-    extern const Metric FormatParsingThreadsScheduled;
-    extern const Metric MergeTreeSnapshotCommitThreads;
-    extern const Metric MergeTreeSnapshotCommitThreadsActive;
-    extern const Metric MergeTreeSnapshotCommitThreadsScheduled;
+#define DECLARE_STATIC_THREAD_POOL_METRICS(SUFFIX, NAME, METRIC) \
+    extern const Metric METRIC##Threads; \
+    extern const Metric METRIC##ThreadsActive; \
+    extern const Metric METRIC##ThreadsScheduled;
+APPLY_FOR_STATIC_THREAD_POOLS(DECLARE_STATIC_THREAD_POOL_METRICS)
+#undef DECLARE_STATIC_THREAD_POOL_METRICS
 }
 
 namespace DB
