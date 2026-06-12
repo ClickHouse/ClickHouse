@@ -239,7 +239,15 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+        /// The MarkCache key must match the key used for eviction in IMergeTreeDataPart::removeMarksFromCache(),
+        /// which is built from getRelativePathOfActivePart() (i.e. getFullRootPath() / <part name>).
+        /// Keying on getFullPath() instead diverges whenever the part is moved between disks or detached:
+        /// the inserted entry can then never be evicted, and a later part reusing the same on-disk directory
+        /// may be served these stale marks, tripping the "Number of marks N is not divisible by number of
+        /// columns M" check in MergeTreeMarksGetter. Same class of bug as the index caches (de320f18af0).
+        auto key = MarkCache::hash(
+            data_part_storage->getDiskName() + ":"
+            + (fs::path(data_part_storage->getFullRootPath()) / data_part_reader->getPartName() / mrk_path).string());
 
         if (save_marks_in_cache)
         {
@@ -271,7 +279,10 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
     /// Avoid queueing jobs into thread pool if marks are in cache
     auto data_part_storage = data_part_reader->getDataPartStorage();
-    auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+    /// Must match the eviction key (getRelativePathOfActivePart()); see the comment in loadMarksSync().
+    auto key = MarkCache::hash(
+        data_part_storage->getDiskName() + ":"
+        + (fs::path(data_part_storage->getFullRootPath()) / data_part_reader->getPartName() / mrk_path).string());
     if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
     {
         ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
