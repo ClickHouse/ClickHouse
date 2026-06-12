@@ -149,7 +149,7 @@ void SerializationObjectSharedData::enumerateStreams(
             /// When deserialize state is present, it means the whole shared data will be read
             /// via deserializeBinaryBulkWithMultipleStreams, which only uses Structure + Copy streams.
             /// Per-bucket Data/PathsMarks/Substreams/SubstreamsMarks/PathsSubstreamsMetadata are only
-            /// needed when reading individual paths via SerializationObjectSharedDataPath (separate class).
+            /// needed when writing or reading individual paths via SerializationObjectSharedDataPath (separate class).
             /// Skip them to avoid unnecessary mark file loads and file opens during prefetching.
             if (!shared_data_state)
             {
