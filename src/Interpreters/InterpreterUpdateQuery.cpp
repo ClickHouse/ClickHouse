@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -15,6 +16,7 @@
 #include <Storages/MutationCommands.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/quoteString.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 
 
@@ -98,6 +100,15 @@ BlockIO InterpreterUpdateQuery::execute()
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
 
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
+    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+        throw Exception(
+            ErrorCodes::TABLE_IS_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run UPDATE in an underlying database",
+            backQuote(table_id.database_name));
+
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
@@ -106,7 +117,6 @@ BlockIO InterpreterUpdateQuery::execute()
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());

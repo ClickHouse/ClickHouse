@@ -73,6 +73,10 @@ DETACH TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
 OPTIMIZE TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
 TRUNCATE TABLE db_overlay.t_a; -- { serverError TABLE_IS_READ_ONLY }
 
+-- Standalone lightweight mutation statements are rejected the same way as ALTER.
+DELETE FROM db_overlay.t_a WHERE id = 1; -- { serverError TABLE_IS_READ_ONLY }
+UPDATE db_overlay.t_a SET s = 'nope' WHERE id = 1 SETTINGS enable_lightweight_update = 1; -- { serverError TABLE_IS_READ_ONLY }
+
 -- The rejected operations had no side effect on the underlying table: it is still fully operational.
 INSERT INTO db_a.t_a VALUES (3, 'a3');
 SELECT * FROM db_overlay.t_a ORDER BY id;
