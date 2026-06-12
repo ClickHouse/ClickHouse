@@ -18,8 +18,8 @@ CacheViewPtr ICacheProvider::planResidencyView(const StoredObject &, size_t, Byt
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "planResidencyView is not implemented by cache provider {}", name());
 }
 
-std::vector<MissEntry> ICacheProvider::openWriteBuffers(
-    const StoredObject &, size_t, const std::vector<ByteRange> &)
+VectorWithMemoryTracking<MissEntry> ICacheProvider::openWriteBuffers(
+    const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "openWriteBuffers is not implemented by cache provider {}", name());
 }

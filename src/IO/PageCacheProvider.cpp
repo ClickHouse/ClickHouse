@@ -212,7 +212,7 @@ CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
 
     /// Accumulators for coalescing runs of adjacent same-kind blocks. A hit run
     /// collects its cells; a miss run only tracks the spanned range.
-    std::vector<PageCacheReader::HeldCell> run_cells;
+    VectorWithMemoryTracking<PageCacheReader::HeldCell> run_cells;
     ByteRange run_range{0, 0};
     bool run_active = false;
     bool run_is_hit = false;
@@ -279,16 +279,16 @@ CacheViewPtr PageCacheProvider::planResidencyView(
     return buildView(range_in_file);
 }
 
-std::vector<MissEntry> PageCacheProvider::openWriteBuffers(
+VectorWithMemoryTracking<MissEntry> PageCacheProvider::openWriteBuffers(
     const StoredObject & /*object*/,
     size_t /*object_file_offset*/,
-    const std::vector<ByteRange> & aligned_miss_ranges)
+    const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
 {
     /// A bypass tier populates nothing on miss, so it opens no writers.
     if (!populatesOnMiss())
         return {};
 
-    std::vector<MissEntry> result;
+    VectorWithMemoryTracking<MissEntry> result;
     result.reserve(aligned_miss_ranges.size());
 
     /// PageCache is file-level — `object` / `object_file_offset` are ignored.

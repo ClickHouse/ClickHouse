@@ -2287,7 +2287,7 @@ void ReaderExecutor::extractMissesAndOpenWriters(
     /// writer for it. Open the held write buffers over the survivors now
     /// (`[CF-plan-rebuild]`): one `getOrSet` per range, owned for the plan's life, so
     /// promotion/backfill only ever write into already-open buffers.
-    std::vector<ByteRange> aligned_miss;
+    VectorWithMemoryTracking<ByteRange> aligned_miss;
     for (const auto & miss : view.misses())
     {
         if (upper_hits.subtract(miss.range).empty())

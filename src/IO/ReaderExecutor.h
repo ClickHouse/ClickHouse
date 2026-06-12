@@ -724,7 +724,7 @@ private:
         StoredObject object;
         size_t object_file_offset = 0;
         CacheViewPtr view;
-        std::vector<MissEntry> writers;
+        VectorWithMemoryTracking<MissEntry> writers;
     };
 
     /// One look-ahead plan and the SOURCE OF TRUTH for the current read: the immutable
@@ -746,7 +746,7 @@ private:
         /// write buffers in `bufs` are finalized. Declared BEFORE `bufs` so it is destroyed
         /// AFTER it (members destruct in reverse declaration order), giving bump-after-writes
         /// (`[CF-lru]`). Never indexed - the value is the destruction timing; writers ignored.
-        std::vector<CacheViewPtr> deferred_lru_bumps;
+        VectorWithMemoryTracking<CacheViewPtr> deferred_lru_bumps;
 
         VectorWithMemoryTracking<BufEntry> bufs;
 

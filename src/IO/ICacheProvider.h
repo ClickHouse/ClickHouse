@@ -113,8 +113,8 @@ public:
 
     /// Sorted, disjoint; hits + misses tile the lookup range (clamped to EOF /
     /// object end). Miss ranges are cache-ALIGNED and may extend beyond the request.
-    virtual const std::vector<HitEntry> & hits() const = 0;
-    virtual const std::vector<MissEntry> & misses() const = 0;
+    virtual const VectorWithMemoryTracking<HitEntry> & hits() const = 0;
+    virtual const VectorWithMemoryTracking<MissEntry> & misses() const = 0;
 
     bool allHit() const { return misses().empty(); }
     bool allMiss() const { return hits().empty(); }
@@ -169,9 +169,9 @@ public:
     /// without re-probing residency. Each buffer owns its writable segment ref(s) and
     /// appends incrementally across windows. Returns empty when `!populatesOnMiss()`.
     /// Default throws until implemented.
-    virtual std::vector<MissEntry> openWriteBuffers(
+    virtual VectorWithMemoryTracking<MissEntry> openWriteBuffers(
         const StoredObject & object, size_t object_file_offset,
-        const std::vector<ByteRange> & aligned_miss_ranges);
+        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges);
 };
 
 }

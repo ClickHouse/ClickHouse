@@ -240,11 +240,11 @@ namespace
 class MockCacheView : public CacheView
 {
 public:
-    const std::vector<HitEntry> & hits() const override { return hit_entries; }
-    const std::vector<MissEntry> & misses() const override { return miss_entries; }
+    const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
+    const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
 
-    std::vector<HitEntry> hit_entries;
-    std::vector<MissEntry> miss_entries;
+    VectorWithMemoryTracking<HitEntry> hit_entries;
+    VectorWithMemoryTracking<MissEntry> miss_entries;
 };
 
 /// Held read buffer over a run of resident blocks in `MockCacheProvider`'s storage.
@@ -423,10 +423,10 @@ public:
         return view;
     }
 
-    std::vector<MissEntry> openWriteBuffers(
-        const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override
+    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
+        const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override
     {
-        std::vector<MissEntry> result;
+        VectorWithMemoryTracking<MissEntry> result;
         result.reserve(aligned_miss_ranges.size());
         for (const auto & aligned : aligned_miss_ranges)
             result.push_back(MissEntry{
@@ -1573,8 +1573,8 @@ public:
 
     /// One held write buffer per aligned (segment) miss range; each appends into its
     /// segment append-only (mirroring the old `put`) and pins it via `pin`.
-    std::vector<MissEntry> openWriteBuffers(
-        const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override;
+    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
+        const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
 
     String name() const override { return "EvictableSegmentMock"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
@@ -1776,10 +1776,10 @@ inline CacheViewPtr EvictableSegmentMockCache::planResidencyView(
     return view;
 }
 
-inline std::vector<MissEntry> EvictableSegmentMockCache::openWriteBuffers(
-    const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges)
+inline VectorWithMemoryTracking<MissEntry> EvictableSegmentMockCache::openWriteBuffers(
+    const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
 {
-    std::vector<MissEntry> result;
+    VectorWithMemoryTracking<MissEntry> result;
     result.reserve(aligned_miss_ranges.size());
     for (const auto & aligned : aligned_miss_ranges)
     {
@@ -2957,10 +2957,10 @@ public:
         return view;
     }
 
-    std::vector<MissEntry> openWriteBuffers(
-        const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override
+    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
+        const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override
     {
-        std::vector<MissEntry> result;
+        VectorWithMemoryTracking<MissEntry> result;
         result.reserve(aligned_miss_ranges.size());
         for (const auto & aligned : aligned_miss_ranges)
             result.push_back(MissEntry{
@@ -3311,10 +3311,10 @@ namespace
             return view;
         }
 
-        std::vector<MissEntry> openWriteBuffers(
-            const StoredObject &, size_t, const std::vector<ByteRange> & aligned_miss_ranges) override
+        VectorWithMemoryTracking<MissEntry> openWriteBuffers(
+            const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override
         {
-            std::vector<MissEntry> result;
+            VectorWithMemoryTracking<MissEntry> result;
             result.reserve(aligned_miss_ranges.size());
             for (const auto & aligned : aligned_miss_ranges)
                 result.push_back(MissEntry{aligned, std::make_unique<TrackingWriteBuffer>(aligned)});

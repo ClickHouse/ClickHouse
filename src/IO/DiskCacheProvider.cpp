@@ -144,7 +144,7 @@ DiskCacheReader::DiskCacheReader(
     ThrottlerPtr local_throttler_,
     ReaderAnchorCache * anchors_,
     StreamingReaderSlot * stream_slot_,
-    std::vector<ByteRange> * hits_to_touch_sink_)
+    VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink_)
     : holder(std::move(holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
@@ -598,7 +598,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
 
     /// Collect raw (unaligned) object-local miss sub-ranges as we classify; the
     /// cache-alignment + merge happens in a second pass so adjacent misses fold.
-    std::vector<ByteRange> raw_miss_obj;
+    VectorWithMemoryTracking<ByteRange> raw_miss_obj;
     auto add_miss_obj = [&](size_t off, size_t end)
     {
         const size_t clamped_end = std::min(end, req_obj_end);
@@ -673,7 +673,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     /// (alignment folded IN, not a separate `alignToCaches`). Emit file-level
     /// `MissEntry{aligned, /*writer=*/nullptr}` — `planResidencyView` never opens
     /// writers.
-    std::vector<ByteRange> aligned_vec;
+    VectorWithMemoryTracking<ByteRange> aligned_vec;
     aligned_vec.reserve(raw_miss_obj.size());
     for (const auto & m : raw_miss_obj)
     {
@@ -689,7 +689,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     /// translate to file-level when emitting. Merging directly against the
     /// file-level `miss_entries` offsets would mix coordinate spaces and corrupt
     /// the merge whenever `object_file_offset > 0`.
-    std::vector<ByteRange> merged_obj;
+    VectorWithMemoryTracking<ByteRange> merged_obj;
     for (const auto & a : aligned_vec)
     {
         if (!merged_obj.empty() && a.offset <= merged_obj.back().end())
@@ -714,10 +714,10 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     return view;
 }
 
-std::vector<MissEntry> DiskCacheProvider::openWriteBuffers(
+VectorWithMemoryTracking<MissEntry> DiskCacheProvider::openWriteBuffers(
     const StoredObject & object,
     size_t object_file_offset,
-    const std::vector<ByteRange> & aligned_miss_ranges)
+    const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
 {
     if (!populatesOnMiss())
         return {};
@@ -725,7 +725,7 @@ std::vector<MissEntry> DiskCacheProvider::openWriteBuffers(
     auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-    std::vector<MissEntry> result;
+    VectorWithMemoryTracking<MissEntry> result;
     result.reserve(aligned_miss_ranges.size());
 
     for (const auto & aligned_file : aligned_miss_ranges)

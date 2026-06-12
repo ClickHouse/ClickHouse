@@ -93,7 +93,7 @@ public:
         ThrottlerPtr local_throttler_,
         ReaderAnchorCache * anchors_,
         StreamingReaderSlot * stream_slot_,
-        std::vector<ByteRange> * hits_to_touch_sink_);
+        VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink_);
 
     ByteRange range() const override { return hit_range; }
     size_t readable() const override;
@@ -109,7 +109,7 @@ private:
     /// Back-pointer to the owning `DiskCacheView`'s deferred-bump list. Each
     /// `read` appends its `sub` here so the view's destructor can bump the LRU
     /// after all writes (see `~DiskCacheView`). Not owned; the view outlives this.
-    std::vector<ByteRange> * hits_to_touch_sink = nullptr;
+    VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink = nullptr;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
@@ -166,13 +166,13 @@ public:
 
     ~DiskCacheView() override;
 
-    const std::vector<HitEntry> & hits() const override { return hit_entries; }
-    const std::vector<MissEntry> & misses() const override { return miss_entries; }
+    const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
+    const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
 
-    std::vector<HitEntry> hit_entries;
-    std::vector<MissEntry> miss_entries;
+    VectorWithMemoryTracking<HitEntry> hit_entries;
+    VectorWithMemoryTracking<MissEntry> miss_entries;
     /// Appended to by the owned read buffers' `read` calls; consumed by the dtor.
-    std::vector<ByteRange> hits_to_touch;
+    VectorWithMemoryTracking<ByteRange> hits_to_touch;
 
 private:
     std::shared_ptr<FileSegmentsHolder> read_holder;
@@ -246,9 +246,9 @@ public:
     /// Open write buffers for the already-known cache-aligned miss ranges (one
     /// `getOrSet` per range, the held holder owned by each `DiskCacheWriter`).
     /// Returns empty when `!populatesOnMiss()`. See `ICacheProvider::openWriteBuffers`.
-    std::vector<MissEntry> openWriteBuffers(
+    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
         const StoredObject & object, size_t object_file_offset,
-        const std::vector<ByteRange> & aligned_miss_ranges) override;
+        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
 
 private:
     FileCachePtr cache;

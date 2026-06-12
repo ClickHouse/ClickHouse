@@ -47,7 +47,7 @@ public:
         PageCache::MappedPtr cell;
     };
 
-    PageCacheReader(ByteRange range_in_file, std::vector<HeldCell> cells_)
+    PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_)
         : range_member(range_in_file), cells(std::move(cells_))
     {
     }
@@ -59,7 +59,7 @@ public:
 
 private:
     ByteRange range_member;
-    std::vector<HeldCell> cells;
+    VectorWithMemoryTracking<HeldCell> cells;
 };
 
 /// Held, incrementally-fillable target for ONE miss file-level range. The cells of
@@ -113,7 +113,7 @@ private:
     bool bypass_if_missing;
     ByteRange range_member;
     IntervalSet committed_ranges;
-    std::vector<AdoptedBlock> blocks;
+    VectorWithMemoryTracking<AdoptedBlock> blocks;
     LoggerPtr log = getLogger("PageCacheWriter");
 };
 
@@ -124,11 +124,11 @@ private:
 class PageCacheView : public CacheView
 {
 public:
-    const std::vector<HitEntry> & hits() const override { return hit_entries; }
-    const std::vector<MissEntry> & misses() const override { return miss_entries; }
+    const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
+    const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
 
-    std::vector<HitEntry> hit_entries;
-    std::vector<MissEntry> miss_entries;
+    VectorWithMemoryTracking<HitEntry> hit_entries;
+    VectorWithMemoryTracking<MissEntry> miss_entries;
 };
 
 
@@ -184,9 +184,9 @@ public:
     /// Open write buffers for the already-known whole-block-aligned miss ranges.
     /// The cells are created lazily on the first `write` of each block. Returns
     /// empty when `!populatesOnMiss()`. See `ICacheProvider::openWriteBuffers`.
-    std::vector<MissEntry> openWriteBuffers(
+    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
         const StoredObject & object, size_t object_file_offset,
-        const std::vector<ByteRange> & aligned_miss_ranges) override;
+        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
 
 private:
     /// Backs `planResidencyView`: read-only block-by-block residency probe over

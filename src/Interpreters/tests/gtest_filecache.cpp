@@ -2642,10 +2642,10 @@ namespace
 
     struct RecordingCacheView : public CacheView
     {
-        const std::vector<HitEntry> & hits() const override { return hit_entries; }
-        const std::vector<MissEntry> & misses() const override { return miss_entries; }
-        std::vector<HitEntry> hit_entries;
-        std::vector<MissEntry> miss_entries;
+        const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
+        const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
+        VectorWithMemoryTracking<HitEntry> hit_entries;
+        VectorWithMemoryTracking<MissEntry> miss_entries;
     };
 
     struct RecordingCacheProvider : public ICacheProvider
@@ -2665,8 +2665,8 @@ namespace
                 std::make_unique<RecordingReadBuffer>(hit_range, recorded_gets, data)});
             return view;
         }
-        std::vector<MissEntry> openWriteBuffers(
-            const StoredObject &, size_t, const std::vector<ByteRange> &) override
+        VectorWithMemoryTracking<MissEntry> openWriteBuffers(
+            const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> &) override
         {
             return {};  /// the configured range is fully resident
         }
