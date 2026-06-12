@@ -58,10 +58,17 @@ struct MachineBase
 {
     std::atomic<MachineState> state{MachineState::Constructed};
 
-    /// Cooperative stop request: a running step polls it at tile boundaries
-    /// and wraps up (-> Interrupted), bounding the executor's wait by one tile
-    /// instead of one step.
+    /// Cooperative TAKEOVER request (collect catching a running fetch): polled
+    /// at tile boundaries, honored only while the remaining fetch exceeds the
+    /// request-cost breakeven - serving a tiny prefix is not worth shredding a
+    /// streaming window (and, on a one-shot, forfeiting its GET). The executor
+    /// keeps the wrap-up products.
     std::atomic<bool> interrupt_requested{false};
+
+    /// Cooperative ABORT request (cancel: seek-away / extent change /
+    /// teardown): the work is already doomed, so it is honored at the very
+    /// next tile boundary unconditionally. The executor discards the products.
+    std::atomic<bool> abort_requested{false};
 
     /// The queued/running step's pool handle: its CAS arbitrates the
     /// queued-pickup race (revoke vs run), its `get` is the release wait.

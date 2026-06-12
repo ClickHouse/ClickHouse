@@ -734,8 +734,15 @@ void ReaderExecutor::maybeTriggerPrefetch()
         self->fetched = fetchGapsFromSource(
             self->physical_window, /*from_prefetch=*/true, /*keep_live=*/self->leased,
             self->conn, self->reached_eof, self->geometry->pressure_level,
-            &self->interrupt_requested, self->stats);
-        if (self->interrupt_requested.load())
+            self, self->stats);
+        /// Wrapped early iff the fetch actually stopped short on a flag (a
+        /// takeover near the tail completes instead and stays a full collect;
+        /// an EOF-short is not a wrap either).
+        const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;
+        const bool stopped_short = !self->reached_eof
+            && fetched_size < self->physical_window.size
+            && (self->abort_requested.load() || self->interrupt_requested.load());
+        if (stopped_short)
         {
             self->stats.add(Stats::MachineInterrupted);
             return StepResult::Interrupted;
@@ -803,7 +810,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         /// bounded by one source block, not one window. Work wasted.
         stats.add(Stats::PrefetchDiscardedRunning);
         StatTimer wait_scope(stats, Stats::PrefetchDiscardWaitMicroseconds);
-        runner->requestInterrupt(*m);
+        runner->requestAbort(*m);
         runner->waitReleased(*m);
         if (m->failure)
             tryLogException(m->failure, log, "Discarded prefetch task threw", LogsLevel::debug);
@@ -1468,20 +1475,37 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
     return buf.read(dest, chunk);
 }
 
+/// The cooperative stop gate, shared by every fetch loop: an ABORT (cancel -
+/// the work is doomed) stops at the very next tile; a TAKEOVER (collect) stops
+/// only while `remaining` exceeds `takeover_breakeven` - near the tail,
+/// completing beats shredding the window into tiny collects (and, on a
+/// one-shot, forfeiting its GET for a fresh request).
+static bool shouldStopFetch(const MachineBase * stop, size_t remaining, size_t takeover_breakeven)
+{
+    if (!stop)
+        return false;
+    if (stop->abort_requested.load(std::memory_order_relaxed))
+        return true;
+    return stop->interrupt_requested.load(std::memory_order_relaxed) && remaining > takeover_breakeven;
+}
+
 Rope ReaderExecutor::Connection::readInto(
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, const LoggerPtr & logger,
-    const std::atomic<bool> * interrupt)
+    const MachineBase * stop, size_t takeover_breakeven)
 {
     Rope rope;
     size_t total_read = 0;
+    size_t want = 0;
+    for (const auto & block : blocks)
+        want += block->size();
 
     for (auto & block : blocks)
     {
-        /// The interrupt point: stop BETWEEN blocks on a set flag, returning the
-        /// blocks read so far - bounding a waiting executor's release latency by
-        /// one block instead of one window. The caller distinguishes this short
-        /// return from EOF by re-checking the flag.
-        if (interrupt && interrupt->load(std::memory_order_relaxed))
+        /// The interrupt point: stop BETWEEN blocks (per the gate above),
+        /// returning the blocks read so far - bounding a waiting executor's
+        /// release latency by one block instead of one window. The caller
+        /// distinguishes this short return from EOF by re-checking the flags.
+        if (shouldStopFetch(stop, want - total_read, takeover_breakeven))
             break;
 
         size_t chunk = block->size();
@@ -1538,7 +1562,7 @@ size_t ReaderExecutor::Connection::drainTail(size_t max_tail, size_t block_bytes
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-    bool keep_live, ConnState & conn, const std::atomic<bool> * interrupt, Stats & out_stats)
+    bool keep_live, ConnState & conn, const MachineBase * stop, Stats & out_stats)
 {
     size_t want = 0;
     for (const auto & block : blocks)
@@ -1576,7 +1600,7 @@ Rope ReaderExecutor::readFromSource(
             LOG_TRACE(log, "readFromSource: live connection hit for {}, position={}", object.remote_path, offset);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
 
-            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, interrupt);
+            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, stop, min_bytes_for_seek);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
             releaseLiveConnectionAtBound(conn);
             return rope;
@@ -1651,7 +1675,7 @@ Rope ReaderExecutor::readFromSource(
             });
             out_stats.add(Stats::SourceRequests);
 
-            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, interrupt);
+            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, stop, min_bytes_for_seek);
 
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
@@ -1690,16 +1714,11 @@ Rope ReaderExecutor::readFromSource(
 
     for (auto & block : blocks)
     {
-        /// The interrupt point (see `Connection::readInto`) - COST-GATED here: a
-        /// one-shot dropped mid-response forfeits its GET and the remainder pays
-        /// a fresh request, so honoring the flag is only cost-positive while the
-        /// unread remainder exceeds the request-cost breakeven (the same
-        /// `min_bytes_for_seek` constant that governs bridging). Near the tail
-        /// the read completes instead - the wait it adds is smaller than the
-        /// request it saves. (A LIVE connection has no such trade: its
-        /// continuation is free, so `readInto` honors the flag unconditionally.)
-        if (interrupt && interrupt->load(std::memory_order_relaxed)
-            && want - total_read > min_bytes_for_seek)
+        /// The interrupt point (see `shouldStopFetch`): abort stops now; a
+        /// takeover is honored only while the unread remainder exceeds the
+        /// request-cost breakeven - this one-shot's GET would be forfeited and
+        /// the remainder would pay a fresh request.
+        if (shouldStopFetch(stop, want - total_read, min_bytes_for_seek))
             break;
 
         size_t chunk = block->size();
@@ -2133,7 +2152,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             /// Keep the connection live iff the current plan holds the lease (a wide plan);
             /// a narrow tail plan reads a one-shot.
             Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
-                /*keep_live=*/static_cast<bool>(connection_lease), conn, /*interrupt=*/nullptr, out_stats);
+                /*keep_live=*/static_cast<bool>(connection_lease), conn, /*stop=*/nullptr, out_stats);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             const size_t actual = sr.totalBytes();
@@ -2158,7 +2177,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 }
 
 Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
-    bool & eof_latch, MemoryPressureLevel pressure_level, const std::atomic<bool> * interrupt, Stats & out_stats)
+    bool & eof_latch, MemoryPressureLevel pressure_level, const MachineBase * stop, Stats & out_stats)
 {
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
     /// physical run (short at EOF or at an interrupt point). No cache
@@ -2187,7 +2206,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         auto blocks = allocateBlocks(pr.size, window_block_size, {});
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
-            keep_live, conn, interrupt, out_stats);
+            keep_live, conn, stop, out_stats);
         HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
             static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
         const size_t actual = source_rope.totalBytes();
@@ -2197,11 +2216,13 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         result.append(std::move(source_rope));
         file_pos += pr.size;
 
-        /// An interrupt-short return is checked FIRST: it must neither latch EOF
+        /// A stop-short return is checked FIRST: it must neither latch EOF
         /// (the bytes exist - the remainder is read by the normal dispatch) nor
-        /// throw the size-known short-read error. The partial result is the
-        /// machine's wrap-up product.
-        if (interrupt && interrupt->load(std::memory_order_relaxed))
+        /// throw the size-known short-read error. This is a POST-HOC check ("did
+        /// a stop cause this short read") - the inner loop already made the
+        /// gated decision - so it looks at the raw flags, not the gate.
+        if (stop && (stop->abort_requested.load(std::memory_order_relaxed)
+                     || stop->interrupt_requested.load(std::memory_order_relaxed)))
             break;
 
         /// Size-known short reads are fatal (the map promised those bytes). Size-unknown
@@ -2274,13 +2295,13 @@ void ReaderExecutor::assembleAndWriteBack(
 }
 
 void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
-    const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
+    const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * abort, Stats & out_stats)
 {
     for (auto & w : writers)
     {
-        /// The put step's interrupt point: stop between writers, leaving the
-        /// remaining ones untouched for the caller's abandon path.
-        if (interrupt && interrupt->load(std::memory_order_relaxed))
+        /// The put step's stop point: stop between writers on a cancel, leaving
+        /// the remaining ones untouched for the caller's abandon path.
+        if (abort && abort->load(std::memory_order_relaxed))
             break;
 
         chassert(w.writer);
@@ -2370,7 +2391,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
             ? self->physical_window.offset
             : std::min(self->physical_window.end(), self->fill_rope.range().end());
         pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
-            self->put_bytes_counter, &self->interrupt_requested, self->stats);
+            self->put_bytes_counter, &self->abort_requested, self->stats);
         /// Pin the partial segment under the just-written frontier until the
         /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
         /// fill landed, so a fresh segment was not pinnable there.
@@ -2385,9 +2406,9 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
         }
         /// The writers are NOT released here - the reap returns them home (a
         /// writer spans many windows and the next one needs it). Only the rope
-        /// is dropped: the fill is committed (or abandoned on interrupt).
+        /// is dropped: the fill is committed (or abandoned on abort).
         self->fill_rope = {};
-        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
+        return self->abort_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
     if (runner->schedule(m, StepKind::Put))
@@ -2451,9 +2472,9 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
         pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
-            self->put_bytes_counter, &self->interrupt_requested, self->stats);
+            self->put_bytes_counter, &self->abort_requested, self->stats);
         self->fill_rope = {};
-        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
+        return self->abort_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
     if (runner->schedule(pm, StepKind::Put))

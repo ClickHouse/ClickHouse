@@ -31,8 +31,13 @@ public:
     /// running or finished; use `waitReleased`.
     bool tryCancelQueued(MachineBase & machine);
 
-    /// Ask a running step to wrap up at its next interrupt point.
+    /// Ask a running step to wrap up at its next interrupt point IF the
+    /// remaining work exceeds the cost breakeven (the takeover intent).
     void requestInterrupt(MachineBase & machine) { machine.interrupt_requested.store(true); }
+
+    /// Ask a running step to wrap up at its next interrupt point
+    /// unconditionally - the work is doomed (the cancel intent).
+    void requestAbort(MachineBase & machine) { machine.abort_requested.store(true); }
 
     /// Block until the scheduled/running step releases the machine (its handle
     /// resolves), establishing the happens-before edge over the machine's

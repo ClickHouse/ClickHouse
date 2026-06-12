@@ -8,7 +8,8 @@ from `system.query_log`, then computes the same cost the unit grid uses:
 
 For each load x cache-state x connection-budget mode, repeated SAMPLES times, the
 test reports each counter's value and stability (coefficient of variation), asserts
-the mode-aware invariant (live: I == pool resets; stateless: I == 0), and checks each
+the mode-aware invariant (live: ConnReset <= I <= ConnReset + ConnExpired; stateless:
+I <= ConnReset + ConnExpired - see the assert comment), and checks each
 counter and the cost-per-MiB KPI against an explicit per-(metric x case) [lo, hi] band.
 The unit grid (deterministic) remains the tight value gate.
 """
@@ -50,6 +51,7 @@ POOL_EVENTS = {
     "ConnCreated": "DiskConnectionsCreated",
     "ConnReused": "DiskConnectionsReused",
     "ConnReset": "DiskConnectionsReset",
+    "ConnExpired": "DiskConnectionsExpired",
 }
 ALL_EVENTS = {**METRIC_EVENTS, **POOL_EVENTS}
 
@@ -314,16 +316,25 @@ def test_metric_values_and_stability(started_cluster):
                 report.append(line)
                 logging.info(line)
 
-                # Mode-aware invariant. Live: every executor-counted incomplete connection
-                # is a real S3 pool reset (I == ConnReset). Stateless: no reused connection
-                # to abandon -> I == 0 (one short-lived bounded connection per window).
+                # Mode-aware invariant. Every executor-counted incomplete connection is a
+                # connection the pool could not re-store: counted as `ConnReset`, or as
+                # `ConnExpired` when the session's keep-alive request budget was already
+                # exhausted at destroy (the pool checks expiry BEFORE completeness, so an
+                # abandoned connection on a spent session lands in Expired, not Reset).
+                # Live: resets only come from executor-visible abandons, so I is bounded
+                # below by ConnReset too. Stateless: one-shots are normally read to their
+                # bound (preserved -> neither counter moves); only a cost-positive takeover
+                # interrupt (remainder > min_bytes_for_seek) forfeits one, so I stays
+                # within the same pool-side upper bound.
                 for s in samples:
                     if live:
-                        assert s["I"] == s["ConnReset"], (
-                            f"{name}/{state}/live: executor I={s['I']} != pool ConnReset={s['ConnReset']}")
+                        assert s["ConnReset"] <= s["I"] <= s["ConnReset"] + s["ConnExpired"], (
+                            f"{name}/{state}/live: executor I={s['I']} outside "
+                            f"[ConnReset={s['ConnReset']}, +ConnExpired={s['ConnReset'] + s['ConnExpired']}]")
                     else:
-                        assert s["I"] == 0, (
-                            f"{name}/{state}/stateless: expected no incomplete connections, got I={s['I']}")
+                        assert s["I"] <= s["ConnReset"] + s["ConnExpired"], (
+                            f"{name}/{state}/stateless: executor I={s['I']} exceeds "
+                            f"ConnReset+ConnExpired={s['ConnReset'] + s['ConnExpired']}")
                     # The server's modeled-cost event must equal the formula recomputed from the raw
                     # counters (only integer-us truncation on the bandwidth term differs).
                     assert abs(_cost_ms(s) - _formula_cost_ms(s)) <= max(2.0, 0.005 * _formula_cost_ms(s)), (
@@ -386,14 +397,18 @@ def test_page_cache_path(started_cluster):
             report.append(line)
             logging.info(line)
             results[(state, mode)] = st
-            # Mode invariant holds on the page-cache path too. The server's modeled
-            # cost event must equal the formula recomputed from the raw counters.
+            # Mode invariant holds on the page-cache path too (same pool-side bound as
+            # the main matrix - see the comment there). The server's modeled cost event
+            # must equal the formula recomputed from the raw counters.
             for s in samples:
                 if live:
-                    assert s["I"] == s["ConnReset"], (
-                        f"pc/{state}/live: executor I={s['I']} != pool ConnReset={s['ConnReset']}")
+                    assert s["ConnReset"] <= s["I"] <= s["ConnReset"] + s["ConnExpired"], (
+                        f"pc/{state}/live: executor I={s['I']} outside "
+                        f"[ConnReset={s['ConnReset']}, +ConnExpired={s['ConnReset'] + s['ConnExpired']}]")
                 else:
-                    assert s["I"] == 0, f"pc/{state}/stateless: expected I=0, got {s['I']}"
+                    assert s["I"] <= s["ConnReset"] + s["ConnExpired"], (
+                        f"pc/{state}/stateless: executor I={s['I']} exceeds "
+                        f"ConnReset+ConnExpired={s['ConnReset'] + s['ConnExpired']}")
                 assert abs(_cost_ms(s) - _formula_cost_ms(s)) <= max(2.0, 0.005 * _formula_cost_ms(s)), (
                     f"pc/{state}/{mode}: cost event {_cost_ms(s):.1f}ms != formula {_formula_cost_ms(s):.1f}ms")
 
