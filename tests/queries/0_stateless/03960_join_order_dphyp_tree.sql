@@ -19,6 +19,9 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
+-- Statistics are not built on insert by default, so without this the tables would have
+-- no column statistics at query time and the NDV-based estimation path would go untested.
+SET materialize_statistics_on_insert = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
