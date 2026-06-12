@@ -1,6 +1,10 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the embedded compiler (JIT).
 
+-- The crash path only exists in the new analyzer; the old analyzer cannot
+-- resolve this query at all (UNKNOWN_IDENTIFIER).
+SET enable_analyzer = 1;
+
 SET group_by_use_nulls = 1;
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
