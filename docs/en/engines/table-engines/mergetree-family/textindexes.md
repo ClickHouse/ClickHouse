@@ -316,7 +316,7 @@ Usage of non-deterministic functions is disallowed.
 **Function compatibility with preprocessor / tokenizer / postprocessor**.
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
 For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
-For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. When the `array` tokenizer is used with a postprocessor, the haystack column is also normalized element-wise at query time, so both sides of the comparison are consistently transformed (e.g., enabling case-insensitive matching for `hasAllTokens(arr, ['FOO'])` with a `lower` postprocessor).
+For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
 | Function | Preprocessor | Compatible tokenizers | Postprocessor |
@@ -337,8 +337,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 
 ² `ILIKE` is only supported via direct-read mode (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer). There is no hint-mode fallback: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`. The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
-The `array` tokenizer applies the postprocessor to each array element during index build, just as other tokenizers apply it to each generated token. At query time, the behavior depends on the function:
-- For `hasToken`, `hasAllTokens`, and `hasAnyTokens`: the postprocessor is applied to both the haystack column (element-wise) and the search needle, enabling fully normalized matching (e.g., case-insensitive array search).
+The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
+- For `hasToken`, `hasAllTokens`, and `hasAnyTokens` (with any tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search).
 - For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
 
 Example for stop word filtering:
