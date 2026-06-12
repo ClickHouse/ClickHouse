@@ -3,7 +3,7 @@
 -- simdjson now writes such numbers as strings on the tape so that
 -- ClickHouse can parse them into wider integer types (UInt128, Int128, etc.).
 
-SET allow_experimental_json_type = 1;
+SET enable_analyzer = 1;
 
 SELECT '-- Positive big integers into UInt128';
 SELECT '{"a" : 123456789123456789123456789}'::JSON(a UInt128) AS j, j.a;
