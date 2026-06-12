@@ -120,10 +120,15 @@ bool containsObject(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isObject);
 }
 
+bool containsDateOrTime(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64);
+}
+
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
 /// have the same representation as the constant after conversion to the result type.
 /// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
-/// `Decimal` vs `Float`, `String` vs `FixedString`, `Object` / `JSON`,
+/// `Decimal` vs `Float`, `String` vs `FixedString`, `Object` / `JSON`, mixed date/time-family types,
 /// or runtime-dispatched `Dynamic` / `Variant` comparisons.
 bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
@@ -143,6 +148,10 @@ bool canReplaceColumnWithConstantAfterFilter(
         return false;
 
     if (containsFixedString(result_type) && !result_type->equals(*constant_type))
+        return false;
+
+    if (containsDateOrTime(result_type)
+        && (constant_type_is_dynamic || (containsDateOrTime(constant_type) && !result_type->equals(*constant_type))))
         return false;
 
     /// `ColumnConst(Nullable)` has a different physical layout from a filtered full nullable column.
