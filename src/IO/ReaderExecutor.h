@@ -304,14 +304,13 @@ private:
     /// machine fetch step runs (it cannot touch shared state). `from_prefetch` routes
     /// the issued-source counter into the machine-local `Stats`. `eof_latch` is set on
     /// a size-unknown short read. `stop` (nullable) carries the machine's cooperative
-    /// stop flags, polled between source blocks: an ABORT (cancel - the work is
-    /// doomed) stops immediately; a TAKEOVER (collect) stops only while the
-    /// remaining fetch exceeds the request-cost breakeven (`min_bytes_for_seek`) -
-    /// near the tail, completing beats shredding the window (and, on a one-shot,
-    /// forfeiting its GET). Either way the fetch returns SHORT with what it has -
-    /// the same shape as an EOF-short return - and the short-read handling must
-    /// neither latch EOF nor throw (the flags are checked FIRST). The window is the
-    /// plan gap the foreground bounded at launch.
+    /// stop flag. The stop policy: a LIVE connection stops at the next block (it is
+    /// saved and continues from its frontier later); a one-shot GET is never cut
+    /// mid-response (its request would be forfeited) - for stateless fetches the
+    /// stop lands BETWEEN connections, before the next range's GET is opened. A
+    /// stop-short return has the same shape as an EOF-short one, and the
+    /// short-read handling must neither latch EOF nor throw (the flag is checked
+    /// FIRST). The window is the plan gap the foreground bounded at launch.
     Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
         bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
         const MachineBase * stop, Stats & out_stats);
@@ -930,13 +929,12 @@ private:
 
         /// Read the pre-allocated `blocks` off the open connection into a Rope using
         /// `set()`/`next()` (data lands directly in block memory), advancing the frontier.
-        /// `stop` (nullable) is polled before each block - the machine's interrupt
-        /// point: an ABORT stops immediately; a TAKEOVER stops only while the
-        /// remaining bytes exceed `takeover_breakeven` (serving a tiny prefix is
-        /// not worth shredding the window).
+        /// `stop` (nullable) is polled before each block - a LIVE connection stops
+        /// freely: it is saved with its frontier and continues later, nothing is
+        /// forfeited.
         Rope readInto(VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks,
                       size_t logical_offset, const LoggerPtr & logger,
-                      const MachineBase * stop, size_t takeover_breakeven);
+                      const MachineBase * stop);
 
         /// Discard up to `gap` bytes off the open connection so the frontier advances
         /// over an already-cached hole; the bytes cross the wire (over-read), only the

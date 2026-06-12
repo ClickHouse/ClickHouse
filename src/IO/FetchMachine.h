@@ -50,13 +50,14 @@ struct MachineBase
 {
     std::atomic<MachineState> state{MachineState::Constructed};
 
-    /// The ONE cooperative stop request, polled at tile boundaries (safe
-    /// points: progress committed into machine-owned fields). Honored only
-    /// while the remaining work exceeds the request-cost breakeven - a small
-    /// tail completes instead, returning the connection CLEAN. Its production
-    /// setter is the CANCEL path (seek-away / extent change / teardown), which
-    /// does not wait: the machine goes to the soft list and is reaped after
-    /// release, so the bounded completion is invisible to the foreground.
+    /// The ONE cooperative stop request, polled at safe points (progress
+    /// committed into machine-owned fields). The fetch policy: a LIVE
+    /// connection stops at the next block - it is saved with the machine and
+    /// continues from its frontier later, nothing is forfeited; a one-shot GET
+    /// is NEVER cut mid-response - the stop lands between connections, where
+    /// no request is in flight and stopping is free. Its production setter is
+    /// the CANCEL path (seek-away / extent change / teardown), which does not
+    /// wait: the machine goes to the soft list and is reaped after release.
     std::atomic<bool> interrupt_requested{false};
 
     /// The queued/running step's pool handle: its CAS arbitrates the

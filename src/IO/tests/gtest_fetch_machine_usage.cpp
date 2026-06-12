@@ -36,11 +36,12 @@ struct TileMachine : MachineBase
 {
     size_t total_tiles = 4;
 
-    /// The stop gate's cost bound, in tiles (production: `min_bytes_for_seek`,
-    /// in bytes): the interrupt is honored only while the REMAINING work
-    /// exceeds it - near the tail, completing beats wrapping (the connection
-    /// comes back clean, and the caller is not waiting anyway: cancel is a
-    /// flag + the soft list, never a foreground block).
+    /// A step-body POLICY example: this step honors the stop only while the
+    /// REMAINING work exceeds a cost bound (near the tail, completing beats
+    /// wrapping). Production fetch steps choose differently per connection
+    /// kind: live stops freely (the connection is saved and continues), a
+    /// one-shot never stops mid-GET (stops land between connections). The
+    /// caller is not waiting either way - cancel is a flag + the soft list.
     size_t breakeven_tiles = 1;
 
     size_t next_tile = 0;
@@ -54,7 +55,7 @@ struct TileMachine : MachineBase
     std::latch resume{1};
 };
 
-/// The reference interruptible step; the stop gate mirrors `shouldStopFetch`.
+/// The reference interruptible step; the gate is the step's own policy.
 std::function<StepResult()> makeTileStep(TileMachine & machine)
 {
     return [self = &machine]

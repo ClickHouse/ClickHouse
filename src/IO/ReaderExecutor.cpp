@@ -1476,33 +1476,30 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
     return buf.read(dest, chunk);
 }
 
-/// The cooperative stop gate, shared by every fetch loop: honored only while
-/// `remaining` exceeds the breakeven - a small tail completes instead, so the
-/// connection comes back CLEAN (pool-reusable) rather than reset. The caller
-/// (the cancel path) does not wait on the wrap - the machine sits on the soft
-/// list until reaped - so the bounded completion costs the foreground nothing.
-static bool shouldStopFetch(const MachineBase * stop, size_t remaining, size_t breakeven)
+/// The cooperative stop probe. The policy lives at the call sites: a LIVE
+/// connection stops at the next block (it is saved with the machine and
+/// continues from its frontier later - nothing is forfeited); a one-shot GET
+/// is never cut mid-response (its request would be forfeited and the remainder
+/// would pay a fresh one) - stateless fetches stop only BETWEEN connections.
+static bool stopRequested(const MachineBase * stop)
 {
-    return stop && stop->interrupt_requested.load(std::memory_order_relaxed) && remaining > breakeven;
+    return stop && stop->interrupt_requested.load(std::memory_order_relaxed);
 }
 
 Rope ReaderExecutor::Connection::readInto(
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, const LoggerPtr & logger,
-    const MachineBase * stop, size_t takeover_breakeven)
+    const MachineBase * stop)
 {
     Rope rope;
     size_t total_read = 0;
-    size_t want = 0;
-    for (const auto & block : blocks)
-        want += block->size();
 
     for (auto & block : blocks)
     {
-        /// The interrupt point: stop BETWEEN blocks (per the gate above),
-        /// returning the blocks read so far - bounding a waiting executor's
-        /// release latency by one block instead of one window. The caller
-        /// distinguishes this short return from EOF by re-checking the flags.
-        if (shouldStopFetch(stop, want - total_read, takeover_breakeven))
+        /// The interrupt point: stop BETWEEN blocks, returning the blocks read
+        /// so far. A live connection stops freely - it stays with the machine,
+        /// frontier intact, and continues later; the caller distinguishes this
+        /// short return from EOF by re-checking the flag.
+        if (stopRequested(stop))
             break;
 
         size_t chunk = block->size();
@@ -1598,7 +1595,7 @@ Rope ReaderExecutor::readFromSource(
             LOG_TRACE(log, "readFromSource: live connection hit for {}, position={}", object.remote_path, offset);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
 
-            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, stop, min_bytes_for_seek);
+            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, stop);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
             releaseLiveConnectionAtBound(conn);
             return rope;
@@ -1676,7 +1673,7 @@ Rope ReaderExecutor::readFromSource(
             });
             out_stats.add(Stats::SourceRequests);
 
-            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, stop, min_bytes_for_seek);
+            Rope rope = conn.connection->readInto(std::move(blocks), logical_offset, log, stop);
 
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
@@ -1715,13 +1712,10 @@ Rope ReaderExecutor::readFromSource(
 
     for (auto & block : blocks)
     {
-        /// The interrupt point (see `shouldStopFetch`): abort stops now; a
-        /// takeover is honored only while the unread remainder exceeds the
-        /// request-cost breakeven - this one-shot's GET would be forfeited and
-        /// the remainder would pay a fresh request.
-        if (shouldStopFetch(stop, want - total_read, min_bytes_for_seek))
-            break;
-
+        /// NO interrupt point here: a one-shot GET, once issued, is read to its
+        /// bound - cutting it mid-response would forfeit the request and make
+        /// the remainder pay a fresh one. The stop lands BETWEEN connections
+        /// (see `fetchGapsFromSource`), where nothing is in flight.
         size_t chunk = block->size();
         size_t got = readIntoBlock(buf, block->data(), chunk);
 
@@ -1739,11 +1733,11 @@ Rope ReaderExecutor::readFromSource(
         total_read += got;
     }
 
-    /// A one-shot GET dropped before it was fully consumed is not reusable: an
-    /// unbounded one (unknown size AND no advertised extent) that did not reach
-    /// EOF, or a bounded one shortened by an interrupt (`total_read < want`).
-    /// Zero transfer means the lazy GET never started - nothing for the pool to
-    /// reset, so nothing to count (the interrupt landed before the first block).
+    /// A one-shot GET dropped before it was fully consumed is not reusable -
+    /// only the unbounded case (unknown size AND no advertised extent) that did
+    /// not reach EOF can produce that now: bounded one-shots are never cut
+    /// mid-response (no interrupt point above), so stateless `I` is structural.
+    /// Zero transfer means the lazy GET never started - nothing to count.
     if (!hit_eof && total_read > 0 && (!stateless_bounded || total_read < want))
         out_stats.add(Stats::IncompleteConnections);
 
@@ -2219,12 +2213,13 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         result.append(std::move(source_rope));
         file_pos += pr.size;
 
-        /// A stop-short return is checked FIRST: it must neither latch EOF
-        /// (the bytes exist - the remainder is read by the normal dispatch) nor
-        /// throw the size-known short-read error. This is a POST-HOC check ("did
-        /// a stop cause this short read") - the inner loop already made the
-        /// gated decision - so it looks at the raw flags, not the gate.
-        if (stop && stop->interrupt_requested.load(std::memory_order_relaxed))
+        /// The BETWEEN-CONNECTIONS stop point (and the post-hoc classifier for a
+        /// live stop-short return): checked FIRST so a stop-short neither latches
+        /// EOF (the bytes exist - the remainder is read by the normal dispatch)
+        /// nor throws the size-known short-read error. For stateless fetches this
+        /// is the ONLY stop point - the previous range's GET fully completed and
+        /// the next one has not been opened, so stopping here is free.
+        if (stopRequested(stop))
             break;
 
         /// Size-known short reads are fatal (the map promised those bytes). Size-unknown
