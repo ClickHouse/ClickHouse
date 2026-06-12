@@ -1130,11 +1130,14 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 aws_client_configuration, !credentials_configuration.use_insecure_imds_request));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
         }
-    }
 
-    /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
-    /// in chain.
-    AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+        /// The AWS config/credentials file is a server-ambient credential source just like the environment
+        /// and IMDS providers above, so it is gated by `use_environment_credentials` too: with the setting
+        /// disabled the chain stays empty and the request goes out unsigned (anonymous).
+        /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
+        /// in chain.
+        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+    }
 }
 
 AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)

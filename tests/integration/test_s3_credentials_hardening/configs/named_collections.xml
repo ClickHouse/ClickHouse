@@ -1,0 +1,7 @@
+<clickhouse>
+    <named_collections>
+        <nc_url_only>
+            <url>http://minio1:9001/root/profilecreds_nc/data.tsv</url>
+        </nc_url_only>
+    </named_collections>
+</clickhouse>

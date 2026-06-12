@@ -12,6 +12,8 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     with_minio=True,
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
     env_variables={
         "AWS_SHARED_CREDENTIALS_FILE": "/tmp/aws_credentials",
         "AWS_EC2_METADATA_DISABLED": "true",
@@ -60,6 +62,38 @@ def test_profile_file_not_used_for_user_queries():
         ).strip()
         == "1"
     )
+
+
+def test_url_only_named_collection_stays_anonymous():
+    # A URL-only named collection means anonymous access. Even when a trusted session re-enables
+    # server-managed credentials, the collection must not silently pick up the server's AWS
+    # shared-credentials file; `use_environment_credentials = 1` is the explicit opt-in.
+    url = "http://minio1:9001/root/profilecreds_nc/data.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 7 SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    select_url_only = (
+        "SELECT * FROM s3(nc_url_only, format = 'TSV', structure = 'x UInt8')"
+    )
+
+    # Anonymous by default, and still anonymous with the override enabled: minio rejects the unsigned
+    # read of the private bucket instead of accepting the server profile credentials.
+    error = node.query_and_get_error(select_url_only)
+    assert "Access Denied" in error or "AccessDenied" in error, error
+    error = node.query_and_get_error(f"{select_url_only} {ALLOW}")
+    assert "Access Denied" in error or "AccessDenied" in error, error
+
+    # The explicit opt-in keeps working: with the override enabled and `use_environment_credentials = 1`
+    # the profile file is consulted and the read succeeds.
+    select_with_env = (
+        "SELECT * FROM s3(nc_url_only, use_environment_credentials = 1, "
+        "format = 'TSV', structure = 'x UInt8')"
+    )
+    error = node.query_and_get_error(select_with_env)
+    assert "ACCESS_DENIED" in error, error
+    assert node.query(f"{select_with_env} {ALLOW}").strip() == "7"
 
 
 def test_server_data_disk_unaffected():
