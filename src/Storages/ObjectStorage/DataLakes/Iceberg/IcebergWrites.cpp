@@ -470,12 +470,8 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots,
-    const std::vector<Iceberg::FileContentType> & per_entry_content_types)
+    bool use_previous_snapshots)
 {
-    if (!per_entry_content_types.empty() && per_entry_content_types.size() != manifest_entry_names.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_entry_content_types size does not match manifest entries");
-
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -493,15 +489,12 @@ void generateManifestList(
         avro::GenericDatum entry_datum(schema.root());
         avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
 
-        const Iceberg::FileContentType entry_content
-            = per_entry_content_types.empty() ? content_type : per_entry_content_types[entry_idx];
-
         entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
         entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
         entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         if (version > 1)
         {
-            entry.field(Iceberg::f_content) = static_cast<Int32>(entry_content);
+            entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
             entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
             entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
         }
@@ -528,7 +521,6 @@ void generateManifestList(
         };
         entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
-
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_files_count);
@@ -536,8 +528,6 @@ void generateManifestList(
             set_versioned_field(0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
                 set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
-            else
-                set_versioned_field(0, Iceberg::f_deleted_rows_count);
         }
         else
         {
@@ -545,28 +535,26 @@ void generateManifestList(
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
+
             if (summary->has(Iceberg::f_added_position_deletes))
                 entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
-            else
-                entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
 
-        if (entry_content == Iceberg::FileContentType::DATA)
+        if (summary->has(Iceberg::f_added_records))
         {
             set_versioned_field(
-                summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
+                summary->getValue<Int64>(Iceberg::f_added_records),
                 Iceberg::f_added_rows_count);
         }
         else
         {
-            set_versioned_field(
-                summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
-                Iceberg::f_added_rows_count);
+            set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_added_rows_count);
         }
         set_versioned_field(
             0,
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
+
         writer.write(entry_datum);
     }
 
@@ -668,10 +656,8 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
-    auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
-        catalog,
-        table_id.getTableName(),
         persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
@@ -679,7 +665,7 @@ IcebergStorageSink::IcebergStorageSink(
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
-        /* ignore_explicit_metadata_file_path */ false);
+        true);
 
     metadata = getMetadataJSONObject(
         metadata_path,
@@ -905,7 +891,6 @@ bool IcebergStorageSink::initializeMetadata()
 {
     const auto & resolver = persistent_table_components.path_resolver;
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
-    auto hint_path = filename_generator.generateVersionHint();
 
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
@@ -921,7 +906,7 @@ bool IcebergStorageSink::initializeMetadata()
         total_data_files,
         total_rows,
         total_chunks_size,
-        /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
+        total_data_files,
         /* added_delete_files */ 0,
         /* num_deleted_rows */ 0);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
@@ -943,7 +928,6 @@ bool IcebergStorageSink::initializeMetadata()
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-
         if (retry_because_of_metadata_conflict)
         {
             /// When retrying after a metadata conflict, we must read the actual latest
@@ -951,10 +935,8 @@ bool IcebergStorageSink::initializeMetadata()
             /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
             /// loop must still discover the real latest version to advance past it.
             /// Otherwise the loop keeps regenerating the same target version and fails.
-            auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+            auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
                 object_storage,
-                catalog,
-                table_id.getTableName(),
                 persistent_table_components.table_path,
                 data_lake_settings,
                 persistent_table_components.metadata_cache,
@@ -962,6 +944,7 @@ bool IcebergStorageSink::initializeMetadata()
                 getLogger("IcebergWrites").get(),
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
+                true,
                 /* ignore_explicit_metadata_file_path */ true);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
@@ -1055,13 +1038,7 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-                    persistent_table_components.path_resolver,
-                    metadata, object_storage, context,
-                    manifest_entries,
-                    new_snapshot,
-                    manifest_entry_sizes,
-                    *buffer_manifest_list,
-                    Iceberg::FileContentType::DATA,
+                    persistent_table_components.path_resolver, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_entry_sizes, *buffer_manifest_list, Iceberg::FileContentType::DATA,
                     /* use_previous_snapshots = */ true);
                 buffer_manifest_list->finalize();
             }
@@ -1083,22 +1060,22 @@ bool IcebergStorageSink::initializeMetadata()
             });
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
-            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-            if (!catalog_writes_metadata_file)
+            auto hint_path = filename_generator.generateVersionHint();
+            if (!writeMetadataFileAndVersionHint(
+                    persistent_table_components.path_resolver,
+                    metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
-                if (!writeMetadataFileAndVersionHint(
-                        persistent_table_components.path_resolver,
-                        metadata_info,
-                        json_representation,
-                        hint_path,
-                        object_storage,
-                        context,
-                        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
-                {
-                    LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
-                    cleanup(true);
-                    return false;
-                }
+                LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
+                cleanup(true);
+                return false;
+            }
+            else
+            {
                 LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
             }
 
