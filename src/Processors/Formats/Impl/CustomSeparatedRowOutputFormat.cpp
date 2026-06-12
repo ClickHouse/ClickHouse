@@ -39,11 +39,16 @@ void CustomSeparatedRowOutputFormat::writePrefix()
 
     const auto & header = getPort(PortKind::Main).getHeader();
 
-    /// Tuple values are flattened into separate columns only under the CSV escaping rule; flatten the
-    /// header the same way so the header field count matches the data (issue #107342).
+    /// Tuple values are flattened into separate columns only under the CSV escaping rule, and the
+    /// tuple elements are joined with csv.tuple_delimiter. CustomSeparated joins fields with
+    /// custom.field_delimiter, so flattening the header only matches the data when that delimiter is
+    /// the same single character as csv.tuple_delimiter; otherwise a tuple value stays one custom
+    /// field while a flattened header would emit several (issue #107342).
     const bool flatten = escaping_rule == EscapingRule::CSV
         && format_settings.csv.serialize_tuple_into_separate_columns
-        && format_settings.csv.header_serialize_tuple_into_separate_columns;
+        && format_settings.csv.header_serialize_tuple_into_separate_columns
+        && format_settings.custom.field_delimiter.size() == 1
+        && format_settings.custom.field_delimiter[0] == format_settings.csv.tuple_delimiter;
 
     Names names;
     Names type_names;

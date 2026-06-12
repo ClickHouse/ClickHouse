@@ -43,10 +43,29 @@ SELECT '-- no tuples: header unchanged';
 SELECT 1::UInt8 AS a, 'x' AS b
 FORMAT CSVWithNames;
 
-SELECT '-- CustomSeparatedWithNames with CSV escaping rule: header flattened';
-SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
+-- CustomSeparated joins fields with format_custom_field_delimiter, but a tuple value uses
+-- csv.tuple_delimiter (format_csv_delimiter, ',') internally. So the header may only be flattened
+-- when the custom field delimiter is the same single character as the tuple delimiter; otherwise a
+-- tuple value stays one custom field and a flattened header would have more fields than the data.
+SELECT '-- CustomSeparatedWithNames, CSV rule, comma field delimiter: header flattened (delimiters match)';
+SELECT 5::UInt8 AS x, (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
 FORMAT CustomSeparatedWithNames
 SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
+
+SELECT '-- CustomSeparatedWithNamesAndTypes, CSV rule, comma field delimiter: names and types flattened';
+SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
+FORMAT CustomSeparatedWithNamesAndTypes
+SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
+
+SELECT '-- CustomSeparatedWithNames, CSV rule, non-comma (|) field delimiter: header NOT flattened (matches one-field tuple value)';
+SELECT 5::UInt8 AS x, (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
+FORMAT CustomSeparatedWithNames
+SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = '|';
+
+SELECT '-- CustomSeparatedWithNames, CSV rule, default tab field delimiter: header NOT flattened';
+SELECT 5::UInt8 AS x, (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
+FORMAT CustomSeparatedWithNames
+SETTINGS format_custom_escaping_rule = 'CSV';
 
 SELECT '-- CustomSeparatedWithNames with non-CSV escaping rule: header not flattened';
 SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
