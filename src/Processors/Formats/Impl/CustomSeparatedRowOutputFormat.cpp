@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
 
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FlattenTupleForCSVHeader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
@@ -37,15 +38,26 @@ void CustomSeparatedRowOutputFormat::writePrefix()
     writeString(format_settings.custom.result_before_delimiter, out);
 
     const auto & header = getPort(PortKind::Main).getHeader();
+
+    /// Tuple values are flattened into separate columns only under the CSV escaping rule; flatten the
+    /// header the same way so the header field count matches the data (issue #107342).
+    const bool flatten = escaping_rule == EscapingRule::CSV
+        && format_settings.csv.serialize_tuple_into_separate_columns
+        && format_settings.csv.header_serialize_tuple_into_separate_columns;
+
+    Names names;
+    Names type_names;
+    getCSVHeaderNamesAndTypes(header, flatten, names, type_names);
+
     if (with_names)
     {
-        writeLine(header.getNames());
+        writeLine(names);
         writeRowBetweenDelimiter();
     }
 
     if (with_types)
     {
-        writeLine(header.getDataTypeNames());
+        writeLine(type_names);
         writeRowBetweenDelimiter();
     }
 }
