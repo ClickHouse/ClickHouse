@@ -1755,6 +1755,73 @@ def test_lag_after_recovery(started_cluster):
     )
 
 
+def test_sync_database_replica_strict_keeper_component(started_cluster):
+    # Regression test for the Keeper-component guard in
+    # DatabaseReplicated::waitForReplicaToProcessAllEntries (STRICT mode).
+    #
+    # STRICT mode reads .../max_log_ptr directly via getZooKeeper()->get on the
+    # query thread (not through the DDL worker, which sets its own component).
+    # Integration nodes run with enforce_keeper_component_tracking=true, so if
+    # that direct read has no current component set, pushRequest throws
+    # LOGICAL_ERROR ("Current component is empty ...") -- or aborts in a debug
+    # build. The only way to reach that read is for the inner DDL-worker wait to
+    # time out while the replica is still lagging, so we keep replica2 lagging
+    # through the strict sync (failpoint stays enabled) and use a short
+    # receive_timeout. With max_replication_lag_to_enqueue=1 the lag stays above
+    # the threshold, so the loop runs the guarded read on every iteration and
+    # the query ends in a clean TIMEOUT_EXCEEDED rather than reporting "synced".
+    main_node.query("drop database if exists strict_component sync")
+    dummy_node.query("drop database if exists strict_component sync")
+
+    main_node.query(
+        "create database strict_component engine=Replicated('/clickhouse/databases/strict_component', 'shard1', 'replica1')"
+    )
+
+    dummy_node.query("system enable failpoint database_replicated_delay_recovery")
+    dummy_node.query(
+        "system enable failpoint database_replicated_delay_entry_execution"
+    )
+    dummy_node.query(
+        "create database strict_component engine=Replicated('/clickhouse/databases/strict_component', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
+    )
+
+    try:
+        # Advance the log on replica1 so replica2 (entries blocked by the
+        # failpoint) falls several entries behind the threshold.
+        settings = {"distributed_ddl_task_timeout": 0}
+        for i in range(5):
+            main_node.query(
+                f"create table strict_component.t{i} (n int) engine=Memory",
+                settings=settings,
+            )
+
+        # Reaches the guarded getZooKeeper()->get(max_log_ptr) in the STRICT
+        # loop. Without the component guard this is LOGICAL_ERROR "Current
+        # component is empty" (release) or a server abort (debug); with it, the
+        # forced timeout is the only outcome.
+        error = dummy_node.query_and_get_error(
+            "system sync database replica strict_component strict",
+            settings={"receive_timeout": 3},
+        )
+        assert "Current component is empty" not in error, error
+        assert "LOGICAL_ERROR" not in error, error
+        assert "TIMEOUT_EXCEEDED" in error, error
+    finally:
+        dummy_node.query(
+            "system disable failpoint database_replicated_delay_entry_execution"
+        )
+        dummy_node.query(
+            "system disable failpoint database_replicated_delay_recovery"
+        )
+
+    # The node must still be alive (a missing guard in a debug build would have
+    # aborted it).
+    assert dummy_node.query("select 1") == "1\n"
+
+    main_node.query("drop database if exists strict_component sync")
+    dummy_node.query("drop database if exists strict_component sync")
+
+
 def test_system_database_replicas_with_ro(started_cluster):
     prefix = generate_random_string()
     database_1 = f"{prefix}_test_system_database_replicas_1"
