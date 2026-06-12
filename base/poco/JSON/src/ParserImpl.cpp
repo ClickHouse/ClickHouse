@@ -37,7 +37,7 @@ namespace JSON {
 ParserImpl::ParserImpl(const Handler::Ptr& pHandler, std::size_t bufSize):
 	_pJSON(new json_stream),
 	_pHandler(pHandler),
-	_depth(JSON_UNLIMITED_DEPTH),
+	_depth(JSON_DEFAULT_DEPTH),
 	_decimalPoint('.'),
 	_allowNullByte(true),
 	_allowComments(false)

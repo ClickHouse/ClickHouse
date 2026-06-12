@@ -15,7 +15,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <Core/Defines.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -157,9 +156,6 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
     Poco::JSON::Parser parser;
-    /// Bound the parser depth so a deeply nested (attacker-controlled) metadata JSON is rejected
-    /// cleanly instead of overflowing the native stack in Poco's recursive parser.
-    parser.setDepth(DBMS_DEFAULT_MAX_PARSER_DEPTH);
     Poco::Dynamic::Var json = parser.parse(json_str);
     const auto & shcema_json = json.extract<Poco::JSON::Object::Ptr>();
 
@@ -263,9 +259,6 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
     Poco::JSON::Parser parser;
-    /// Bound the parser depth so a deeply nested (attacker-controlled) metadata JSON is rejected
-    /// cleanly instead of overflowing the native stack in Poco's recursive parser.
-    parser.setDepth(DBMS_DEFAULT_MAX_PARSER_DEPTH);
     Poco::Dynamic::Var json = parser.parse(json_str);
     const auto & snapshot_json = json.extract<Poco::JSON::Object::Ptr>();
     return PaimonSnapshot(snapshot_json);

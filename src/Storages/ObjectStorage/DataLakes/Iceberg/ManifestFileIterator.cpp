@@ -6,7 +6,6 @@
 #include <compare>
 #include <optional>
 
-#include <Core/Defines.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -255,9 +254,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
-    /// Bound the parser depth so deeply nested partition-spec/schema JSON is rejected cleanly
-    /// instead of overflowing the native stack in Poco's recursive parser.
-    parser.setDepth(DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
     if (!partition_spec_json_string.has_value())

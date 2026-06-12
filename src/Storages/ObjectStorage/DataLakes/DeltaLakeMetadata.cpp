@@ -2,7 +2,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/JSON.h>
-#include <Core/Defines.h>
 #include "config.h"
 
 #if USE_PARQUET
@@ -270,10 +269,6 @@ struct DeltaLakeMetadataImpl
 
             sum_json += json_str;
             Poco::JSON::Parser parser;
-            /// Bound the parser depth so a deeply nested metadata/schema JSON is rejected cleanly
-            /// instead of overflowing the native stack in Poco's recursive parser. This parser is
-            /// reused below to parse the (attacker-controlled) schemaString as well.
-            parser.setDepth(DBMS_DEFAULT_MAX_PARSER_DEPTH);
             Poco::Dynamic::Var json = parser.parse(json_str);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
@@ -545,7 +540,6 @@ struct DeltaLakeMetadataImpl
             if (!metadata.empty())
             {
                 Poco::JSON::Parser parser;
-                parser.setDepth(DBMS_DEFAULT_MAX_PARSER_DEPTH);
                 Poco::Dynamic::Var json = parser.parse(metadata);
                 const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
