@@ -1513,6 +1513,45 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
+    DECLARE(Bool, oom_canary_enable, false, R"(
+    Experimental. Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
+    before the main ClickHouse server process, giving the server a chance to shed load.
+    Requires Linux >= 5.3 (for `pidfd_open`); the canary is disabled at startup on older kernels.
+    The OOM response requires cgroup v2 `memory.events.local` OOM-kill evidence and may run global
+    query cancellation, merge cancellation, and `system.crash_log` writes.
+    The canary cannot protect the server when cgroup v2 `memory.oom.group` is enabled for the
+    server's cgroup: the kernel then kills the whole cgroup as one unit, including the server,
+    so the OOM response never runs. A warning is logged at startup in this mode.
+    Behavior may change between ClickHouse versions until production validation is complete.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, oom_canary_size, 104857600, R"(
+    Size in bytes of the memory region that the OOM canary child process allocates and touches.
+    Locking the region with `mlock` is best-effort: it requires `CAP_IPC_LOCK` or a sufficient
+    `RLIMIT_MEMLOCK`, and when locking fails the canary logs a warning and the memory remains
+    allocated but may be swapped out.
+    Default is 100 MB (104857600). Larger values make the canary a more attractive OOM target.
+    )", 0) \
+    DECLARE(Bool, oom_canary_relaunch, true, R"(
+    When true, the OOM canary is automatically relaunched after the canary process dies for any
+    reason other than a permanent setup failure or server shutdown — including OOM kills, other
+    signals, and transient exits — subject to `oom_canary_max_rapid_relaunches` and the backoff
+    settings. The OOM response sequence itself runs only when cgroup v2 `memory.events.local`
+    provides OOM-kill evidence.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
+    Maximum number of consecutive rapid OOM canary relaunches before automatic relaunch is disabled
+    to avoid thrashing under sustained memory pressure. The counter and the relaunch backoff reset
+    once a canary survives longer than `oom_canary_max_backoff_seconds`, so a canary that dies only
+    sporadically over a long uptime is not eventually disabled.
+    Applies only when `oom_canary_relaunch` is true.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_initial_backoff_seconds, 1, R"(
+    Initial backoff delay in seconds between consecutive OOM canary relaunches.
+    The delay doubles on each relaunch up to `oom_canary_max_backoff_seconds`.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_backoff_seconds, 60, R"(
+    Maximum backoff delay in seconds between consecutive OOM canary relaunches.
+    )", 0) \
     DECLARE(Bool, remap_executable, false, R"(
     Setting to reallocate memory for machine code ("text") using huge pages.
 
