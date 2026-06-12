@@ -58,18 +58,28 @@ private:
     bool apply_virtual_row_conversions;
 
     /// When sources are deferred behind virtual rows, let the ones the merge will need
-    /// soon read ahead in parallel (at most this many at once when there is no limit).
-    /// Zero disables the read-ahead.
+    /// soon read ahead in parallel, at most this many at once, so that the number of
+    /// simultaneously resident readers stays bounded by the window rather than by the
+    /// number of parts. Zero disables the read-ahead.
     const size_t virtual_row_prefetch_window;
 
-    /// Sources whose current chunk is a virtual row (so their real data has not been
+    enum class SourceDeferralState : char
+    {
+        NotDeferred,        /// Real data was requested or has arrived.
+        Deferred,           /// Still behind its virtual row, no read started.
+        PrefetchIssued,     /// Read-ahead was issued, real data has not arrived yet.
+    };
+
+    /// Sources whose initial chunk is a virtual row (so their real data has not been
     /// requested yet), ordered by the virtual row sort key, i.e. in the order the merge
     /// will need them.
     std::vector<size_t> deferred_sources_in_merge_order;
     /// Position in `deferred_sources_in_merge_order` of the next source to prefetch.
     size_t next_deferred_source_pos = 0;
-    /// Flag per source: the source is still deferred behind its virtual row.
-    std::vector<char> source_is_deferred;
+    /// Number of issued prefetches whose real data has not arrived yet.
+    size_t prefetches_in_flight = 0;
+    /// Per-source deferral state.
+    std::vector<SourceDeferralState> source_deferral_state;
     /// Sources to report for read-ahead with the next `merge` status.
     std::vector<size_t> sources_to_prefetch;
 
@@ -89,7 +99,7 @@ private:
     Status mergeBatchImpl(TSortingQueue & queue);
 
     bool hasFilter() const { return filter_column_position != -1; }
-    void prefetchSourcesNeededBefore(SortCursorImpl & boundary);
+    void topUpPrefetch();
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);

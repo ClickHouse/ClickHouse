@@ -57,10 +57,13 @@ FORMAT Null SETTINGS log_comment = 'test_04201_with_filter_vrow', read_in_order_
 
 SYSTEM FLUSH LOGS query_log;
 
+-- With `read_in_order_use_virtual_row`, deferred sources within the read-ahead window
+-- (bounded by `max_threads`) read one chunk ahead of the merge to keep reading parallel,
+-- so all 4 parts contribute a granule even though the merge itself only needs 3 of them.
 SELECT
     log_comment,
     if(read_rows <= 8192 * expected_granules, 'Ok', format('Fail: {} rows read in query {}', read_rows, query_id)),
-    if(Settings['read_in_order_use_virtual_row'] == '1', 3, 4) as expected_granules
+    4 as expected_granules
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND event_date >= yesterday()

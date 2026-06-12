@@ -177,15 +177,24 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     if (!state.inputs_to_prefetch.empty())
     {
-        /// Ask the inputs deferred behind virtual rows to start producing data without
-        /// waiting for it, so that they read in parallel with the merge.
-        for (size_t input_num : state.inputs_to_prefetch)
+        if (state.is_finished)
         {
-            auto & input = input_states[input_num].port;
-            if (!input.isFinished())
-                input.setNeeded();
+            /// The merge finished before the read-ahead could start: the data would
+            /// never be consumed.
+            state.inputs_to_prefetch.clear();
         }
-        state.inputs_to_prefetch.clear();
+        else
+        {
+            /// Ask the inputs deferred behind virtual rows to start producing data without
+            /// waiting for it, so that they read in parallel with the merge.
+            for (size_t input_num : state.inputs_to_prefetch)
+            {
+                auto & input = input_states[input_num].port;
+                if (!input.isFinished())
+                    input.setNeeded();
+            }
+            state.inputs_to_prefetch.clear();
+        }
     }
 
     if (state.is_finished)

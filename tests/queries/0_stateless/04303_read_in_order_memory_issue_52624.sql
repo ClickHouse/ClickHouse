@@ -12,8 +12,10 @@
 --
 -- `read_in_order_use_virtual_row` (enabled by default) lets MergingSortedTransform
 -- reprioritize sources using primary key values from the sparse index, so the parts
--- that cannot contribute to the answer are never read. This test verifies that the
--- optimization is active by default: only a tiny fraction of the rows is read.
+-- that cannot contribute to the answer are not read (except for a bounded read-ahead
+-- window of at most `max_threads` parts that keeps reading parallel). This test
+-- verifies that the optimization is active by default: only a tiny fraction of the
+-- rows is read.
 
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_for_top_k = 0;
