@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
