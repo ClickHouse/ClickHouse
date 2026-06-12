@@ -755,7 +755,7 @@ void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & comm
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
+    configuration->checkMutationIsPossible(object_storage, CurrentThread::getQueryContext(), commands);
 }
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
