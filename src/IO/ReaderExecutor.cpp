@@ -2271,7 +2271,7 @@ void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_
 void ReaderExecutor::extractMissesAndOpenWriters(
     ICacheProvider & cache, const CacheView & view,
     const StoredObject & object, size_t object_file_offset,
-    GeometryEntry & geom_entry, BufEntry & buf_entry)
+    const IntervalSet & upper_hits, GeometryEntry & geom_entry, BufEntry & buf_entry)
 {
     /// A bypass tier is never written, so it has no fetch/write target.
     if (!cache.populatesOnMiss())
@@ -2279,12 +2279,16 @@ void ReaderExecutor::extractMissesAndOpenWriters(
 
     /// The cache-aligned gaps this tier lacks, UNCLAMPED to the plan span (only
     /// object-end-clamped inside the provider), so the aligned extent drives both the
-    /// fetch and the over-read bound (`[CF-overread]`). Open the held write buffers over
-    /// them now (`[CF-plan-rebuild]`): one `getOrSet` per range, owned for the plan's life,
-    /// so promotion/backfill only ever write into already-open buffers.
+    /// fetch and the over-read bound (`[CF-overread]`). PRUNE any cell fully covered by a
+    /// faster tier (`upper_hits`): the data already lives upstream, so this tier needs no
+    /// writer for it. Open the held write buffers over the survivors now
+    /// (`[CF-plan-rebuild]`): one `getOrSet` per range, owned for the plan's life, so
+    /// promotion/backfill only ever write into already-open buffers.
     std::vector<ByteRange> aligned_miss;
     for (const auto & miss : view.misses())
     {
+        if (upper_hits.subtract(miss.range).empty())
+            continue;  /// fully covered by a faster tier - prune
         geom_entry.aligned_miss.push_back(miss.range);
         aligned_miss.push_back(miss.range);
     }
@@ -2344,9 +2348,11 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     /// One read-only residency probe (`planResidencyView`) per cache tier per object-piece,
     /// each translated by the two extract helpers into a 1:1 `GeometryEntry`/`BufEntry` pair
     /// (pushed BOTH-or-NEITHER, so `geometry()->entries` and `bufs` stay positionally
-    /// aligned — `residentAt`'s entry index maps into `bufs`). Both tiers are probed over
-    /// the full span; the streaming `covered` guard in `readPhysicalWindow` re-establishes
-    /// fastest-tier-first priority when a byte is resident in two tiers.
+    /// aligned — `residentAt`'s entry index maps into `bufs`). `caches` is fastest-first, so
+    /// `upper_hits` (the running union of already-processed, faster tiers' hits) lets a
+    /// slower tier PRUNE the miss cells a faster tier already holds. The streaming `covered`
+    /// guard in `readPhysicalWindow` re-establishes the same priority when serving.
+    IntervalSet upper_hits;
     for (auto & cache : caches)
     {
         auto pieces = offset_map.map(plan_range);
@@ -2368,7 +2374,13 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
             buf_entry.object_file_offset = object_file_offset;
 
             extractResidentRuns(*view, plan_range, geom_entry);
-            extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, geom_entry, buf_entry);
+            extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, upper_hits, geom_entry, buf_entry);
+
+            /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
+            /// against them. Read BEFORE the move below. Same-tier hits/misses are disjoint,
+            /// so this never prunes a later piece of the same tier.
+            for (const auto & r : geom_entry.resident)
+                upper_hits.add(r);
 
             /// Drop records that are neither resident nor a populatable gap — nothing to
             /// read or write. Otherwise keep the view (its hit read buffers pin the

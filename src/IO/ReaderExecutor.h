@@ -779,12 +779,15 @@ private:
     /// (the per-piece body of `planResidencyWindow`, factored out so the translate reads as
     /// data-flow). `extractResidentRuns` records the tier's hits as resident ranges (clamped
     /// to the plan span). `extractMissesAndOpenWriters` records its cache-aligned misses as
-    /// the fetch/write targets and opens the held write buffers (populatable tiers only).
+    /// the fetch/write targets and opens the held write buffers (populatable tiers only),
+    /// PRUNING any miss cell fully covered by `upper_hits` (the union of faster tiers' hits,
+    /// accumulated fastest-first): that range already lives upstream, so this tier needs no
+    /// writer for it - which also shrinks the held-write-buffer footprint.
     static void extractResidentRuns(const CacheView & view, ByteRange plan_range, GeometryEntry & geom_entry);
     static void extractMissesAndOpenWriters(
         ICacheProvider & cache, const CacheView & view,
         const StoredObject & object, size_t object_file_offset,
-        GeometryEntry & geom_entry, BufEntry & buf_entry);
+        const IntervalSet & upper_hits, GeometryEntry & geom_entry, BufEntry & buf_entry);
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     /// Single source of truth for "is there a prefetch scheduled":

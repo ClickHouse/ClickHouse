@@ -3187,6 +3187,39 @@ TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
         << "Cache block must be filled past the window end (intentional read-ahead)";
 }
 
+/// Cache-range pruning: a lower-tier miss cell that a faster tier already holds in FULL is
+/// dropped at plan build - no writer is opened, so the lower tier is not filled for it (the
+/// read is served from the faster tier). Page block == disk block (64K), so the page hit
+/// covers the whole disk cell `[0,64K)`. Without pruning the page bytes would be promoted
+/// down and `hasBlock(0)` would be true; with pruning the disk cell stays empty.
+TEST(ReaderExecutor, PrunesLowerTierMissCoveredByFasterTier)
+{
+    const size_t block = 64 * 1024;
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(block, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", block);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(block, "PageMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(block, "DiskMock");
+    page_cache->seedBlock(0, 'P');  // page holds the whole disk cell [0,64K)
+
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
+                             /*window_size=*/block, /*min_bytes_for_seek=*/0);
+
+    size_t total = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.range().size == 0)
+            break;
+        total += rope.range().size;
+    }
+    EXPECT_EQ(total, block) << "the page hit must still serve the data";
+    EXPECT_FALSE(disk_cache->hasBlock(0))
+        << "the disk cell fully covered by the page hit must be pruned, not filled";
+}
+
 namespace
 {
     /// Records every cache access (each `planResidencyView` probe) so tests can assert
