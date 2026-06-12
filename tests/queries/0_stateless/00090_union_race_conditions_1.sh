@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: race, no-msan, no-random-detach
+# Tags: long, race, no-msan, no-random-detach
+# long: the test loops for 100 seconds by design; under sanitizers a single
+# batch of 100 queries can overshoot the budget past the 180 s flaky-check limit
 # no-random-detach: race condition test, DETACH/ATTACH makes it worse
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
