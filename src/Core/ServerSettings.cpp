@@ -19,6 +19,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #if USE_AVRO
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #endif
 #if USE_PARQUET
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
