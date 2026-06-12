@@ -30,7 +30,7 @@ DROP TABLE IF EXISTS t_nullif_fixedstring;
 
 -- Regression test for Partition Pruning
 DROP TABLE IF EXISTS t_nullif_partition;
-CREATE TABLE t_nullif_partition (p UInt64, v UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 8192;
+CREATE TABLE t_nullif_partition (p UInt8, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 8192;
 INSERT INTO t_nullif_partition SELECT number % 10, number FROM numbers(2000000);
 OPTIMIZE TABLE t_nullif_partition FINAL;
 
