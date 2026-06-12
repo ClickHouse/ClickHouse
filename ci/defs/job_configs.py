@@ -489,6 +489,7 @@ class JobConfigs:
             ],
         ),
         timeout=900,
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -1378,6 +1379,7 @@ class JobConfigs:
             include_paths=[
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
+                "./ci/jobs/scripts/docs",
             ],
             # Exclude everything currently in ./docs so that this job runs only
             # on files that are NOT part of the legacy docs tree (i.e. the new
