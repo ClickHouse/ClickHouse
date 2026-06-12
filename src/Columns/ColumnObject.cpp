@@ -2331,32 +2331,43 @@ void ColumnObject::validateDynamicPathsSizes() const
     }
 }
 
-bool ColumnObject::isEmptyAt(size_t n) const
+bool ColumnObject::isEmptyAt(size_t n, bool skip_null_typed_paths) const
 {
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
     if (!typed_paths.empty())
-        return false;
+    {
+        if (!skip_null_typed_paths)
+            /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
+            return false;
 
-    /// Check if all dynamic paths have NULL at this row
+        /// When skip_null_typed_paths is true, check each typed path individually:
+        /// only non-NULL values count as present.
+        for (const auto & [path, column] : typed_paths)
+        {
+            if (!column->isNullAt(n))
+                return false;
+        }
+    }
+
+    /// Check if all dynamic paths have NULL at this row.
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         if (!column->isNullAt(n))
             return false;
     }
 
-    /// Check if there is no paths in shared data.
+    /// Check if there are no paths in shared data.
     return shared_data->isDefaultAt(n);
 }
 
-bool ColumnObject::hasNonEmptyRows() const
+bool ColumnObject::hasNonEmptyRows(bool skip_null_typed_paths) const
 {
     /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
+    if (!skip_null_typed_paths && !typed_paths.empty())
         return true;
 
     for (size_t i = 0; i != size(); ++i)
     {
-        if (!isEmptyAt(i))
+        if (!isEmptyAt(i, skip_null_typed_paths))
             return true;
     }
 

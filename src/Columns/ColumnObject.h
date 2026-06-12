@@ -294,11 +294,13 @@ public:
 
     void validateDynamicPathsSizes() const;
 
-    /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data)
-    bool isEmptyAt(size_t n) const;
+    /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data).
+    /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present.
+    bool isEmptyAt(size_t n, bool skip_null_typed_paths = false) const;
 
     /// Returns true if the object has at least one non-empty path on at least one row.
-    bool hasNonEmptyRows() const;
+    /// When skip_null_typed_paths is true, typed paths with all NULL values are not considered present.
+    bool hasNonEmptyRows(bool skip_null_typed_paths = false) const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator

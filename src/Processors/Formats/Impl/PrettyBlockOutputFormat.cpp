@@ -38,7 +38,6 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
             readable_number_tip = true;
     }
     format_settings.pretty_format = true;
-    format_settings.json = FormatSettings::JSON{};
     format_settings.json.pretty_print_indent_multiplier = 1;
 }
 

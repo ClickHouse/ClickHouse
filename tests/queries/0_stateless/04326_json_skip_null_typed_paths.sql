@@ -40,6 +40,20 @@ SELECT JSONHas(json, 'a'), JSONHas(json, 'b') FROM test_json_skip_null ORDER BY 
 SELECT 'JSONHas with setting';
 SELECT JSONHas(json, 'a'), JSONHas(json, 'b') FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
 
+-- JSONExtractRaw
+SELECT 'JSONExtractRaw without setting';
+SELECT JSONExtractRaw(json, 'a'), JSONExtractRaw(json, 'b') FROM test_json_skip_null ORDER BY rowNumberInAllBlocks();
+
+SELECT 'JSONExtractRaw with setting';
+SELECT JSONExtractRaw(json, 'a'), JSONExtractRaw(json, 'b') FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+-- JSONAllValues
+SELECT 'JSONAllValues without setting';
+SELECT JSONAllValues(json) FROM test_json_skip_null ORDER BY rowNumberInAllBlocks();
+
+SELECT 'JSONAllValues with setting';
+SELECT JSONAllValues(json) FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
 -- Test with non-nullable typed path: setting should NOT affect it.
 DROP TABLE IF EXISTS test_json_non_nullable;
 CREATE TABLE test_json_non_nullable (json JSON(a Int64)) ENGINE = Memory;
@@ -65,6 +79,25 @@ SELECT JSONAllPaths(json) FROM test_json_mixed ORDER BY rowNumberInAllBlocks() S
 SELECT 'mixed empty with setting';
 SELECT empty(json) FROM test_json_mixed ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
 
+-- Test nested typed path: parent path presence with the setting.
+-- When a.b is a typed path and a.b is NULL, JSONHas(json, 'a') should return 0 with the setting.
+DROP TABLE IF EXISTS test_json_nested;
+CREATE TABLE test_json_nested (json JSON(a.b Nullable(Int64))) ENGINE = Memory;
+INSERT INTO test_json_nested VALUES ('{"a": {"b": 42}}'), ('{"a": {"b": null}}'), ('{}');
+
+SELECT 'nested JSONHas without setting';
+SELECT JSONHas(json, 'a') FROM test_json_nested ORDER BY rowNumberInAllBlocks();
+
+SELECT 'nested JSONHas with setting';
+SELECT JSONHas(json, 'a') FROM test_json_nested ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+SELECT 'nested JSONExtractRaw without setting';
+SELECT JSONExtractRaw(json, 'a') FROM test_json_nested ORDER BY rowNumberInAllBlocks();
+
+SELECT 'nested JSONExtractRaw with setting';
+SELECT JSONExtractRaw(json, 'a') FROM test_json_nested ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
 DROP TABLE test_json_skip_null;
 DROP TABLE test_json_non_nullable;
 DROP TABLE test_json_mixed;
+DROP TABLE test_json_nested;

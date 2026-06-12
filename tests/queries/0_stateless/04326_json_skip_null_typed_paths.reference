@@ -48,6 +48,26 @@ JSONHas with setting
 0	0
 0	1
 0	0
+JSONExtractRaw without setting
+42	"hello"
+null	null
+null	"world"
+null	null
+JSONExtractRaw with setting
+42	"hello"
+	
+	"world"
+	
+JSONAllValues without setting
+['42','hello']
+['ᴺᵁᴸᴸ','ᴺᵁᴸᴸ']
+['ᴺᵁᴸᴸ','world']
+['ᴺᵁᴸᴸ','ᴺᵁᴸᴸ']
+JSONAllValues with setting
+['42','hello']
+[]
+['world']
+[]
 non-nullable typed path with setting
 {"a":0}
 {"a":0}
@@ -66,3 +86,19 @@ mixed empty with setting
 0
 0
 1
+nested JSONHas without setting
+1
+1
+1
+nested JSONHas with setting
+1
+0
+0
+nested JSONExtractRaw without setting
+{"b":42}
+{"b":null}
+{"b":null}
+nested JSONExtractRaw with setting
+{"b":42}
+
+
