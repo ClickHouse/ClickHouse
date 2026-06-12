@@ -816,6 +816,31 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 }
 
 
+/// The minmax skip index reflects all physical rows of a part, including rows hidden by a
+/// lightweight delete. The top-k granule optimization keeps only the globally extreme granules,
+/// so a part whose stale minmax advertises an extreme value can displace and prune a part that
+/// actually holds the live top rows, yielding wrong (often empty) results. Exclude such parts
+/// from candidate selection; they are then read in full and the delete mask is applied on read.
+static bool partHasLightweightDelete(
+    const MergeTreeData::DataPartPtr & part,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    /// Materialized lightweight delete: the part carries a _row_exists column.
+    if (part->hasLightweightDelete())
+        return true;
+
+    /// Lightweight delete pending as an on-the-fly mutation (not yet written to the part).
+    if (mutations_snapshot && mutations_snapshot->hasDataMutations())
+    {
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+        if (alter_conversions->hasLightweightDelete())
+            return true;
+    }
+
+    return false;
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1071,7 +1096,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
-            if (perform_top_k_optimization)
+            if (perform_top_k_optimization && !partHasLightweightDelete(ranges.data_part, mutations_snapshot, context))
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
