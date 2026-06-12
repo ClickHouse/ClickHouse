@@ -683,8 +683,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (connected && join_kind == JoinKind::Cross)
-                        join_kind = JoinKind::Inner;
+                    /// Derive the cartesian distinction from actual connectivity:
+                    /// an Inner pair with no connecting predicate is a Cross join.
+                    /// This keeps Cross/Comma semantics without storing a marker in
+                    /// join_kinds, so outer-join restrictions on relation 0 survive.
+                    if (join_kind == JoinKind::Inner && !connected)
+                        join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,

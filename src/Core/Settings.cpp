@@ -7894,6 +7894,9 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
+    DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, true, R"(
+When the hash join build side has been converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that map directly as the runtime filter for the probe side, replacing the Set/BloomFilter that the runtime filter framework otherwise builds for the same join.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
