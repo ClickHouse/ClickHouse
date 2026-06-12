@@ -1241,6 +1241,65 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, cons
 
 }
 
+bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to)
+{
+    while (true)
+    {
+        if (from->equals(*to))
+            return false;
+
+        const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (arr_from && arr_to)
+        {
+            from = arr_from->getNestedType().get();
+            to = arr_to->getNestedType().get();
+            continue;
+        }
+
+        const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
+        const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+        if (nullable_from && nullable_to)
+        {
+            from = nullable_from->getNestedType().get();
+            to = nullable_to->getNestedType().get();
+            continue;
+        }
+
+        const auto * map_from = typeid_cast<const DataTypeMap *>(from);
+        const auto * map_to = typeid_cast<const DataTypeMap *>(to);
+        if (map_from && map_to)
+        {
+            if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+                return false;
+            from = map_from->getValueType().get();
+            to = map_to->getValueType().get();
+            continue;
+        }
+
+        const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from);
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(to);
+        if (tuple_from && tuple_to
+            && tuple_from->hasExplicitNames() && tuple_to->hasExplicitNames())
+        {
+            const auto & from_names = tuple_from->getElementNames();
+            const auto & to_names = tuple_to->getElementNames();
+            /// Strictly more named fields in `to` than in `from` and every old name still present.
+            if (to_names.size() <= from_names.size())
+                return false;
+            std::unordered_set<std::string_view> to_set(to_names.begin(), to_names.end());
+            for (const auto & name : from_names)
+            {
+                if (!to_set.contains(name))
+                    return false;
+            }
+            return true;
+        }
+
+        return false;
+    }
+}
+
 bool AlterCommand::isSettingsAlter() const
 {
     return type == MODIFY_SETTING || type == RESET_SETTING;

@@ -4738,14 +4738,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type)
+        else if (command.isRequireMutationStage(*getInMemoryMetadataPtr(local_context, false), local_context))
         {
-            /// Run key/index/projection safety checks for any `MODIFY_COLUMN` that changes
-            /// the column's type, regardless of whether the change is metadata-only or
-            /// requires a mutation. Previously these checks were gated behind
-            /// `isRequireMutationStage`, but metadata-only conversions (e.g. adding a
-            /// subfield to a named `Tuple` whose subcolumn appears in `ORDER BY`) must
-            /// also be rejected to keep `primary.idx` and partition keys self-consistent.
+            /// This alter will override data on disk. Let's check that it doesn't
+            /// modify immutable column.
             if (columns_alter_type_forbidden.contains(command.column_name))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
@@ -4775,34 +4771,87 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// Don't check columns in projections here. If required columns of projections get
             /// modified, it will be checked later in AlterCommands::apply.
 
-            if (columns_alter_type_check_safe_for_partition.contains(command.column_name))
+            if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                auto it = old_types.find(command.column_name);
+                if (columns_alter_type_check_safe_for_partition.contains(command.column_name))
+                {
+                    auto it = old_types.find(command.column_name);
 
-                chassert(it != old_types.end());
-                if (!isSafeForKeyConversion(it->second, command.data_type.get()))
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                    "ALTER of partition key column {} from type {} "
-                                    "to type {} is not safe because it can change the representation "
-                                    "of partition key", backQuoteIfNeed(command.column_name),
-                                    it->second->getName(), command.data_type->getName());
+                    chassert(it != old_types.end());
+                    if (!isSafeForKeyConversion(it->second, command.data_type.get()))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                        "ALTER of partition key column {} from type {} "
+                                        "to type {} is not safe because it can change the representation "
+                                        "of partition key", backQuoteIfNeed(command.column_name),
+                                        it->second->getName(), command.data_type->getName());
+                }
+
+                if (columns_alter_type_metadata_only.contains(command.column_name))
+                {
+                    auto it = old_types.find(command.column_name);
+                    chassert(it != old_types.end());
+                    if (!isSafeForKeyConversion(it->second, command.data_type.get()))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                        "ALTER of key column {} from type {} "
+                                        "to type {} is not safe because it can change the representation "
+                                        "of primary key", backQuoteIfNeed(command.column_name),
+                                        it->second->getName(), command.data_type->getName());
+                }
+
+                if (old_metadata.getColumns().has(command.column_name))
+                {
+                    columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
+                }
             }
-
-            if (columns_alter_type_metadata_only.contains(command.column_name))
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
+            && old_metadata.getColumns().hasPhysical(command.column_name)
+            && new_metadata.getColumns().hasPhysical(command.column_name))
+        {
+            /// Metadata-only ALTER that adds new subfields to a named `Tuple` (possibly
+            /// wrapped in `Array`/`Nullable`/`Map`) skips the mutation branch above, so it
+            /// must still respect key/index immutability. Without this, a metadata-only
+            /// `MODIFY COLUMN t Tuple(a, b) -> Tuple(a, b, c)` on a column whose subcolumn
+            /// appears in `ORDER BY` would leave old `primary.idx` bytes that no longer
+            /// match the new tuple shape.
+            ///
+            /// Restricted to named-Tuple subfield additions (`tupleAddsSubfieldsOnly`) so
+            /// existing metadata-only conversions on key columns (e.g. `Date` -> `UInt16`)
+            /// keep their current behavior.
+            auto old_type_it = old_types.find(command.column_name);
+            if (old_type_it != old_types.end()
+                && tupleAddsSubfieldsOnly(old_type_it->second, command.data_type.get()))
             {
-                auto it = old_types.find(command.column_name);
-                chassert(it != old_types.end());
-                if (!isSafeForKeyConversion(it->second, command.data_type.get()))
+                if (columns_alter_type_forbidden.contains(command.column_name)
+                    || columns_alter_type_check_safe_for_partition.contains(command.column_name)
+                    || columns_alter_type_metadata_only.contains(command.column_name))
+                {
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                    "ALTER of key column {} from type {} "
-                                    "to type {} is not safe because it can change the representation "
-                                    "of primary key", backQuoteIfNeed(command.column_name),
-                                    it->second->getName(), command.data_type->getName());
-            }
+                        "ALTER of key column {} to add new Tuple subfields is forbidden",
+                        backQuoteIfNeed(command.column_name));
+                }
 
-            if (old_metadata.getColumns().has(command.column_name))
-            {
-                columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
+                if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER column {} whose subcolumns ({}) are part of key expression",
+                        backQuoteIfNeed(command.column_name),
+                        boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+                }
+
+                if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
+                {
+                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
+                    {
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
+                            "'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            it->second);
+                    }
+                }
             }
         }
     }

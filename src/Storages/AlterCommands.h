@@ -197,6 +197,14 @@ struct AlterCommand
 
 class Context;
 
+/// Returns true if `from` -> `to` is a metadata-only type change that *introduces new
+/// fields* into a named `Tuple` (recursively through `Array`, `Nullable`, `Map`, or
+/// nested `Tuple` wrappers). Other metadata-only conversions (e.g. `Date` -> `UInt16`)
+/// return false. Used by MergeTree key/index safety checks: while named-Tuple subfield
+/// additions are metadata-only for ordinary columns, they change the on-disk shape of
+/// any `Tuple` value embedded in a key column, so they must be rejected for keys.
+bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to);
+
 /// Vector of AlterCommand with several additional functions
 class AlterCommands : public std::vector<AlterCommand>
 {
