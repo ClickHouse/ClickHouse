@@ -1072,22 +1072,22 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     if (nullif_node->children.size() != 2)
         return nullptr;
 
-    if (canonical_op != "equals" && canonical_op != "notEquals")
+    if (canonical_op != "equals")
         return nullptr;
 
     const auto * col_node = nullif_node->children[0];
     const auto * sentinel_node = nullif_node->children[1];
 
-    if (is_const(*sentinel_node))
-    {
-        Field sentinel_field;
-        Field const_field;
-        sentinel_node->column->get(0, sentinel_field);
-        const_node->column->get(0, const_field);
+    if (!is_const(*sentinel_node))
+        return nullptr;
 
-        if (sentinel_field == const_field)
-            return nullptr;
-    }
+    Field sentinel_field;
+    Field const_field;
+    sentinel_node->column->get(0, sentinel_field);
+    const_node->column->get(0, const_field);
+
+    if (sentinel_field == const_field)
+        return nullptr;
 
     auto function_builder = FunctionFactory::instance().get(String(canonical_op), context);
     if (!function_builder)

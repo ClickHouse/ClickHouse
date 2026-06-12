@@ -11,4 +11,8 @@ OPTIMIZE TABLE t_nullif_pruning FINAL;
 -- This should successfully prune granules (2/245) instead of a full scan
 EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, 255) = 5;
 
+SELECT '--- NEGATIVE TESTS (Should fallback to full scan) ---';
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, 255) != 5;
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, k) = 5;
+
 DROP TABLE t_nullif_pruning;
