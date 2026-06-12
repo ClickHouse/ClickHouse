@@ -135,10 +135,24 @@ public:
 
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
+        /// Only Const/Replicated/Sparse/LowCardinality are outer wrappers; the four predicates
+        /// match the four strip calls below. Container columns (e.g. ColumnArray) are not wrappers
+        /// and must not take the delegation branch: ColumnArray::convertToFullColumnIfConst always
+        /// allocates a fresh ColumnArray, so a pointer-difference check would loop forever there.
+        const bool is_outer_wrapper = isConst() || isReplicated() || isSparse() || lowCardinality();
+
         Ptr converted = convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
             ->convertToFullColumnIfSparse()
             ->convertToFullColumnIfLowCardinality();
+
+        /// If an outer wrapper was stripped, the unwrapped column may override convertToFullIfNeeded
+        /// (ColumnVariant/ColumnDynamic do, to keep inner LowCardinality consistent with their type
+        /// metadata). Delegate to it so the override is honored; recursing into its subcolumns here
+        /// would bypass it and strip that inner LowCardinality. The converted.get() != this check
+        /// keeps termination guaranteed (a wrapper always strips to a different column object).
+        if (is_outer_wrapper && converted.get() != this)
+            return converted->convertToFullIfNeeded();
 
         Columns new_subcolumns;
         bool any_changed = false;
