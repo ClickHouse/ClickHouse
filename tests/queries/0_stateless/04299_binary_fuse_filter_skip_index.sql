@@ -153,6 +153,55 @@ SELECT count() FROM t_map_b WHERE m['K9'] = 'V9' SETTINGS force_data_skipping_in
 DROP TABLE t_map_bf;
 DROP TABLE t_map_b;
 
+-- mapContains / mapContainsKey / mapContainsValue named function coverage
+DROP TABLE IF EXISTS t_map_named_bf;
+DROP TABLE IF EXISTS t_map_named_b;
+
+CREATE TABLE t_map_named_bf
+(
+    `k` UInt64,
+    `m` Map(String, String),
+    INDEX idx_mk mapKeys(m) TYPE binary_fuse_filter(0.025) GRANULARITY 1,
+    INDEX idx_mv mapValues(m) TYPE binary_fuse_filter(0.025) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1;
+
+CREATE TABLE t_map_named_b
+(
+    `k` UInt64,
+    `m` Map(String, String),
+    INDEX idx_mk mapKeys(m) TYPE bloom_filter(0.025) GRANULARITY 1,
+    INDEX idx_mv mapValues(m) TYPE bloom_filter(0.025) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_map_named_bf SELECT number, map('K0', 'V0', 'K1', 'V1') FROM numbers(200);
+INSERT INTO t_map_named_b SELECT number, map('K0', 'V0', 'K1', 'V1') FROM numbers(200);
+OPTIMIZE TABLE t_map_named_bf FINAL;
+OPTIMIZE TABLE t_map_named_b FINAL;
+
+SELECT count() FROM t_map_named_bf WHERE mapContains(m, 'K0') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_named_b WHERE mapContains(m, 'K0') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_named_bf WHERE mapContains(m, 'K9') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_named_b WHERE mapContains(m, 'K9') SETTINGS force_data_skipping_indices = 'idx_mk';
+
+SELECT count() FROM t_map_named_bf WHERE mapContainsKey(m, 'K0') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_named_b WHERE mapContainsKey(m, 'K0') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_named_bf WHERE mapContainsKey(m, 'K9') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_named_b WHERE mapContainsKey(m, 'K9') SETTINGS force_data_skipping_indices = 'idx_mk';
+
+SELECT count() FROM t_map_named_bf WHERE mapContainsValue(m, 'V0') SETTINGS force_data_skipping_indices = 'idx_mv';
+SELECT count() FROM t_map_named_b WHERE mapContainsValue(m, 'V0') SETTINGS force_data_skipping_indices = 'idx_mv';
+SELECT count() FROM t_map_named_bf WHERE mapContainsValue(m, 'V9') SETTINGS force_data_skipping_indices = 'idx_mv';
+SELECT count() FROM t_map_named_b WHERE mapContainsValue(m, 'V9') SETTINGS force_data_skipping_indices = 'idx_mv';
+
+DROP TABLE t_map_named_bf;
+DROP TABLE t_map_named_b;
+
 DROP TABLE IF EXISTS t_arr_bf;
 DROP TABLE IF EXISTS t_arr_b;
 

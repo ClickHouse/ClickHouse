@@ -1361,7 +1361,8 @@ namespace
 {
 
 /// Hash of skip-index definition fields used for experimental-setting bypass:
-/// expression, TYPE arguments (e.g. FPR), and GRANULARITY. name/type are compared separately.
+/// expression, TYPE arguments (e.g. FPR), GRANULARITY, and resolved index-column types.
+/// name/type are compared separately.
 UInt128 getIndexDefinitionHash(const IndexDescription & index)
 {
     SipHash hash;
@@ -1370,6 +1371,8 @@ UInt128 getIndexDefinitionHash(const IndexDescription & index)
     if (index.arguments)
         index.arguments->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(index.granularity);
+    for (const auto & col : index.sample_block)
+        hash.update(col.type->getName());
     return hash.get128();
 }
 

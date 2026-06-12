@@ -104,7 +104,11 @@ BinaryFuseFilter BinaryFuseFilter::buildFromHashes(const HashSet<UInt64> & hashe
     BinaryFuseFilter filter(fingerprintBitsFromFalsePositiveRate(false_positive_rate), 0);
     if (filter.buildFromHashesImpl(hashes))
         return filter;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not build binary fuse filter (distinct keys: {}).", hashes.size());
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Could not build binary fuse filter (distinct keys: {}). "
+        "Try a larger false positive rate or increasing index granularity.",
+        hashes.size());
 }
 
 UInt64 BinaryFuseFilter::mixKey(UInt64 item_hash) const

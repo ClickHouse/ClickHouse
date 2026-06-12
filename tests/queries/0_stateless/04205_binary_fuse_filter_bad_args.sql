@@ -11,6 +11,7 @@ CREATE TABLE t_binary_fuse_bad (`k` UInt64, INDEX i k TYPE binary_fuse_filter(0.
 DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_fpr;
 DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_expr;
 DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_gran;
+DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_type;
 
 -- Existing experimental index: unrelated ALTER and DROP succeed with setting off.
 DROP TABLE IF EXISTS t_binary_fuse_alter_keep;
@@ -36,6 +37,7 @@ SET allow_experimental_binary_fuse_filter_index = 1;
 CREATE TABLE t_binary_fuse_alter_bypass_fpr (`k` UInt64, INDEX idx k TYPE binary_fuse_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
 CREATE TABLE t_binary_fuse_alter_bypass_expr (`k` UInt64, INDEX idx k TYPE binary_fuse_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
 CREATE TABLE t_binary_fuse_alter_bypass_gran (`k` UInt64, INDEX idx k TYPE binary_fuse_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
+CREATE TABLE t_binary_fuse_alter_bypass_type (`k` UInt64, INDEX idx k TYPE binary_fuse_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
 SET allow_experimental_binary_fuse_filter_index = 0;
 ALTER TABLE t_binary_fuse_alter_bypass_fpr
     DROP INDEX idx,
@@ -46,6 +48,8 @@ ALTER TABLE t_binary_fuse_alter_bypass_expr
 ALTER TABLE t_binary_fuse_alter_bypass_gran
     DROP INDEX idx,
     ADD INDEX idx k TYPE binary_fuse_filter(0.01) GRANULARITY 2; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE t_binary_fuse_alter_bypass_type MODIFY COLUMN k UInt32; -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_fpr;
 DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_expr;
 DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_gran;
+DROP TABLE IF EXISTS t_binary_fuse_alter_bypass_type;

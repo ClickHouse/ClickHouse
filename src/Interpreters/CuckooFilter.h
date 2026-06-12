@@ -21,7 +21,7 @@ public:
     static constexpr size_t SLOTS_PER_BUCKET = 4;
     static constexpr double DEFAULT_LOAD_FACTOR = 0.9;
     static constexpr size_t MAX_KICKS = 500;
-    static constexpr size_t MAX_SEED_RETRIES = 3;
+    static constexpr size_t MAX_SEED_RETRIES = 12;
 
     /// Derive fingerprint width (8 or 16 bits) from target false positive rate.
     static size_t fingerprintBitsFromFalsePositiveRate(double false_positive_rate);
