@@ -645,6 +645,18 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
     if (!vm_smaps)
         return;
 
+    if (isThreadStackVMANamingUnsupported())
+    {
+        /// Pre-5.17 kernel: `prctl(PR_SET_VMA_ANON_NAME)` returned EINVAL, so
+        /// no smaps entry will ever carry the tag. Surface it in `system.warnings`.
+        getContext()->addOrUpdateWarningMessage(
+            Context::WarningType::MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
+            PreformattedMessage::create(
+                "MemoryThreadStacks* async metrics require Linux 5.17 or newer "
+                "(PR_SET_VMA_ANON_NAME). Detected an older kernel; the metrics will not populate."));
+        return;
+    }
+
     try
     {
         /// Walk /proc/self/smaps and sum `Size:` / `Rss:` of every VMA whose

@@ -80,13 +80,18 @@ static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
 /// `PR_SET_VMA_ANON_NAME` was introduced in Linux 5.17. On older kernels
 /// `prctl` returns EINVAL and the `MemoryThreadStacks*` async metrics will
-/// not populate. The warning is emitted once per process to avoid log spam.
+/// not populate. The log warning is emitted once per process to avoid log
+/// spam, and `g_stack_vma_naming_unsupported` is exposed via
+/// `isThreadStackVMANamingUnsupported` so `ServerAsynchronousMetrics` can
+/// surface the limitation in `system.warnings` too.
 #ifndef PR_SET_VMA
 #define PR_SET_VMA 0x53564d41
 #endif
 #ifndef PR_SET_VMA_ANON_NAME
 #define PR_SET_VMA_ANON_NAME 0
 #endif
+
+static std::atomic<bool> g_stack_vma_naming_unsupported{false};
 
 static void nameCurrentThreadStackVMA() noexcept
 {
@@ -113,10 +118,12 @@ static void nameCurrentThreadStackVMA() noexcept
         if (prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, addr, size, THREAD_STACK_VMA_NAME.data()) == 0)
             return;
 
-        /// Older kernels (< 5.17) return EINVAL. Warn once process-wide and
-        /// stay silent on subsequent threads.
+        /// Older kernels (< 5.17) return EINVAL. Set the global flag so the
+        /// metrics layer can publish a `system.warnings` entry, and emit a
+        /// log warning once process-wide.
         if (errno == EINVAL)
         {
+            g_stack_vma_naming_unsupported.store(true, std::memory_order_relaxed);
             static std::atomic<bool> warned{false};
             bool expected = false;
             if (warned.compare_exchange_strong(expected, true))
@@ -206,6 +213,19 @@ ThreadName getThreadName()
 #endif
 
     return parseThreadName(std::string_view{tmp_thread_name});
+}
+
+bool isThreadStackVMANamingUnsupported() noexcept
+{
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
+    return g_stack_vma_naming_unsupported.load(std::memory_order_relaxed);
+#else
+    /// On non-Linux the `MemoryThreadStacks*` metric does not exist at all
+    /// (smaps is Linux-only), so there is nothing to warn about. Return
+    /// `false` so any future caller without an OS_LINUX guard doesn't
+    /// publish a spurious warning here.
+    return false;
+#endif
 }
 
 }

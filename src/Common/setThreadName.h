@@ -198,4 +198,11 @@ std::string_view toString(ThreadName name);
 /// `prctl(PR_SET_VMA_ANON_NAME)`. Appears in `/proc/self/smaps` as
 /// `[anon:<name>]` on the VMA header line.
 constexpr std::string_view THREAD_STACK_VMA_NAME = "clickhouse_stack";
+
+/// True if any thread observed EINVAL from `prctl(PR_SET_VMA_ANON_NAME)`,
+/// i.e. running on a Linux kernel older than 5.17. Used by
+/// `ServerAsynchronousMetrics` to surface the limitation via
+/// `system.warnings`. Always `false` on non-Linux (the metric does not
+/// exist there, so there is nothing to warn about).
+bool isThreadStackVMANamingUnsupported() noexcept;
 }
