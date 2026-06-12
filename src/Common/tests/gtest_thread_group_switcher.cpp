@@ -68,6 +68,11 @@ TEST(ThreadGroupSwitcher, PartialAttachUndoneOnException)
                 /// and logged internally. The SCOPE_EXIT_SAFE guard in attachToGroupImpl
                 /// calls detachFromGroup() to undo the full attachment before returning.
                 ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+
+                /// Prove the failpoint actually fired: on success the thread would
+                /// be attached to G1 here. nullptr means the attach failed and the
+                /// rollback in attachToGroupImpl ran.
+                ASSERT_EQ(getCurrentThreadGroup(), nullptr);
             }
 
             /// Failpoint is ONCE — already consumed, no need to disable.
@@ -125,6 +130,11 @@ TEST(ThreadGroupSwitcher, LinkThreadFailureDoesNotCorruptCounter)
                 /// The SCOPE_EXIT rollback must skip unlinkThread (linked=false).
                 /// ThreadStatus::thread_group is never set, so the thread is immediately clean.
                 ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+
+                /// Prove the failpoint actually fired: on success the thread would
+                /// be attached to G1 here. nullptr means linkThread threw and the
+                /// thread was never attached in the first place.
+                ASSERT_EQ(getCurrentThreadGroup(), nullptr);
             }
 
             /// Thread is clean — second attachment must succeed.
