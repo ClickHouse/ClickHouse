@@ -130,15 +130,28 @@ void IdentifierResolveScope::popExpressionNode()
 namespace
 {
 
-/// Whether `node`'s subtree (including `node` itself) contains any node from `nodes`,
-/// using the set's hash-ignore-types comparison.
-bool subtreeContainsAnyNode(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashIgnoreTypesSet & nodes)
+/// Whether the subtree contains a QUERY or UNION node. Constant source expressions
+/// are not checked: they are not part of getChildren, so no query tree pass can
+/// reach or mutate them, and sharing them between clones is safe.
+bool subtreeContainsQueryOrUnion(const QueryTreeNodePtr & root)
 {
-    if (nodes.contains(node))
-        return true;
-    for (const auto & child : node->getChildren())
-        if (child && subtreeContainsAnyNode(child, nodes))
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(root.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
             return true;
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
     return false;
 }
 
@@ -149,6 +162,13 @@ bool IdentifierResolveScope::canCacheIdentifier(
     const IdentifierResolveContext & resolve_context) const
 {
     if (!identifier_resolve_cache_enabled)
+        return false;
+
+    /// Do not cache table expression lookups. A resolved table expression (table, CTE)
+    /// must stay a per-use-site instance — later stages assign unique aliases and
+    /// rewrite each instance independently — and re-resolution is the established
+    /// path for repeated references.
+    if (lookup.isTableExpressionLookup())
         return false;
 
     /// Cannot use cache when the resolve context differs from the default — a cached
@@ -174,7 +194,7 @@ bool IdentifierResolveScope::canCacheIdentifier(
 
 std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentifier(
     const IdentifierLookup & lookup,
-    const IdentifierResolveContext & resolve_context) const
+    const IdentifierResolveContext & resolve_context)
 {
     if (!canCacheIdentifier(lookup, resolve_context))
         return {};
@@ -183,7 +203,24 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
     if (it == identifier_resolve_cache.end())
         return {};
 
-    return it->second;
+    const auto & entry = it->second;
+    if (!entry.needs_clone_on_retrieval)
+        return entry.result;
+
+    IdentifierResolveResult result = entry.result;
+    result.resolved_identifier = entry.result.resolved_identifier->clone();
+
+    /// Mirror the registration done for the original resolution in
+    /// tryResolveIdentifierFromAliases: inner aliases of every embedded copy must
+    /// be removed at the end of resolveQuery. Otherwise the same alias would be
+    /// defined in several subtrees of the formatted AST, and re-analysis of the
+    /// dispatched query on a remote replica would fail with
+    /// MULTIPLE_EXPRESSIONS_FOR_ALIAS (see issue #74324 for the PREWHERE variant).
+    /// Table expression lookups never reach this point — they are rejected
+    /// by canCacheIdentifier.
+    aliases.node_to_remove_aliases.push_back(result.resolved_identifier);
+
+    return result;
 }
 
 void IdentifierResolveScope::tryCacheIdentifier(
@@ -194,7 +231,9 @@ void IdentifierResolveScope::tryCacheIdentifier(
     if (!canCacheIdentifier(lookup, resolve_context))
         return;
 
-    identifier_resolve_cache[lookup] = result;
+    identifier_resolve_cache[lookup] = IdentifierResolveCacheEntry{
+        .result = result,
+        .needs_clone_on_retrieval = subtreeContainsQueryOrUnion(result.resolved_identifier)};
 }
 
 namespace

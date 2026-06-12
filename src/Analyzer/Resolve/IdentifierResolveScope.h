@@ -222,7 +222,7 @@ struct IdentifierResolveScope
 
     std::optional<IdentifierResolveResult> findCachedIdentifier(
         const IdentifierLookup & lookup,
-        const IdentifierResolveContext & resolve_context) const;
+        const IdentifierResolveContext & resolve_context);
 
     void tryCacheIdentifier(
         const IdentifierLookup & lookup,
@@ -239,7 +239,19 @@ private:
         const IdentifierLookup & lookup,
         const IdentifierResolveContext & resolve_context) const;
 
-    std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_resolve_cache;
+    struct IdentifierResolveCacheEntry
+    {
+        IdentifierResolveResult result;
+
+        /// Expressions that contain subqueries cannot be shared between use sites:
+        /// later stages rewrite each subquery instance independently (`GLOBAL IN`
+        /// external tables, `rewrite_in_to_join`, `createUniqueAliasesIfNecessary`),
+        /// so every retrieval must return its own copy of the tree. Computed once at
+        /// insertion to avoid walking the subtree on every hit.
+        bool needs_clone_on_retrieval = false;
+    };
+
+    std::unordered_map<IdentifierLookup, IdentifierResolveCacheEntry, IdentifierLookupHash> identifier_resolve_cache;
     bool identifier_resolve_cache_enabled = true;
     bool identifier_resolve_cache_force_disabled = false;
 };
