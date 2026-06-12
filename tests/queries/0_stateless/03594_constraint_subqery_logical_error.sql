@@ -1,6 +1,7 @@
--- Tags: no-random-detach
+-- Tags: no-random-detach, no-async-insert
 -- no-random-detach: random DETACH/ATTACH races with INSERT and produces flaky
 -- 'Unexpected packet from server (got Progress)' over the native protocol.
+-- - no-async-insert -- with wait_for_async_insert=0 the INSERT is fire-and-forget, so the constraint error is raised in the background flush and never reaches the client, breaking the { serverError } assertion.
 
 CREATE TABLE check_constraint (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO TABLE check_constraint (c0) VALUES (1);
