@@ -1775,6 +1775,20 @@ namespace DB
         return arrow::binary();
     }
 
+    /// A LowCardinality(Time) column maps to an Arrow dictionary whose value type is time32. The Arrow
+    /// dictionary writer cannot fill time values, and even if it could the result would be unreadable by
+    /// ClickHouse (a time dictionary re-imports as LowCardinality(Time64), which DataTypeLowCardinality
+    /// rejects). So when output_format_arrow_low_cardinality_as_dictionary is enabled we still unwrap such
+    /// columns and write a plain Arrow time32 column, which round-trips. Only Time is handled because
+    /// LowCardinality(Time64) cannot be constructed (Time64 is not allowed inside LowCardinality).
+    static bool isLowCardinalityWithTimeDictionary(const DataTypePtr & type)
+    {
+        if (!type->lowCardinality())
+            return false;
+        const auto & dictionary_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+        return isTime(removeNullable(dictionary_type));
+    }
+
     std::shared_ptr<arrow::Schema> CHColumnToArrowColumn::calculateArrowSchema(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
@@ -1796,7 +1810,7 @@ namespace DB
             auto column_type = header_column.type;
             auto column = chunk ? chunk->getColumns()[column_i] : header_column.column;
 
-            if (!settings.low_cardinality_as_dictionary)
+            if (!settings.low_cardinality_as_dictionary || isLowCardinalityWithTimeDictionary(column_type))
             {
                 column_type = recursiveRemoveLowCardinality(column_type);
                 if (column)
@@ -1866,7 +1880,7 @@ namespace DB
                 auto column_type = header_column.type;
                 auto column = chunk.getColumns()[column_i];
 
-                if (!settings.low_cardinality_as_dictionary)
+                if (!settings.low_cardinality_as_dictionary || isLowCardinalityWithTimeDictionary(column_type))
                 {
                     column = recursiveRemoveLowCardinality(column);
                     column_type = recursiveRemoveLowCardinality(column_type);
