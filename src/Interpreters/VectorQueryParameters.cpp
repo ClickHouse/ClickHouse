@@ -981,7 +981,7 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
             }
             // ActionsDAG constants are rewritten by replacing the const column payload
             // at the recorded node index with the parsed runtime Field value.
-            ColumnPtr new_column = dag_node.result_type->createColumnConst(0, raw_value);
+            ColumnPtr new_column = dag_node.result_type->createColumnConst(1, raw_value);
             const_cast<ColumnPtr &>(dag_node.column) = std::move(new_column);
         }
         catch (...)
