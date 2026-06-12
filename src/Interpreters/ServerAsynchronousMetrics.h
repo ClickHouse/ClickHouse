@@ -69,6 +69,10 @@ private:
     /// Pss, etc. Kept here (not in the base class) so the cost is gated.
     std::optional<ReadBufferFromFilePRead> vm_smaps;
 
+    /// Previous values for the ReaderExecutorModeledCostMsPerRequestedMiB interval delta.
+    UInt64 prev_reader_executor_cost_us = 0;
+    UInt64 prev_reader_executor_requested_bytes = 0;
+
     void updateMutationAndDetachedPartsStats();
     void updateThreadStackStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);

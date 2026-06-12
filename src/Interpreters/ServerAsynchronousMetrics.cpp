@@ -17,6 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
 #include <Common/ThreadStackRegistry.h>
 
@@ -46,6 +47,12 @@ namespace HistogramMetrics
     extern Metric & HTTPPoolTCPBufBytesHTTPSnd;
 }
 #endif
+
+namespace ProfileEvents
+{
+    extern const Event ReaderExecutorModeledCostMicroseconds;
+    extern const Event ReaderExecutorRequestedBytes;
+}
 
 namespace DB
 {
@@ -200,6 +207,31 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+    }
+
+    /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
+    /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
+    {
+        const UInt64 cost_us = static_cast<UInt64>(
+            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
+        const UInt64 req_bytes = static_cast<UInt64>(
+            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        if (!first_run)
+        {
+            const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
+            const UInt64 d_req = req_bytes - prev_reader_executor_requested_bytes;
+            const double ms_per_mib = d_req > 0
+                ? (static_cast<double>(d_cost) / 1000.0) / (static_cast<double>(d_req) / (1024.0 * 1024.0))
+                : 0.0;
+            new_values["ReaderExecutorModeledCostMsPerRequestedMiB"] = { ms_per_mib,
+                "Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested"
+                " bytes over the last update interval, instance-wide -- the ratio of the deltas of"
+                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes."
+                " Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0,"
+                " over-fetch and incomplete connections push it up. 0 means no executor reads in the interval." };
+        }
+        prev_reader_executor_cost_us = cost_us;
+        prev_reader_executor_requested_bytes = req_bytes;
     }
 
     if (auto page_cache = getContext()->getPageCache())
