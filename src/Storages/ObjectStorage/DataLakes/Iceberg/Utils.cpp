@@ -1081,7 +1081,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-        
+
         std::vector<String> metadata_files;
         for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
