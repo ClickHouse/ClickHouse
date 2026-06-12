@@ -2406,6 +2406,9 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 {
     out.clear();
 
+    if (func.getArgumentsSize() != 2)
+        return;
+
     const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
@@ -2609,7 +2612,9 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     out.clear();
 
     chassert(func.getFunctionName() == "has");
-    chassert(func.getArgumentsSize() == 2);
+
+    if (func.getArgumentsSize() != 2)
+        return;
 
     /// Check if key usable
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
@@ -3558,30 +3563,97 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
 
 void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
 {
-    /** Functions < > = != <= >= in `notIn` isNull isNotNull, where one argument is a constant, and the other is one of columns of key,
-      *  or itself, wrapped in a chain of possibly-monotonic functions,
-      *  (for example, if the table has ORDER BY time, we will check the conditions like
-      *   toDate(time) = '2023-10-14', toMonth(time) = 12, etc)
-      *  or any of arguments of a space-filling curve function if it is in the key,
-      *  (for example, if the table has ORDER BY mortonEncode(x, y), we will check the conditions like x > c, y <= c, etc.)
+    /** This function routes one predicate-leaf function to the matching extraction path. The supported
+      * functions are the comparisons (< > = != <= >=, the `like` family, `match`, `startsWith`), the IN
+      * family and `has`, the unary checks (`isNull`, `isNotNull`, `empty`, `notEmpty`), and
+      * `pointInPolygon`. For binary functions one argument must be a constant, and the other must reach
+      * key columns in one of the following ways.
+      *
+      * 1. The wrapping functions are in the predicate: the predicate expression is a key column wrapped
+      *    in a chain of possibly-monotonic functions. For example, if the table has `ORDER BY time`,
+      *    conditions like `toDate(time) = '2023-10-14'` or `toMonth(time) = 12` are analyzed. The
+      *    discovered chain (`toDate`, `toMonth`) is stored in the atom and is applied to the granule
+      *    key ranges at evaluation time.
+      *
+      * 2. The wrapping functions are in the table's key, the other way around: a key column is computed
+      *    from the predicate column. For example, if the table has `ORDER BY toDate(time)`, the
+      *    condition `time >= '2023-10-14 00:00:00'` is analyzed by applying `toDate` to the constant
+      *    once, here at build time, which produces the relaxed atom
+      *    `toDate(time) >= toDate('2023-10-14 00:00:00')`. Nothing is stored in the atom in this case
+      *    (see the candidate sources in `extractBinaryComparisonAtoms`).
+      *
+      * 3. The predicate expression is an argument of a space-filling curve in the key. For example, if
+      *    the table has `ORDER BY mortonEncode(x, y)`, conditions like `x > c` and `y <= c` are
+      *    analyzed.
       */
     auto func = node.toFunctionNode();
     const size_t num_args = func.getArgumentsSize();
 
     const std::string func_name = func.getFunctionName();
 
-    if (atom_map.find(func_name) == std::end(atom_map))
+    const auto atom_it = atom_map.find(func_name);
+    if (atom_it == atom_map.end())
         return;
 
+    const bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
+
+    /// This fills the function kind and the range/set of every prepared element in `out` via the
+    /// atom_map builder and propagates relaxation. An atom that cannot be built is dropped: the atoms
+    /// of one leaf are ANDed necessary conditions, so the remaining ones stay usable, and if none
+    /// remain, RPNBuilder turns the empty leaf into FUNCTION_UNKNOWN. The value argument is unused by
+    /// the set and unary builders reached from here; comparison atoms pass the real constant in
+    /// `extractBinaryComparisonAtoms`.
+    auto finalize_atoms = [&]
+    {
+        Field unused_value;
+        for (auto it = out.begin(); it != out.end();)
+        {
+            /// Constant-folded elements (e.g. `has([], x)` folds to ALWAYS_FALSE) are already complete;
+            /// the builder would overwrite their function kind.
+            if (it->function == RPNElement::ALWAYS_TRUE || it->function == RPNElement::ALWAYS_FALSE)
+            {
+                ++it;
+                continue;
+            }
+
+            if (!atom_it->second(*it, unused_value))
+            {
+                it = out.erase(it);
+                continue;
+            }
+
+            if (it->relaxed)
+                relaxed = true;
+            ++it;
+        }
+    };
+
+
+    /// Only one atom is ever created for `pointInPolygon`.
+    /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
     if (func_name == "pointInPolygon")
     {
         extractPointInPolygonAtom(func, out);
         return;
     }
 
-    const bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
+    /// IN / NOT IN
+    if (functionIsInOrGlobalInOperator(func_name))
+    {
+        tryPrepareSetAtomsForIn(func, info, out, allow_constant_transformation);
+        finalize_atoms();
+        return;
+    }
 
-    /// Unary functions over a key expression, like isNull(key), toDate(key), etc.
+    /// has(const_array, key)
+    if (func_name == "has")
+    {
+        tryPrepareSetAtomsForHas(func, info, out, allow_constant_transformation);
+        finalize_atoms();
+        return;
+    }
+
+    /// Unary functions over a key expression, like isNull(key), empty(key), etc.
     if (num_args == 1)
     {
         /// Type of expression containing key column
@@ -3610,71 +3682,13 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         element.monotonic_functions_chain = std::move(chain);
         element.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        Field dummy_value;
-        const auto atom_it = atom_map.find(func_name);
-        if (!atom_it->second(element, dummy_value))
-            return;
-
-        if (element.relaxed)
-            relaxed = true;
-
         out.emplace_back(std::move(element));
+        finalize_atoms();
         return;
     }
-
-    /// Binary functions with a constant, key expression, or supported set patterns.
-    if (num_args == 2)
+    /// Binary comparisons of a key expression with a constant.
+    else if (num_args == 2)
     {
-        /// IN / NOT IN
-        if (functionIsInOrGlobalInOperator(func_name))
-        {
-            tryPrepareSetAtomsForIn(func, info, out, allow_constant_transformation);
-            if (out.empty())
-                return;
-
-            Field dummy_value;
-            const auto atom_it = atom_map.find(func_name);
-            for (auto & element : out)
-            {
-                if (!atom_it->second(element, dummy_value))
-                {
-                    out.clear();
-                    return;
-                }
-
-                if (element.relaxed)
-                    relaxed = true;
-            }
-            return;
-        }
-
-        /// has(const_array, key)
-        if (func_name == "has")
-        {
-            tryPrepareSetAtomsForHas(func, info, out, allow_constant_transformation);
-            if (out.empty())
-                return;
-
-            /// Found empty array constant in has([], x) -> always false.
-            if (out.size() == 1 && out[0].function == RPNElement::ALWAYS_FALSE)
-                return;
-
-            Field dummy_value;
-            const auto atom_it = atom_map.find(func_name);
-            for (auto & element : out)
-            {
-                if (!atom_it->second(element, dummy_value))
-                {
-                    out.clear();
-                    return;
-                }
-
-                if (element.relaxed)
-                    relaxed = true;
-            }
-            return;
-        }
-
         extractBinaryComparisonAtoms(node, func, info, func_name, allow_constant_transformation, out);
     }
 }
