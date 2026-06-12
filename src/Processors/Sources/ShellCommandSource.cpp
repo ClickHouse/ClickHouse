@@ -3,14 +3,8 @@
 #include <poll.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <Common/UDFProcessSubtreeSampler.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ErrnoException.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -25,7 +19,6 @@
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
-#include <csignal>
 #include <ranges>
 
 
@@ -84,7 +77,7 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
     auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
     auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
 
-    int res = 0;
+    int res;
 
     while (true)
     {
@@ -124,9 +117,9 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
 static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 {
-    pollfd pfd{};
+    pollfd pfd;
     pfd.fd = fd;
-    pfd.events = static_cast<int16_t>(events);
+    pfd.events = events;
     pfd.revents = 0;
 
     return pollWithTimeout(&pfd, 1, timeout_milliseconds) > 0;
@@ -139,13 +132,11 @@ public:
         int stdout_fd_,
         int stderr_fd_,
         size_t timeout_milliseconds_,
-        ExternalCommandStderrReaction stderr_reaction_,
-        UDFProcessSubtreeSampler * sampler_)
+        ExternalCommandStderrReaction stderr_reaction_)
         : stdout_fd(stdout_fd_)
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
-        , sampler(sampler_)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -169,8 +160,8 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (num_events <= 0)
+            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
             bool has_stdout = pfds[0].revents > 0;
@@ -185,21 +176,9 @@ public:
                 {
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                    {
-                        /// Accumulate stderr up to safety limit
-                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
-                        if (current_size < MAX_STDERR_SIZE)
-                        {
-                            if (!stderr_full_output)
-                                stderr_full_output.emplace();
-                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - current_size);
-                            stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
-                        }
-                    }
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                    {
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
+                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
                         LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
-                    }
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -221,61 +200,10 @@ public:
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
 
                 if (res == 0)
-                {
-                    /// EOF on stdout - drain remaining stderr before returning
-                    if (stderr_reaction != ExternalCommandStderrReaction::NONE
-                        && stderr_reaction != ExternalCommandStderrReaction::LOG)
-                    {
-                        static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
-
-                        while (true)
-                        {
-                            pfds[1].revents = 0;
-                            int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
-                            if (stderr_events <= 0)
-                                break;
-
-                            if (pfds[1].revents <= 0)
-                                break;
-
-                            if (stderr_read_buf == nullptr)
-                                stderr_read_buf.reset(new char[BUFFER_SIZE]);
-                            ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
-                            if (stderr_res <= 0)
-                                break;
-
-                            std::string_view str(stderr_read_buf.get(), stderr_res);
-                            if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                            {
-                                size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
-                                if (current_size >= MAX_STDERR_SIZE)
-                                    break;
-                                if (!stderr_full_output)
-                                    stderr_full_output.emplace();
-                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - current_size);
-                                stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
-                            }
-                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
-                            {
-                                ssize_t to_insert = std::min(ssize_t(stderr_result_buf.reserve()), stderr_res);
-                                if (to_insert > 0)
-                                    stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + to_insert);
-                            }
-                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
-                            {
-                                stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + stderr_res);
-                            }
-                        }
-                    }
                     break;
-                }
 
                 if (res > 0)
-                {
                     bytes_read += res;
-                    if (sampler)
-                        sampler->recordOutputBytes(static_cast<size_t>(res));
-                }
             }
         }
 
@@ -297,41 +225,17 @@ public:
         tryMakeFdBlocking(stdout_fd);
         tryMakeFdBlocking(stderr_fd);
 
-        // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
         {
             String stderr_result;
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
-
-            if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST || stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
-            {
-                LOG_WARNING(
-                    getLogger("ShellCommandSource"),
-                    "Executable generates stderr at the {}: {}",
-                    stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
-                    stderr_result);
-            }
+            LOG_WARNING(
+                getLogger("ShellCommandSource"),
+                "Executable generates stderr at the {}: {}",
+                stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
+                stderr_result);
         }
-    }
-
-    /// Check if stderr was accumulated (for THROW mode)
-    bool hasStderr() const { return stderr_full_output.has_value(); }
-
-    /// Get accumulated stderr content (for THROW mode)
-    const String & getStderr() const { return *stderr_full_output; }
-
-    /// Get buffered stderr content from circular buffer (for LOG_FIRST/LOG_LAST modes)
-    /// Clears the buffer to prevent duplicate logging in destructor
-    String consumeBufferedStderr()
-    {
-        if (stderr_result_buf.empty())
-            return {};
-        String result;
-        result.reserve(stderr_result_buf.size());
-        result.append(stderr_result_buf.begin(), stderr_result_buf.end());
-        stderr_result_buf.clear();
-        return result;
     }
 
 private:
@@ -339,22 +243,19 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
-    UDFProcessSubtreeSampler * sampler;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
-    static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
-    pollfd pfds[2]{};
+    pollfd pfds[2];
     size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
-    std::optional<String> stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_, UDFProcessSubtreeSampler * sampler_)
-        : fd(fd_), timeout_milliseconds(timeout_milliseconds_), sampler(sampler_)
+    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
+        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
     {
         makeFdNonBlocking(fd);
     }
@@ -377,11 +278,7 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
-            {
                 bytes_written += res;
-                if (sampler)
-                    sampler->recordInputBytes(static_cast<size_t>(res));
-            }
         }
     }
 
@@ -398,7 +295,6 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
-    UDFProcessSubtreeSampler * sampler;
 };
 
 class ShellCommandHolder
@@ -460,7 +356,7 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
+            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction)
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -486,7 +382,7 @@ namespace
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
+                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
 
                         try
                         {
@@ -542,25 +438,6 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            /// Resource accounting must observe the borrow's resident set before
-            /// the worker is torn down or the slot is handed back to the pool —
-            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
-            /// would then read zero CPU and zero `VmHWM`.
-            /// `recordReleased` reads procfs and may throw, but `cleanup` is
-            /// called from the destructor — swallow any exception so the
-            /// destructor stays noexcept.
-            if (configuration.sampler)
-            {
-                try
-                {
-                    configuration.sampler->recordReleased();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSource");
-                }
-            }
-
             if (command_is_invalid)
                 command = nullptr;
 
@@ -588,7 +465,7 @@ namespace
                     if (!executor && configuration.read_number_of_rows_from_process_output)
                     {
                         readText(configuration.number_of_rows_to_read, timeout_command_out);
-                        char dummy = 0;
+                        char dummy;
                         readChar(dummy, timeout_command_out);
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
@@ -624,38 +501,19 @@ namespace
                     if (thread.joinable())
                         thread.join();
 
-                /// Check if stderr was accumulated before checking exit code
-                /// This ensures stderr exceptions take priority over exit code exceptions
-                if (timeout_command_out.hasStderr())
-                {
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                                  "Executable generates stderr: {}", timeout_command_out.getStderr());
-                }
-
                 if (check_exit_code)
                 {
-                    try
+                    if (process_pool)
                     {
-                        if (process_pool)
-                        {
-                            bool valid_command
-                                = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+                        bool valid_command
+                            = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
 
-                            // We can only wait for pooled commands when they are invalid.
-                            if (!valid_command)
-                                command->wait();
-                        }
-                        else
+                        // We can only wait for pooled commands when they are invalid.
+                        if (!valid_command)
                             command->wait();
                     }
-                    catch (Exception & e)
-                    {
-                        /// Enrich exit code exception with buffered stderr content (LOG_FIRST/LOG_LAST modes)
-                        String stderr_content = timeout_command_out.consumeBufferedStderr();
-                        if (!stderr_content.empty())
-                            e.addMessage("Stderr: {}", stderr_content);
-                        throw;
-                    }
+                    else
+                        command->wait();
                 }
 
                 rethrowExceptionDuringSendDataIfNeeded();
@@ -739,7 +597,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
-    const VectorWithMemoryTracking<std::string> & arguments,
+    const std::vector<std::string> & arguments,
     std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
@@ -776,13 +634,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             },
             configuration.max_command_execution_time_seconds * 10000);
 
-        /// Pool wait is frozen here on both the success and the timeout-failure
-        /// paths so that `PoolWaitMicroseconds` always records contention for a
-        /// slot. Any time spent below in `buildCommand` (cold spawn) lands in
-        /// `ElapsedMicroseconds` instead.
-        if (source_configuration.sampler)
-            source_configuration.sampler->recordPoolWaitDone();
-
         if (!result)
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -790,30 +641,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 configuration.max_command_execution_time_seconds);
 
         process = process_holder->buildCommand();
-
-        /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
-        /// runs here so `clear_refs` and the utime/stime baseline cover only
-        /// the work attributable to this borrow.
-        ///
-        /// `recordPidAcquired` allocates (vector return from `walkSubtree`,
-        /// `unordered_set` and `unordered_map` inserts) and is not noexcept.
-        /// If it throws here, `process_holder` is still a local — ownership
-        /// does not transfer to `ShellCommandSource` until further below — so
-        /// stack unwinding would destroy it without calling `returnObject`,
-        /// permanently shrinking the pool's effective capacity by one. Swallow
-        /// the exception so the local stays intact for the normal hand-off;
-        /// sampling is best-effort and dropping one pre baseline is harmless.
-        if (source_configuration.sampler)
-        {
-            try
-            {
-                source_configuration.sampler->recordPidAcquired(process->getPid());
-            }
-            catch (...)
-            {
-                tryLogCurrentException("ShellCommandSource");
-            }
-        }
     }
     else
     {
@@ -845,12 +672,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
-        /// Only the primary stdin pipe (i == 0) contributes to InputBytes.
-        /// Additional write descriptors carry side-channel data that isn't
-        /// part of the UDF's observable input.
-        UDFProcessSubtreeSampler * write_sampler = (i == 0) ? source_configuration.sampler.get() : nullptr;
         auto timeout_write_buffer
-            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds, write_sampler);
+            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
 
         input_pipes[i].resize(1);
 
@@ -875,7 +698,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             executor.execute();
 
             timeout_write_buffer->finalize();
-            (*timeout_write_buffer).reset();
+            timeout_write_buffer->reset();
 
             if (!is_executable_pool)
             {

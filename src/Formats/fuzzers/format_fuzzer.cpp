@@ -1,7 +1,5 @@
 #include <base/types.h>
 
-#include <Core/Settings.h>
-
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -15,39 +13,17 @@
 
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
-#include <iostream>
-
 using namespace DB;
 
-static ContextMutablePtr getContext()
-{
-    static SharedContextHolder shared_context = Context::createShared();
-    static ContextMutablePtr context = Context::createGlobal(shared_context.get());
-    return context;
-}
-
-
+static SharedContextHolder shared_context;
+static ContextMutablePtr context;
 static std::string env_format_name;
-
-static bool isMerge(int argc, const char * const * argv)
-{
-    for (int i = 1; i < argc; ++i)
-    {
-        std::string_view arg{argv[i]};
-        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-ignore_remaining_args")
-            break;
-        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-merge")
-            return true;
-    }
-    return false;
-}
 
 static std::string getFormatNameFromEnv()
 {
@@ -57,71 +33,14 @@ static std::string getFormatNameFromEnv()
     return "";
 }
 
-extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
-// Helper function to parse settings from command line arguments
-static std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
+extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
-    std::map<std::string, std::string> settings;
-    bool ignore_remaining = false;
+    if (context)
+        return true;
 
-    for (int i = 1; i < argc; ++i)
-    {
-        std::string arg{argv[i]};
-
-        if (!ignore_remaining)
-        {
-            // Check for -ignore_remaining_args
-            if (arg.starts_with("-ignore_remaining_args"))
-            {
-                ignore_remaining = true;
-                continue;
-            }
-        }
-        else
-        {
-            // Parse settings after -ignore_remaining_args
-            size_t eq_pos = arg.find('=');
-            if (eq_pos != std::string::npos)
-            {
-                // Skip leading dashes to get the setting name
-                size_t key_start = 0;
-                while (key_start < arg.length() && arg[key_start] == '-')
-                    ++key_start;
-
-                std::string key = arg.substr(key_start, eq_pos - key_start);
-                std::string value = arg.substr(eq_pos + 1);
-                settings[key] = value;
-            }
-        }
-    }
-
-    return settings;
-}
-
-extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
-{
-    // If it's a merge coordinator don't initialize anything
-    if (isMerge(*argc, *argv))
-        return 0;
-
-    getContext()->makeGlobalContext();
-
-    Settings settings;
-    for (const auto & [key, value] : parseSettingsFromArgs(*argc, *argv))
-    {
-        try
-        {
-            settings.set(key, value);
-        }
-        catch (const std::exception & e)
-        {
-            std::cerr << "Warning: Failed to set setting '" << key << "' to '" << value << "': " << e.what() << std::endl;
-        }
-    }
-    getContext()->setSettings(settings);
-
+    shared_context = Context::createShared();
+    context = Context::createGlobal(shared_context.get());
+    context->makeGlobalContext();
     env_format_name = getFormatNameFromEnv();
 
     MainThreadStatus::getInstance();
@@ -196,7 +115,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         readStringUntilNewlineInto(structure, in);
         assertChar('\n', in);
 
-        ColumnsDescription description = parseColumnsListFromString(structure, getContext());
+        ColumnsDescription description = parseColumnsListFromString(structure, context);
         auto columns_info = description.getOrdinary();
 
         Block header;
@@ -209,8 +128,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             header.insert(std::move(column));
         }
 
-        InputFormatPtr input_format = getContext()->getInputFormat(format, in, header, 13 /* small block size */);
-        chassert(input_format->getName() == format);
+        InputFormatPtr input_format = context->getInputFormat(format, in, header, 13 /* small block size */);
+        assert(input_format->getName() == format);
 
         QueryPipeline pipeline(Pipe(std::move(input_format)));
         PullingPipelineExecutor executor(pipeline);
@@ -220,7 +139,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     }
     catch (...)
     {
-        // Ok
     }
 
     return 0;

@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// arrayConcat(arr1, ...) - concatenate arrays.
-class FunctionArrayConcat final : public IFunction
+class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";

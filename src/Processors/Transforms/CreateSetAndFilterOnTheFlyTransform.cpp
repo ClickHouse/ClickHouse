@@ -1,6 +1,7 @@
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
 #include <cstddef>
+#include <mutex>
 
 #include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
@@ -40,7 +41,7 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
     {
-        auto col = removeSpecialRepresentations(all_cols.at(index));
+        auto col = recursiveRemoveSparse(all_cols.at(index));
         columns.push_back(std::move(col));
     }
 
@@ -157,7 +158,7 @@ IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
             LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {:.2f}% filtered",
                 Poco::toLower(getDescription()), fmt::join(column_names, ", "),
                 stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
-                stat.consumed_rows > 0 ? (100 - 100.0 * static_cast<double>(stat.result_rows) / static_cast<double>(stat.consumed_rows)) : 0);
+                stat.consumed_rows > 0 ? (100 - 100.0 * stat.result_rows / stat.consumed_rows) : 0);
         }
         else
         {

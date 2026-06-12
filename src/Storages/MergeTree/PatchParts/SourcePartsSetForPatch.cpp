@@ -118,11 +118,11 @@ SourcePartsSetForPatch SourcePartsSetForPatch::build(const Block & block, UInt64
     SourcePartsSetForPatch parts_set;
     for (size_t i = 0; i < part_name_str.size(); ++i)
     {
-        auto part_name = part_name_str.getDataAt(i);
+        auto part_name = part_name_str.getDataAt(i).toString();
 
         /// LowCardinality dictionary always has default value.
         if (!part_name.empty())
-            parts_set.addSourcePart(std::string{part_name}, data_version);
+            parts_set.addSourcePart(part_name, data_version);
     }
 
     return parts_set;
@@ -167,13 +167,13 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 
 void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
 {
-    UInt8 version = 0;
+    UInt8 version;
     readBinaryLittleEndian(version, in);
 
     if (version != VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of SourcePartsSetForPatch: {}", std::to_string(version));
 
-    UInt64 num_parts = 0;
+    UInt64 num_parts;
     readBinaryLittleEndian(num_parts, in);
 
     for (size_t i = 0; i < num_parts; ++i)

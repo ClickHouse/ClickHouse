@@ -5,14 +5,8 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 
-#include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Functions/ComparisonNames.h>
-#include <IO/WriteHelpers.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -71,9 +65,9 @@ namespace
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context)
+    const DB::ActionsDAG & filter, std::exception_ptr & exception)
 {
-    return std::make_unique<EnginePredicate>(filter, exception, context);
+    return std::make_unique<EnginePredicate>(filter, exception);
 }
 
 /// Contains state for EngineIterator
@@ -122,7 +116,7 @@ class  EngineIterator : public ffi::EngineIterator
 public:
     static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
-    explicit EngineIterator(EngineIteratorData & data_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    explicit EngineIterator(EngineIteratorData & data_)
     {
         data = &data_;
         get_next = &getNext;
@@ -211,7 +205,7 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Int8:
         {
             auto result = value.safeGet<Int8>();
-            return ffi::visit_expression_literal_byte(state, static_cast<int8_t>(result));
+            return ffi::visit_expression_literal_byte(state, result); /// Accepts int8
         }
         case DB::TypeIndex::UInt8:
         {
@@ -223,23 +217,23 @@ static uintptr_t visitLiteralValue(
             else
             {
                 auto result = value.safeGet<Int16>();
-                return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
+                return ffi::visit_expression_literal_short(state, result); /// Accepts int16
             }
         }
         case DB::TypeIndex::Int16:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
+            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
         }
         case DB::TypeIndex::UInt16:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
+            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
         }
         case DB::TypeIndex::Int32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
+            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
         }
         case DB::TypeIndex::UInt32:
         {
@@ -254,12 +248,12 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Date:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
+            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
         }
         case DB::TypeIndex::Date32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
+            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
         }
         default:
         {
@@ -392,8 +386,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                             /* from */std::move(left_column),
                             /* to */column_node->result_type,
                             DB::CastType::nonAccurate,
-                            std::move(diagnostic),
-                            iterator_data.predicate.getContext());
+                            std::move(diagnostic));
 
                         DB::ActionsDAG::NodeRawConstPtrs children = { left_arg, right_arg };
                         literal_node = &dag.addFunction(func_base_cast, std::move(children), {});
