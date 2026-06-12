@@ -1,0 +1,10 @@
+conversion path, const array
+[NULL,'hi']
+adaptor path, const array
+[NULL,'hi']
+conversion path, table column
+	13
+hi	13
+adaptor path, table column
+\N	13
+hi	13
