@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
 #include <Common/GetPriorityForLoadBalancing.h>
+#include <Common/isLocalAddress.h>
 
 using namespace DB;
 
@@ -104,6 +106,76 @@ TEST(GetPriorityForLoadBalancing, RoundRobinRotates)
     /// All `pool_size` heads must be distinct (one full rotation).
     std::unordered_set<size_t> distinct_heads(heads.begin(), heads.end());
     ASSERT_EQ(distinct_heads.size(), pool_size);
+}
+
+namespace
+{
+    /// Build a `GetPriorityForLoadBalancing` for one of the longest-common-prefix/suffix
+    /// strategies, fill the relevant vector using the real distance functions, and return
+    /// the index of the preferred replica — the one with the smallest `Priority` value.
+    /// On ties this returns the first such index (in ClickHouse the base pool then breaks
+    /// the tie randomly, which does not affect "who has the best score").
+    size_t preferredReplica(LoadBalancing strategy, const std::string & initiator, const std::vector<std::string> & replicas)
+    {
+        GetPriorityForLoadBalancing lb(strategy);
+        for (const auto & replica : replicas)
+        {
+            lb.hostname_longest_common_prefix.push_back(getHostNameLongestCommonPrefix(initiator, replica));
+            lb.hostname_longest_common_suffix.push_back(getHostNameLongestCommonSuffix(initiator, replica));
+        }
+
+        auto func = lb.getPriorityFunc(strategy, 0, replicas.size());
+        size_t best = 0;
+        for (size_t i = 1; i < replicas.size(); ++i)
+            if (func(i).value < func(best).value)
+                best = i;
+        return best;
+    }
+}
+
+/// The longest-common-prefix length is case-sensitive and bounded by the shorter string,
+/// matching `getHostNamePrefixDistance` (`nearest_hostname`).
+TEST(GetPriorityForLoadBalancing, LongestCommonPrefixLength)
+{
+    ASSERT_EQ(getHostNameLongestCommonPrefix("sfe301", "sde301"), 1u);   // "s"
+    ASSERT_EQ(getHostNameLongestCommonPrefix("sfe301", "sfe10101"), 3u); // "sfe"
+    ASSERT_EQ(getHostNameLongestCommonPrefix("sde101", "sde1010"), 6u);  // "sde101"
+    ASSERT_EQ(getHostNameLongestCommonPrefix("sde101", "sde102"), 5u);   // "sde10"
+    ASSERT_EQ(getHostNameLongestCommonPrefix("abc", "abcdef"), 3u);      // bounded by the shorter string
+    ASSERT_EQ(getHostNameLongestCommonPrefix("abc", "xyz"), 0u);
+    ASSERT_EQ(getHostNameLongestCommonPrefix("", "anything"), 0u);
+}
+
+TEST(GetPriorityForLoadBalancing, LongestCommonSuffixLength)
+{
+    ASSERT_EQ(getHostNameLongestCommonSuffix("et46gtghn.qc.localdomain", "tr676ddgh.td.localdomain"), 12u); // ".localdomain"
+    ASSERT_EQ(getHostNameLongestCommonSuffix("et46gtghn.qc.localdomain", "ab999.qc.localdomain"), 15u);     // ".qc.localdomain"
+    ASSERT_EQ(getHostNameLongestCommonSuffix("def", "abcdef"), 3u);                                        // bounded by the shorter string
+    ASSERT_EQ(getHostNameLongestCommonSuffix("abc", "xyz"), 0u);
+    ASSERT_EQ(getHostNameLongestCommonSuffix("anything", ""), 0u);
+}
+
+/// The replica with the longest common prefix must get the lowest priority value (be preferred).
+TEST(GetPriorityForLoadBalancing, LongestCommonPrefixPicksClosest)
+{
+    ASSERT_EQ(
+        preferredReplica(LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX, "sfe301", {"sde301", "sfe10101", "sde505"}),
+        1u); // sfe10101
+    ASSERT_EQ(
+        preferredReplica(
+            LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX, "sde101", {"sde1010", "sde102", "sde103", "sde1020", "sde1030"}),
+        0u); // sde1010
+}
+
+/// The replica with the longest common suffix must get the lowest priority value (be preferred).
+TEST(GetPriorityForLoadBalancing, LongestCommonSuffixPicksClosest)
+{
+    ASSERT_EQ(
+        preferredReplica(
+            LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX,
+            "et46gtghn.qc.localdomain",
+            {"tr676ddgh.td.localdomain", "ab999.qc.localdomain"}),
+        1u); // ab999.qc.localdomain
 }
 
 /// Smoke-test for the explicit copy/move ctors and assignment operators that were added

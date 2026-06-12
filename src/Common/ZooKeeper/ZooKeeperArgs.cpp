@@ -48,12 +48,16 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     /// init get_priority_load_balancing
     get_priority_load_balancing.hostname_prefix_distance.resize(hosts.size());
     get_priority_load_balancing.hostname_levenshtein_distance.resize(hosts.size());
+    get_priority_load_balancing.hostname_longest_common_prefix.resize(hosts.size());
+    get_priority_load_balancing.hostname_longest_common_suffix.resize(hosts.size());
     const String & local_hostname = getFQDNOrHostName();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
         get_priority_load_balancing.hostname_prefix_distance[i] = DB::getHostNamePrefixDistance(local_hostname, node_host);
         get_priority_load_balancing.hostname_levenshtein_distance[i] = DB::getHostNameLevenshteinDistance(local_hostname, node_host);
+        get_priority_load_balancing.hostname_longest_common_prefix[i] = DB::getHostNameLongestCommonPrefix(local_hostname, node_host);
+        get_priority_load_balancing.hostname_longest_common_suffix[i] = DB::getHostNameLongestCommonSuffix(local_hostname, node_host);
     }
 }
 

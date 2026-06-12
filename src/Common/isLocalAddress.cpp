@@ -136,4 +136,24 @@ size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const 
     return levenshteinDistanceCaseInsensitive(local_hostname, host);
 }
 
+size_t getHostNameLongestCommonPrefix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    size_t length = std::min(local_hostname.length(), host.length());
+    size_t common = 0;
+    while (common < length && local_hostname[common] == host[common])
+        ++common;
+    return common;
+}
+
+size_t getHostNameLongestCommonSuffix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    size_t length = std::min(local_hostname.length(), host.length());
+    size_t common = 0;
+    while (common < length && local_hostname[local_hostname.length() - 1 - common] == host[host.length() - 1 - common])
+        ++common;
+    return common;
+}
+
 }

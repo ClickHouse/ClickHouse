@@ -129,6 +129,38 @@ def test_hostname_levenshtein_distance(started_cluster):
         change_balancing("hostname_levenshtein_distance", "random", reload=False)
 
 
+def test_hostname_longest_common_prefix(started_cluster):
+    try:
+        change_balancing("random", "hostname_longest_common_prefix")
+        for node, regexp in ((node1, zk1_re), (node2, zk2_re), (node3, zk3_re)):
+            connections = (
+                node.exec_in_container(ss_established, privileged=True, user="root")
+                .strip()
+                .split("\n")
+            )
+            logging.debug("Established connections for 2181:\n%s", connections)
+            assert len(connections) == 1
+            assert regexp.search(connections[0])
+    finally:
+        change_balancing("hostname_longest_common_prefix", "random", reload=False)
+
+
+def test_hostname_longest_common_suffix(started_cluster):
+    try:
+        change_balancing("random", "hostname_longest_common_suffix")
+        for node, regexp in ((node1, zk1_re), (node2, zk2_re), (node3, zk3_re)):
+            connections = (
+                node.exec_in_container(ss_established, privileged=True, user="root")
+                .strip()
+                .split("\n")
+            )
+            logging.debug("Established connections for 2181:\n%s", connections)
+            assert len(connections) == 1
+            assert regexp.search(connections[0])
+    finally:
+        change_balancing("hostname_longest_common_suffix", "random", reload=False)
+
+
 def test_round_robin(started_cluster):
     pm = PartitionManager()
     try:

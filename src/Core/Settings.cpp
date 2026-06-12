@@ -963,6 +963,8 @@ ClickHouse supports the following algorithms of choosing replicas:
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
 - [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
+- [Hostname longest common prefix](#load_balancing-hostname_longest_common_prefix)
+- [Hostname longest common suffix](#load_balancing-hostname_longest_common_suffix)
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
@@ -1012,6 +1014,45 @@ example-clickhouse-0-0 example-clickhouse-1-10
 example-clickhouse-0-0 example-clickhouse-12-0
 3
 ```
+
+### Hostname longest common prefix {#load_balancing-hostname_longest_common_prefix}
+
+```sql
+load_balancing = hostname_longest_common_prefix
+```
+
+Just like `nearest_hostname`, but the replica whose hostname shares the longest common prefix with the local hostname is preferred (the longer the common prefix, the higher the priority). Unlike `nearest_hostname`, which counts differing characters position by position, this strategy is not confused by hostnames whose numeric segments have different lengths. For example, for the local hostname `sfe301`:
+
+```text
+sfe301 sde301
+1
+
+sfe301 sfe10101
+3
+
+sfe301 sde505
+1
+```
+
+Here `sfe10101` is preferred because it shares the longest common prefix (`sfe`, length 3) with `sfe301`.
+
+### Hostname longest common suffix {#load_balancing-hostname_longest_common_suffix}
+
+```sql
+load_balancing = hostname_longest_common_suffix
+```
+
+Just like `hostname_longest_common_prefix`, but the longest common *suffix* is compared instead of the prefix. This is useful when the data center identity is encoded as a suffix of the hostname. For example, for the local hostname `et46gtghn.qc.localdomain`:
+
+```text
+et46gtghn.qc.localdomain tr676ddgh.td.localdomain
+12
+
+et46gtghn.qc.localdomain ab999.qc.localdomain
+15
+```
+
+Here `ab999.qc.localdomain` is preferred because it shares the longest common suffix (`.qc.localdomain`, length 15) with `et46gtghn.qc.localdomain`.
 
 ### In Order {#load_balancing-in_order}
 
