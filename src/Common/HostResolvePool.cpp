@@ -185,13 +185,35 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
             /// empty result) and never reach `updateImpl`/`updateWeights`. Without
             /// this, the failed address would keep its stale weight in the selection
             /// table and `selectBest` could keep handing it out even though it is
-            /// known-bad. This mirrors the immediate `updateWeights` in `setSuccess`.
-            updateWeights();
+            /// known-bad.
+            ///
+            /// Use `updateWeightsImpl` (the plain prefix-sum recomputation), not
+            /// `updateWeights`: the latter also runs the "all addresses banned"
+            /// fallback that un-bans every record once the total weight reaches zero.
+            /// Applying that fallback here - before the refresh - would un-ban the
+            /// address we just failed, so a subsequent `update` that discovers a new
+            /// healthy address would still keep the bad one selectable, losing the
+            /// pessimization. The fallback is applied below only if the refresh fails.
+            updateWeightsImpl();
         }
     }
 
     ProfileEvents::increment(metrics.failed);
-    update();
+
+    try
+    {
+        update();
+    }
+    catch (...)
+    {
+        /// The refresh failed, so no new address became available. If every cached
+        /// address is now banned the selection table has zero total weight, which
+        /// `selectBest` cannot handle. Apply the "all addresses banned" fallback now
+        /// to keep at least one address selectable, then propagate the error.
+        std::lock_guard lock(mutex);
+        updateWeights();
+        throw;
+    }
 }
 
 Poco::Net::IPAddress HostResolver::selectBest()

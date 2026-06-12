@@ -312,6 +312,46 @@ TEST_F(ResolvePoolTest, WeightsConsistentWhenFailRefreshThrows)
     }
 }
 
+TEST_F(ResolvePoolTest, FailedAddressStaysBannedWhenRefreshAddsHealthyOne)
+{
+    /// Regression: when the only cached address fails and the subsequent DNS refresh
+    /// in `setFail` discovers an additional healthy address, the just-failed address
+    /// must stay pessimized. `setFail` must recompute the selection weights without
+    /// running the "all addresses banned" fallback (which un-bans every record once
+    /// the total weight hits zero) - otherwise the failed address is silently un-banned
+    /// before the refresh and remains selectable alongside the new healthy one.
+    std::vector<Poco::Net::IPAddress> current{Poco::Net::IPAddress("127.0.0.1")};
+
+    auto resolve_func = [&] (const String &)
+    {
+        return current;
+    };
+
+    /// Large history so the ban does not expire and no background refresh fires during the loop.
+    auto resolver = std::make_shared<ResolvePoolMock>("some_host", Poco::Timespan(10 * 1000 * 1000), resolve_func);
+
+    auto failed_addr = resolver->resolve();
+    String failed = *failed_addr;
+    ASSERT_EQ(failed, "127.0.0.1");
+
+    /// The refresh triggered inside `setFail` now also discovers a second, healthy address.
+    current.emplace_back(Poco::Net::IPAddress("127.0.0.2"));
+    failed_addr.setFail();
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+
+    /// Only the healthy address must be handed out; the failed one stays banned.
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        auto next_addr = resolver->resolve();
+        ASSERT_NE(*next_addr, failed);
+        ASSERT_EQ(*next_addr, "127.0.0.2");
+        next_addr.setUnused();
+    }
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+}
+
 TEST_F(ResolvePoolTest, SetUnusedHasNoSideEffects)
 {
     auto resolver = make_resolver();
