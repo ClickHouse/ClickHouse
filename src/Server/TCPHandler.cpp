@@ -3050,10 +3050,35 @@ void TCPHandler::trySendExceptionWithoutConnectionBuffers(const Exception & e)
         /// reads it. Read the pending data out, so the connection is terminated
         /// gracefully with FIN. There is no need to wait for more data: the client
         /// sends 'Hello' in a single packet before reading the response.
-        while (socket().available() > 0)
+        /// The amount of drained data is limited in case the client keeps sending:
+        /// such a connection is closed with RST, and that is fine.
+        ssize_t max_bytes_to_drain = 65536;
+        if (socket().secure())
         {
-            if (socket().receiveBytes(stack_memory, sizeof(stack_memory)) <= 0)
-                break;
+            /// For secure sockets available is `SSL_pending`, which only reports decrypted
+            /// data buffered inside OpenSSL and misses the data in the socket receive queue,
+            /// so the readiness of the underlying fd is polled instead. receiveBytes can
+            /// block on a partially received TLS record, so the receive timeout is limited.
+            socket().setReceiveTimeout(Poco::Timespan(0, 100'000 /*microseconds*/));
+            while (max_bytes_to_drain > 0 && socket().poll(Poco::Timespan(), Poco::Net::Socket::SELECT_READ))
+            {
+                int bytes_received = socket().receiveBytes(stack_memory, sizeof(stack_memory));
+                if (bytes_received <= 0)
+                    break;
+                max_bytes_to_drain -= bytes_received;
+            }
+        }
+        else
+        {
+            /// For plain sockets available reflects the socket receive queue,
+            /// and receiveBytes never blocks.
+            while (max_bytes_to_drain > 0 && socket().available() > 0)
+            {
+                int bytes_received = socket().receiveBytes(stack_memory, sizeof(stack_memory));
+                if (bytes_received <= 0)
+                    break;
+                max_bytes_to_drain -= bytes_received;
+            }
         }
     }
     catch (...)
