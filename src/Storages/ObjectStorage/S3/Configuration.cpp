@@ -367,6 +367,15 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     path_suffix = parsing_result.path_suffix;
 }
 
+/// Disambiguates an ambiguous positional slot (partition strategy vs compression method). Matches a
+/// real strategy case-insensitively (`hive`/`HIVE`), but excludes `NONE` so the valid compression
+/// method `none` keeps mapping to compression_method rather than the default strategy.
+static bool looksLikeExplicitPartitionStrategy(const String & arg)
+{
+    const auto strategy = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(arg, magic_enum::case_insensitive);
+    return strategy.has_value() && *strategy != PartitionStrategyFactory::StrategyType::NONE;
+}
+
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
@@ -559,8 +568,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            /// Case-insensitive to match the parse site below; otherwise lowercase `hive` is misrouted to `compression_method`.
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
+            if (looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
             }
@@ -585,8 +593,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            /// Case-insensitive to match the parse site below; otherwise lowercase `hive` is misrouted to `compression_method`.
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
+            if (looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }
