@@ -236,7 +236,7 @@ void S3RequestSettings::validateUploadSettings()
                             (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
     }
 
-    NameSet storage_class_names {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER", "DEEP_ARCHIVE", "OUTPOSTS", "GLACIER_IR", "SNOW", "EXPRESS_ONEZONE"};
+    NameSet storage_class_names {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "INTELLIGENT_TIERING"};
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
