@@ -263,8 +263,14 @@ class _Environment(MetaClasses.Serializable):
         # Job names are normalized in the workflow status file
         normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)
         config_job_data = workflow_status_data.get(normalized_job_name, {})
-        data_str = config_job_data.get("outputs", {}).get("data", "{}")
-        env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+        data_str = config_job_data.get("outputs", {}).get("data", "")
+        # A suppressed output may surface either as a missing key or as a blank
+        # string - do not let json.loads choke on the latter before the
+        # explicit error below
+        if isinstance(data_str, str):
+            env_dict = json.loads(data_str) if data_str.strip() else None
+        else:
+            env_dict = data_str
         if not env_dict or "SHA" not in env_dict:
             raise RuntimeError(
                 f"Job output [data] of the [{Settings.CI_CONFIG_JOB_NAME}] job is empty or missing. "
