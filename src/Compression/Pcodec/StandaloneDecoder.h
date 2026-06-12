@@ -295,10 +295,16 @@ inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t f
         DeltaEncoding de = readDeltaEncoding(reader, format_major);
 
         // `Conv1` widens latents into a signed accumulator; the 64-bit widening is lossy and
-        // unsupported (see ConvTypeFor), so reject it for 64-bit latent types instead of casting
-        // arbitrary latents through signed `int64_t` arithmetic.
-        if (de.variant == DeltaEncodingVariant::Conv1 && l_bits >= 64)
-            throw PcodecError("pcodec: Conv1 delta encoding is not supported for 64-bit latent types");
+        // unsupported (see ConvTypeFor), so reject it when the latent variable it applies to is
+        // 64-bit, instead of casting arbitrary latents through signed `int64_t` arithmetic.
+        // `Conv1` only ever applies to the primary latent variable (its metadata has no
+        // `secondary_uses_delta` flag), and for `Dict` mode the primary latents are the 32-bit
+        // dictionary indices regardless of the chunk's number type — the reference decoder
+        // accepts `Conv1` there (its width check in `delta::new_conv1` is on the actual latents),
+        // so only reject based on the same width.
+        Bitlen conv_latent_bits = mode.variant == ModeVariant::Dict ? latentBits<uint32_t> : l_bits;
+        if (de.variant == DeltaEncodingVariant::Conv1 && conv_latent_bits >= 64)
+            throw PcodecError("pcodec: Conv1 delta encoding is not supported for 64-bit latent variables");
 
         // A lookback window larger than the chunk is valid: the reference encoder clamps
         // `window_n_log` to [4, 15] independently of the chunk size (lookbacks reaching before the
