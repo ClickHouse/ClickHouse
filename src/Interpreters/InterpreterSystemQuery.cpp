@@ -2419,7 +2419,25 @@ void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
 {
     using Type = ASTSystemQuery::Type;
     const auto type = query.type;
+
+    /// Pre-check access before touching the catalog so that a user with neither privilege gets
+    /// ACCESS_DENIED rather than being able to tell UNKNOWN_TABLE apart and probe table existence.
+    auto access = getContext()->getAccess();
+    if (!access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name)
+        && !access->isGranted(AccessType::SYSTEM_BACKGROUND, table_id.database_name, table_id.table_name))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. To execute this query, it's necessary to have the grant "
+            "SYSTEM VIEWS or SYSTEM BACKGROUND on {}", table_id.getNameForLogs());
+
     auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (!storage->isStreamingStorage())
+    {
+        const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
+        if (!mv || !mv->isRefreshable())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} has no controllable background activity", table_id.getNameForLogs());
+    }
 
     if (storage->isStreamingStorage())
     {

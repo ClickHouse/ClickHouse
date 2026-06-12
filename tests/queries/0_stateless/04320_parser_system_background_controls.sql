@@ -29,3 +29,34 @@ EXPLAIN SYNTAX SYSTEM PAUSE VIEWS;
 
 EXPLAIN SYNTAX SYSTEM STOP db.background;
 EXPLAIN SYNTAX SYSTEM STOP all;
+
+-- ON CLUSTER is not supported for the background-control verbs
+SYSTEM STOP db.t ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM START db.t ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM PAUSE db.t ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM CANCEL db.t ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM REFRESH db.t ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM STOP ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM START ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM PAUSE ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM CANCEL ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+SYSTEM REFRESH ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
+
+-- Commands only apply to tables with controllable background activity.
+-- Fail uniformly with BAD_ARGUMENTS on any other table.
+create table mt (x Int64) engine MergeTree order by x;
+
+system stop mt;    -- { serverError BAD_ARGUMENTS }
+system start mt;   -- { serverError BAD_ARGUMENTS }
+system pause mt;   -- { serverError BAD_ARGUMENTS }
+system cancel mt;  -- { serverError BAD_ARGUMENTS }
+system refresh mt; -- { serverError BAD_ARGUMENTS }
+
+-- A non-refreshable materialized view also has no controllable background activity.
+create materialized view mv (x Int64) engine MergeTree order by x as select x from mt;
+
+system stop mv;    -- { serverError BAD_ARGUMENTS }
+system refresh mv; -- { serverError BAD_ARGUMENTS }
+
+drop table mv;
+drop table mt;
