@@ -6,6 +6,7 @@
 #include <IO/IntervalSet.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LiveConnectionLimit.h>
+#include <IO/FetchMachine.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -15,7 +16,6 @@
 #include <base/types.h>
 #include <array>
 #include <functional>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -31,7 +31,7 @@ namespace DB
 
 class PrefetchThreadPool;
 class ReaderExecutorLog;
-class PrefetchHandle;
+class FetchMachineRunner;
 
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
 /// through a fastest-first cache chain, falling back to the source. Tuned for
@@ -40,13 +40,13 @@ class PrefetchHandle;
 /// shrinks its window/block sizes under memory pressure. Owns its cache and
 /// decryption layers internally, so it is NOT wrapped by the legacy
 /// async/decrypt/cache read buffers. One instance per column-stream; not
-/// thread-safe beyond the prefetch-worker handoff: while a prefetch is in flight
-/// the worker exclusively owns `connection` and `inflight_segment_pin`, and the
-/// foreground must establish the `get()`/`tryCancel` happens-before edge before
-/// touching them (enforced by a `chassert` in `readPhysicalWindow`). A foreground
-/// read that skips that handoff reintroduces the `connection` use-after-free.
-/// Served-byte counters are NOT shared: a prefetch worker accumulates into its own
-/// job-local `Stats`, merged into `this->stats` at join (see `prefetch_job_stats`).
+/// thread-safe beyond the machine handoff: while a fetch machine is in flight
+/// the worker exclusively owns the machine payload (its `ConnState`, pin, rope,
+/// stats), and the foreground reclaims it only through the runner's
+/// revoke/release edges (`FetchMachineRunner::tryCancelQueued`/`waitReleased`).
+/// A foreground read that skips that handoff reintroduces the `connection`
+/// use-after-free. Served-byte counters are NOT shared: a worker accumulates
+/// into the machine's own `Stats`, merged into `this->stats` at collect/cancel.
 class ReaderExecutor
 {
 public:
@@ -162,15 +162,15 @@ public:
     /// no objects are configured.
     String getFileName() const { return log_file_path; }
 
-    /// Test-only: is there a prefetch currently scheduled for the next window?
-    bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }
-    /// Test-only: byte size of the in-flight prefetch window, or 0 when no
-    /// prefetch is scheduled (e.g. suppressed under high memory pressure).
-    size_t inflightPrefetchSize() const { return prefetch_handle ? prefetch_range.size : 0; }
-    /// Test-only: number of cancelled prefetch handles still awaiting the
-    /// destructor's drain (stashed on cancel so the worker can finish
-    /// attaching before this executor's state is freed).
-    size_t abandonedPrefetchCount() const { return abandoned_prefetches.size(); }
+    /// Test-only: is there a fetch machine currently in flight for the next window?
+    bool hasInflightPrefetch() const { return machine != nullptr; }
+    /// Test-only: byte size of the in-flight read-ahead window, or 0 when none
+    /// is scheduled (e.g. suppressed under high memory pressure).
+    size_t inflightPrefetchSize() const { return machine ? machine->requested_range.size : 0; }
+    /// Test-only: number of cancelled machines still awaiting the destructor's
+    /// drain (stashed on cancel so the pool's no-op pickup can finish attaching
+    /// before this executor's state is freed).
+    size_t abandonedPrefetchCount() const { return abandoned_machines.size(); }
 
     /// Logical file size (physical size minus encryption headers).
     /// Saturates to 0 if the underlying objects sum to fewer bytes than the
@@ -201,11 +201,11 @@ private:
     /// shared counter.
     struct Stats;
 
-    /// The in-flight prefetch's co-owned job: the worker's job-local `Stats` plus the
-    /// source-connection cluster (`ConnState`) it owns for the job's duration.
-    /// Forward-declared so the `prefetch_job` member can be a `shared_ptr<PrefetchJob>`
-    /// (defined below, after `Stats`).
-    struct PrefetchJob;
+    /// The in-flight background machine: the worker's job-local `Stats` plus the
+    /// source-connection cluster (`ConnState`) and products it owns while
+    /// scheduled/running. Forward-declared so the `machine` member can be a
+    /// `shared_ptr<FetchMachine>` (defined below, after `Stats`).
+    struct FetchMachine;
 
     /// The source-connection cluster threaded as a `ConnState &` through the read
     /// path (defined below, after `Connection`). Forward-declared so the
@@ -226,12 +226,13 @@ private:
     Rope serveCacheBlock(size_t position_phys, size_t to_read);
     Rope coverWindow(size_t position_phys, size_t to_read);
 
-    /// The in-flight-prefetch state machine, lifted out of `coverWindow`. With a prefetch
-    /// in flight for this gap: if it has already started/finished, CONSUME it (reclaim its
-    /// connection, backfill the cache from its bytes, finalize) into `rope` and return true;
-    /// if it was still queued, CANCEL it (reclaim the untouched connection, stash the handle
-    /// for the destructor) and return false so the caller reads synchronously.
-    bool tryConsumePrefetch(Rope & rope);
+    /// The collect verb, lifted out of `coverWindow`. With a machine in flight
+    /// for this gap: if its step has already started/finished, COLLECT it (wait
+    /// the release edge, reclaim its connection, backfill the cache from its
+    /// bytes, finalize) into `rope` and return true; if it was still queued,
+    /// revoke it (reclaim the untouched connection, stash the machine for the
+    /// destructor's drain) and return false so the caller reads synchronously.
+    bool tryCollectMachine(Rope & rope);
     /// Read one gap window synchronously from the source (the no-prefetch / cancelled path):
     /// take the live-connection lease iff the plan is wide, then `readWindowLogical`.
     Rope syncGapRead(ByteRange physical_window);
@@ -413,12 +414,13 @@ private:
         size_t size, size_t block_size, const VectorWithMemoryTracking<size_t> & splits = {});
 
     void maybeTriggerPrefetch();
-    /// Drop the in-flight prefetch. `cancelled` is true for a real cancellation
-    /// (`seek` / extent change) so it counts into `ReaderExecutorPrefetchCancelled`,
-    /// false for destructor cleanup (which is not a user-visible cancellation).
-    void discardPrefetch(bool cancelled);
+    /// The cancel verb: drop the in-flight machine. `cancelled` is true for a
+    /// real cancellation (`seek` / extent change) so it counts into
+    /// `ReaderExecutorPrefetchCancelled`, false for destructor cleanup (which
+    /// is not a user-visible cancellation).
+    void cancelMachine(bool cancelled);
 
-    void drainAbandonedPrefetches(bool wait_finished = false);
+    void drainAbandonedMachines(bool wait_finished = false);
 
     /// EOF detection has two cases:
     ///   - size known: `position >= totalSize()`.
@@ -791,42 +793,26 @@ private:
         const IntervalSet & upper_hits, GeometryEntry & geom_entry, BufEntry & buf_entry);
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-    /// Single source of truth for "is there a prefetch scheduled":
-    /// `prefetch_handle != nullptr`. `prefetch_range` is only meaningful when
-    /// the handle is non-null.
-    std::shared_ptr<PrefetchHandle> prefetch_handle;
-    /// `prefetch_range` is the LOGICAL requested read-ahead range (the space `position`,
-    /// seek and the consume slice work in). `prefetch_physical_window` is the PHYSICAL,
-    /// cache-aligned window the worker actually fetched (`ReadPlanGeometry::fetchWindowAt`
-    /// widened it to whole page blocks / the disk-segment boundary) - the consume path
-    /// backfills the caches over it and pins at its frontier. Both meaningful only while
-    /// the handle is set.
-    ByteRange prefetch_range;
-    ByteRange prefetch_physical_window;
-    /// The in-flight prefetch worker's job, co-owned with the worker lambda. Holds
-    /// the worker's job-local `Stats` AND the source-connection cluster (`conn`) it
-    /// took ownership of at submit. The worker writes ONLY `prefetch_job->stats` and
-    /// operates ONLY on `prefetch_job->conn` (never the shared `this->stats` /
-    /// `this->conn`); the foreground reconciles at join once the `get()`/`tryCancel`
-    /// happens-before edge is established: `mergePrefetchJobStats` folds the stats in,
-    /// and the connection cluster is moved back into `this->conn` (consume /
-    /// cancel-queued) or dropped (discard-running). Because a job-local `Stats` starts
-    /// at zero, its `prefetch_issued_*` ARE this prefetch's issued bytes, so a discard
-    /// attributes exactly them to wasted (no snapshot needed). Null when no prefetch
-    /// is in flight; a cancelled-while-queued job is untouched (worker never ran), so
-    /// its `conn` is reclaimed and its stats stay zero.
-    std::shared_ptr<PrefetchJob> prefetch_job;
-    /// Merge a resolved prefetch's job-local stats into `this->stats`. `wasted` ⟹
-    /// the rope was discarded unconsumed (a running prefetch dropped by seek /
-    /// extent-change): the bytes still crossed the wire so they count as issued I/O,
-    /// and additionally as wasted. Clears `prefetch_job` is the CALLER's job (it also
-    /// reclaims/drops the connection cluster); this only touches the stats half.
-    /// No-op (and harmless) for a cancelled-while-queued job whose stats are zero.
-    void mergePrefetchJobStats(bool wasted);
-    /// Cancelled prefetches whose worker may still be inside the pool job
-    /// slot. The destructor waits on each; running calls sweep finished ones
-    /// to keep the vector bounded under seek-heavy workloads.
-    VectorWithMemoryTracking<std::shared_ptr<PrefetchHandle>> abandoned_prefetches;
+    /// The machine driver over `prefetch_pool`: state writes, scheduling and
+    /// the revoke/release edges live there; every policy decision stays here.
+    /// Created in `setPrefetchPool`; null without a pool.
+    std::unique_ptr<FetchMachineRunner> runner;
+    /// Single source of truth for "is a background machine in flight":
+    /// `machine != nullptr`, from launch until collect/cancel. The machine is
+    /// co-owned with the pool job; the worker reads and writes ONLY the machine
+    /// payload (its `stats`, `conn`, `fetched`, EOF latch - never a shared
+    /// `this->` member), and the foreground reclaims it only through the
+    /// runner's revoke/release edges. Because the machine-local `Stats` starts
+    /// at zero, its `prefetch_issued_*` ARE this read-ahead's issued bytes, so
+    /// a discard attributes exactly them to wasted (no snapshot needed). A
+    /// cancelled-while-queued machine is untouched (the worker never ran): its
+    /// `conn` is reclaimed and its stats stay zero.
+    std::shared_ptr<FetchMachine> machine;
+    /// Cancelled machines whose queued step may still be picked up by the pool
+    /// (the no-op pickup attaches a ThreadGroupSwitcher first). The destructor
+    /// waits on each; running calls sweep finished ones to keep the vector
+    /// bounded under seek-heavy workloads.
+    VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> abandoned_machines;
     /// Set when the source returned fewer bytes than requested AND the
     /// total file size is unknown — in that mode the short return IS the
     /// EOF marker. `readNextWindow` consults this so a subsequent call
@@ -886,11 +872,11 @@ private:
         size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
-    /// The source-connection cluster a prefetch worker takes ownership of for the
-    /// duration of its job. Bundled and threaded as a `ConnState &` (exactly like
+    /// The source-connection cluster a machine worker takes ownership of for the
+    /// duration of its step. Bundled and threaded as a `ConnState &` (exactly like
     /// `Stats & out_stats`) so a worker operates on its OWN cluster
-    /// (`prefetch_job->conn`) and the foreground on `this->conn` — the
-    /// shared-`connection` use-after-free becomes a compile-time impossibility,
+    /// (`machine->conn`) and the foreground on its own — the shared-`connection`
+    /// use-after-free becomes a compile-time impossibility,
     /// not a runtime invariant. Move-only (holds the connection's `unique_ptr`).
     struct ConnState
     {
@@ -919,11 +905,11 @@ private:
         CacheWriter::CacheSegmentPin inflight_segment_pin;
     };
 
-    /// The foreground's connection cluster. EMPTY while a prefetch is in flight —
-    /// the cluster is moved into `prefetch_job->conn` at submit and moved back on
-    /// consume / cancel-queued (dropped on discard-running). Named distinctly from
+    /// The foreground's connection cluster. EMPTY while a machine is in flight —
+    /// the cluster is moved into `machine->conn` at launch and moved back at
+    /// collect / revoke (dropped on a running-discard). Named distinctly from
     /// the read-path `ConnState & conn` parameter (which a worker binds to
-    /// `prefetch_job->conn` instead) so the two never shadow.
+    /// `machine->conn` instead) so the two never shadow.
     ConnState foreground_connection_state;
     std::shared_ptr<LiveConnectionLimit> buffer_limit;
     /// The executor's single live-connection lease (one global-limit unit). Taken lazily
@@ -1075,30 +1061,53 @@ private:
     };
 
     /// `mutable` so `const` read helpers can accumulate timings. Stats are
-    /// observability, not state. The foreground owns this aggregate; a prefetch
-    /// worker never writes it - it accumulates into its own job-local `Stats`
-    /// (`prefetch_job->stats`), merged here at join under the future's `get()`
-    /// happens-before edge.
+    /// observability, not state. The foreground owns this aggregate; a machine
+    /// worker never writes it - it accumulates into the machine's own `Stats`
+    /// (`machine->stats`), merged here at collect/cancel under the runner's
+    /// release happens-before edge.
     mutable Stats stats;
 
-    /// The in-flight prefetch's co-owned job (see the `prefetch_job` member). Bundles
-    /// EVERYTHING a prefetch worker touches, so the worker reads/writes ONLY job state
-    /// — never a shared `this->` member: the job-local `Stats`, the source-connection
-    /// cluster it owns for the job's duration, the per-plan `pressure_level` that sizes
-    /// its source blocks (it does no cache lookup or resident serve, so it needs no
-    /// geometry snapshot), and the `reached_eof` latch it sets on a size-unknown short
-    /// read (OR-ed into the executor's member at consume).
+    /// The background read-ahead machine (see the `machine` member): the old
+    /// `PrefetchJob` grown into a steppable context (FetchMachine.h). One step
+    /// today - a pure source fetch of the pre-bounded aligned gap window - then
+    /// the `AwaitCollect` barrier; the foreground collects (cache backfill +
+    /// serve) or cancels. Bundles EVERYTHING the worker touches, so it never
+    /// reads a shared `this->` member: the job-local `Stats`, the
+    /// source-connection cluster, the co-owned immutable geometry snapshot
+    /// (consulted only for its cached `pressure_level` - the worker does no
+    /// cache lookup or resident serve), the `reached_eof` latch it sets on a
+    /// size-unknown short read (OR-ed into the executor's member at collect),
+    /// and the products (`fetched`, `failure` via `MachineBase`).
     /// Defined here, after `Stats` and `ConnState`.
-    struct PrefetchJob
+    struct FetchMachine : MachineBase
     {
+        /// Out-of-line: initializes `inflight_gauge` (the metric symbol is
+        /// declared in the .cpp).
+        FetchMachine();
+
+        /// LOGICAL requested read-ahead range (the space `position`, seek and
+        /// the collect slice work in).
+        ByteRange requested_range;
+        /// The PHYSICAL, cache-aligned window the fetch step reads
+        /// (`ReadPlanGeometry::fetchWindowAt` widened it to whole page blocks /
+        /// the disk-segment boundary) - collect backfills the caches over it
+        /// and pins at its frontier.
+        ByteRange physical_window;
+        std::shared_ptr<const ReadPlanGeometry> geometry;
         Stats stats;
         ConnState conn;
-        MemoryPressureLevel pressure_level{};
-        /// Whether the read that launched this prefetch held the live-connection lease
-        /// (a wide gap). Set by the foreground at submit so the worker opens a kept-live
-        /// connection vs a one-shot WITHOUT reading the shared `connection_lease`.
+        /// Whether the launching plan held the live-connection lease (a wide
+        /// gap), so the worker opens a kept-live connection vs a one-shot
+        /// WITHOUT reading the shared `connection_lease`.
         bool leased = false;
         bool reached_eof = false;
+        /// The fetch step's product: the raw PHYSICAL source bytes of
+        /// `physical_window` (short at EOF).
+        Rope fetched;
+        /// `ReaderExecutorPrefetchInFlight` for this machine's lifetime (launch
+        /// through collect / cancel / abandon-drain) - RAII replaces the old
+        /// pool-side add/sub pair.
+        CurrentMetrics::Increment inflight_gauge;
     };
 
     CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime

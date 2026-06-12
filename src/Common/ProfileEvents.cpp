@@ -846,9 +846,9 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (planning, cache reads, source reads and prefetch waits for the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchHits, "Number of times a ReaderExecutor read was served by an in-flight prefetch.", ValueType::Number) \
     M(ReaderExecutorPrefetchCancelled, "Number of times a ReaderExecutor prefetch was cancelled before its worker started.", ValueType::Number) \
-    M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submit returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
-    M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's discardPrefetch blocked on a running prefetch's get() because tryCancel lost the race; the work the worker did is wasted.", ValueType::Number) \
-    M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's discardPrefetch waiting for a running prefetch to finish before throwing its result away.", ValueType::Microseconds) \
+    M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submitJob returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
+    M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's cancelMachine blocked on a running read-ahead's release because the revoke lost the race; the work the worker did is wasted.", ValueType::Number) \
+    M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's cancelMachine waiting for a running read-ahead to finish before throwing its result away.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchIssuedSourceBytes, "Bytes ReaderExecutor prefetch reads fetched from the source (a bandwidth cost), whether or not later consumed.", ValueType::Bytes) \
     M(ReaderExecutorPrefetchIssuedCacheBytes, "Bytes ReaderExecutor prefetch reads served from cache tiers (near-free), whether or not later consumed.", ValueType::Bytes) \
     M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \

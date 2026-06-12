@@ -49,9 +49,9 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
 
         {"prefetch_hits", std::make_shared<DataTypeUInt64>(), "Number of windows served by an in-flight prefetch."},
         {"prefetch_cancelled", std::make_shared<DataTypeUInt64>(), "Number of prefetches cancelled before their worker ran."},
-        {"prefetch_pool_full", std::make_shared<DataTypeUInt64>(), "Number of times `PrefetchThreadPool::submit` returned `nullptr` (queue full)."},
-        {"prefetch_discarded_running", std::make_shared<DataTypeUInt64>(), "Number of times `discardPrefetch` blocked on `get()` because the worker had already started; everything the worker produced is wasted."},
-        {"prefetch_discard_wait_microseconds", std::make_shared<DataTypeUInt64>(), "Time blocked in `discardPrefetch::get` waiting for a running prefetch to finish before its result was thrown away."},
+        {"prefetch_pool_full", std::make_shared<DataTypeUInt64>(), "Number of times `PrefetchThreadPool::submitJob` returned `nullptr` (queue full)."},
+        {"prefetch_discarded_running", std::make_shared<DataTypeUInt64>(), "Number of times `cancelMachine` blocked on the release wait because the worker had already started; everything the worker produced is wasted."},
+        {"prefetch_discard_wait_microseconds", std::make_shared<DataTypeUInt64>(), "Time blocked in `cancelMachine` waiting for a running read-ahead to finish before its result was thrown away."},
         {"prefetch_issued_source_bytes", std::make_shared<DataTypeUInt64>(), "Bytes prefetch reads fetched from the source (a bandwidth cost), whether or not they were later consumed."},
         {"prefetch_issued_cache_bytes", std::make_shared<DataTypeUInt64>(), "Bytes prefetch reads served from cache tiers (near-free), whether or not they were later consumed."},
         {"prefetch_wasted_source_bytes", std::make_shared<DataTypeUInt64>(), "Source bytes a running prefetch materialised into a rope that was then discarded - real wasted bandwidth. Excludes cache `put`s made in the same window, which persist for later reads."},

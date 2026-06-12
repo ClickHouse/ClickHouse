@@ -1187,9 +1187,9 @@ namespace
 {
 
 /// Succeeds on the first open() and throws on every subsequent one.
-/// Used to drive an asynchronous failure into the prefetch lambda so the
-/// future held by ReaderExecutor ends up holding an exception when the
-/// destructor calls future.get() via discardPrefetch.
+/// Used to drive an asynchronous failure into the fetch step so the machine
+/// held by ReaderExecutor ends up carrying an exception (`failure`) when the
+/// destructor drains it via cancelMachine.
 class ThrowOnSecondOpenSourceReader : public IFileBasedSourceReader
 {
 public:
@@ -1230,10 +1230,10 @@ private:
 
 TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
 {
-    /// Pre-fix: ~ReaderExecutor calls discardPrefetch → future.get(), which
-    /// re-throws the prefetch lambda's exception. Because ~ReaderExecutor is
-    /// implicitly noexcept, this terminates the process.
-    /// Post-fix: discardPrefetch catches and logs, scope exit is clean.
+    /// ~ReaderExecutor must drain a throwing read-ahead without terminating:
+    /// the step's exception is captured into the machine (`failure`) and only
+    /// logged by `cancelMachine` - nothing rethrows out of the `noexcept`
+    /// destructor.
 
     auto source = std::make_shared<ThrowOnSecondOpenSourceReader>(String(2000, 'A'));
     StoredObjects objects;
@@ -1257,20 +1257,12 @@ TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
 
 TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
 {
-    /// Reproduces the production segfault observed in stress tests:
-    ///   1. First `readNextWindow` succeeds and queues a prefetch.
-    ///   2. Second `readNextWindow` waits on the prefetch via `future.get()`,
-    ///      which re-throws the worker's exception. `future.get()` detaches
-    ///      the future's `__state_` as its very first step, so afterwards the
-    ///      future is unusable.
-    ///   3. Pre-fix: the throw skipped `prefetch_handle.reset()`, leaving the
-    ///      executor with a non-null `prefetch_handle` whose future has already
-    ///      been consumed. `~ReaderExecutor → discardPrefetch → get()` then
-    ///      segfaulted dereferencing a null `__assoc_state*` at offset 0x28
-    ///      (the `__mut_` slot) inside `pthread_mutex_lock`.
-    ///   4. Post-fix: `readNextWindow` takes local ownership of the handle and
-    ///      clears `prefetch_handle` BEFORE calling `get`,
-    ///      so the destructor never re-touches a half-consumed future.
+    /// Reproduces a production segfault observed in stress tests: a collect
+    /// that rethrows the worker's exception must not leave the executor
+    /// pointing at a half-consumed step (a std::future is detached by its
+    /// first `get`). `tryCollectMachine` takes local ownership (clears
+    /// `machine`) BEFORE waiting/rethrowing, so the destructor's
+    /// `cancelMachine` never re-touches the consumed handle.
 
     auto source = std::make_shared<ThrowOnSecondOpenSourceReader>(String(2000, 'B'));
     StoredObjects objects;
@@ -1292,10 +1284,9 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
         /// executor in a poisoned state.
         EXPECT_ANY_THROW(executor.readNextWindow());
 
-        /// Now let the executor go out of scope. Pre-fix this segfaulted in
-        /// `discardPrefetch`. Post-fix the destructor finishes cleanly because
-        /// `prefetch_handle` was already cleared inside `readNextWindow` before
-        /// the throw.
+        /// Now let the executor go out of scope: the destructor must finish
+        /// cleanly because `machine` was already cleared inside
+        /// `readNextWindow` before the throw.
     }
     SUCCEED();
 }
@@ -1356,9 +1347,9 @@ TEST(ReaderExecutor, ConfiguredBlockSizeControlsNodeSize)
 
 TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
 {
-    /// When a queued prefetch is cancelled on the readNextWindow consume path
-    /// (the next read arrives before the worker starts it), the handle must be
-    /// stashed in `abandoned_prefetches` so ~ReaderExecutor waits for the pool
+    /// When a queued read-ahead is revoked on the readNextWindow collect path
+    /// (the next read arrives before the worker starts it), the machine must be
+    /// stashed in `abandoned_machines` so ~ReaderExecutor waits for the pool
     /// worker to take the cancellation path before the executor's state (and
     /// the enclosing query's memory-tracker chain) is freed. The worker
     /// attaches a ThreadGroupSwitcher to the submitter's group BEFORE checking
@@ -1376,11 +1367,10 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
 
     std::promise<void> worker_started;
     std::promise<void> release_worker;
-    auto blocker = pool->submit([&]() -> Rope
+    auto blocker = pool->submitJob([&]
     {
         worker_started.set_value();
         release_worker.get_future().wait();
-        return Rope{};
     });
     ASSERT_TRUE(blocker != nullptr);
     worker_started.get_future().wait();   /// the one worker is now busy in `blocker`
@@ -1422,11 +1412,10 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchStashedBeforeThrowingSyncRead)
     auto pool = std::make_shared<PrefetchThreadPool>(1);
     std::promise<void> worker_started;
     std::promise<void> release_worker;
-    auto blocker = pool->submit([&]() -> Rope
+    auto blocker = pool->submitJob([&]
     {
         worker_started.set_value();
         release_worker.get_future().wait();
-        return Rope{};
     });
     ASSERT_TRUE(blocker != nullptr);
     worker_started.get_future().wait();
@@ -3482,7 +3471,7 @@ TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
 namespace
 {
 
-/// Mock prefetch pool whose `submit` always returns nullptr ("queue full"
+/// Mock prefetch pool whose `submitJob` always returns nullptr ("queue full"
 /// fallback). The executor still calls `ensurePreAcquiredSlot` before the
 /// submit attempt, so the pre-acquired slot DOES get set — exposing the
 /// leak path we want to exercise without needing real worker threads.
@@ -3490,22 +3479,23 @@ class FakePrefetchPool : public PrefetchThreadPool
 {
 public:
     FakePrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::shared_ptr<PrefetchHandle> submit(std::function<Rope()> /*task*/) override
+    std::shared_ptr<JobHandle> submitJob(std::function<void()> /*task*/) override
     {
         return nullptr;
     }
 };
 
-/// Mock pool that runs every submitted task synchronously on the calling
-/// thread and returns a `Done`-state handle holding the produced rope.
-/// Eliminates worker-thread timing from prefetch-related tests.
+/// Mock pool that runs every submitted job synchronously on the calling
+/// thread and returns a `Done`-state handle (the machine then holds the
+/// produced rope). Eliminates worker-thread timing from prefetch-related tests.
 class SyncPrefetchPool : public PrefetchThreadPool
 {
 public:
     SyncPrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::shared_ptr<PrefetchHandle> submit(std::function<Rope()> task) override
+    std::shared_ptr<JobHandle> submitJob(std::function<void()> task) override
     {
-        return makeCompletedHandleForTest(task());
+        task();
+        return makeCompletedJobHandleForTest();
     }
 };
 
@@ -3554,14 +3544,11 @@ TEST(ReaderExecutor, PreAcquiredSlotReleasedWhenPrefetchNotSubmitted)
     EXPECT_EQ(limit->getActiveCount(), 1u) << "the read holds exactly one lease";
 }
 
-/// Pre-fix: for an unknown-size source, the prefetch worker can set
-/// `reached_eof = true` mid-flight while still producing a partial rope
-/// with the real final bytes. `readNextWindow`'s EOF gate ran BEFORE the
-/// `if (prefetch_handle)` branch, so the foreground call short-circuited
-/// to `discardPrefetch()` + `return {}` and dropped those bytes.
-///
-/// With the fix, the prefetch is consumed first; only the no-prefetch
-/// branch applies the EOF gate.
+/// For an unknown-size source, the worker can latch `reached_eof` mid-flight
+/// while still producing a partial rope with the real final bytes.
+/// `readNextWindow`'s EOF gate must defer to the in-flight machine (`atEnd()
+/// && !machine`), so those bytes are collected and served; only the
+/// nothing-in-flight case short-circuits to EOF.
 TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
 {
     /// 30 bytes "ABAB...". The source has the real bytes; the executor is
