@@ -504,7 +504,7 @@ $CLICKHOUSE_CLIENT --query_id "${mask_qid}" -q "
         google_adc_client_secret = 'ADC_SECRET_LEAK_CHECK',
         google_adc_refresh_token = 'ADC_TOKEN_LEAK_CHECK',
         format = 'TSV', structure = 'x UInt8')" > /dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 adc_mask_out="$($CLICKHOUSE_CLIENT -q "
     SELECT query FROM system.query_log
     WHERE query_id = '${mask_qid}' AND current_database = currentDatabase() AND query LIKE '%s3(%'
