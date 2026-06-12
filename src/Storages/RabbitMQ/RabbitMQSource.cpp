@@ -95,6 +95,7 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
+    , cancel_epoch(storage_.currentCancelEpoch())
     , log(log_)
     , max_execution_time_ms(max_execution_time_)
 {
@@ -220,7 +221,7 @@ Chunk RabbitMQSource::generateImpl()
     /// Channel id will not change during read.
     while (true)
     {
-        if (storage.isConsumeCancelRequested())
+        if (storage.isConsumeCancelRequested(cancel_epoch))
         {
             aborted = true;
             break;

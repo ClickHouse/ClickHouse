@@ -1292,7 +1292,9 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
 
-    stream_control.resetCancel();
+    /// Snapshot the cancel epoch for this whole cycle; a STOP/CANCEL arriving mid-cycle advances it past
+    /// this value and aborts the in-flight block before its Keeper offset guard commits.
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.
@@ -1319,7 +1321,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto maybe_rows = streamFromConsumer(*consumer, watch);
+        const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
         if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
@@ -1454,7 +1456,7 @@ void StorageKafka2::cleanConsumers()
     consumers.clear();
 }
 
-std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
+std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
 {
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -1477,7 +1479,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
 
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
 
-    if (isConsumeCancelRequested())
+    if (isConsumeCancelRequested(cycle_epoch))
     {
         block_io.onCancelOrConnectionLoss();
         return std::nullopt;

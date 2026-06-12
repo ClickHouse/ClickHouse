@@ -713,7 +713,6 @@ void StorageKafka::threadFunc(size_t idx)
 bool StorageKafka::streamToViews()
 {
     Stopwatch watch;
-    stream_control.resetCancel();
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());

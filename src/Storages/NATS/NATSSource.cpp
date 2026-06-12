@@ -62,6 +62,7 @@ NATSSource::NATSSource(
     , handle_error_mode(handle_error_mode_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
+    , cancel_epoch(storage_.currentCancelEpoch())
 {
 }
 
@@ -149,7 +150,7 @@ Chunk NATSSource::generate()
 
     while (true)
     {
-        if (storage.isConsumeCancelRequested())
+        if (storage.isConsumeCancelRequested(cancel_epoch))
         {
             aborted = true;
             break;

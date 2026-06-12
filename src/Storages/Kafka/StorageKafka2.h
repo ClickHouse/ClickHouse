@@ -97,7 +97,8 @@ public:
     void triggerBackgroundActivity() override;
     void refreshBackgroundActivity() override;
     void cancelBackgroundActivity() override;
-    bool isConsumeCancelRequested() const { return stream_control.isCancelRequested(); }
+    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
+    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     void drop() override;
 
@@ -231,7 +232,7 @@ private:
     void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
     void cleanConsumers();
 
-    std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch);
+    std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch, UInt64 cycle_epoch);
 
     // Returns true if this is the first replica
     bool createTableIfNotExists();

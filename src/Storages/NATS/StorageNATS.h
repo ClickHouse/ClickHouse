@@ -54,7 +54,8 @@ public:
     void triggerBackgroundActivity() override;
     void refreshBackgroundActivity() override;
     void cancelBackgroundActivity() override;
-    bool isConsumeCancelRequested() const { return stream_control.isCancelRequested(); }
+    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
+    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those

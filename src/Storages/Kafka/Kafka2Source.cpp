@@ -27,6 +27,7 @@ Kafka2Source::Kafka2Source(
     , max_block_size(max_block_size_)
     , consumer_index(consumer_index_)
     , commit_in_suffix(commit_in_suffix_)
+    , cancel_epoch(storage_.currentCancelEpoch())
 {
 }
 
@@ -76,7 +77,7 @@ Chunk Kafka2Source::generateImpl()
 
     is_finished = true;
 
-    if (storage.isConsumeCancelRequested())
+    if (storage.isConsumeCancelRequested(cancel_epoch))
         return {};
 
     auto maybe_blocks_and_guard = storage.pollConsumer(*consumer, total_stopwatch, context, max_block_size);
@@ -86,7 +87,7 @@ Chunk Kafka2Source::generateImpl()
 
     /// The cancel may have arrived while pollConsumer was polling. Drop the block by not taking its
     /// offset guard.
-    if (storage.isConsumeCancelRequested())
+    if (storage.isConsumeCancelRequested(cancel_epoch))
         return {};
 
     offset_guard.emplace(std::move(maybe_blocks_and_guard->guard));

@@ -57,6 +57,7 @@ KafkaSource::KafkaSource(
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
+    , cancel_epoch(storage_.currentCancelEpoch())
 {
 }
 
@@ -173,7 +174,7 @@ Chunk KafkaSource::generateImpl()
 
     while (true)
     {
-        if (storage.isConsumeCancelRequested())
+        if (storage.isConsumeCancelRequested(cancel_epoch))
         {
             cancelled = true;
             break;
@@ -187,7 +188,7 @@ Chunk KafkaSource::generateImpl()
         {
             /// The cancel may have arrived while consume() was blocked polling; check again so the
             /// just-polled message is dropped with the rest of the block rather than committed.
-            if (storage.isConsumeCancelRequested())
+            if (storage.isConsumeCancelRequested(cancel_epoch))
             {
                 cancelled = true;
                 break;

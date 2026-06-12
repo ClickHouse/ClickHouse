@@ -49,7 +49,8 @@ public:
     void triggerBackgroundActivity() override;
     void refreshBackgroundActivity() override;
     void cancelBackgroundActivity() override;
-    bool isConsumeCancelRequested() const { return stream_control.isCancelRequested(); }
+    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
+    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     void read(
         QueryPlan & query_plan,

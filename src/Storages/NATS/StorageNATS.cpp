@@ -728,7 +728,10 @@ void StorageNATS::threadFunc()
 
 bool StorageNATS::streamToViews()
 {
-    stream_control.resetCancel();
+    /// Snapshot the cancel epoch for this whole cycle; a STOP/CANCEL arriving mid-cycle advances it past
+    /// this value, so the JetStream ack below is skipped and the messages are redelivered (core NATS has
+    /// no replay, so they are lost).
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -793,7 +796,7 @@ bool StorageNATS::streamToViews()
     }
 
     /// JetStream: the block was inserted, acknowledge its messages
-    if (!stream_control.isCancelRequested())
+    if (!stream_control.isCancelRequested(cycle_epoch))
     {
         for (auto & source : sources)
             if (auto source_consumer = source->getConsumer())

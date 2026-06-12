@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ActionBlocker.h>
+#include <base/types.h>
 #include <atomic>
 
 namespace DB
@@ -27,10 +28,15 @@ namespace DB
 /// Backed by:
 ///   - `blocker`          — STOP/PAUSE block future cycles; START releases. An ActionBlocker so it
 ///                          plugs into the action-locks manager and the `... ALL BACKGROUND` fan-out.
-///   - `cancel_requested` — STOP/CANCEL ask the in-flight cycle to abort *before* its durable boundary
+///   - `cancel_epoch`     — STOP/CANCEL ask the in-flight cycle to abort *before* its durable boundary
 ///                          (so the source discards its block and the data is redelivered / reprocessed,
-///                          or lost for core NATS which has no replay). Reset at the start of each cycle
-///                          so it only affects the cycle that was in flight when the command arrived.
+///                          or lost for core NATS which has no replay). A monotonic counter rather than a
+///                          resettable flag: a consumer (a streaming cycle or a direct SELECT) snapshots
+///                          the epoch when it starts and considers itself cancelled once the epoch has
+///                          advanced past that snapshot. So a CANCEL aborts exactly the work already in
+///                          flight when it arrived, a later reader takes a fresh snapshot and is
+///                          unaffected (no stale flag to poison a future direct SELECT), and concurrent
+///                          cycles cannot clear each other's request (there is nothing to reset).
 ///   - `refresh_once`     — REFRESH runs exactly one out-of-order cycle even while blocked, then the
 ///                          block applies again. Mirrors `SYSTEM REFRESH VIEW` for refreshable views.
 class StreamingBackgroundControl
@@ -40,10 +46,11 @@ public:
     [[nodiscard]] ActionLock block() { return blocker.cancel(); }
     bool isBlocked() const { return blocker.isCancelled(); }
 
-    /// Abort the in-flight cycle before its durable boundary.
-    void requestCancel() { cancel_requested.store(true); }
-    void resetCancel() { cancel_requested.store(false); }
-    bool isCancelRequested() const { return cancel_requested.load(); }
+    /// Abort whatever is in flight before its durable boundary. Advances a monotonic epoch; a consumer
+    /// snapshots `currentCancelEpoch` when it starts and is cancelled once the epoch moves past it.
+    void requestCancel() { cancel_epoch.fetch_add(1); }
+    UInt64 currentCancelEpoch() const { return cancel_epoch.load(); }
+    bool isCancelRequested(UInt64 snapshot) const { return cancel_epoch.load() != snapshot; }
 
     /// Run exactly one cycle even while blocked.
     void requestRefreshOnce() { refresh_once.store(true); }
@@ -59,7 +66,7 @@ public:
 
 private:
     ActionBlocker blocker;
-    std::atomic<bool> cancel_requested = false;
+    std::atomic<UInt64> cancel_epoch = 0;
     std::atomic<bool> refresh_once = false;
 };
 

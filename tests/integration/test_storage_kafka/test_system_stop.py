@@ -106,6 +106,38 @@ def assert_dst_count_stable(table, expected, seconds=10):
         time.sleep(1)
 
 
+def produce_to_partition(kafka_cluster, topic, partition, start, count):
+    """Produce to an explicit partition, so each of several consumers gets its own data."""
+    producer = k.get_kafka_producer(
+        kafka_cluster.kafka_port, k.producer_serializer, retries=15
+    )
+    for i in range(start, start + count):
+        producer.send(
+            topic=topic,
+            value=json.dumps({"key": i, "value": i}),
+            partition=partition,
+        )
+    producer.flush()
+
+
+def read_direct(table, expected, timeout=60):
+    """Accumulate rows over repeated direct SELECTs (each returns one polled batch and
+    commits its offsets) until `expected` rows have been seen or the timeout expires."""
+    total = 0
+    deadline = time.time() + timeout
+    while total < expected and time.time() < deadline:
+        batch = int(
+            instance.query(
+                f"SELECT count() FROM test.{table}",
+                settings={"stream_like_engine_allow_direct_select": 1},
+            )
+        )
+        total += batch
+        if batch == 0:
+            time.sleep(0.5)
+    return total
+
+
 def test_system_stop_start_consuming(kafka_cluster):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_stop_{k.random_string(6)}"
@@ -462,3 +494,85 @@ def test_pause_after_refresh_while_running(kafka_cluster):
 
         instance.query(f"SYSTEM START test.{table}")
         wait_dst_count(table, 20)
+
+
+@pytest.mark.parametrize("verb", ["STOP", "CANCEL"])
+def test_direct_select_not_poisoned_by_stop_or_cancel(kafka_cluster, verb):
+    # Regression test: on a table with no attached materialized view no streaming cycle ever
+    # runs, so nothing may rely on a cycle start to reset the in-flight cancel request. After a
+    # STOP (which also requests a cancel) or a bare CANCEL issued while idle, a direct SELECT must
+    # still return data instead of bailing out before polling and returning nothing forever.
+    #
+    # Each verb uses its own fresh table so its direct read is the consumer's first group join. A
+    # second direct read on the same pooled consumer re-subscribes and rebalances (revoke+rejoin),
+    # which races the short query and marks the consumer dirty independently of the cancel logic
+    # under test; that churn — not the cancel epoch — is what would make a later read flaky.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_select_{verb.lower()}_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 500;
+            """
+        )
+
+        produce(kafka_cluster, table, 0, 10)
+
+        # Issue the verb while idle (STOP also engages the blocker, so resume with START), then read.
+        instance.query(f"SYSTEM {verb} test.{table}")
+        if verb == "STOP":
+            instance.query(f"SYSTEM START test.{table}")
+        assert read_direct(table, 10) == 10
+
+
+def test_multi_consumer_stop_aborts_all_inflight_blocks(kafka_cluster):
+    # With `kafka_thread_per_consumer = 1` every consumer runs its own independent background
+    # task against the shared control state. A STOP issued while several cycles are in flight
+    # must abort ALL of them before their offset commits: no task may commit its open block,
+    # and no task's cycle start may erase the request for a sibling still in flight.
+    # (The CANCEL-only analogue of this race is not deterministically testable: without the
+    # blocker a finishing task is free to start a fresh cycle at any moment.)
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_multi_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table, num_partitions=2):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_num_consumers = 2,
+                         kafka_thread_per_consumer = 1,
+                         kafka_flush_interval_ms = 5000,
+                         kafka_poll_timeout_ms = 1000,
+                         kafka_max_block_size = 1000;
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table};
+            """
+        )
+
+        # Pre-load both partitions while halted, then resume so each consumer task opens its
+        # own block and holds it for ~kafka_flush_interval_ms.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce_to_partition(kafka_cluster, table, 0, 0, 5)
+        produce_to_partition(kafka_cluster, table, 1, 5, 5)
+        instance.query(f"SYSTEM START test.{table}")
+
+        time.sleep(2)  # both blocks are now open: rows polled but not yet committed
+        instance.query(f"SYSTEM STOP test.{table}")
+
+        # Neither task may commit its in-flight block.
+        assert_dst_count_stable(table, 0, seconds=8)
+
+        # Nothing was committed, so START redelivers everything.
+        instance.query(f"SYSTEM START test.{table}")
+        wait_dst_count(table, 10)

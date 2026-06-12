@@ -46,6 +46,9 @@ private:
     bool is_finished = false;
     const Block non_virtual_header;
     const Block virtual_header;
+    /// Epoch snapshot taken when this source starts; a SYSTEM STOP/CANCEL that advances the storage's
+    /// cancel epoch past this value aborts this source's in-flight block (see StreamingBackgroundControl).
+    const UInt64 cancel_epoch;
 
     INATSConsumerPtr consumer;
     bool unsubscribe_on_destroy = false;

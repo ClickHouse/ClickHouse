@@ -52,6 +52,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
     const StreamingHandleErrorMode handle_error_mode;
+    const UInt64 cancel_epoch;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};

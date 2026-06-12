@@ -1181,8 +1181,9 @@ void StorageRabbitMQ::threadFunc()
 
 bool StorageRabbitMQ::streamToViews()
 {
-
-    stream_control.resetCancel();
+    /// Snapshot the cancel epoch for this whole cycle; a STOP/CANCEL arriving mid-cycle advances it past
+    /// this value, so the block is requeued (not acked) instead of reaching its durable boundary.
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1263,7 +1264,7 @@ bool StorageRabbitMQ::streamToViews()
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 
-    const bool aborted = isConsumeCancelRequested();
+    const bool aborted = isConsumeCancelRequested(cycle_epoch);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

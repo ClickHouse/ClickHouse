@@ -873,9 +873,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
 
-    /// A fresh round of consumption starts: clear any pending SYSTEM CANCEL/STOP interrupt request
-    /// so it only affects the poll that was in flight when it was issued.
-    stream_control.resetCancel();
+    /// Snapshot the cancel epoch for this whole round; a SYSTEM STOP/CANCEL arriving mid-round advances
+    /// it past this value, which cancels the pipeline and resets the in-flight files for reprocessing.
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -923,7 +923,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
-    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested())
+    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
@@ -995,13 +995,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
             executor.setCancelCallback(
-                [this] { return stream_control.isCancelRequested(); },
+                [this, cycle_epoch] { return stream_control.isCancelRequested(cycle_epoch); },
                 std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
             executor.execute();
 
             /// If the pipeline was cancelled because of an interrupt request, route to the failure
             /// path below so the files are reset for reprocessing instead of marked Processed.
-            if (stream_control.isCancelRequested())
+            if (stream_control.isCancelRequested(cycle_epoch))
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");
         }
         catch (...)
