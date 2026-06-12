@@ -240,7 +240,7 @@ void S3RequestSettings::validateUploadSettings()
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which is not a valid S3 storage class",
+            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
             (*this)[S3RequestSetting::storage_class_name].value);
 
     /// TODO: it's possible to set too small limits.
