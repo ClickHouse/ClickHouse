@@ -58,11 +58,13 @@ void SQLiteOutputFormat::writePrefix()
 
     sqlite3 * db_ptr = nullptr;
     int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READWRITE | SQLITE_OPEN_URI, nullptr);
+    /// `sqlite3_open_v2` can leave `db_ptr` non-null even on error, and that handle still has to be closed.
+    /// Wrap it immediately so the connection is released on every path.
+    db.reset(db_ptr, sqlite3_close_v2);
     if (status != SQLITE_OK)
         throw Exception::createDeprecated(
             fmt::format("Cannot open SQLite database. Error status: {}. Message: {}", status, sqlite3_errstr(status)),
             ErrorCodes::SQLITE_ENGINE_ERROR);
-    db.reset(db_ptr, sqlite3_close_v2);
 
     const auto & header = getPort(PortKind::Main).getHeader();
     auto names_and_types = header.getNamesAndTypes();

@@ -85,6 +85,9 @@ void SQLiteInputFormat::prepareReader()
 
     sqlite3 * db_ptr = nullptr;
     int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, sqlite_read_vfs_name);
+    /// `sqlite3_open_v2` can leave `db_ptr` non-null even on error, and that handle still has to be closed.
+    /// Wrap it immediately so the connection is released on every path.
+    db.reset(db_ptr, sqlite3_close_v2);
     if (status != SQLITE_OK)
     {
         rethrowSavedReadException();
@@ -92,7 +95,6 @@ void SQLiteInputFormat::prepareReader()
             fmt::format("Cannot open sqlite database. Error status: {}. Message: {}", status, sqlite3_errstr(status)),
             ErrorCodes::SQLITE_ENGINE_ERROR);
     }
-    db.reset(db_ptr, sqlite3_close_v2);
 }
 
 std::vector<String> SQLiteInputFormat::getTablesNames()
