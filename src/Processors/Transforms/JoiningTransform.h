@@ -113,6 +113,14 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+    /// The terminal state machine of the last transform (the one for which `finish_counter->isLast()`
+    /// returned true): `prepare` requests `finish_build_phase`, `work` runs `onBuildPhaseFinish` and
+    /// sets `build_phase_finished`, then (if the join asks for it) the same round-trip repeats for
+    /// `post_build_phase`/`runPostBuildPhase`. The heavy calls always run in the work context: e.g.
+    /// the deferred exact-size build of `parallel_hash` fills the whole hash table inside
+    /// `onBuildPhaseFinish`, which must not block in `prepare`.
+    bool finish_build_phase = false;
+    bool build_phase_finished = false;
     bool post_build_phase = false;
 };
 
