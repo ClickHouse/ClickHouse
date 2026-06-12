@@ -1036,6 +1036,8 @@ sfe301 sde505
 
 Here `sfe10101` is preferred because it shares the longest common prefix (`sfe`, length 3) with `sfe301`.
 
+Replicas with equal common prefix length are chosen at random. In particular, when no replica shares any prefix with the local hostname (all common prefix lengths are zero), this strategy behaves exactly like `random`.
+
 ### Hostname longest common suffix {#load_balancing-hostname_longest_common_suffix}
 
 ```sql
@@ -1053,6 +1055,8 @@ et46gtghn.qc.localdomain ab999.qc.localdomain
 ```
 
 Here `ab999.qc.localdomain` is preferred because it shares the longest common suffix (`.qc.localdomain`, length 15) with `et46gtghn.qc.localdomain`.
+
+Replicas with equal common suffix length are chosen at random. In particular, when no replica shares any suffix with the local hostname (all common suffix lengths are zero), this strategy behaves exactly like `random`.
 
 ### In Order {#load_balancing-in_order}
 
