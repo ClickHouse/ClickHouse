@@ -628,25 +628,35 @@ struct ToDateTime64TransformFloat
         /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Decide overflow without narrowing the
         /// scaled native bound back to the (possibly 32-bit) float domain: dividing `max_native` by the scale
         /// in `FromType` rounds the bound to the wrong side and would let out-of-range values pass the `throw`
-        /// check (or clamp in-range ones). Instead compare the whole-second part as an integer and the
-        /// sub-second part in the Float64 domain, which is exact enough at every scale and deterministic
-        /// across architectures. The maximum is capped at Int64::max, so scale 9 — where the calendar maximum
-        /// does not fit — saturates instead of raising DECIMAL_OVERFLOW. Saturated values are produced
-        /// directly in the native domain to avoid Float64 rounding losing the last representable fraction.
+        /// check (or clamp in-range ones). The maximum is capped at Int64::max, so scale 9 — where the
+        /// calendar maximum does not fit — saturates instead of raising DECIMAL_OVERFLOW. Saturated values
+        /// are produced directly in the native domain to avoid Float64 rounding losing the last representable
+        /// fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
         const DateTime64::NativeType max_native = maxRepresentableDateTime64Native(scale_multiplier);
         const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
         const DateTime64::NativeType min_native = MIN_DATETIME64_TIMESTAMP * scale_multiplier;
-        const DateTime64::NativeType max_fraction = max_native - max_whole_second * scale_multiplier;
 
         const double from_seconds = static_cast<double>(from);
         /// The calendar minimum has no sub-second part, so a plain comparison is exact.
-        const bool below = from_seconds < static_cast<double>(MIN_DATETIME64_TIMESTAMP);
+        /// NaN has no representable timestamp; the pre-existing convertToDecimal path rejected NaN and
+        /// infinities (DECIMAL_OVERFLOW) rather than letting the final static_cast<NativeType> hit
+        /// undefined behavior. Route NaN through the out-of-range path here too (`-inf` already satisfies
+        /// the comparison; `+inf` is caught by the `above` check below).
+        const bool below = isNaN(from) || from_seconds < static_cast<double>(MIN_DATETIME64_TIMESTAMP);
+        const double scaled = from_seconds * static_cast<double>(scale_multiplier);
         bool above = false;
         if (from_seconds > static_cast<double>(max_whole_second))
         {
-            const double fraction = from_seconds - static_cast<double>(max_whole_second);
-            above = fraction * static_cast<double>(scale_multiplier) > static_cast<double>(max_fraction);
+            /// Decide overflow on the truncated scaled-native value the conversion below actually stores,
+            /// not on the binary-rounded fraction: e.g. 10413791999.999 as Float64 has a fractional part
+            /// slightly above .999, but its scaled product still truncates to the valid maximum native
+            /// value, so it must be accepted. Values at or beyond 2^63 cannot be cast to the native type
+            /// (and are certainly out of range, this also covers +inf), so they are rejected before the cast.
+            if (scaled >= 9223372036854775808.0)
+                above = true;
+            else
+                above = static_cast<DateTime64::NativeType>(scaled) > max_native;
         }
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -665,7 +675,7 @@ struct ToDateTime64TransformFloat
         /// DECIMAL_OVERFLOW. Float64 reproduces convertToDecimal exactly for Float64 sources and is strictly
         /// more faithful for Float32 ones (one native tick is far finer than the Float32 grid at these
         /// magnitudes), so an in-range value is preserved rather than rejected.
-        return static_cast<DateTime64::NativeType>(from_seconds * static_cast<double>(scale_multiplier));
+        return static_cast<DateTime64::NativeType>(scaled);
     }
 };
 
@@ -806,21 +816,30 @@ struct ToTime64TransformFloat
         /// Time64(1) value (999:59:59.1). Decide overflow without narrowing the scaled native bound back to
         /// the (possibly 32-bit) float domain: dividing `max_native` by the scale in `FromType` rounds the
         /// bound to the wrong side and would let out-of-range values pass the `throw` check (or clamp in-range
-        /// ones). Instead compare the whole-second part as an integer and the sub-second part in the Float64
-        /// domain, which is exact for the narrow Time64 range and deterministic across architectures. The
-        /// range is symmetric, so the magnitude is checked once. Saturated values are produced directly in the
-        /// native domain to avoid Float64 rounding losing the last representable fraction.
+        /// ones). The range is symmetric, so the magnitude is checked once. Saturated values are produced
+        /// directly in the native domain to avoid Float64 rounding losing the last representable fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
         const Time64::NativeType max_native = maxRepresentableTime64Native(scale_multiplier);
-        const Time64::NativeType max_fraction = max_native - MAX_TIME_TIMESTAMP * scale_multiplier;
 
         const double from_seconds = static_cast<double>(from);
         const double magnitude = from_seconds < 0 ? -from_seconds : from_seconds;
-        bool overflow = false;
-        if (magnitude > static_cast<double>(MAX_TIME_TIMESTAMP))
+        const double scaled_magnitude = magnitude * static_cast<double>(scale_multiplier);
+        /// NaN has no representable value; treat it as overflow (the pre-existing convertToDecimal path
+        /// rejected NaN and infinities) so the final static_cast<NativeType> does not hit undefined
+        /// behavior. Infinities are still caught by the magnitude check below.
+        bool overflow = isNaN(from);
+        if (!overflow && magnitude > static_cast<double>(MAX_TIME_TIMESTAMP))
         {
-            const double fraction = magnitude - static_cast<double>(MAX_TIME_TIMESTAMP);
-            overflow = fraction * static_cast<double>(scale_multiplier) > static_cast<double>(max_fraction);
+            /// Decide overflow on the truncated scaled-native value the conversion below actually stores,
+            /// not on the binary-rounded fraction: e.g. 3599999.99 as Float64 has a fractional part slightly
+            /// above .99, but its scaled product still truncates to the valid maximum native value, so it
+            /// must be accepted (the final cast truncates towards zero, so the magnitude check matches the
+            /// signed conversion exactly). Values at or beyond 2^63 cannot be cast to the native type (and
+            /// are certainly out of range, this also covers infinities), so they are rejected before the cast.
+            if (scaled_magnitude >= 9223372036854775808.0)
+                overflow = true;
+            else
+                overflow = static_cast<Time64::NativeType>(scaled_magnitude) > max_native;
         }
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
