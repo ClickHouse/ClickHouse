@@ -148,7 +148,9 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
+def shell_get_output(
+    cmd: str, timeout: Optional[float] = None, keep_output_on_error: bool = False
+) -> str:
     try:
         res = subprocess.run(
             cmd,
@@ -164,13 +166,14 @@ def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
         )
         return res.stdout.strip()
     except subprocess.CalledProcessError as e:
-        # stdout here is the merged stdout+stderr captured above. For a
-        # diagnostic like lldb the failure reason lives in that output, so
-        # print it — otherwise the log keeps only "returned non-zero exit
-        # status N" and the actual cause is lost. Bound it with trim_for_log:
-        # a command that prints many lines (e.g. lldb dumping thread
-        # backtraces) and only then exits non-zero must not flood job.log,
-        # and trim_for_log keeps the tail where the failure reason lives.
+        # stdout here is the merged stdout+stderr captured above. With
+        # keep_output_on_error the caller persists it itself (e.g. lldb exited
+        # non-zero but still printed backtraces worth saving to a file), so
+        # return it untouched. Otherwise print the failure reason — which lives
+        # in that output — bounded with trim_for_log so a command that prints
+        # many lines and only then exits non-zero cannot flood job.log.
+        if keep_output_on_error:
+            return (e.output or "").strip()
         print(
             f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
             file=sys.stderr,
@@ -508,8 +511,10 @@ def trim_for_log(s, limit=10000):
     lines = s.splitlines()
     if len(lines) > limit:
         separator = "-" * 40 + str(len(lines) - limit) + " lines are hidden" + "-" * 40
-        return "\n".join(lines[:limit//2] + [] + [separator] + [] + lines[-limit//2:])
-    return "\n".join(lines)
+        lines = lines[:limit//2] + [separator] + lines[-limit//2:]
+    # Newline-terminate so callers do not each re-add the trailing newline that
+    # splitlines() drops (the dumps this trims are always whole-line blocks).
+    return "\n".join(lines) + "\n"
 
 
 def is_valid_utf_8(fname):
@@ -1030,9 +1035,14 @@ def get_stacktraces_from_lldb(pid):
     # this. shutil.which resolves the absolute path because sudo resets PATH.
     lldb = shutil.which("lldb") or "lldb"
     sudo = "sudo " if platform.system() == "Darwin" else ""
+    # keep_output_on_error: even when lldb exits non-zero it may have printed
+    # backtraces (or an attach error) worth keeping. Returning the output lets
+    # print_c_stacktraces save the full dump to c_stacktraces.log and preview
+    # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
         f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
+        keep_output_on_error=True,
     )
 
 
@@ -4557,10 +4567,7 @@ def run_tests_array(
                 # Bound the timeout/cleanup diagnostic like every other dump in
                 # this file: lldb "thread backtrace all" over every server
                 # process is unbounded and otherwise floods the log/report.
-                trimmed_cleanup = trim_for_log(cleanup_output.getvalue())
-                description += trimmed_cleanup
-                if not trimmed_cleanup.endswith("\n"):
-                    description += "\n"
+                description += trim_for_log(cleanup_output.getvalue())
 
             if is_concurrent:
                 description = (
