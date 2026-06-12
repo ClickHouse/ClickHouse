@@ -116,6 +116,14 @@ ContextMutablePtr createGlobalContext()
     return context;
 }
 
+ContextMutablePtr createQueryContext(ContextPtr global_context)
+{
+    auto query_context = Context::createCopy(global_context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId({});
+    return query_context;
+}
+
 /// Splits the input into ';'-separated statements, keeping both the AST and the original text slice.
 std::vector<std::pair<ASTPtr, std::string>> splitStatements(const std::string & queries_text)
 {
@@ -155,9 +163,7 @@ std::vector<std::pair<ASTPtr, std::string>> splitStatements(const std::string & 
 
 void executeSetupStatement(const std::string & statement, ContextMutablePtr global_context)
 {
-    auto query_context = Context::createCopy(global_context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId({});
+    auto query_context = createQueryContext(global_context);
 
     QueryScope query_scope;
     if (!CurrentThread::getGroup())
@@ -288,9 +294,11 @@ try
             executeSetupStatement(statements[i].second, global_context);
     }
 
-    /// buildQueryTree throws if the last statement is not a SELECT / UNION / INTERSECT / EXCEPT query.
+    /// Build once up front: reports the tree build time and rejects a non-SELECT last statement
+    /// before the analysis loop starts (buildQueryTree throws for anything that is not
+    /// a SELECT / UNION / INTERSECT / EXCEPT query).
     Stopwatch build_watch;
-    auto unresolved_tree = buildQueryTree(statements.back().first, global_context);
+    buildQueryTree(statements.back().first, createQueryContext(global_context));
     UInt64 build_ns = build_watch.elapsedNanoseconds();
 
     const bool only_analyze = options.contains("only-analyze");
@@ -299,18 +307,20 @@ try
 
     for (size_t i = 0; i < iterations; ++i)
     {
-        /// A fresh query context and a fresh clone of the tree per iteration: resolution mutates
-        /// the tree, and scalar subquery results are cached in the query context, so reusing
-        /// either would make iterations after the first one measure something else.
-        auto query_context = Context::createCopy(global_context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId({});
+        /// A fresh query context and a freshly built tree per iteration, exactly as production
+        /// does for each incoming query: buildQueryTree stores the context inside the query tree
+        /// nodes, and the analyzer resolves scopes against that stored context (a tree built with
+        /// the global context fails on table functions and scalar subqueries with THERE_IS_NO_QUERY).
+        /// Fresh contexts also keep iterations independent: scalar subquery results are cached in
+        /// the query context, so a reused context would make iterations after the first one measure
+        /// the cache instead of the execution.
+        auto query_context = createQueryContext(global_context);
 
         QueryScope query_scope;
         if (!CurrentThread::getGroup())
             query_scope = QueryScope::create(query_context);
 
-        auto tree = unresolved_tree->clone();
+        auto tree = buildQueryTree(statements.back().first, query_context);
         QueryAnalysisPass pass(only_analyze);
 
         Stopwatch watch;

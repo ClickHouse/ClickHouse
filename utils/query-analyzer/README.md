@@ -37,12 +37,13 @@ query-analyzer --setting max_subquery_depth=200 -n 100 "SELECT 1"
 query-analyzer --dump-tree "SELECT 1 + 1"
 ```
 
-Each iteration clones the unresolved query tree and uses a fresh query
-context, so iterations are independent (scalar subquery results are not
-cached across iterations). Only the analysis pass itself is timed; parsing
-and query tree building are excluded (tree building is reported once,
-separately). Scalar subqueries are executed during analysis as in
-production; pass `--only-analyze` to skip executing them.
+Each iteration builds the query tree from the parsed AST with a fresh query
+context (the same pairing production uses), so iterations are independent
+(scalar subquery results are not cached across iterations). Only the
+analysis pass itself is timed; parsing and query tree building are excluded
+from the reported statistics (tree building is reported once, separately).
+Scalar subqueries are executed during analysis as in production; pass
+`--only-analyze` to skip executing them.
 
 ## Profiling with perf
 
@@ -56,6 +57,10 @@ perf script | stackcollapse-perf.pl | flamegraph.pl > analyzer.svg
 
 Use a build with debug info (`RelWithDebInfo`) for meaningful stacks.
 
+The per-iteration context creation and query tree building are excluded from
+the reported timings but do appear in the perf profile; for very cheap
+queries, focus the analysis on `QueryAnalysisPass::run` and below.
+
 ## Limitations
 
 - Tables live in an in-memory `default` database created at startup; there is
@@ -68,3 +73,7 @@ Use a build with debug info (`RelWithDebInfo`) for meaningful stacks.
   followed by a newline — not just a `;` — before the next statement.
 - `SET` statements in the setup part are applied to the global context;
   settings can also be passed via `--setting key=value`.
+- Each run leaves a `query-analyzer-<pid>` working directory behind in the
+  system temporary directory (kept so data of setup-created tables can be
+  inspected); clean them up occasionally if you create large `MergeTree`
+  tables in setup statements.
