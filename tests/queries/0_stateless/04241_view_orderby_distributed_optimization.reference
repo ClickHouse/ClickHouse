@@ -30,3 +30,7 @@ fractional LIMIT result count:	20
 extremes disables pushdown:	1
 type mismatch disables pushdown:	1
 type mismatch result:	9
+view QUALIFY disables pushdown:	1
+view SETTINGS limit disables pushdown:	1
+prefer_column_name_to_alias disables pushdown:	1
+view SETTINGS prefer_column_name_to_alias disables pushdown:	1

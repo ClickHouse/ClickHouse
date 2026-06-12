@@ -274,6 +274,58 @@ DROP VIEW test_view_strtype_04241;
 DROP TABLE test_distributed_strtype_04241;
 DROP TABLE test_local_strtype_04241;
 
+-- View whose inner query has a `QUALIFY` clause: pushdown must be disabled.
+-- `QUALIFY` filters rows by a window function evaluated over the whole row set;
+-- pushing `ORDER BY/LIMIT` into the view would let each shard evaluate the
+-- window over only its truncated rows, which is not equivalent to the global
+-- computation. The window guards do not catch this because the window lives in
+-- `QUALIFY` rather than the select list.
+DROP VIEW IF EXISTS test_view_qualify_04241;
+CREATE VIEW test_view_qualify_04241 AS
+SELECT id, val, ts FROM test_distributed_04241 QUALIFY row_number() OVER (ORDER BY id) > 5;
+
+SELECT 'view QUALIFY disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_qualify_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+DROP VIEW test_view_qualify_04241;
+
+-- View whose inner query carries `LIMIT` through its own `SETTINGS` clause:
+-- pushdown must be disabled. `SETTINGS limit = N` constrains which rows the view
+-- exposes just like an explicit `LIMIT`, so re-sorting and truncating around it
+-- would change which rows the view returns.
+DROP VIEW IF EXISTS test_view_settings_limit_04241;
+CREATE VIEW test_view_settings_limit_04241 AS
+SELECT id, val, ts FROM test_distributed_04241 SETTINGS limit = 5;
+
+SELECT 'view SETTINGS limit disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_settings_limit_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+DROP VIEW test_view_settings_limit_04241;
+
+-- `prefer_column_name_to_alias = 1`: pushdown must be disabled. The injected
+-- inner `ORDER BY` references view columns by bare identifier; with this setting
+-- an identifier prefers a source column over a matching select-list alias, so
+-- the inner sort key could bind to a different expression than the outer view
+-- column. Skip the optimization whenever the setting is enabled.
+SELECT 'prefer_column_name_to_alias disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10 SETTINGS prefer_column_name_to_alias = 1)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+-- The same setting carried through the view's own `SETTINGS` clause: the
+-- injected inner `ORDER BY` identifiers are resolved under that clause, so it
+-- must disable the pushdown even when the outer query keeps the default.
+DROP VIEW IF EXISTS test_view_settings_alias_04241;
+CREATE VIEW test_view_settings_alias_04241 AS
+SELECT id, val, ts FROM test_distributed_04241 SETTINGS prefer_column_name_to_alias = 1;
+
+SELECT 'view SETTINGS prefer_column_name_to_alias disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_settings_alias_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+DROP VIEW test_view_settings_alias_04241;
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

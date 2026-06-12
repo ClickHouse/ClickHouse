@@ -50,6 +50,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTIdentifier.h>
@@ -116,6 +117,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
+    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
@@ -862,6 +864,19 @@ void pushOrderByIntoView(
     if (query_context->getSettingsRef()[Setting::extremes])
         return;
 
+    /// Skip when `prefer_column_name_to_alias` is enabled. The injected inner
+    /// `ORDER BY` references view columns by bare identifier name (see below). By
+    /// default an identifier in `ORDER BY` binds to a matching select-list alias,
+    /// which is exactly the view column the outer query sorts by. But with
+    /// `prefer_column_name_to_alias = 1` the same identifier prefers a source
+    /// column of that name instead, so for a view like
+    /// `SELECT b AS a, a AS b FROM dist` the injected inner `ORDER BY a` would
+    /// bind to the source column `a` rather than the view column `a` (the inner
+    /// expression `b`). The types can still match, so the type check below does
+    /// not catch it, and shard-local truncation could keep the wrong rows.
+    if (query_context->getSettingsRef()[Setting::prefer_column_name_to_alias])
+        return;
+
     /// Skip when the outer query has filtration: `WHERE`, `PREWHERE`, or
     /// `QUALIFY`. The outer filter is materialized as a separate filter step
     /// above the view subquery, while `query_info.filter_actions_dag` is only
@@ -969,9 +984,37 @@ void pushOrderByIntoView(
     if (const auto & select_expr = sel->select(); select_expr && containsWindowFunction(*select_expr))
         return;
 
+    /// `QUALIFY` filters rows by window-function results and is evaluated before
+    /// `ORDER BY`/`LIMIT`. Its filter typically depends on a window computed over
+    /// the whole row set (e.g. `QUALIFY row_number() OVER (ORDER BY id) > 50`),
+    /// which the window guards above do not catch because the window lives in the
+    /// `QUALIFY` clause rather than the select list. Pushing `ORDER BY`/`LIMIT`
+    /// into such a view would let each shard evaluate the window over only its
+    /// truncated rows, which is not equivalent to the global computation.
+    if (sel->qualify())
+        return;
+
     /// View must not already have ORDER BY/LIMIT
     if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
         return;
+
+    /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.
+    /// `SETTINGS limit = N` / `offset = N` constrain which rows the view exposes,
+    /// just like an explicit `LIMIT`/`OFFSET`. Pushing the outer `ORDER BY`/`LIMIT`
+    /// into the inner query would re-sort and truncate around that setting and
+    /// change which rows the view returns, so treat it like an existing inner
+    /// `LIMIT` and skip the pushdown.
+    ///
+    /// Likewise reject `prefer_column_name_to_alias` here: the injected inner
+    /// `ORDER BY` identifiers are resolved under the view's own `SETTINGS`
+    /// clause, so it could re-introduce the alias-vs-source-column ambiguity
+    /// that the outer-context guard above already excludes.
+    if (const auto & settings_ast = sel->settings())
+    {
+        const auto & changes = settings_ast->as<ASTSetQuery &>().changes;
+        if (changes.tryGet("limit") || changes.tryGet("offset") || changes.tryGet("prefer_column_name_to_alias"))
+            return;
+    }
 
     /// The pushed `ORDER BY`/`LIMIT` is evaluated by the view's inner query,
     /// before `StorageView` converts the inner result to the view's declared
