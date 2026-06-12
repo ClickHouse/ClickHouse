@@ -79,6 +79,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_dedup_conflict_part_name_missing[];
 }
 
 namespace ErrorCodes
@@ -509,14 +510,23 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     {
                         chassert(conflicts.size() == 1);
                         auto block_id = conflicts.front().getBlockId();
-                        auto actual_part_name = conflicts.front().getConflictPartName();
-                        bool exists_locally = bool(storage.getActiveContainingPart(actual_part_name));
-                        LOG_INFO(
-                            log,
-                            "Block with ID {} {} as part {}; ignoring it.",
-                            block_id,
-                            exists_locally ? "already exists locally" : "already exists on other replicas",
-                            actual_part_name);
+                        /// The conflicting part name may be unresolved (see ZNONODE skip in
+                        /// resolve_duplicate_stage), same guard as the quorum collection above.
+                        if (conflicts.front().hasConflictPartName())
+                        {
+                            auto actual_part_name = conflicts.front().getConflictPartName();
+                            bool exists_locally = bool(storage.getActiveContainingPart(actual_part_name));
+                            LOG_INFO(
+                                log,
+                                "Block with ID {} {} as part {}; ignoring it.",
+                                block_id,
+                                exists_locally ? "already exists locally" : "already exists on other replicas",
+                                actual_part_name);
+                        }
+                        else
+                        {
+                            LOG_INFO(log, "Block with ID {} was deduplicated; ignoring it.", block_id);
+                        }
                     }
 
                     block_ids_for_log = getDeduplicationBlockIds(conflicts);
@@ -748,8 +758,11 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             auto & deduplication_hash = retry_context.conflict_deduplication_hashes[i];
             const auto & resp = response[i];
 
+            bool simulate_missing_node = false;
+            fiu_do_on(FailPoints::rmt_dedup_conflict_part_name_missing, { simulate_missing_node = true; });
+
             /// If we cannot get the node, then probably it was removed in the meantime. Just skip it then.
-            if (resp.error == Coordination::Error::ZNONODE)
+            if (resp.error == Coordination::Error::ZNONODE || simulate_missing_node)
                 continue;
 
             const String & part_name = resp.data;

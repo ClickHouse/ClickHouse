@@ -21,6 +21,22 @@ ThreadGroupPtr getCurrentThreadGroup()
 }
 
 ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+    : ThreadGroupSwitcher(std::move(thread_group_), allow_existing_group)
+{
+    if (!thread_group)
+        return;
+
+    try
+    {
+        setThreadName(thread_name);
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -46,13 +62,13 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
                 return;
             }
             else if (!allow_existing_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread is already attached to a group (master_thread_id {})", prev_thread_group->master_thread_id);
             else
                 CurrentThread::detachFromGroupIfNotDetached();
         }
 
         if (!prev_thread)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread to a group, but the ThreadStatus is not initialized");
 
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -64,8 +80,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         if (!prev_query_id.empty() && CurrentThread::getQueryId().empty())
             prev_thread->setQueryId(std::string(prev_query_id));
 
-        setThreadName(thread_name);
-        LOG_TEST(getLogger("ThreadGroupSwitcher"), "Attach thread {} to thread group with master_thread_id {}", thread_name, thread_group->master_thread_id);
+        LOG_TEST(getLogger("ThreadGroupSwitcher"), "Attach thread to thread group with master_thread_id {}", thread_group->master_thread_id);
     }
     catch (...)
     {
