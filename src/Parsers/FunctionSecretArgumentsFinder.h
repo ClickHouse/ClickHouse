@@ -350,10 +350,11 @@ protected:
         /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
         size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
-        if (!is_cluster_function && isNamedCollectionName(0))
+        if (isNamedCollectionName(url_arg_idx))
         {
             /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
-            findS3NamedCollectionSecretArguments(1);
+            /// s3Cluster('cluster_name', named_collection, ..., secret_access_key = 'secret_access_key', ...)
+            findS3NamedCollectionSecretArguments(url_arg_idx + 1);
             return;
         }
 

@@ -517,3 +517,25 @@ elif echo "${adc_mask_out}" | grep -q "HIDDEN"; then
 else
     echo "adc_masking: fail (no masked query found: ${adc_mask_out//$'\n'/ })"
 fi
+
+# The same masking must apply to the cluster form, where the named collection is the second argument
+# (after the cluster name) instead of the first.
+cluster_mask_qid="04325_cluster_mask_${DB}_${RANDOM}"
+$CLICKHOUSE_CLIENT --query_id "${cluster_mask_qid}" -q "
+    SELECT * FROM s3Cluster('test_shard_localhost', ${NC_NOCREDS},
+        session_token = 'SESSION_TOKEN_LEAK_CHECK',
+        google_adc_client_secret = 'ADC_SECRET_LEAK_CHECK',
+        google_adc_refresh_token = 'ADC_TOKEN_LEAK_CHECK',
+        format = 'TSV', structure = 'x UInt8')" > /dev/null 2>&1
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+cluster_mask_out="$($CLICKHOUSE_CLIENT -q "
+    SELECT query FROM system.query_log
+    WHERE query_id = '${cluster_mask_qid}' AND current_database = currentDatabase() AND query LIKE '%s3Cluster(%'
+    ORDER BY event_time_microseconds LIMIT 1")"
+if echo "${cluster_mask_out}" | grep -qE "SESSION_TOKEN_LEAK_CHECK|ADC_SECRET_LEAK_CHECK|ADC_TOKEN_LEAK_CHECK"; then
+    echo "s3cluster_masking: fail (secret leaked: ${cluster_mask_out//$'\n'/ })"
+elif echo "${cluster_mask_out}" | grep -q "HIDDEN"; then
+    echo "s3cluster_masking: pass"
+else
+    echo "s3cluster_masking: fail (no masked query found: ${cluster_mask_out//$'\n'/ })"
+fi
