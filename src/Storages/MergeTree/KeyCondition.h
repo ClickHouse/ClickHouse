@@ -387,7 +387,7 @@ private:
         const NameSet key_subexpr_names;
     };
 
-    struct KeyFunctionChain
+    struct KeyWrappingChain
     {
         size_t key_column_num = 0;
         DataTypePtr key_column_type;
@@ -432,7 +432,7 @@ private:
     ///  and fills chain of possibly-monotonic functions.
     /// If @assume_function_monotonicity = true, assume all deterministic
     /// functions as monotonic, which is useful for partition pruning.
-    bool isKeyPossiblyWrappedByMonotonicFunctions(
+    bool tryMatchKeyColumnThroughMonotonicChain(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -441,7 +441,7 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         bool assume_function_monotonicity = false);
 
-    bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+    bool tryMatchKeyColumnThroughMonotonicChainImpl(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -449,13 +449,13 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    std::vector<KeyFunctionChain> extractMonotonicFunctionsChainsFromKey(
+    std::vector<KeyWrappingChain> collectKeyWrappingChains(
         ContextPtr context,
         const String & expr_name,
         const BuildInfo & info,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
-    std::vector<TransformedConstant> transformConstantForKeyColumns(
+    std::vector<TransformedConstant> transformConstantByMonotonicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         const Field & value,
@@ -463,7 +463,7 @@ private:
         std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
     /// Transform a constant through all applicable deterministic key-expression DAGs.
-    std::vector<TransformedConstant> transformConstantByDeterministicFunctions(
+    std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         const Field & value,
@@ -477,7 +477,7 @@ private:
     };
 
     /// Extract deterministic sub-DAGs for ALL key columns that can be computed from `expr_name`.
-    std::vector<DeterministicKeyDag> extractAllDeterministicFunctionsDagsFromKey(
+    std::vector<DeterministicKeyDag> collectKeyWrappingDags(
         const String & expr_name,
         const BuildInfo & info) const;
 
@@ -486,7 +486,7 @@ private:
     /// specifies key column position / type. Besides that it produces the
     /// transformation DAG which should be executed on set elements, to
     /// transform them into key column values.
-    bool canSetValuesBeWrappedByDeterministicFunctions(
+    bool canSetValuesBeWrappedByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -507,7 +507,7 @@ private:
         RPN & out,
         bool allow_constant_transformation);
 
-    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+    void analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
         std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,

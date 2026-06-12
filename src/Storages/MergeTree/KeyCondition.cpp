@@ -368,7 +368,7 @@ static String extractCommonPrefixFromAlternationBranches(const String & expressi
 namespace
 {
 
-bool invertInequalityDirection(std::string & func_name)
+bool mirrorInequalityDirection(std::string & func_name)
 {
     if (func_name == "less")
     {
@@ -394,9 +394,9 @@ bool invertInequalityDirection(std::string & func_name)
     return false;
 }
 
-bool invertComparisonForSwappedArguments(std::string & func_name)
+bool mirrorComparisonForSwappedArguments(std::string & func_name)
 {
-    if (invertInequalityDirection(func_name))
+    if (mirrorInequalityDirection(func_name))
         return true;
 
     /// Some comparisons are not symmetric when swapping the constant and the key expression.
@@ -1674,7 +1674,7 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
     return true;
 }
 
-std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantForKeyColumns(
+std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByMonotonicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     const Field & value,
@@ -1693,7 +1693,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantFo
         return {};
 
     auto chains
-        = extractMonotonicFunctionsChainsFromKey(node.getTreeContext().getQueryContext(), expr_name, info, std::move(allow_key_function));
+        = collectKeyWrappingChains(node.getTreeContext().getQueryContext(), expr_name, info, std::move(allow_key_function));
 
     if (chains.empty())
         return {};
@@ -1734,7 +1734,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantFo
 /// not depend on other inputs. For example, for `ORDER BY left(key, length(key) - length(substringIndex(key, '-', -1)) - 1)`
 ///
 /// This variant collects ALL matching key columns (not just the first).
-std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::extractAllDeterministicFunctionsDagsFromKey(
+std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingDags(
     const String & expr_name,
     const BuildInfo & info) const
 {
@@ -2095,7 +2095,7 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
-std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicFunctions(
+std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     const Field & value,
@@ -2113,7 +2113,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     if (value.isNull())
         return {};
 
-    auto dags = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+    auto dags = collectKeyWrappingDags(expr_name, info);
     if (dags.empty())
         return {};
 
@@ -2152,7 +2152,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 }
 
 
-void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+void KeyCondition::analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
         std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,
@@ -2167,7 +2167,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
         DataTypePtr data_type;
         std::optional<size_t> key_space_filling_curve_argument_pos;
         DeterministicKeyTransformDag set_transforming_dag;
-        if (isKeyPossiblyWrappedByMonotonicFunctions(
+        if (tryMatchKeyColumnThroughMonotonicChain(
                 node, info, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
@@ -2178,7 +2178,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
         else
         {
             bool is_injective = false;
-            if (canSetValuesBeWrappedByDeterministicFunctions(
+            if (canSetValuesBeWrappedByDeterministicKeyFunctions(
                     node, info, index_mapping.key_index, data_type, set_transforming_dag, is_injective))
             {
                 indexes_mapping.push_back(index_mapping);
@@ -2402,7 +2402,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
     size_t left_args_count = 0;
     bool set_is_relaxed = false;
 
-    analyzeKeyExpressionForSetIndex(
+    analyzePredicateExpressionForSetIndex(
         left_arg,
         indexes_mapping,
         set_transforming_dags,
@@ -2499,7 +2499,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 
     if (auto atom = try_build_atom(indexes_mapping, set_transforming_dags, data_types, left_args_count))
     {
-        /// Propagate relaxation from analyzeKeyExpressionForSetIndex (non-injective deterministic transforms).
+        /// Propagate relaxation from analyzePredicateExpressionForSetIndex (non-injective deterministic transforms).
         if (set_is_relaxed)
             atom->relaxed = true;
         out.emplace_back(std::move(*atom));
@@ -2530,7 +2530,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
         const String expr_name = getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names);
         if (!expr_name.empty())
         {
-            auto candidates = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+            auto candidates = collectKeyWrappingDags(expr_name, info);
 
             for (auto & candidate : candidates)
             {
@@ -2603,7 +2603,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     size_t key_args_count = 0;
     bool set_is_relaxed = false;
 
-    analyzeKeyExpressionForSetIndex(
+    analyzePredicateExpressionForSetIndex(
         key_arg, indexes_mapping, set_transforming_dags, data_types, key_args_count, info, set_is_relaxed);
 
     if (indexes_mapping.empty())
@@ -2675,7 +2675,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
 
     if (auto atom = try_build_atom(indexes_mapping, set_transforming_dags, data_types, key_args_count))
     {
-        /// Propagate relaxation from analyzeKeyExpressionForSetIndex (non-injective deterministic transforms).
+        /// Propagate relaxation from analyzePredicateExpressionForSetIndex (non-injective deterministic transforms).
         if (set_is_relaxed)
             atom->relaxed = true;
         out.emplace_back(std::move(*atom));
@@ -2699,7 +2699,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
         const String expr_name = getExprNameOrEmptyForSetWrapping(key_arg, info.key_subexpr_names);
         if (!expr_name.empty())
         {
-            auto candidates = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+            auto candidates = collectKeyWrappingDags(expr_name, info);
 
             for (auto & candidate : candidates)
             {
@@ -2862,7 +2862,7 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 }
 
 
-bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
+bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     size_t & out_key_column_num,
@@ -2874,7 +2874,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     std::vector<RPNBuilderFunctionTreeNode> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
 
-    if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+    if (!tryMatchKeyColumnThroughMonotonicChainImpl(
         node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type, chain_not_tested_for_monotonicity))
         return false;
 
@@ -2930,7 +2930,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     return true;
 }
 
-bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     size_t & out_key_column_num,
@@ -2996,7 +2996,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         {
             if (function_node.getArgumentAt(0).isConstant())
             {
-                result = isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+                result = tryMatchKeyColumnThroughMonotonicChainImpl(
                     function_node.getArgumentAt(1),
                     info,
                     out_key_column_num,
@@ -3006,7 +3006,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
             }
             else if (function_node.getArgumentAt(1).isConstant())
             {
-                result = isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+                result = tryMatchKeyColumnThroughMonotonicChainImpl(
                     function_node.getArgumentAt(0),
                     info,
                     out_key_column_num,
@@ -3017,7 +3017,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         }
         else
         {
-            result = isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+            result = tryMatchKeyColumnThroughMonotonicChainImpl(
                 function_node.getArgumentAt(0),
                 info,
                 out_key_column_num,
@@ -3064,7 +3064,7 @@ static std::set<std::string_view> date_time_parsing_functions = {
   * Instead, we can qualify only functions that do not transform the range (for example rounding),
   * which while not strictly monotonic, are monotonic everywhere on the input range.
   */
-std::vector<KeyCondition::KeyFunctionChain> KeyCondition::extractMonotonicFunctionsChainsFromKey(
+std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChains(
     ContextPtr context,
     const String & expr_name,
     const BuildInfo & info,
@@ -3072,7 +3072,7 @@ std::vector<KeyCondition::KeyFunctionChain> KeyCondition::extractMonotonicFuncti
 {
     const auto & sample_block = info.key_expr->getSampleBlock();
 
-    std::vector<KeyFunctionChain> result;
+    std::vector<KeyWrappingChain> result;
 
     for (const auto & node : info.key_expr->getNodes())
     {
@@ -3120,7 +3120,7 @@ std::vector<KeyCondition::KeyFunctionChain> KeyCondition::extractMonotonicFuncti
 
             if (is_valid_chain && cur_node->result_name == expr_name)
             {
-                KeyFunctionChain candidate;
+                KeyWrappingChain candidate;
                 candidate.key_column_num = it->second;
                 candidate.key_column_type = sample_block.getByName(it->first).type;
 
@@ -3208,7 +3208,7 @@ std::vector<KeyCondition::KeyFunctionChain> KeyCondition::extractMonotonicFuncti
     return result;
 }
 
-bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
+bool KeyCondition::canSetValuesBeWrappedByDeterministicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     size_t & out_key_column_num,
@@ -3228,7 +3228,7 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
         /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
         /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
         ///
-        /// We do not check this in transformConstantForKeyColumns.
+        /// We do not check this in transformConstantByMonotonicKeyFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f` is considered to be rare.
         ///
         /// Note: for negative values, we can filter more partitions than needed.
@@ -3238,7 +3238,7 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
             return false;
     }
 
-    auto dags = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+    auto dags = collectKeyWrappingDags(expr_name, info);
     if (dags.empty())
         return false;
 
@@ -3556,7 +3556,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         std::optional<size_t> argument_num_of_space_filling_curve;
 
         MonotonicFunctionsChain chain;
-        if (!isKeyPossiblyWrappedByMonotonicFunctions(
+        if (!tryMatchKeyColumnThroughMonotonicChain(
                 func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
             return;
 
@@ -3766,7 +3766,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         return;
     }
 
-    struct RegularAtomCandidate
+    struct ComparisonAtomCandidate
     {
         size_t key_column_num = 0;
         DataTypePtr key_expr_type;
@@ -3777,14 +3777,14 @@ void KeyCondition::extractBinaryComparisonAtoms(
         bool is_constant_transformed = false;
     };
 
-    std::vector<RegularAtomCandidate> candidates;
+    std::vector<ComparisonAtomCandidate> candidates;
 
     auto add_direct_key_candidate = [&](size_t key_column_num,
                                         DataTypePtr key_expr_type,
                                         MonotonicFunctionsChain chain,
                                         std::optional<size_t> argument_num_of_space_filling_curve)
     {
-        candidates.push_back(RegularAtomCandidate{
+        candidates.push_back(ComparisonAtomCandidate{
             .key_column_num = key_column_num,
             .key_expr_type = std::move(key_expr_type),
             .chain = std::move(chain),
@@ -3796,7 +3796,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
 
     auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool allow_constant_relaxation)
     {
-        candidates.push_back(RegularAtomCandidate{
+        candidates.push_back(ComparisonAtomCandidate{
             .key_column_num = transformed.key_column_num,
             .key_expr_type = transformed.key_column_type,
             .chain = {},
@@ -3814,7 +3814,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         MonotonicFunctionsChain chain;
 
         const bool assume_function_monotonicity = single_point;
-        if (isKeyPossiblyWrappedByMonotonicFunctions(
+        if (tryMatchKeyColumnThroughMonotonicChain(
                 key_arg,
                 info,
                 key_column_num,
@@ -3833,7 +3833,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
     /// Try infer key constraints by transforming the constant with key functions.
     if (allow_constant_transformation)
     {
-        auto transformed_candidates = transformConstantForKeyColumns(
+        auto transformed_candidates = transformConstantByMonotonicKeyFunctions(
             key_arg,
             info,
             const_value,
@@ -3857,7 +3857,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
 
     if (candidates.empty() && (func_name == "equals" || func_name == "notEquals"))
     {
-        auto transformed_candidates = transformConstantByDeterministicFunctions(
+        auto transformed_candidates = transformConstantByDeterministicKeyFunctions(
             key_arg, info, const_value, const_type);
 
         for (const auto & transformed : transformed_candidates)
@@ -3870,7 +3870,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
     /// Replace <const> <sign> <data> to <data> <-sign> <const>.
     /// This is shared between all candidates.
     std::string base_func_name = func_name;
-    if (key_arg_pos == 1 && !invertComparisonForSwappedArguments(base_func_name))
+    if (key_arg_pos == 1 && !mirrorComparisonForSwappedArguments(base_func_name))
         return;
 
     struct NormalizedCandidate
@@ -3880,7 +3880,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         RPNElement element;
     };
 
-    auto normalize_candidate = [&](const RegularAtomCandidate & candidate, std::string candidate_func_name) -> std::optional<NormalizedCandidate>
+    auto normalize_candidate = [&](const ComparisonAtomCandidate & candidate, std::string candidate_func_name) -> std::optional<NormalizedCandidate>
     {
         bool is_constant_transformed = candidate.is_constant_transformed;
 
