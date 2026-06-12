@@ -9,6 +9,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -433,7 +434,9 @@ static inline ReturnType read(IColumn & column, Reader && reader)
         restore_column();
         if constexpr (throw_exception)
             throw;
-        else
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
+        if constexpr (!throw_exception)
             return false;
     }
 }
