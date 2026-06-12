@@ -61,7 +61,9 @@ void ASTCreateIndexQuery::writeJSON(WriteBuffer & out) const
     /// strings above cannot represent query parameters.
     w.writeChild("database_ast", database);
     w.writeChild("table_ast", table);
-    writeOutputOptionsJSON(w);
+    /// `CREATE INDEX` is parsed by `ParserCreateIndexQuery`, not `ParserQueryWithOutput`,
+    /// and supports no output-suffix clause at all (not even `SETTINGS`). Do not serialize
+    /// the output options, which the SQL parser can never produce for this query.
 }
 
 void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
@@ -106,8 +108,6 @@ void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
     /// The parser cannot produce a standalone `CREATE INDEX` without one.
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify a target table during AST JSON deserialization");
-
-    readOutputOptionsJSON(r);
 }
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

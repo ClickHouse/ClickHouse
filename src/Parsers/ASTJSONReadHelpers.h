@@ -104,6 +104,21 @@ public:
         return IAST::createFromJSON(*child_obj);
     }
 
+    /// Read a child AST node and require it to be of the concrete AST type `T`.
+    /// Returns nullptr when the key is absent. Throws `BAD_ARGUMENTS` when the stored
+    /// node has an unexpected type, so malformed `clickhouse_json` cannot build an AST
+    /// that the SQL parser could never produce (and that a downstream `as<T>()` cast
+    /// would later hit as an internal error instead of a user-facing parse error).
+    template <typename T>
+    ASTPtr readChildOfType(const char * key) const
+    {
+        ASTPtr child = readChild(key);
+        if (child && !child->as<T>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected node type for key '{}' during AST JSON deserialization", key);
+        return child;
+    }
+
     /// Read the "children" array.
     ASTs readChildren() const
     {

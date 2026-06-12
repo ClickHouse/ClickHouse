@@ -1,4 +1,5 @@
 #include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -78,8 +79,11 @@ void ASTUpdateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("assignments", assignments);
     w.writeChild("partition", partition);
     w.writeChild("predicate", predicate);
+    /// `UPDATE` is parsed by `ParserUpdateQuery`, not `ParserQueryWithOutput`, so the only
+    /// supported output-suffix clause is the query-local `SETTINGS`. Do not serialize the
+    /// full output options (`INTO OUTFILE` / `FORMAT` / `COMPRESSION`), which the SQL parser
+    /// can never produce for this query and which would break the JSON round-trip contract.
     w.writeChild("settings_ast", settings_ast);
-    writeOutputOptionsJSON(w);
 }
 
 void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
@@ -110,10 +114,10 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`Update` AST requires 'predicate' during AST JSON deserialization");
     children.push_back(predicate);
-    settings_ast = r.readChild("settings_ast");
+    /// Only the query-local `SETTINGS` clause is supported here (see `writeJSON`).
+    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (settings_ast)
         children.push_back(settings_ast);
-    readOutputOptionsJSON(r);
 }
 
 }

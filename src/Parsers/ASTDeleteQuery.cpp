@@ -1,4 +1,5 @@
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/Exception.h>
@@ -78,8 +79,11 @@ void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("table", table);
     w.writeChild("partition", partition);
     w.writeChild("predicate", predicate);
+    /// `DELETE` is parsed by `ParserDeleteQuery`, not `ParserQueryWithOutput`, so the only
+    /// supported output-suffix clause is the query-local `SETTINGS`. Do not serialize the
+    /// full output options (`INTO OUTFILE` / `FORMAT` / `COMPRESSION`), which the SQL parser
+    /// can never produce for this query and which would break the JSON round-trip contract.
     w.writeChild("settings_ast", settings_ast);
-    writeOutputOptionsJSON(w);
 }
 
 void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
@@ -100,10 +104,10 @@ void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
     if (!predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'predicate' in DeleteQuery JSON");
     children.push_back(predicate);
-    settings_ast = r.readChild("settings_ast");
+    /// Only the query-local `SETTINGS` clause is supported here (see `writeJSON`).
+    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (settings_ast)
         children.push_back(settings_ast);
-    readOutputOptionsJSON(r);
 }
 
 }
