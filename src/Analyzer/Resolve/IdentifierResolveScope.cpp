@@ -155,6 +155,29 @@ bool subtreeContainsQueryOrUnion(const QueryTreeNodePtr & root)
     return false;
 }
 
+/// Whether the subtree contains any node from `nodes`, using the set's
+/// hash-ignore-types comparison.
+bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const QueryTreeNodePtrWithHashIgnoreTypesSet & nodes)
+{
+    std::vector<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push_back(root);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (nodes.contains(node))
+            return true;
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child);
+    }
+
+    return false;
+}
+
 }
 
 bool IdentifierResolveScope::canCacheIdentifier(
@@ -229,6 +252,16 @@ void IdentifierResolveScope::tryCacheIdentifier(
     const IdentifierResolveContext & resolve_context)
 {
     if (!canCacheIdentifier(lookup, resolve_context))
+        return;
+
+    /// Don't cache a result whose subtree contains a `nullable_group_by_keys` node.
+    /// With `group_by_use_nulls` the type of a key depends on the resolution context:
+    /// base type inside aggregate function arguments, nullable outside. The use-site
+    /// conversion at the end of `resolveExpressionNode` only adjusts the top-level
+    /// node, so a key embedded deeper in a cached tree (e.g. `k` inside `k + 1 AS a`)
+    /// would keep whichever nullability the first resolution baked in and corrupt
+    /// later use sites in the opposite context.
+    if (!nullable_group_by_keys.empty() && subtreeContainsAnyNode(result.resolved_identifier, nullable_group_by_keys))
         return;
 
     identifier_resolve_cache[lookup] = IdentifierResolveCacheEntry{
