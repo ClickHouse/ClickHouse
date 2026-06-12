@@ -608,46 +608,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             }
         }
 
-        /// If no valid join was found, add a cross product between smallest relations
+        /// The loop above accepts any pair passing isValidJoinOrder, even an unconnected
+        /// one (which becomes a cross product), as long as no best plan exists yet. So
+        /// reaching this point means no pair of components can be joined at all: the
+        /// outer join restrictions are stuck. This cannot happen for a query graph built
+        /// from a well-formed join tree: required partner sets follow the original tree's
+        /// scoping, so the original join order always remains valid.
         if (!best_plan)
-        {
-            /// Find two smallest components
-            UInt64 first_best = std::numeric_limits<UInt64>::max();
-            best_i = 0;
-            UInt64 second_best = std::numeric_limits<UInt64>::max();
-            best_j = 0;
-
-            for (size_t idx = 0; idx < components.size(); idx++)
-            {
-                auto & component = components[idx];
-                UInt64 estimated_rows = component->estimated_rows.value_or(std::numeric_limits<UInt64>::max() - 1);
-                if (estimated_rows < first_best)
-                {
-                    std::tie(second_best, best_j) = std::tie(first_best, best_i);
-                    std::tie(first_best, best_i) = std::tie(estimated_rows, idx);
-                }
-                else if (estimated_rows < second_best)
-                {
-                    std::tie(second_best, best_j) = std::tie(estimated_rows, idx);
-                }
-            }
-
-            if (best_i == best_j)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
-            if (!isValidJoinOrder(components[best_i]->relations, components[best_j]->relations))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Join restriction violated");
-
-            auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
-            auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
-            JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Unspecified);
-            /// Use left: min idx, right: max idx to keep original order order of joins
-            /// We will swap tables later if needed
-            best_plan = std::make_shared<DPJoinEntry>(components[std::min(best_i, best_j)], components[std::max(best_i, best_j)], cost, cardinality, join_operator);
-            applied_edge.clear();
-        }
-
-        if (best_i == best_j)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find components to join");
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "No valid join pair found among components [{}], the outer join restrictions cannot be satisfied",
+                fmt::join(components | std::views::transform([](const auto & c) { return c->dump(); }), ", "));
 
         LOG_TEST(log, "Best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, join operator: {}",
             best_plan->dump(), best_plan->left->dump(), best_plan->right->dump(),
