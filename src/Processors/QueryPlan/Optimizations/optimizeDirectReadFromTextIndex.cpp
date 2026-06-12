@@ -215,51 +215,72 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node)
+/// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
+/// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
+/// instead of being emitted as bare, unresolvable identifiers.
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured = {});
+
+/// Reconstructs a captured lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
+/// `captured_values` are the columns supplied for the capture, aligned with capture.captured_names.
+ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, const ActionsDAG::NodeRawConstPtrs & captured_values)
+{
+    const auto & capture = function_capture.getCapture();
+    const auto & capture_dag = function_capture.getAcionsDAG();
+    if (capture_dag.getOutputs().size() != 1 || captured_values.size() != capture.captured_names.size())
+        return nullptr;
+
+    /// Bind each captured column to the value passed into the capture so the body has no dangling refs.
+    std::unordered_map<std::string, const ActionsDAG::Node *> body_captured;
+    for (size_t i = 0; i < capture.captured_names.size(); ++i)
+        body_captured.emplace(capture.captured_names[i], captured_values[i]);
+
+    auto arguments = make_intrusive<ASTFunction>();
+    arguments->name = "tuple";
+    arguments->arguments = make_intrusive<ASTExpressionList>();
+    arguments->children.push_back(arguments->arguments);
+    for (const auto & lambda_argument : capture.lambda_arguments)
+        arguments->arguments->children.push_back(make_intrusive<ASTIdentifier>(lambda_argument.name));
+
+    auto lambda = make_intrusive<ASTFunction>();
+    lambda->name = "lambda";
+    lambda->arguments = make_intrusive<ASTExpressionList>();
+    lambda->children.push_back(lambda->arguments);
+    lambda->arguments->children.push_back(std::move(arguments));
+    lambda->arguments->children.push_back(convertNodeToAST(*capture_dag.getOutputs().front(), body_captured));
+    return lambda;
+}
+
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured)
 {
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
+            if (auto it = captured.find(node.result_name); it != captured.end())
+                return convertNodeToAST(*it->second);
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
             return node.column ? make_intrusive<ASTLiteral>((*node.column)[0]) : make_intrusive<ASTLiteral>(Field{});
 
         case ActionsDAG::ActionType::ALIAS:
-            return node.children.empty() ? nullptr : convertNodeToAST(*node.children[0]);
+            return node.children.empty() ? nullptr : convertNodeToAST(*node.children[0], captured);
 
         case ActionsDAG::ActionType::FUNCTION:
         {
             if (!node.function_base)
                 return nullptr;
 
+            if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
+                return convertCapturedLambdaToAST(*function_capture, node.children);
+
             auto function = make_intrusive<ASTFunction>();
             function->arguments = make_intrusive<ASTExpressionList>();
             function->children.push_back(function->arguments);
-
-            /// Unwrap arguments of lambda function.
-            if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
+            function->name = node.function_base->getName();
+            for (const auto * child : node.children)
             {
-                const auto & capture_dag = function_capture->getAcionsDAG();
-                if (capture_dag.getOutputs().size() != 1)
-                    return nullptr;
-
-                auto required_columns = capture_dag.getRequiredColumnsNames();
-                if (required_columns.size() != 1)
-                    return nullptr;
-
-                function->name = "lambda";
-                function->arguments->children.push_back(makeASTFunction("tuple", make_intrusive<ASTIdentifier>(required_columns.front())));
-                function->arguments->children.push_back(convertNodeToAST(*capture_dag.getOutputs().front()));
-            }
-            else
-            {
-                function->name = node.function_base->getName();
-                for (const auto * child : node.children)
-                {
-                    if (auto arg_ast = convertNodeToAST(*child))
-                        function->arguments->children.push_back(arg_ast);
-                }
+                if (auto arg_ast = convertNodeToAST(*child, captured))
+                    function->arguments->children.push_back(arg_ast);
             }
 
             return function;
