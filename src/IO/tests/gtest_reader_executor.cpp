@@ -3938,18 +3938,22 @@ TEST(ReaderExecutor, ProfileEventsCountSourceReadsAndBytes)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorRequestedBytes), size);
-    /// No cache tiers configured and no live connection kept: these stay 0.
+    /// No cache tiers configured: the cache counters stay 0.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+    /// No read extent is set, so each one-shot opens the whole object and is dropped
+    /// at its window's end, before the object bound: counted as incomplete. (Extent-
+    /// bounded reads - e.g. MergeTree mark ranges - drain to the bound and count 0.)
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 4u);
 }
 
 TEST(ReaderExecutor, ModeledCostMatchesFormula)
 {
     TestThreadGroup tg;
 
-    /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache/conn terms 0):
-    /// 4 window-sized requests + 1 MiB transferred.
+    /// Modeled cost = 30ms/source request + 20ms/MiB from source + 5ms/incomplete
+    /// connection (cache terms 0): 4 window-sized requests + 1 MiB transferred + 4
+    /// one-shot connections dropped before the object bound (no read extent is set).
     constexpr size_t size = 1024 * 1024;
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", String(size, 'C')}});
@@ -3962,13 +3966,13 @@ TEST(ReaderExecutor, ModeledCostMatchesFormula)
 
     const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
     const auto requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
-    EXPECT_EQ(cost, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
+    EXPECT_EQ(cost, 30000u * 4 + 20000u + 5000u * 4);  // 4 reads + 1 MiB + 4 incomplete
     EXPECT_EQ(requested, size);
 
     /// The KPI: modeled ms per requested MiB.
     const double ms_per_mib = (static_cast<double>(cost) / 1000.0)
         / (static_cast<double>(requested) / (1024.0 * 1024.0));
-    EXPECT_DOUBLE_EQ(ms_per_mib, 140.0);
+    EXPECT_DOUBLE_EQ(ms_per_mib, 160.0);
 }
 
 TEST(ReaderExecutor, ModeledCostScalesWithSourceRequests)
