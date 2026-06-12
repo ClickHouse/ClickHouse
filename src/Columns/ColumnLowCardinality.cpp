@@ -639,6 +639,37 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
+PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
+{
+    /// Work and memory are O(limit), not O(dictionary): MergeTreeIndexAggregatorBloomFilter
+    /// calls this once per granule over the same (possibly large) block dictionary. Result
+    /// order is arbitrary.
+    HashSet<UInt64> seen;
+
+    const IColumn & indexes = getIndexes();
+    auto populate = [&](const auto & positions)
+    {
+        for (size_t i = 0; i < limit; ++i)
+            seen.insert(positions[offset + i]);
+    };
+
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): populate(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
+        case sizeof(UInt16): populate(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
+        case sizeof(UInt32): populate(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
+        case sizeof(UInt64): populate(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
+        default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
+    }
+
+    PaddedPODArray<UInt64> distinct;
+    distinct.reserve(seen.size());
+    for (const auto & cell : seen)
+        distinct.push_back(cell.getKey());
+
+    return distinct;
+}
+
 ColumnPtr ColumnLowCardinality::countKeys() const
 {
     const auto & nested_column = getDictionary().getNestedColumn();
