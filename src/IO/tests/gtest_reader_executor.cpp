@@ -3220,6 +3220,43 @@ TEST(ReaderExecutor, PrunesLowerTierMissCoveredByFasterTier)
         << "the disk cell fully covered by the page hit must be pruned, not filled";
 }
 
+/// Proactive fill down to the deepest tier, across an EMBEDDED faster-tier hit. Disk cell
+/// is 4K; page block is 1K and holds [1K,2K) inside that cell; disk is cold. Read [1K,4K)
+/// (seek to 1K). The [2K,4K) no-tier gap's fetch aligns to the disk cell [0,4K), reaching
+/// LEFT past the seek position and across the page hit to the cell floor, so the disk cell
+/// fills WHOLE: [0,1K) over-read from source (left of the request), [1K,2K) promoted from
+/// page, [2K,4K) from source. The client still gets only [1K,4K).
+TEST(ReaderExecutor, ProactivelyFillsLowerCellAcrossEmbeddedFasterHit)
+{
+    const size_t page_block = 1024;
+    const size_t disk_block = 4096;
+    const size_t file = 4096;
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(file, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(page_block, "PageMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(disk_block, "DiskMock");
+    page_cache->seedBlock(1, 'P');  // page holds [1K,2K), embedded in the disk cell [0,4K)
+
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
+                             /*window_size=*/file, /*min_bytes_for_seek=*/0);
+    executor.seek(page_block);  // request starts at 1K
+
+    size_t delivered = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.range().size == 0)
+            break;
+        delivered += rope.range().size;
+    }
+    EXPECT_EQ(delivered, file - page_block) << "client gets only the requested [1K,4K)";
+    EXPECT_TRUE(disk_cache->hasBlock(0))
+        << "the whole disk cell [0,4K) must fill - incl. the [0,1K) prefix left of the seek";
+}
+
 namespace
 {
     /// Records every cache access (each `planResidencyView` probe) so tests can assert
