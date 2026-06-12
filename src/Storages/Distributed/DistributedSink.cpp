@@ -53,6 +53,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedSyncInsertionTimeoutExceeded;
+    extern const Event DistributedShardsSkipped;
 }
 
 namespace fs = std::filesystem;
@@ -480,6 +481,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                         "Skipping shard {} on INSERT due to `skip_unavailable_shards_mode` setting: {}",
                         shard_info.shard_num, e.displayText());
 
+                    ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
                     job.skip = true;
                     job.executor.reset();
                     job.pipeline = QueryPipeline();

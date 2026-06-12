@@ -42,6 +42,7 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
+    extern const Event DistributedShardsSkipped;
 }
 
 namespace DB
@@ -1136,14 +1137,17 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard()
 
 void RemoteQueryExecutor::reportShardSkipped()
 {
-    if (!shard_skip_reported && unavailable_shard_tracker)
-    {
-        shard_skip_reported = true;
-        /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` if the configured `max_skip_unavailable_shards_num` /
-        /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
-        /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
+    if (shard_skip_reported)
+        return;
+    shard_skip_reported = true;
+
+    ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
+
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` if the configured `max_skip_unavailable_shards_num` /
+    /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
+    /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
+    if (unavailable_shard_tracker)
         unavailable_shard_tracker->onShardSkipped();
-    }
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
