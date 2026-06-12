@@ -766,7 +766,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & column_node = node->as<ColumnNode &>();
 
     const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
-    if (correlated_columns_set.contains(column_node_ptr))
+    if (!correlated_columns_set.empty() && correlated_columns_set.contains(column_node_ptr))
         return visitCorrelatedColumn(column_node_ptr);
 
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
