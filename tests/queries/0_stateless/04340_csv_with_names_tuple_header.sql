@@ -43,6 +43,19 @@ SELECT '-- no tuples: header unchanged';
 SELECT 1::UInt8 AS a, 'x' AS b
 FORMAT CSVWithNames;
 
+SELECT '-- empty tuple in a mixed row: still occupies one field, header keeps one cell';
+SELECT 1::UInt8 AS x, tuple()::Tuple() AS t, 2::UInt8 AS y
+FORMAT CSVWithNamesAndTypes;
+
+SELECT '-- non-null Nullable(Tuple(...)): value flattens, so the header flattens the inner tuple too';
+SELECT materialize(CAST((1, 'a'), 'Nullable(Tuple(ID UInt64, Name String))')) AS User
+FORMAT CSVWithNamesAndTypes
+SETTINGS allow_experimental_nullable_tuple_type = 1;
+
+SELECT '-- scalar Nullable column: stays one cell with the full Nullable type name';
+SELECT CAST(1, 'Nullable(UInt64)') AS n, 'x' AS s
+FORMAT CSVWithNamesAndTypes;
+
 -- CustomSeparated joins fields with format_custom_field_delimiter, but a tuple value uses
 -- csv.tuple_delimiter (format_csv_delimiter, ',') internally. So the header may only be flattened
 -- when the custom field delimiter is the same single character as the tuple delimiter; otherwise a

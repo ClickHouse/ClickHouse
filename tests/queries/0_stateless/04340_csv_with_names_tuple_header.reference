@@ -24,6 +24,18 @@
 -- no tuples: header unchanged
 "a","b"
 1,"x"
+-- empty tuple in a mixed row: still occupies one field, header keeps one cell
+"x","t","y"
+"UInt8","Tuple()","UInt8"
+1,,2
+-- non-null Nullable(Tuple(...)): value flattens, so the header flattens the inner tuple too
+"User.ID","User.Name"
+"UInt64","String"
+1,"a"
+-- scalar Nullable column: stays one cell with the full Nullable type name
+"n","s"
+"Nullable(UInt64)","String"
+1,"x"
 -- CustomSeparatedWithNames, CSV rule, comma field delimiter: header flattened (delimiters match)
 "x","User.ID","User.Name"
 5,1,"a"
