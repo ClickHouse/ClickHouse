@@ -17,8 +17,10 @@ trap '$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"' EXIT
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
 
-# `timeout 30s` caps each query so a single hung ALTER/INSERT on a slow shard
-# cannot keep the loop alive until the 600s per-test budget is hit.
+# `timeout 120s` caps each query so a single hung ALTER/INSERT on a slow shard
+# cannot keep the loop alive until the 600s per-test budget is hit. The cap must
+# stay generous: on a debug build with s3 storage under parallel load a single
+# INSERT or ALTER occasionally takes more than 30 seconds without being hung.
 function report_error()
 {
     local STMT="$1"
@@ -62,7 +64,7 @@ function thread_alter()
             "ALTER TABLE alter_table MODIFY COLUMN IF EXISTS $1 UInt64" \
             "ALTER TABLE alter_table DROP COLUMN IF EXISTS $1"
         do
-            OUTPUT=$(timeout 30s $CLICKHOUSE_CLIENT --query "$STMT" 2>&1) && RC=0 || RC=$?
+            OUTPUT=$(timeout 120s $CLICKHOUSE_CLIENT --query "$STMT" 2>&1) && RC=0 || RC=$?
             ERROR=${OUTPUT//$'\n'/ }
             report_error "$STMT" "$RC" "$ERROR"
         done
@@ -75,7 +77,7 @@ function thread_insert()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        OUTPUT=$(timeout 30s $CLICKHOUSE_CLIENT -q "$STMT" 2>&1) && RC=0 || RC=$?
+        OUTPUT=$(timeout 120s $CLICKHOUSE_CLIENT -q "$STMT" 2>&1) && RC=0 || RC=$?
         ERROR=${OUTPUT//$'\n'/ }
         report_error "$STMT" "$RC" "$ERROR"
     done
