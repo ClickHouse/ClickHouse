@@ -354,13 +354,12 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.';
+SELECT '14. Partially materialized index + postprocessor: haystack is postprocessed on row-scan too.';
 
--- Old parts use row-level scan. The postprocessor is applied to the needle only,
--- never to the haystack. When old-part data is uppercase and the postprocessor lowercases
--- tokens, the row-scan cannot match: hasToken('FOO', lower('FOO')) = hasToken('FOO', 'foo') = 0.
--- New parts have the index: it stores lower('FOO')='foo', and lower('FOO')='foo' is the
--- lookup key, so row 3 is found. The count 1 (not 2) proves the haystack is untouched.
+-- The postprocessor is applied to the haystack on the row-scan path as well, so unindexed (old) parts
+-- match the same rows as indexed (new) parts. lower('FOO')='foo' on both paths, and the needle is
+-- lowered to 'foo', so each needle matches both its old and new row: count 2 (independent of whether
+-- the index is read).
 
 CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
@@ -372,21 +371,19 @@ ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', post
 
 INSERT INTO tab VALUES (3, 'FOO'), (4, 'BAR');  -- new parts: with index, same data
 
--- Old part row-scan: hasToken('FOO', 'foo') = 0. New part index: lower('FOO')='foo' found → 1. Total: 1.
-SELECT count() FROM tab WHERE hasToken(val, 'FOO');  -- 1
-SELECT count() FROM tab WHERE hasToken(val, 'BAR');  -- 1
+-- Old row-scan and new index both postprocess to 'foo'/'bar', so each needle matches both rows.
+SELECT count() FROM tab WHERE hasToken(val, 'FOO');  -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'BAR');  -- 2
 SELECT count() FROM tab WHERE hasToken(val, 'xyz');  -- 0
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.';
+SELECT '15. Partially materialized index + non-trivial postprocessor: haystack postprocessed on row-scan.';
 
--- When the postprocessor significantly transforms tokens (here: strips the suffix "ing"),
--- the postprocessed needle no longer matches the raw token in an unindexed part.
--- Old parts: hasToken('running', postprocessor('running')) = hasToken('running', 'runn') = 0.
--- New parts: index stores 'runn' (from 'running') and looks up postprocessor('running')='runn' → found.
--- Token unaffected by postprocessor ('cat'): old row-scan also matches → total is 2.
+-- A postprocessor that significantly transforms tokens (here: strips the suffix "ing") is applied to
+-- the haystack on the row-scan path too, so an unindexed part matches the same rows as an indexed one.
+-- 'running' → 'runn' on both paths, and the needle is postprocessed to 'runn', so both rows match.
 
 CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
@@ -398,9 +395,9 @@ ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', post
 
 INSERT INTO tab VALUES (3, 'running'), (4, 'cat');  -- new parts: with index
 
--- 'running' → postprocessor → 'runn'. Old row-scan: hasToken('running', 'runn') = 0. New index: 'runn' found → 1. Total: 1.
-SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 1
--- 'cat' is unchanged by the postprocessor. Old row-scan: hasToken('cat', 'cat') = 1. New index: 'cat' found → 1. Total: 2.
+-- 'running' → 'runn' on both row-scan and index paths → both rows match: 2.
+SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 2
+-- 'cat' is unchanged by the postprocessor → both rows match: 2.
 SELECT count() FROM tab WHERE hasToken(val, 'cat');      -- 2
 SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
 

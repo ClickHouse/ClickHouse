@@ -92,12 +92,12 @@ started	1
 1
 1
 0
-14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.
-1
-1
+14. Partially materialized index + postprocessor: haystack is postprocessed on row-scan too.
+2
+2
 0
-15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.
-1
+15. Partially materialized index + non-trivial postprocessor: haystack postprocessed on row-scan.
+2
 2
 0
 16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
