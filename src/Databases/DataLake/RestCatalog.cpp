@@ -932,7 +932,7 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
         const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
         String next_page_token;
         DB::Names page_tables;
-        {        
+        {
             ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTables);
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTablesMicroseconds);
             auto buf = createReadBuffer(config.prefix / endpoint, params);

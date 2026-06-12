@@ -1496,16 +1496,16 @@ The server successfully detected this situation and will download merged part fr
     M(DataLakeGlueCatalogDropTable, "Number of 'drop table' requests to Iceberg Glue catalog.", ValueType::Number) \
     M(DataLakeGlueCatalogDropTableMicroseconds, "Total time of 'drop table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
     \
-    M(DataLakeUnityCatalogGetTables, "Number of 'get tables' requests to Iceberg Unity catalog.", ValueType::Number) \
-    M(DataLakeUnityCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
-    M(DataLakeUnityCatalogGetTable, "Number of 'get table' requests to Iceberg Unity catalog.", ValueType::Number) \
-    M(DataLakeUnityCatalogGetTableMicroseconds, "Total time of 'get table' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
-    M(DataLakeUnityCatalogGetTableMetadata, "Number of 'get table metadata' requests to Iceberg Unity catalog.", ValueType::Number) \
-    M(DataLakeUnityCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
-    M(DataLakeUnityCatalogGetSchemas, "Number of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Number) \
-    M(DataLakeUnityCatalogGetSchemasMicroseconds, "Total time of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
-    M(DataLakeUnityCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Number) \
-    M(DataLakeUnityCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTables, "Number of 'get tables' requests to Delta Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Delta Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTable, "Number of 'get table' requests to Delta Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTableMicroseconds, "Total time of 'get table' requests to Delta Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTableMetadata, "Number of 'get table metadata' requests to Delta Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Delta Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetSchemas, "Number of 'get schemas' requests to Delta Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetSchemasMicroseconds, "Total time of 'get schemas' requests to Delta Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetCredentials, "Number of 'get credentials' requests to Delta Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Delta Unity catalog.", ValueType::Microseconds) \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
