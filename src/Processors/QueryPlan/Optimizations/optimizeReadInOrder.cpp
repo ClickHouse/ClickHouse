@@ -1312,10 +1312,16 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             /// step is applied. `buildSortingDAG` clears the local `limit` for these too, but
             /// since we bypass that cleared `limit`, we gate on the dedicated
             /// `has_row_reducing_step` flag instead.
+            ///
+            /// `SAMPLE` is also a row-reducing predicate invisible to `buildSortingDAG`: the
+            /// sampling `FilterTransform` is appended to the pipe after the `FINAL` merge
+            /// (see `ReadFromMergeTree::initializePipeline`), so stopping the merge after `N`
+            /// pre-sample groups can drop later sampled keys that should fill the top-`N`.
             bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
             bool has_deferred_filters = reading->getDeferredRowLevelFilter() || reading->getDeferredPrewhereInfo();
             if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_row_reducing_step
-                && !has_deferred_filters && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by)
+                && !has_deferred_filters && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by
+                && !reading->isQueryWithSampling())
                 reading->setFinalLimit(sorting.getLimit());
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
