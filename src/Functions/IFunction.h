@@ -291,11 +291,11 @@ public:
         /// to execute expr lazily, because it's used in both branches.
         /// Example 2: and(expr1, expr2(..., expr, ...), expr3(..., expr, ...)), here we
         /// should enable lazy execution for expr, because it must be filtered by expr1.
-        bool enable_lazy_execution_for_common_descendants_of_arguments;
+        bool enable_lazy_execution_for_common_descendants_of_arguments{};
         /// Should we enable lazy execution without checking isSuitableForShortCircuitArgumentsExecution?
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
-        bool force_enable_lazy_execution;
+        bool force_enable_lazy_execution{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -427,6 +427,8 @@ protected:
       *   - wrap getReturnType() result in Nullable type and pass to build
       *
       * Otherwise build returns build(arguments, getReturnType(arguments));
+      * Note that the function may be called with garbage input for the null rows (but the output will be masked out),
+      * so this is not suitable for heavy functions or functions with side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
