@@ -554,16 +554,19 @@ class LakeDataGenerator:
         if isinstance(dtype, TimestampType) or (
             HAS_TIMESTAMP_NTZ and isinstance(dtype, TimestampNTZType)
         ):
-            return f"TIMESTAMP '{self._rand_timestamp().strftime('%Y-%m-%d %H:%M:%S.%f')}'"
+            return (
+                f"TIMESTAMP '{self._rand_timestamp().strftime('%Y-%m-%d %H:%M:%S.%f')}'"
+            )
         if isinstance(dtype, BinaryType):
             return f"X'{self._rand_binary(random.randint(0, 8)).hex()}'"
         return None
 
     def insert_random_data(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Inserting {nrows} row(s) into {tpath}")
         df = self._create_random_df(spark, table, nrows)
-        self.logger.info(f"Inserting {nrows} row(s) into {table.get_table_full_path()}")
-        df.writeTo(table.get_table_full_path()).append()
+        df.writeTo(tpath).append()
 
     def run_query(self, session, query: str):
         self.logger.info(f"Running query: {query}")
@@ -574,6 +577,8 @@ class LakeDataGenerator:
 
     def merge_into_table(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Merging {nrows} row(s) into {tpath}")
         df = self._create_random_df(spark, table, nrows)
         df.createOrReplaceTempView("updates")
 
@@ -588,20 +593,19 @@ class LakeDataGenerator:
             "UPDATE SET *",
             f"UPDATE SET {','.join([f't.{cname} = s.{cname}' for cname in to_update])}",
         ]
-
-        self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
         self.run_query(
             spark,
-            f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
+            f"MERGE INTO {tpath} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
  WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
 {f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
-        self.logger.info(f"Delete from table {table.get_table_full_path()}")
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Delete from table {tpath}")
         self.run_query(
             spark,
-            f"DELETE FROM {table.get_table_full_path()} WHERE {self._random_predicate(table)};",
+            f"DELETE FROM {tpath} WHERE {self._random_predicate(table)};",
         )
 
     def update_rows(self, spark: SparkSession, table: SparkTable):
@@ -609,6 +613,8 @@ class LakeDataGenerator:
         # MERGE). SET targets are top-level, non-generated columns; scalar
         # columns get a typed literal, complex-typed columns are nulled when
         # nullable (their literals are impractical to spell inline).
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Update rows in {tpath}")
         targets = [c for c, sc in table.columns.items() if not sc.generated]
         random.shuffle(targets)
         assignments = []
@@ -620,8 +626,6 @@ class LakeDataGenerator:
                 assignments.append(f"{c} = NULL")
         if not assignments:
             return
-        tpath = table.get_table_full_path()
-        self.logger.info(f"Update rows in {tpath}")
         self.run_query(
             spark,
             f"UPDATE {tpath} SET {', '.join(assignments)} WHERE {self._random_predicate(table)};",
@@ -633,14 +637,14 @@ class LakeDataGenerator:
         # session is per-operation and stopped right after, so this conf does
         # not leak to other work).
         nrows: int = random.randint(0, 100)
+        tpath = table.get_table_full_path()
+        self.logger.info(f"INSERT REPLACE WHERE {nrows} row(s) into {tpath}")
         df = self._create_random_df(spark, table, nrows)
         view_name = f"replace_src_{table.table_name}"
         df.createOrReplaceTempView(view_name)
         spark.conf.set(
             "spark.databricks.delta.replaceWhere.constraintCheck.enabled", "false"
         )
-        tpath = table.get_table_full_path()
-        self.logger.info(f"INSERT REPLACE WHERE {nrows} row(s) into {tpath}")
         self.run_query(
             spark,
             f"INSERT INTO {tpath} REPLACE WHERE {self._random_predicate(table)} SELECT * FROM {view_name};",
@@ -650,53 +654,53 @@ class LakeDataGenerator:
         # Dynamic partition overwrite via DataFrameWriterV2: replaces only the
         # partitions present in the new data (full overwrite when unpartitioned).
         nrows: int = random.randint(0, 100)
-        df = self._create_random_df(spark, table, nrows)
         tpath = table.get_table_full_path()
         self.logger.info(f"Overwrite partitions of {tpath} with {nrows} row(s)")
+        df = self._create_random_df(spark, table, nrows)
         df.writeTo(tpath).overwritePartitions()
 
     def overwrite_where_data(self, spark: SparkSession, table: SparkTable):
         # Conditional overwrite via DataFrameWriterV2: atomically deletes rows
         # matching the condition and appends the new data.
         nrows: int = random.randint(0, 100)
-        df = self._create_random_df(spark, table, nrows)
         tpath = table.get_table_full_path()
         self.logger.info(f"Overwrite rows of {tpath} with {nrows} row(s)")
+        df = self._create_random_df(spark, table, nrows)
         df.writeTo(tpath).overwrite(F.expr(self._random_predicate(table)))
 
     def insert_into_branch(self, spark: SparkSession, table: SparkTable):
         # Iceberg branch write: create a branch and insert into it. The main
         # branch (what readers / tablecheck see) is left unchanged.
-        branch = f"b_{random.randint(1, 1000000)}"
+        branch = f"b_{random.randint(1, 3)}"
         tpath = table.get_table_full_path()
+        nrows: int = random.randint(0, 100)
+        self.logger.info(f"INSERT {nrows} row(s) into branch {branch} of {tpath}")
         self.run_query(
             spark, f"ALTER TABLE {tpath} CREATE BRANCH IF NOT EXISTS {branch};"
         )
-        nrows: int = random.randint(0, 100)
         df = self._create_random_df(spark, table, nrows)
         view_name = f"branch_src_{table.table_name}"
         df.createOrReplaceTempView(view_name)
-        self.logger.info(f"INSERT {nrows} row(s) into branch {branch} of {tpath}")
         self.run_query(
             spark,
             f"INSERT INTO {tpath}.branch_{branch} SELECT * FROM {view_name};",
         )
 
     def truncate_table(self, spark: SparkSession, table: SparkTable):
-        self.logger.info(f"Truncate table {table.get_table_full_path()}")
-        self.run_query(spark, f"DELETE FROM {table.get_table_full_path()};")
+        tpath = table.get_table_full_path()
+        self.logger.info(f"Truncate table {tpath}")
+        self.run_query(spark, f"DELETE FROM {tpath};")
 
     def insert_overwrite_data(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)
+        tpath = table.get_table_full_path()
+        self.logger.info(f"INSERT OVERWRITE {nrows} row(s) into {tpath}")
         df = self._create_random_df(spark, table, nrows)
         view_name = f"overwrite_src_{table.table_name}"
         df.createOrReplaceTempView(view_name)
-        self.logger.info(
-            f"INSERT OVERWRITE {nrows} row(s) into {table.get_table_full_path()}"
-        )
         self.run_query(
             spark,
-            f"INSERT OVERWRITE {table.get_table_full_path()} SELECT * FROM {view_name};",
+            f"INSERT OVERWRITE {tpath} SELECT * FROM {view_name};",
         )
 
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
@@ -752,6 +756,7 @@ class LakeDataGenerator:
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
+                self.logger.info(f"Running SQL procedure on {table.get_table_full_path()}")
                 stmt = next_table_generator.generate_extra_statement(spark, table)
                 if stmt:
                     self.run_query(spark, stmt)
@@ -760,7 +765,10 @@ class LakeDataGenerator:
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                stmt = next_table_generator.generate_alter_table_statements(spark, table)
+                self.logger.info(f"Running ALTER statement on {table.get_table_full_path()}")
+                stmt = next_table_generator.generate_alter_table_statements(
+                    spark, table
+                )
                 if stmt:
                     self.run_query(spark, stmt)
         except Exception as e:
