@@ -93,8 +93,7 @@ static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
     return nuraft::snapshot::deserialize(*buf);
 }
 
-/// nuraft::snapshot identity is (last_log_idx, last_log_term); size and cluster config are
-/// payload. Raft log matching guarantees one identity per committed prefix.
+/// Snapshot identity is (last_log_idx, last_log_term); Raft log matching guarantees one per committed prefix.
 static bool sameSnapshotIdentity(const nuraft::snapshot & lhs, const nuraft::snapshot & rhs)
 {
     return lhs.get_last_log_idx() == rhs.get_last_log_idx()
@@ -739,9 +738,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     });
 
     /// Consume the pending install context for THIS snapshot (matched by identity) on every
-    /// exit; a pending context with a different identity belongs to another install and is
-    /// left untouched. Runs after all inner lock_guards unwind, so re-acquiring
-    /// `snapshots_lock` here cannot deadlock.
+    /// exit; a different identity belongs to another install. Runs after inner lock_guards unwind.
     SCOPE_EXIT({
         std::lock_guard lock(snapshots_lock);
         if (pending_snapshot_to_apply && sameSnapshotIdentity(*pending_snapshot_to_apply, s))
@@ -770,13 +767,10 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         }
         if (s.get_last_log_idx() < pending_snapshot->get_last_log_idx())
         {
-            /// A newer install's save displaced this install's pending context (NuRaft drops
-            /// its lock between save and apply). Returning success makes NuRaft record this
-            /// snapshot's index as committed — sound only when local commits already cover it.
-            /// Otherwise fail closed: the throw makes NuRaft exit the process
-            /// (`handle_install_failure` -> `system_exit`), and `init` then recovers from the
-            /// displacing install, which is fully saved on disk. Silently skipping would
-            /// diverge if the newer install never gets applied.
+            /// A newer install's save displaced this pending context (NuRaft drops its lock
+            /// between save and apply). Skip-as-success is sound only when local commits
+            /// already cover the snapshot; otherwise fail closed — NuRaft exits the process
+            /// and `init` recovers from the displacing install, which is fully saved on disk.
             const auto last_committed = keeper_context->lastCommittedIndex();
             if (last_committed >= s.get_last_log_idx())
             {
@@ -1052,10 +1046,9 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
                     if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                     {
-                        /// Return the file backing the high-water mark, not the manager's map max — the
-                        /// max may be a saved-but-not-applied install that `last_snapshot` does not
-                        /// report. Feeds the S3 upload and shutdown-upload paths; probe existence to
-                        /// match the old `getLatestSnapshotInfo` contract (consumers handle nullptr).
+                        /// Return the file backing the mark, not the map max (which may be a
+                        /// saved-but-not-applied install `last_snapshot` does not report).
+                        /// Probe existence to keep the old `getLatestSnapshotInfo` contract.
                         snapshot_file_info = getSnapshotPinUnlocked(latest_snapshot_meta->get_last_log_idx());
                         if (snapshot_file_info)
                         {
@@ -1095,9 +1088,8 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
                             if (!file_exists)
                             {
-                                /// Fail closed: never truncate/rewrite registered bytes in place (transfers
-                                /// and S3 uploads stream them outside `snapshots_lock`). This creation fails
-                                /// (`when_done(false)`) and NuRaft retries at a later snapshot boundary.
+                                /// Fail closed: never rewrite registered bytes in place (transfers stream
+                                /// them outside the lock). NuRaft retries at a later snapshot boundary.
                                 throw Exception(
                                     ErrorCodes::CORRUPTED_DATA,
                                     "Snapshot with last log idx {} is already registered (file {}) but the file "
@@ -1106,12 +1098,10 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                                     registered_same_index->path);
                             }
 
-                            /// Defensive adopt: a queued create task can drain after a stale duplicate
-                            /// install at the same index was saved without being applied. By Raft log
-                            /// matching the registered file is state-equivalent to what we would write,
-                            /// so adopt it instead of truncating registered bytes in place, and re-sync
-                            /// the mark upward. The file is deliberately not re-read; a genuine identity
-                            /// mismatch would be caught fail-closed by `apply_snapshot`'s checks.
+                            /// Defensive adopt: a queued create can drain after a stale duplicate install
+                            /// at the same index was saved without being applied. The registered file is
+                            /// state-equivalent by Raft log matching (deliberately not re-read — a genuine
+                            /// mismatch fails closed in `apply_snapshot`); adopt it and re-sync the mark.
                             LOG_WARNING(
                                 log,
                                 "Snapshot with last log idx {} is already registered (file {}) while the latest "
@@ -1305,9 +1295,8 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotObject);
         if (is_last_obj)
         {
-            /// Stamp the per-install context consumed by the matching apply_snapshot — NOT
-            /// `latest_snapshot_meta`: an install may target an index below the high-water
-            /// mark (re-install from a new leader) and must still be applied.
+            /// NOT `latest_snapshot_meta`: an install may target an index below the mark
+            /// (re-install from a new leader) and must still be applied.
             pending_snapshot_to_apply = cloneSnapshotMeta(s);
             snapshot_receive_ctx.reset();
 
