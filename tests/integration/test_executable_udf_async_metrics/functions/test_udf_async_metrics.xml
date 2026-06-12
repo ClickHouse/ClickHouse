@@ -46,6 +46,18 @@
     </function>
     <function>
         <type>executable</type>
+        <name>test_udf_async_hang</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>udf_async_hang.py</command>
+        <command_read_timeout>10000</command_read_timeout>
+        <command_termination_timeout>2</command_termination_timeout>
+    </function>
+    <function>
+        <type>executable</type>
         <name>test_udf_async_mem_sleep</name>
         <return_type>UInt64</return_type>
         <argument>

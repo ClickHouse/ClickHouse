@@ -24,6 +24,7 @@ SCRIPTS = (
     "udf_async_child_pool.py",
     "udf_async_mem_kill_pool.py",
     "udf_async_mem_sleep.py",
+    "udf_async_hang.py",
     "nonudf_exec_mem_sleep.py",
 )
 
@@ -157,6 +158,43 @@ def test_inflight_executable_invocation_is_visible(started_cluster):
     assert not thread.is_alive(), "query did not finish"
 
     # The non-pool child is reaped at query end and must leave both metrics.
+    assert _wait_for(lambda: _memory_resident() - mem_before < 30 * MiB), (
+        f"memory did not return to baseline, increase {_memory_resident() - mem_before}"
+    )
+    assert _wait_for(lambda: _processes() - procs_before == 0)
+
+
+def test_timed_out_executable_is_killed_and_leaves_metrics(started_cluster):
+    _skip_msan()
+    # Covers cleanup after a FAILED invocation: the script hangs after
+    # allocating, command_read_timeout (10 s) fails the query, and the error
+    # path must tear the stuck process down and release its registry entry.
+    mem_before = _memory_resident()
+    procs_before = _processes()
+
+    errors = []
+
+    def run_query():
+        try:
+            node.query("SELECT test_udf_async_hang(1)")
+        except Exception as e:
+            errors.append(e)
+
+    thread = threading.Thread(target=run_query)
+    thread.start()
+    try:
+        assert _wait_for(
+            lambda: _memory_resident() - mem_before >= 100 * MiB,
+            timeout=12,
+            interval=0.3,
+        ), f"hanging memory increase {_memory_resident() - mem_before} is below 100 MiB"
+        assert _processes() - procs_before >= 1
+    finally:
+        thread.join(timeout=60)
+
+    assert errors, "query unexpectedly succeeded, expected a read timeout"
+    assert "TIMEOUT_EXCEEDED" in str(errors[0]), f"unexpected error: {errors[0]}"
+
     assert _wait_for(lambda: _memory_resident() - mem_before < 30 * MiB), (
         f"memory did not return to baseline, increase {_memory_resident() - mem_before}"
     )
