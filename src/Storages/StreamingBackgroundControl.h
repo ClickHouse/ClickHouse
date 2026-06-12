@@ -50,10 +50,12 @@ public:
 
     /// Decide whether the background task should run a streaming cycle on this scheduler wake-up:
     /// true when consumption is not blocked, or a SYSTEM REFRESH has requested one out-of-order cycle.
-    /// Consumes the one-shot REFRESH request, so call it exactly once per wake-up. After the cycle
-    /// runs, use `isBlocked()` to decide whether to keep cycling: it stays true while STOP/PAUSE are in
-    /// effect, so a REFRESH grants exactly one cycle and then the block resumes.
-    bool shouldRunCycle() { return !isBlocked() || refresh_once.exchange(false); }
+    /// Consumes the one-shot REFRESH request, so call it exactly once per wake-up.
+    bool shouldRunCycle()
+    {
+        const bool one_shot = refresh_once.exchange(false);
+        return one_shot || !isBlocked();
+    }
 
 private:
     ActionBlocker blocker;

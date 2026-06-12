@@ -416,3 +416,49 @@ def test_system_stop_requires_grant(kafka_cluster):
             instance.query(f"SYSTEM {verb} test.{table}", user=user)
 
         instance.query(f"DROP USER {user}")
+
+def test_pause_after_refresh_while_running(kafka_cluster):
+    # A REFRESH issued while the stream is running cannot leave a stale one-shot
+    # grant behind. If the one-shot is not consumed while running, a later PAUSE is
+    # violated: the next background wake-up spends the leftover grant on one full committed
+    # cycle, ingesting data that arrived after the PAUSE.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_staleref_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table):
+        # Data produced right after PAUSE sits in the topic for ~10s before the next wake-up
+        # so a stale one-shot firing
+        # on that wake-up is reliably observed by the stability window below.
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 500,
+                         kafka_consumer_reschedule_ms = 10000;
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table};
+            """
+        )
+
+        produce(kafka_cluster, table, 0, 10)
+        wait_dst_count(table, 10)
+
+        # Plant the one-shot while the stream is running, then PAUSE before the next wake-up.
+        instance.query(f"SYSTEM REFRESH test.{table}")
+        instance.query(f"SYSTEM PAUSE test.{table}")
+
+        # Let the cycle the REFRESH may have triggered finish: PAUSE lets an in-flight cycle
+        # complete, and rows produced while it is still polling would legitimately land in it.
+        time.sleep(2)
+        produce(kafka_cluster, table, 10, 10)
+
+        # The window outlasts the 10 s reschedule: if a stale one-shot survived the REFRESH,
+        # the wake-up consumes the second batch here and the count grows past 10.
+        assert_dst_count_stable(table, 10, seconds=15)
+
+        instance.query(f"SYSTEM START test.{table}")
+        wait_dst_count(table, 20)
