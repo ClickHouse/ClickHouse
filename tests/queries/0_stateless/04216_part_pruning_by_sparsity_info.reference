@@ -28,21 +28,21 @@ mixed  = 0	2500
 mixed  = 0 baseline	2500
 projection drop-extremal	1001
 projection drop-extremal baseline	1001
-      Sparsity
-          all_default
-        Parts: 2/4
-        Granules: 2/4
-        Parts: 2/2
-        Granules: 2/2
-      Sparsity
-          no_default
-        Parts: 1/4
-        Granules: 1/4
-        Parts: 1/1
-        Granules: 1/1
-      Sparsity
-          mixed
-        Parts: 2/4
-        Granules: 2/4
-        Parts: 2/2
-        Granules: 2/2
+Sparsity
+all_default
+Parts: 2/4
+Granules: 2/4
+Parts: 2/2
+Granules: 2/2
+Sparsity
+no_default
+Parts: 1/4
+Granules: 1/4
+Parts: 1/1
+Granules: 1/1
+Sparsity
+mixed
+Parts: 2/4
+Granules: 2/4
+Parts: 2/2
+Granules: 2/2

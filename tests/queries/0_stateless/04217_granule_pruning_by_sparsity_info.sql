@@ -50,7 +50,7 @@ SELECT 'unprunable off',      count() FROM t_granule_prune WHERE x = 0 SETTINGS
 -- EXPLAIN: the `Sparsity` step drops 5 of 10 granules for `WHERE x != 0`.
 -- Strip the surrounding plan so the assertion is robust to clickhouse-test random
 -- settings that rename steps.
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_granule_prune WHERE x != 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%'

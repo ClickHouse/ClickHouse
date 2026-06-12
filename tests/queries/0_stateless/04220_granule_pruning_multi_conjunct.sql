@@ -47,7 +47,7 @@ SELECT 'planning sum',  sum(a + b) FROM t_multi_conjunct WHERE a != 0 AND b != 0
 SELECT 'data_read sum', sum(a + b) FROM t_multi_conjunct WHERE a != 0 AND b != 0 SETTINGS use_sparsity_info_for_pruning = 'data_read';
 
 -- EXPLAIN: `Sparsity` step prunes 9 of 10 granules and lists both `a` and `b` as keys.
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_multi_conjunct WHERE a != 0 AND b != 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%'

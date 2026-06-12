@@ -60,19 +60,19 @@ SELECT 'projection drop-extremal baseline', count() FROM (SELECT id FROM t_spars
 -- differences that random clickhouse-test settings can introduce (Expression vs Filter
 -- step naming, extra rename steps, etc.).
 -- `all_default != 0` -- p1 and p2 are all-default, dropped; p3 and p4 are kept.
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_sparsity_prune WHERE all_default != 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%' OR trimLeft(explain) LIKE 'Parts: %' OR trimLeft(explain) LIKE 'Granules: %' OR trimLeft(explain) LIKE 'all_default';
 
 -- `no_default = 0` -- only p3 has any defaults in no_default, the other three parts are dropped.
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_sparsity_prune WHERE no_default = 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%' OR trimLeft(explain) LIKE 'Parts: %' OR trimLeft(explain) LIKE 'Granules: %' OR trimLeft(explain) LIKE 'no_default';
 
 -- `mixed != 0` -- p2 and p4 are all-default in `mixed`, dropped; p1 and p3 kept.
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_sparsity_prune WHERE mixed != 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%' OR trimLeft(explain) LIKE 'Parts: %' OR trimLeft(explain) LIKE 'Granules: %' OR trimLeft(explain) LIKE 'mixed';

@@ -38,7 +38,7 @@ SELECT 'q1', count() FROM t_partial_cache WHERE id < 500 AND x != 0
 -- Q2: full range. The Sparsity step must still drop 8 of 10 granules; under the
 -- old behaviour Q1's partial cache would suppress pruning of marks 6..9 and
 -- this row would read `Granules: 6/10`.
-SELECT 'q2_pruning' AS what, explain FROM (
+SELECT 'q2_pruning' AS what, trimLeft(explain) FROM (
     EXPLAIN indexes = 1 SELECT id FROM t_partial_cache WHERE x != 0
     SETTINGS use_sparsity_info_for_pruning = 'planning',
              use_query_condition_cache = 1
