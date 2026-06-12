@@ -110,6 +110,29 @@ ${CLICKHOUSE_CLIENT} -nm --user="${USER_SRC}" --query "
     SELECT count() FROM ${DB_A}.${T_A};
 " >/dev/null && echo "Access granted"
 
+# INSERT through the facade resolves to a table owned by an underlying database, and the
+# INSERT privilege is checked against that owning database — a grant on the Overlay alone
+# must not allow writing into a source the user cannot write to directly.
+${CLICKHOUSE_CLIENT} -nm --query "
+    GRANT INSERT ON ${DB_OVL}.* TO ${USER_OVL};
+    GRANT INSERT ON ${DB_A}.* TO ${USER_SRC};
+"
+
+echo 'A grant on the Overlay database alone does not allow inserting through the facade'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
+    INSERT INTO ${DB_OVL}.${T_A} VALUES (100, 'x100');
+" 2>&1 | grep -o ACCESS_DENIED | uniq
+
+echo 'A grant on the underlying database allows inserting through the facade'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_SRC}" --query "
+    INSERT INTO ${DB_OVL}.${T_A} VALUES (200, 'x200');
+" >/dev/null && echo "Access granted"
+
+echo 'The inserted row landed in the underlying table'
+${CLICKHOUSE_CLIENT} -nm --query "
+    SELECT count() FROM ${DB_A}.${T_A} WHERE id = 200;
+"
+
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE IF EXISTS ${DB_OVL};
     DROP DATABASE IF EXISTS ${DB_A};

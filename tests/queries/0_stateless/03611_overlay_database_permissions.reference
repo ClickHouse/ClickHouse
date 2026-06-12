@@ -14,3 +14,9 @@ ACCESS_DENIED
 A grant on an underlying database alone does not allow reading through the facade
 ACCESS_DENIED
 Access granted
+A grant on the Overlay database alone does not allow inserting through the facade
+ACCESS_DENIED
+A grant on the underlying database allows inserting through the facade
+Access granted
+The inserted row landed in the underlying table
+1
