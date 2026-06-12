@@ -492,7 +492,7 @@ Skip merging: 0
 With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
 
 :::note
-`distributed` is rendered only in the legacy (non-`pretty`) form, because the `pretty` output does not integrate the remote shard plans into the plan tree. For this reason, enabling `distributed` automatically disables the `pretty` defaults (`actions`, `compact`, and `pretty`), regardless of `explain_query_plan_default`. You can still set `actions` manually. The `distributed` option is also not supported together with `json`.
+`distributed` is rendered only in the legacy (non-`pretty`) form, because the `pretty` output does not integrate the remote shard plans into the plan tree. For this reason, enabling `distributed` automatically disables the `pretty` defaults (`actions`, `compact`, and `pretty`), regardless of `explain_query_plan_default`. You can still set `actions=1` manually. The `distributed` option is also not supported together with `json`.
 :::
 
 Example with distributed table:
