@@ -31,7 +31,6 @@ BlockIO InterpreterCheckGrantQuery::execute()
     return res;
 }
 
-void registerInterpreterCheckGrantQuery(InterpreterFactory & factory);
 void registerInterpreterCheckGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

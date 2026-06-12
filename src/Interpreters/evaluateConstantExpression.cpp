@@ -75,7 +75,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     return {res, type};
 }
 
-static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
+std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -115,7 +115,7 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
         auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
@@ -140,6 +140,12 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         {
             result_column = output->column;
             result_type = output->result_type;
+
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+            if (result_column->empty() && isColumnConst(*result_column))
+                result_column = result_column->cloneResized(1);
         }
     }
     else
@@ -179,12 +185,6 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
-
-    /// All constant (literal) columns in block are added with size 1.
-    /// But if there was no columns in block before executing a function, the result has size 0.
-    /// Change the size to 1.
-    if (result_column->empty() && isColumnConst(*result_column))
-        result_column = result_column->cloneResized(1);
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -545,11 +545,7 @@ namespace
         {
             if (const auto * node = findMatch(key, matches))
             {
-                /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
-                /// because the conjunction map is consumed by evaluatePartialResult with
-                /// input_rows_count == 1, and downstream consumers (e.g. createBlockSelector)
-                /// rely on the column's row count.
-                ColumnPtr column = ColumnConst::create(col->getDataColumnPtr(), 1);
+                ColumnPtr column = col->getPtr();
                 if (!value->result_type->equals(*node->result_type))
                 {
                     auto inner = tryCastColumn(col->getDataColumnPtr(), value->result_type, node->result_type);
@@ -578,7 +574,10 @@ namespace
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return {};
 
-        const auto & col = value->column->getDataColumnPtr();
+        auto col = value->column;
+        if (const auto * col_const = typeid_cast<const ColumnConst *>(col.get()))
+            col = col_const->getDataColumnPtr();
+
         const auto * col_set = typeid_cast<const ColumnSet *>(col.get());
         if (!col_set || !col_set->getData())
             return {};
@@ -634,7 +633,7 @@ namespace
         if (node->result_type->isNullable() && set->hasNull())
         {
             auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
+            res.push_back({ConjunctionMap{{node, {col_null, node->result_type, node->result_name}}}});
         }
 
         size_t num_rows = column->size();
@@ -734,7 +733,7 @@ namespace
         }
         else if (node->type == ActionsDAG::ActionType::COLUMN)
         {
-            if (node->result_type->canBeUsedInBooleanContext())
+            if (isColumnConst(*node->column) && node->result_type->canBeUsedInBooleanContext())
             {
                 if (!node->column->getBool(0))
                     return DisjunctionList{};
