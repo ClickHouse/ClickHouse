@@ -1,5 +1,11 @@
--- Tags: shard
+-- Tags: shard, no-old-analyzer
 -- https://github.com/ClickHouse/ClickHouse/issues/85895
+-- The fix lives entirely in the new analyzer's distributed query-tree rewrite
+-- (`buildQueryTreeDistributed`, wrapping duplicate ALIAS expansions into the
+-- internal `__actionName` function), so the test is only meaningful there. The
+-- old analyzer uses a separate AST-based path that cannot even resolve ALIAS
+-- columns of a `GLOBAL JOIN` right-hand table, which is an unrelated, pre-existing
+-- limitation, so the test is restricted to the new analyzer.
 -- When several ALIAS columns share the same expression, the Distributed engine
 -- must not collapse them into a single column of the block sent over the
 -- network. At the same time, referencing the *same* ALIAS column from more
