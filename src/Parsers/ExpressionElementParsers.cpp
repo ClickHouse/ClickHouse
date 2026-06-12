@@ -10,7 +10,6 @@
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
@@ -50,7 +49,6 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
-#include <Core/UUID.h>
 
 namespace DB
 {
@@ -79,70 +77,6 @@ inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, 
         expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
     }
 }
-
-String ilikePatternToRegexp(const String & pattern)
-{
-    return "(?i)" + likePatternToRegexp(pattern);
-}
-
-bool parseColumnsMatcherFromLikePattern(IParser::Pos & pos, Expected & expected, bool qualified, ASTPtr & node)
-{
-    bool case_insensitive = false;
-    if (ParserKeyword(Keyword::ILIKE).ignore(pos, expected))
-        case_insensitive = true;
-    else if (!ParserKeyword(Keyword::LIKE).ignore(pos, expected))
-        return false;
-
-    ParserStringLiteral string_literal;
-    ASTPtr like_pattern;
-    if (!string_literal.parse(pos, like_pattern, expected))
-        return true;
-
-    const auto & like_pattern_str = like_pattern->as<ASTLiteral &>().value.safeGet<String>();
-    const auto pattern = case_insensitive ? ilikePatternToRegexp(like_pattern_str) : likePatternToRegexp(like_pattern_str);
-    if (qualified)
-    {
-        auto columns_matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
-        columns_matcher->setPattern(pattern);
-        node = std::move(columns_matcher);
-        return true;
-    }
-
-    auto columns_matcher = make_intrusive<ASTColumnsRegexpMatcher>();
-    columns_matcher->setPattern(pattern);
-    node = std::move(columns_matcher);
-    return true;
-}
-
-void attachColumnTransformers(ASTPtr & matcher, ASTPtr transformers)
-{
-    if (!transformers || transformers->children.empty())
-        return;
-
-    ASTPtr * matcher_transformers = nullptr;
-
-    if (auto * asterisk = matcher->as<ASTAsterisk>())
-    {
-        matcher_transformers = &asterisk->transformers;
-    }
-    else if (auto * qualified_asterisk = matcher->as<ASTQualifiedAsterisk>())
-    {
-        matcher_transformers = &qualified_asterisk->transformers;
-    }
-    else if (auto * columns_matcher = matcher->as<ASTColumnsRegexpMatcher>())
-    {
-        matcher_transformers = &columns_matcher->transformers;
-    }
-    else
-    {
-        auto & qualified_columns_matcher = matcher->as<ASTQualifiedColumnsRegexpMatcher &>();
-        matcher_transformers = &qualified_columns_matcher.transformers;
-    }
-
-    *matcher_transformers = std::move(transformers);
-    matcher->children.push_back(*matcher_transformers);
-}
-
 }
 
 /*
@@ -310,10 +244,8 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::QuotedIdentifier)
     {
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (*pos->begin == '\xE2' && pos->size() >= 6)
+        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
         {
-            if (pos->size() == 6) /// Empty Unicode-quoted identifiers are not allowed.
-                return false;
             node = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
             ++pos;
             return true;
@@ -455,7 +387,7 @@ protected:
     }
 
 private:
-    size_t last_array_level{};
+    size_t last_array_level;
 };
 
 }
@@ -525,7 +457,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
-    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -539,13 +470,11 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
-            has_uuid_clause = true;
         }
 
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
-        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
@@ -578,7 +507,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 
 bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    chassert(node);
+    assert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
@@ -622,7 +551,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    chassert(node);
+    assert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     // Variant 1:
@@ -1190,7 +1119,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto try_read_float = [&](const char * it, const char * end)
     {
         std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
-        char * str_end = nullptr;
+        char * str_end;
         errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
@@ -1442,7 +1371,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         std::string_view here_doc(pos->begin, pos->size());
         size_t heredoc_size = here_doc.find('$', 1) + 1;
-        chassert(heredoc_size != std::string_view::npos);
+        assert(heredoc_size != std::string_view::npos);
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
@@ -1754,7 +1683,6 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
-    "STREAM",
     "UNION",
     "USING",
     "WHERE",
@@ -2009,13 +1937,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::Asterisk)
     {
         ++pos;
-
-        ASTPtr res;
-        if (parseColumnsMatcherFromLikePattern(pos, expected, false /*qualified*/, res) && !res)
-            return false;
-        if (!res)
-            res = make_intrusive<ASTAsterisk>();
-
+        auto asterisk = make_intrusive<ASTAsterisk>();
         auto transformers = make_intrusive<ASTColumnsTransformerList>();
         ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
@@ -2024,9 +1946,13 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             transformers->children.push_back(transformer);
         }
 
-        attachColumnTransformers(res, std::move(transformers));
+        if (!transformers->children.empty())
+        {
+            asterisk->transformers = std::move(transformers);
+            asterisk->children.push_back(asterisk->transformers);
+        }
 
-        node = std::move(res);
+        node = std::move(asterisk);
         return true;
     }
     return false;
@@ -2046,12 +1972,7 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
     ++pos;
 
-    ASTPtr res;
-    if (parseColumnsMatcherFromLikePattern(pos, expected, true /*qualified*/, res) && !res)
-        return false;
-    if (!res)
-        res = make_intrusive<ASTQualifiedAsterisk>();
-
+    auto res = make_intrusive<ASTQualifiedAsterisk>();
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
@@ -2060,21 +1981,14 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         transformers->children.push_back(transformer);
     }
 
-    ASTPtr * matcher_qualifier = nullptr;
-    if (auto * qualified_asterisk = res->as<ASTQualifiedAsterisk>())
-    {
-        matcher_qualifier = &qualified_asterisk->qualifier;
-    }
-    else
-    {
-        auto & columns_matcher = res->as<ASTQualifiedColumnsRegexpMatcher &>();
-        matcher_qualifier = &columns_matcher.qualifier;
-    }
+    res->qualifier = std::move(node);
+    res->children.push_back(res->qualifier);
 
-    *matcher_qualifier = std::move(node);
-    res->children.push_back(*matcher_qualifier);
-
-    attachColumnTransformers(res, std::move(transformers));
+    if (!transformers->children.empty())
+    {
+        res->transformers = std::move(transformers);
+        res->children.push_back(res->transformers);
+    }
 
     node = std::move(res);
     return true;
@@ -2592,7 +2506,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    TTLMode mode = {};
+    TTLMode mode;
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 

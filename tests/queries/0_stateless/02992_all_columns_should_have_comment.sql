@@ -1,5 +1,3 @@
--- Tags: no-llvm-coverage
-
 SYSTEM FLUSH LOGS /* all tables */;
 SELECT 'Column ' || name || ' from table ' || concat(database, '.', table) || ' should have a comment'
 FROM system.columns

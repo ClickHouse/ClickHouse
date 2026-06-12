@@ -2,8 +2,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
 #include <deque>
 
 namespace DB
@@ -32,16 +30,13 @@ struct QueueEvictionInfo
     size_t elements_to_evict = 0;
     IFileCachePriority::HoldSpacePtr hold_space;
 
-    /// Overwrite the eviction target with `other`'s. No accumulation.
-    void setEvictTarget(const QueueEvictionInfo & other);
-
-    /// Merge `other_hold` into ours so all reservations stay live until
-    /// release. No-op if null.
-    void absorbHoldSpace(IFileCachePriority::HoldSpacePtr other_hold);
+    void merge(QueueEvictionInfoPtr other);
 
     std::string toString() const;
     /// Whether actual eviction is needed to be done.
     bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+    /// Whether we "hold" some space.
+    bool hasHoldSpace() const { return hold_space != nullptr; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 };
@@ -53,7 +48,7 @@ using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 /// Aggregated eviction info:
 /// - contains QueueEvictionInfo per queue_id
 /// - aggregates all methods among all QueueEvictionInfo's.
-class EvictionInfo : public absl::flat_hash_map<QueueID, QueueEvictionInfoPtr>, private boost::noncopyable
+class EvictionInfo : public std::map<QueueID, QueueEvictionInfoPtr>, private boost::noncopyable
 {
 public:
     EvictionInfo() = default;
@@ -70,32 +65,28 @@ public:
 
     size_t getSizeToEvict() const { return size_to_evict; }
     size_t getElementsToEvict() const { return elements_to_evict; }
-    size_t getHoldSize() const { return hold_size; }
-    size_t getHoldElements() const { return hold_elements; }
     /// Whether actual eviction is needed to be done.
     bool requiresEviction() const { return size_to_evict || elements_to_evict; }
     /// Whether we "hold" some space.
-    bool hasHoldSpace() const { return hold_size || hold_elements; }
+    bool hasHoldSpace() const;
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 
     std::string toString() const;
 
-    /// Keep `usage` alive so a concurrent `cache_usage.snapshot` cannot destroy
-    /// the user's per-client priority while we hold raw pointers into it.
-    /// `shared_ptr` value dedupes: same user across iterations is stored once.
-    void addCacheUsage(CacheUsagePtr usage) { kept_alive_cache_usage.insert(std::move(usage)); }
+    void setCacheUsage(std::vector<CacheUsagePtr> && usage) { sorted_cache_usage = std::move(usage); }
+    std::vector<CacheUsagePtr> getCacheUsage() const { return sorted_cache_usage; }
 
 private:
-    /// On existing queue: replace target + merge holds if `replace_if_exists`, else throw.
-    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool replace_if_exists);
+    /// If `merge_if_exists` is true
+    /// (meaning that eviction info by `queue_id` already exists),
+    /// combine two eviction info's into one.
+    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool merge_if_exists);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
-    size_t hold_size = 0;     /// Total hold size among all eviction infos.
-    size_t hold_elements = 0; /// Total hold elements among all eviction infos.
 
-    absl::flat_hash_set<CacheUsagePtr> kept_alive_cache_usage;
+    std::vector<CacheUsagePtr> sorted_cache_usage;
 };
 
 class EvictionCandidates : private boost::noncopyable
@@ -104,7 +95,7 @@ public:
     using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
     using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
 
-    explicit EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_);
+    EvictionCandidates();
     ~EvictionCandidates();
 
     /// Total number of eviction candidates.
@@ -163,20 +154,21 @@ public:
 
     /// Get the original queue type of a candidate saved during removeQueueEntries.
     /// Returns None if not found (e.g., if removeQueueEntries was not called).
-    IFileCachePriority::QueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
+    FileCacheQueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
     {
         auto it = original_queue_types.find(candidate);
-        return it != original_queue_types.end() ? it->second : IFileCachePriority::QueueEntryType::None;
+        return it != original_queue_types.end() ? it->second : FileCacheQueueEntryType::None;
     }
 
 private:
-    absl::flat_hash_map<FileCacheKey, KeyCandidates, std::hash<FileCacheKey>> candidates;
+
+    std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
     size_t candidates_bytes = 0;
     FailedCandidates failed_candidates;
 
     /// Saved original queue type per candidate, populated in removeQueueEntries.
-    std::unordered_map<const FileSegmentMetadata *, IFileCachePriority::QueueEntryType> original_queue_types;
+    std::unordered_map<const FileSegmentMetadata *, FileCacheQueueEntryType> original_queue_types;
 
     AfterEvictWriteFunc after_evict_write_func;
     AfterEvictStateFunc after_evict_state_func;
@@ -185,8 +177,6 @@ private:
     bool removed_queue_entries = false;
 
     IFileCachePriority::HoldSpacePtr hold_space;
-
-    IFileCachePriority::OnEvictCallback on_evict_callback;
 
     LoggerPtr log;
 };
