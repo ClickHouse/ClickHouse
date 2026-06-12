@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <optional>
 
 namespace DB
 {
@@ -291,8 +292,37 @@ public:
     SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);
 
 private:
-    /// Main state machine logic
-    std::unique_ptr<Storage> storage;
+    struct DetachedSnapshotReceiveFiles
+    {
+        DiskPtr disk;
+        std::string snapshot_file_name;
+        uint64_t log_idx;
+    };
+
+    std::optional<DetachedSnapshotReceiveFiles> detachUnfinishedSnapshotReceiveForCleanup() TSA_REQUIRES(snapshots_lock);
+    void cleanupDetachedSnapshotReceive(const DetachedSnapshotReceiveFiles & files);
+    void runSnapshotMaintenanceAfterUnlock(SnapshotMaintenanceTasks && tasks);
+
+    /// Phase 2 of the create task: write+sync under a fresh unique name, outside `snapshots_lock`.
+    SnapshotFileInfoPtr writeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
+
+    struct LocalSnapshotPublishOutcome
+    {
+        SnapshotFileInfoPtr published;       /// entry to report to NuRaft / S3
+        SnapshotFileInfoPtr loser_to_remove; /// retired; unlinked outside the lock when the last ref drops
+        bool won = false;                    /// true iff our written file became the registered entry
+    };
+
+    /// Phase 3: metadata-only publication with adopt-on-conflict. No disk IO.
+    /// Throws only before any state mutation.
+    LocalSnapshotPublishOutcome publishWrittenSnapshot(
+        const SnapshotFileInfoPtr & written_file_info,
+        const SnapshotMetadataPtr & written_snapshot_meta,
+        std::optional<uint64_t> written_size) TSA_REQUIRES(snapshots_lock);
+
+    /// Main state machine logic. Swapped by `apply_snapshot` under the exclusive
+    /// storage lock; in-flight create tasks capture their own reference.
+    std::shared_ptr<Storage> storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager<Storage> snapshot_manager;

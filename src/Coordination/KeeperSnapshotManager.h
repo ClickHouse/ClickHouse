@@ -7,8 +7,10 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage_fwd.h>
+#include <functional>
 #include <libnuraft/nuraft.hxx>
 #include <IO/WriteBuffer.h>
+#include <vector>
 
 namespace DB
 {
@@ -138,6 +140,23 @@ struct SnapshotFileInfo
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
+
+struct SnapshotMoveCandidate
+{
+    uint64_t log_idx;
+    SnapshotFileInfoPtr file_info;
+    DiskPtr source_disk;
+    std::string source_path;
+    DiskPtr target_disk;
+    std::string target_path;
+};
+
+struct SnapshotMaintenanceTasks
+{
+    std::vector<SnapshotFileInfoPtr> retired_snapshots;
+    std::vector<SnapshotMoveCandidate> move_candidates;
+};
+
 #if USE_ROCKSDB
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
@@ -199,11 +218,31 @@ public:
     /// Compress snapshot and serialize it to buffer
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const;
 
+    /// Write helpers do disk I/O under a fresh unique name and do not publish metadata.
+    SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot<Storage> & snapshot);
+    SnapshotFileInfoPtr writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+
+    /// Metadata-only; call under `IKeeperStateMachine::snapshots_lock` in runtime paths.
+    /// Insert-or-reuse: returns the already-registered entry for the same log index if any
+    /// (state-equivalent in Raft); the caller retires its own file when it loses.
+    SnapshotFileInfoPtr publishSnapshotFile(uint64_t up_to_log_idx, SnapshotFileInfoPtr file_info);
+    SnapshotMaintenanceTasks prepareSnapshotMaintenanceTasks();
+    bool publishMovedSnapshotIfValid(const SnapshotMoveCandidate & candidate);
+    SnapshotFileInfoPtr getLatestSnapshotInfoMetadataOnly() const;
+    void retireUnpublishedSnapshotFile(const SnapshotFileInfoPtr & file_info) const;
+
+    /// Cross-disk copy/removal; must run outside `snapshots_lock` in the create path.
+    bool moveSnapshotCandidate(
+        const SnapshotMoveCandidate & candidate,
+        const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot);
+
+    /// Receive/tool-path maintenance; may run in the caller's locking context.
+    void runMaintenanceInline(SnapshotMaintenanceTasks && tasks);
+
     /// Serialize already compressed snapshot to disk (return path)
     SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
-    /// Chunked snapshot receive: open the snapshot file for writing and return a receive context.
-    /// The caller appends chunks and calls finalizeSnapshotReceiveToDisk when done.
+    /// Chunked receive: open a snapshot file under a fresh unique name and return a context.
     std::unique_ptr<SnapshotReceiveCtx> beginSnapshotReceiveToDisk(uint64_t up_to_log_idx);
 
     /// Finalize chunked receive: sync, finalize write buffer, remove tmp marker, register snapshot.
@@ -225,7 +264,7 @@ public:
     /// Deserialize latest snapshot from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
 
-    /// Remove snapshot  with this log_index
+    /// Remove snapshot with this log_index. Used by tests and tools only.
     void removeSnapshot(uint64_t log_idx);
 
     /// Total amount of snapshots
@@ -242,8 +281,10 @@ public:
     SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
 
 private:
-    void removeOutdatedSnapshotsIfNeeded();
-    void moveSnapshotsIfNeeded();
+    SnapshotFileInfoPtr detachSnapshotForRemoval(uint64_t log_idx);
+    std::vector<SnapshotFileInfoPtr> detachOutdatedSnapshotsIfNeeded();
+    std::vector<SnapshotMoveCandidate> selectSnapshotsToMove();
+    void cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate) const;
 
     /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
     /// `retired_for_removal` is set.
@@ -278,8 +319,11 @@ private:
 /// successfully serialized notifies state machine.
 struct CreateSnapshotTask
 {
-    KeeperStorageSnapshotPtr snapshot;
+    /// Declared before `snapshot`: the closure keeps the captured storage alive while the
+    /// snapshot holds a raw pointer into it; reverse member destruction protects a task
+    /// that is destroyed without being executed.
     CreateSnapshotCallback create_snapshot;
+    KeeperStorageSnapshotPtr snapshot;
 };
 
 }

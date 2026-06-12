@@ -54,15 +54,6 @@ namespace CoordinationSetting
 namespace
 {
 
-uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
-{
-    std::filesystem::path path(snapshot_path);
-    std::string filename = path.stem();
-    std::vector<std::string_view> name_parts;
-    splitInto<'_', '.'>(name_parts, filename);
-    return parse<uint64_t>(name_parts[1]);
-}
-
 void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats, size_t subtrees_limit)
 {
     try

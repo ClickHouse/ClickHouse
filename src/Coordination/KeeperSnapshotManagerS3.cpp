@@ -1,3 +1,4 @@
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 
 #if USE_AWS_S3
@@ -207,7 +208,8 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         auto snapshot_file = snapshot_disk->readFile(snapshot_path, getReadSettings());
 
-        auto snapshot_name = fs::path(snapshot_path).filename().string();
+        /// Strip the unique suffix so every node uploads the same index under the same S3 key.
+        auto snapshot_name = getCanonicalSnapshotS3Name(snapshot_path);
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
         if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, snapshot_name))
