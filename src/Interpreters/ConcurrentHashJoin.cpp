@@ -581,6 +581,31 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     return res;
 }
 
+size_t ConcurrentHashJoin::getProjectedTotalByteCount() const
+{
+    size_t res = 0;
+    size_t total_buffered_rows = 0;
+    for (const auto & hash_join : hash_joins)
+    {
+        std::lock_guard lock(hash_join->mutex);
+        res += hash_join->data->getTotalByteCount() + hash_join->buffered_bytes;
+        total_buffered_rows += hash_join->buffered_rows;
+    }
+
+    /// Project the memory the replay of the deferred build would allocate on top of the current
+    /// footprint: the hash-table buffers for all buffered rows and the arena copies of string keys.
+    /// `BuildRefList` nodes for duplicate keys (64 bytes per key with more than one row, ~10 bytes
+    /// per row for extreme duplication) are not projected; the `threshold / 2` headroom of the
+    /// callers covers them. Zero rows are buffered on the non-deferred path, so this method then
+    /// degenerates to `getTotalByteCount` exactly.
+    if (total_buffered_rows > 0)
+    {
+        res += projectedTwoLevelMapBytes(*hash_joins[0]->data, total_buffered_rows);
+        res += buffered_key_bytes.load(std::memory_order_relaxed);
+    }
+    return res;
+}
+
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 {
     for (const auto & hash_join : hash_joins)
