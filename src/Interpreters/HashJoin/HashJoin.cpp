@@ -2499,13 +2499,15 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!probe_fn)
         return;
 
-    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier.
-    for (const auto & [filter_name, descr_build_key] : descriptors)
+    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier. The descriptor's
+    /// first element is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
+    /// filter under and the probe-side `__applyFilter` looks it up by), not the stable display name.
+    for (const auto & [filter_key, descr_build_key] : descriptors)
     {
         if (descr_build_key != build_key_name)
             continue;
 
-        auto existing = lookup->find(filter_name);
+        auto existing = lookup->find(filter_key);
         if (!existing)
             continue;
 
@@ -2525,7 +2527,9 @@ void HashJoin::publishSharedRuntimeFilters()
             existing->getPassRatioThresholdForDisabling(),
             existing->getBlocksToSkipBeforeReenabling(),
             probe_fn);
-        lookup->replace(filter_name, std::move(filter));
+        /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
+        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
+        lookup->replace(filter_key, std::move(filter));
     }
 }
 

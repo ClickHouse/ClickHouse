@@ -416,14 +416,16 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndNam
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
-    void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
+    void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard g(rw_lock);
-        auto & filter = filters_by_name[name];
+        auto & filter = filters_by_name[key];
         if (!filter)
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release());   /// Save new filter
+            /// Record the readable structural name once (the map is keyed by the opaque rendezvous key).
+            display_names.emplace(key, display_name);
         }
         else
         {
@@ -454,18 +456,24 @@ public:
     void logStats() const override
     {
         SharedLockGuard g(rw_lock);
-        for (const auto & [filter_name, filter] : filters_by_name)
+        for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
+            /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
+            auto name_it = display_names.find(filter_key);
+            const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(getLogger("RuntimeFilter"),
                 "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
-                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
+                name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
         }
     }
 
 private:
     mutable SharedMutex rw_lock;
     std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(rw_lock);
+    /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
+    /// preserved across `replace` (the replacement keeps the original registration's name).
+    std::unordered_map<String, String> display_names TSA_GUARDED_BY(rw_lock);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()

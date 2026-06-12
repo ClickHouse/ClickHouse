@@ -81,8 +81,7 @@ Chunk ArrowBlockInputFormat::read()
         {
             auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
             if (!rows.ok())
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+                throwFromArrowStatus(rows.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
             return getChunkForCount(*rows);
         }
 
@@ -90,8 +89,7 @@ Chunk ArrowBlockInputFormat::read()
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
+        throwFromArrowStatus(batch_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
 
     /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
     /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
@@ -100,8 +98,7 @@ Chunk ArrowBlockInputFormat::read()
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Error while reading batch of Arrow data: {}", table_result.status().ToString());
+        throwFromArrowStatus(table_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
 
     ++record_batch_current;
 
@@ -175,8 +172,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     options.memory_pool = ArrowMemoryPool::instance();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-                        "Error while opening a table: {}", stream_reader_status.status().ToString());
+        throwFromArrowStatus(stream_reader_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table");
     return *stream_reader_status;
 }
 
@@ -193,8 +189,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
     options.memory_pool = ArrowMemoryPool::instance();
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while opening a table: {}", file_reader_status.status().ToString());
+        throwFromArrowStatus(file_reader_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table");
     return *file_reader_status;
 }
 
@@ -287,7 +282,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
 
     auto rows = file_reader->CountRows();
     if (!rows.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+        throwFromArrowStatus(rows.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
 
     return *rows;
 }

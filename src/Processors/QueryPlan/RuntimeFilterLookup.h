@@ -308,8 +308,9 @@ struct IRuntimeFilterLookup : boost::noncopyable
 {
     virtual ~IRuntimeFilterLookup() = default;
 
-    /// Add runtime filter with the specified name
-    virtual void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+    /// Add a runtime filter under the given rendezvous key. `display_name` is the readable structural
+    /// id kept only for logging; the lookup is keyed by `key`.
+    virtual void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
     /// Used by HashJoin to install a SharedFixedHashTableRuntimeFilter that supersedes the
