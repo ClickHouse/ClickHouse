@@ -1,5 +1,6 @@
 #include <IO/Rope.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <gtest/gtest.h>
 
 #include <cstring>
@@ -51,6 +52,15 @@ TEST(OwnedRopeBuffer, RopeBytesGaugeTracksLiveAllocation)
         }
         EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes) - baseline, 4096);
     }
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes), baseline);
+}
+
+TEST(OwnedRopeBuffer, HugeSizeThrows)
+{
+    /// SIMD padding uses checked addition: a size that would wrap on `+ PADDING_FOR_SIMD`
+    /// throws instead of allocating a tiny block, and the live-bytes gauge stays untouched.
+    const auto baseline = CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes);
+    EXPECT_THROW(OwnedRopeBuffer(static_cast<size_t>(-1)), Exception);
     EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes), baseline);
 }
 
@@ -939,4 +949,168 @@ TEST(Rope, ShiftMovesConsumedFrontier)
     rope.append(RopeNode{b, 0, 10, 150});  /// [150, 160), below 225
     EXPECT_EQ(rope.peek().logical_offset, 225u);
     EXPECT_EQ(rope.range().offset, 225u);
+}
+
+TEST(Rope, AdvanceZeroIsNoOp)
+{
+    /// advance(0) must not anchor the consumed frontier: a fresh rope still accepts a
+    /// legal out-of-order append before the front node afterwards.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 100});  /// [100, 200)
+    rope.advance(0);
+
+    auto early = std::make_shared<OwnedRopeBuffer>(50);
+    rope.append(RopeNode{early, 0, 50, 0});  /// [0, 50): must not be dropped
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.peek().logical_offset, 0u);
+    EXPECT_EQ(rope.totalBytes(), 150u);
+}
+
+TEST(Rope, GapFillAppendBetweenFrontierAndFront)
+{
+    /// Advancing over a gap leaves the frontier (200) behind the cursor (300). A node
+    /// appended into the never-consumed gap is kept (trimmed to the frontier), becomes
+    /// the new front, and is served before the rest.
+    auto buf = std::make_shared<OwnedRopeBuffer>(400);
+    std::memset(buf->data(), 'A', 400);
+    Rope rope;
+    rope.append(RopeNode{buf, 100, 100, 100});  /// [100, 200)
+    rope.append(RopeNode{buf, 300, 100, 300});  /// [300, 400), gap [200, 300)
+    rope.advance(100);                            /// consume [100, 200)
+    ASSERT_EQ(rope.peek().logical_offset, 300u);
+
+    auto fill = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(fill->data(), 'B', 100);
+    rope.append(RopeNode{fill, 0, 100, 150});     /// [150, 250): [150, 200) is consumed
+    EXPECT_EQ(rope.peek().logical_offset, 200u);  /// trimmed to [200, 250), new front
+
+    std::string out;
+    while (!rope.atEnd())
+    {
+        auto s = rope.peek();
+        out.append(s.data, s.size);
+        rope.advance(s.size);
+    }
+    EXPECT_EQ(out, std::string(50, 'B') + std::string(100, 'A'));  /// [200,250) then [300,400)
+}
+
+TEST(Rope, AppendToDrainedRopeRespectsFrontier)
+{
+    /// A fully drained rope is not a fresh one: the frontier persists, so re-appending
+    /// consumed bytes is dropped and a straddling node keeps only its reachable tail.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.advance(100);
+    ASSERT_TRUE(rope.atEnd());
+
+    rope.append(RopeNode{buf, 50, 10, 50});  /// [50, 60): consumed, dropped
+    EXPECT_TRUE(rope.atEnd());
+
+    auto b = std::make_shared<OwnedRopeBuffer>(40);
+    rope.append(RopeNode{b, 0, 40, 80});  /// [80, 120) -> trimmed to [100, 120)
+    EXPECT_EQ(rope.peek().logical_offset, 100u);
+    EXPECT_EQ(rope.peek().size, 20u);
+    EXPECT_EQ(rope.range().offset, 100u);
+}
+
+TEST(Rope, DrainEqualOffsetDuplicateServedOnce)
+{
+    /// Two nodes for the same byte (e.g. cache hit + later source read): streaming serves
+    /// the byte once, from the first-appended node.
+    auto b1 = std::make_shared<OwnedRopeBuffer>(1);
+    auto b2 = std::make_shared<OwnedRopeBuffer>(1);
+    *b1->data() = 'F';
+    *b2->data() = 'S';
+    Rope rope;
+    rope.append(RopeNode{b1, 0, 1, 42});
+    rope.append(RopeNode{b2, 0, 1, 42});
+
+    std::string out;
+    while (!rope.atEnd())
+    {
+        auto s = rope.peek();
+        out.append(s.data, s.size);
+        rope.advance(s.size);
+    }
+    EXPECT_EQ(out, "F");
+}
+
+TEST(Rope, TryRewindBackwardReopensFrontier)
+{
+    /// A backward rewind lowers the consumed frontier: the re-opened bytes are slice-able
+    /// and appendable again, and draining still serves the union exactly once.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(buf->data(), 'A', 100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 100});  /// [100, 200)
+    rope.advance(50);                           /// frontier 150
+    ASSERT_TRUE(rope.tryRewind(120));           /// re-open [120, 150)
+
+    Rope s = rope.slice({120, 30});
+    EXPECT_EQ(s.range().offset, 120u);
+    EXPECT_EQ(s.range().size, 30u);
+
+    auto b = std::make_shared<OwnedRopeBuffer>(40);
+    std::memset(b->data(), 'B', 40);
+    rope.append(RopeNode{b, 0, 40, 110});  /// [110, 150): only [110, 120) is still consumed
+    EXPECT_EQ(rope.getNodes().size(), 2u);
+
+    std::string out;
+    while (!rope.atEnd())
+    {
+        auto sp = rope.peek();
+        out.append(sp.data, sp.size);
+        rope.advance(sp.size);
+    }
+    EXPECT_EQ(out.size(), 80u);  /// [120, 200) once, no duplicate from the appended overlap
+}
+
+TEST(Rope, TryRewindToExactEndReachesEOF)
+{
+    /// `new_position == range().end()` (the exclusive end) is a valid rewind target: EOF.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    ASSERT_TRUE(rope.tryRewind(100));
+    EXPECT_TRUE(rope.atEnd());
+    EXPECT_FALSE(rope.tryRewind(100));  /// nothing reachable once empty
+}
+
+TEST(Rope, TryRewindForwardAcrossOverlapBoundary)
+{
+    /// Forward rewind past the front into an overlapping second node lands exactly on the
+    /// requested position with the correct remaining span.
+    auto a = std::make_shared<OwnedRopeBuffer>(100);
+    auto b = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(a->data(), 'A', 100);
+    std::memset(b->data(), 'B', 100);
+    Rope rope;
+    rope.append(RopeNode{a, 0, 100, 0});   /// [0, 100)
+    rope.append(RopeNode{b, 0, 100, 50});  /// [50, 150)
+
+    ASSERT_TRUE(rope.tryRewind(120));
+    auto s = rope.peek();
+    EXPECT_EQ(s.logical_offset, 120u);
+    EXPECT_EQ(s.size, 30u);
+    EXPECT_EQ(s.data[0], 'B');
+}
+
+TEST(Rope, CopyToAfterPartialAdvance)
+{
+    /// copyTo on a partly-consumed rope: the consumed prefix is no longer covered, and the
+    /// first node is read from its unconsumed part.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    for (size_t i = 0; i < 100; ++i)
+        buf->data()[i] = static_cast<char>('A' + (i % 26));
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.advance(30);
+
+    EXPECT_FALSE(rope.covers({0, 100}));
+    std::vector<char> out(40, '\0');
+    EXPECT_EQ(rope.copyTo(out.data(), {30, 40}), 40u);
+    for (size_t i = 0; i < 40; ++i)
+        ASSERT_EQ(out[i], static_cast<char>('A' + ((30 + i) % 26))) << "byte " << i;
 }
