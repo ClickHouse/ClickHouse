@@ -18,11 +18,17 @@ LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
 
+def get_disk_storage_conf_path():
+    # The generated config must be unique per pytest-xdist worker: when several workers
+    # run this module concurrently, each cluster gets its own azurite port, and a shared
+    # file would be overwritten with another worker's port.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
+    return os.path.join(SCRIPT_DIR, f"./_gen/disk_storage_conf{suffix}.xml")
+
+
 def generate_cluster_def(port):
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/disk_storage_conf.xml",
-    )
+    path = get_disk_storage_conf_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(
@@ -537,7 +543,7 @@ def test_freeze_unfreeze(cluster):
 def test_apply_new_settings(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
-    config_path = os.path.join(SCRIPT_DIR, "./_gen/disk_storage_conf.xml")
+    config_path = get_disk_storage_conf_path()
 
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"
