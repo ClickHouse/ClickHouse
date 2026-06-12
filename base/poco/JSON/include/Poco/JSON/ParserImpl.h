@@ -109,6 +109,7 @@ namespace JSON
         struct json_stream * _pJSON;
         Handler::Ptr _pHandler;
         int _depth;
+        int _currentDepth = 0;
         char _decimalPoint;
         bool _allowNullByte;
         bool _allowComments;
