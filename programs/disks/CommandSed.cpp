@@ -5,11 +5,15 @@
 #include <IO/ReadHelpers.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Disks/WriteMode.h>
 
 #include <boost/algorithm/string/trim.hpp>
 
 #include <thread>
+
+#include <signal.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -82,6 +86,12 @@ public:
             std::thread feeder(
                 [&]
                 {
+                    /// On any exit, close sed's stdin so sed sees EOF and the main thread
+                    /// cannot block forever reading sed's stdout. cancel() first so close()
+                    /// does not flush: if finalize() threw inside close(), the ::close(fd)
+                    /// would be skipped and the fd would leak, reintroducing the hang. It is
+                    /// a no-op when the close() in the happy path already finalized the buffer.
+                    SCOPE_EXIT_SAFE({ command->in.cancel(); command->in.close(); });
                     try
                     {
                         copyData(*in, command->in);
@@ -99,6 +109,13 @@ public:
             }
             catch (...)
             {
+                /// The feeder may be blocked in write(): we are no longer draining sed's
+                /// stdout, so sed's pipes fill up and it stops reading stdin. Terminate sed
+                /// to break the pipes; the feeder then fails with a broken pipe, runs its
+                /// scope guard and exits, making join() safe. The child has not been reaped
+                /// yet, so the pid cannot have been reused.
+                if (0 != ::kill(command->getPid(), SIGTERM))
+                    LOG_WARNING(log, "Cannot send SIGTERM to sed (pid {}): {}", command->getPid(), errnoToString());
                 feeder.join();
                 throw;
             }
