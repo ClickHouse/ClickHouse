@@ -854,8 +854,8 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->ignore(bytes_to_skip);
-    size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    data.resize(initial_size + size);
+    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    data.resize(initial_size + bytes_to_read);
     column = std::move(mutable_column);
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();
