@@ -379,6 +379,25 @@ void StorageMergeTree::startup()
                         throw;
                     }
 
+                    /// The takeover sync above can take longer than
+                    /// `leader_election_session_timeout`, and the heartbeat task cannot renew
+                    /// the lease while it is executing this callback. If the lease has gone
+                    /// stale, another node may have already claimed leadership — running the
+                    /// destructive `clearEmptyParts` / `clearOldTemporaryDirectories` below as
+                    /// a stale leader would violate the single-writer invariant. Re-check lease
+                    /// freshness (relaxed to `session_timeout` by `TakeoverSyncScope`) and abort
+                    /// the takeover: the exception propagates to the election task, which
+                    /// relinquishes leadership locally and retries on a later heartbeat.
+                    if (!leader_election_ptr->isLeader())
+                    {
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                            "The leader lease was not renewed within the session timeout while "
+                            "syncing parts from shared storage on leadership acquisition; "
+                            "refusing to run destructive cleanup as a possibly stale leader");
+                    }
+
                     /// Cancel pre-existing follower-state cancellations on merges and moves so the
                     /// background assignees can run. The cancellations are re-acquired below on
                     /// leadership loss.
