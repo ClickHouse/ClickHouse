@@ -377,6 +377,11 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     new_args.enforce_component_tracking = args.enforce_component_tracking;
     new_args.send_receive_os_threads_nice_value = args.send_receive_os_threads_nice_value;
 
+    /// last_zxid_seen is runtime session state propagated by startNewSession, not configuration,
+    /// so it is always 0 in new_args. Without this, the first config reload after any
+    /// expiry-driven session replacement recreates the session even if the config is unchanged.
+    new_args.last_zxid_seen = args.last_zxid_seen;
+
     return args != new_args;
 }
 
