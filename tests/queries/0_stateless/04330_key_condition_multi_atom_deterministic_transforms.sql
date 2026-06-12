@@ -99,6 +99,8 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_
 SELECT count() FROM test_det_alias WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
 
 -- Tables created with moduloLegacy in the partition key accept modulo predicates.
+-- Trivial count is disabled because the old analyzer would answer this count from
+-- partition metadata without reading, hiding the index analysis from EXPLAIN.
 CREATE TABLE test_det_modulo_legacy (k UInt64) ENGINE = MergeTree
 PARTITION BY moduloLegacy(k, 16)
 ORDER BY k
@@ -106,7 +108,7 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO test_det_modulo_legacy SELECT number FROM numbers(32);
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3 SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3;
 SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
