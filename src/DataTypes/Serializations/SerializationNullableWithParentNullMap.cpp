@@ -65,46 +65,54 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    /// Nested serialization produces a ColumnNullable with its own null map.
-    /// Read it first, then OR in the parent's null map for the rows just read.
+    /// Read the parent's null map first, matching the substream order of `SerializationNullable`, so that
+    /// streams are always read forward in Compact parts.
+    ColumnPtr parent_null_map;
+    size_t parent_num_read_rows = 0;
+
+    settings.path.push_back(Substream::NullMap);
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    {
+        /// The cached column may contain rows from multiple ranges read into the same result block;
+        /// the rows of the current range are at its tail.
+        std::tie(parent_null_map, parent_num_read_rows) = *cached_column_with_num_read_rows;
+    }
+    else if (auto * stream = settings.getter(settings.path))
+    {
+        auto mutable_parent_null_map = ColumnUInt8::create();
+        SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, rows_offset, limit, 0);
+        parent_null_map = std::move(mutable_parent_null_map);
+        parent_num_read_rows = parent_null_map->size();
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, parent_null_map, parent_num_read_rows);
+    }
+    settings.path.pop_back();
+
     size_t prev_size = column->size();
 
-    settings.path.push_back(Substream::NullableElements);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(
-        column, rows_offset, limit, settings, state, cache);
-    settings.path.pop_back();
+    /// The nested column (or some of its substreams) may already be in the substreams cache from
+    /// deserialization of another subcolumn, and a cached column can contain rows from multiple ranges.
+    /// Force copying only the rows of the current range from the cache, so that the number of rows appended
+    /// to `column` is exactly the size of the current range and the null map modified below is owned by
+    /// `column` rather than shared with a column produced by another subcolumn read.
+    auto nested_settings = settings;
+    nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
+    nested_settings.path.push_back(Substream::NullableElements);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, nested_settings, state, cache);
 
     size_t new_rows = column->size() - prev_size;
     if (new_rows == 0)
         return;
 
-    ColumnPtr parent_null_map = ColumnUInt8::create();
-
-    settings.path.push_back(Substream::NullMap);
-    if (insertDataFromSubstreamsCacheIfAny(cache, settings, parent_null_map))
-    {
-        /// Data was inserted from cache.
-    }
-    else if (auto * stream = settings.getter(settings.path))
-    {
-        auto mutable_parent_null_map = IColumn::mutate(std::move(parent_null_map));
-        SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, rows_offset, limit, 0);
-        parent_null_map = std::move(mutable_parent_null_map);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, parent_null_map, parent_null_map->size());
-    }
-    settings.path.pop_back();
-
-    const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
-
-    if (parent_null_map_data.size() < new_rows)
+    if (parent_num_read_rows != new_rows)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Parent null map has fewer rows than the nested column of `Nullable(Tuple(...))` subcolumn "
-            "(parent null map size = {}, required = {})",
-            parent_null_map_data.size(),
+            "Number of rows read from the parent null map of `Nullable(Tuple(...))` differs from the number of rows "
+            "read for its subcolumn (parent null map rows = {}, subcolumn rows = {})",
+            parent_num_read_rows,
             new_rows);
 
-    size_t parent_offset = parent_null_map_data.size() - new_rows;
+    const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
+    size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
     auto mutable_column = column->assumeMutable();
     auto & column_nullable = assert_cast<ColumnNullable &>(*mutable_column);

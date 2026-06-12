@@ -4,16 +4,15 @@
 namespace DB
 {
 
-/// Serialization for reading an already-Nullable subcolumn extracted from a
-/// Nullable(Tuple(...)) column.
+/// Serialization for reading an already-Nullable subcolumn extracted from a Nullable(Tuple(...)) column.
 ///
 /// When MergeTree reads a subcolumn like `tup.s` from a column
-/// `tup Nullable(Tuple(u UInt64, s Nullable(String)))`, the subcolumn's inner
-/// data streams live under [NullableElements, TupleElement(name)] in the
-/// parent's stream hierarchy, and the parent's null map is at [NullMap].
+/// `tup Nullable(Tuple(u UInt64, s Nullable(String)))`, the subcolumn's inner data streams live under
+/// [NullableElements, TupleElement(name)] in the parent's stream hierarchy, and the parent's null map is
+/// at [NullMap].
 ///
-/// This class reads the inner ColumnNullable (which has its own null map), reads
-/// the parent's null map, and OR's them together.
+/// This class reads the parent's null map, then the inner ColumnNullable (which has its own null map),
+/// and ORs the parent's null map into the inner one.
 ///
 ///   Substreams layout (base name "tup", element "s"):
 ///     [NullMap]                                        -> tup.null       (parent null map)
