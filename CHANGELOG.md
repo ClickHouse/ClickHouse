@@ -461,6 +461,7 @@
 * The text index is now GA and stays enabled regardless of the `compatibility` setting, preventing unexpected disabling during backup restores or when running in compatibility mode. [#101518](https://github.com/ClickHouse/ClickHouse/pull/101518) ([Nikita Fomichev](https://github.com/fm4v)).
 
 #### Experimental Feature
+* Added experimental `cuckoo_filter` and `binary_fuse_filter` skip index types for MergeTree tables. Both are gated by experimental settings and documented as workload-dependent alternatives to `bloom_filter`, with benchmark coverage for size and pruning behavior. [#101796](https://github.com/ClickHouse/ClickHouse/pull/101796) ([zex-hyd](https://github.com/zex-hyd)).
 * Add `ALTER TABLE ... EXECUTE remove_orphan_files` for Iceberg tables to identify and remove unreferenced files from object storage. [#99127](https://github.com/ClickHouse/ClickHouse/pull/99127) ([murphy-4o](https://github.com/murphy-4o)).
 * Add `query_plan_optimize_join_order_randomize` setting that randomizes statistics used for join reordering, useful for testing. [#100643](https://github.com/ClickHouse/ClickHouse/pull/100643) ([Vladimir Cherkasov](https://github.com/vdimir)).
 * Add AI function support to ClickHouse, allowing users to call OpenAI and Anthropic endpoints using SQL. `aiGenerate` is included as the first such function. [#100831](https://github.com/ClickHouse/ClickHouse/pull/100831) ([George Larionov](https://github.com/george-larionov)).

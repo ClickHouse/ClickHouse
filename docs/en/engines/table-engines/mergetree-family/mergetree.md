@@ -402,6 +402,8 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
 - [`bloom_filter`](#bloom-filter) index
+- [`cuckoo_filter`](#cuckoo-filter) index *(Experimental)*
+- [`binary_fuse_filter`](#binary-fuse-filter) index *(Experimental)*
 - [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
 - [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
 - [`text`](#text) index
@@ -456,6 +458,84 @@ For the `Map` data type, the client can specify if the index should be created f
 :::note JSON data type: indexing JSON paths
 For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
+
+#### Cuckoo filter *(Experimental)* {#cuckoo-filter}
+
+:::note
+This index type is experimental. Set [`allow_experimental_cuckoo_filter_index`](/operations/settings/settings#allow_experimental_cuckoo_filter_index) to `1` when defining a new experimental index or changing an existing experimental index definition. Unrelated `ALTER` queries on tables that already contain the index, and `DROP INDEX`, do not require the setting. The on-disk format is new; use only when you accept the operational risk of mixed versions and upgrades.
+
+Both `cuckoo_filter` and `binary_fuse_filter` are experimental. They are not general replacements for [`bloom_filter`](#bloom-filter). In ClickHouse MergeTree skip indexes, performance and size depend heavily on index `GRANULARITY`, distinct values per index granule, target FPR, and data locality.
+
+Use `bloom_filter` as the default choice. Use these experimental indexes only after benchmarking the target workload.
+
+`cuckoo_filter` is currently mainly experimental in the MergeTree skip-index path and may be larger than `bloom_filter` for small per-index-granule distinct counts.
+:::
+
+For each index granule stores a [cuckoo filter](https://en.wikipedia.org/wiki/Cuckoo_filter) for the indexed expressions. It is an approximate-membership structure with a similar role to [`bloom_filter`](#bloom-filter): the reader may still have to read a granule when the filter reports a possible hit. The filter is built per index granule when the granule is finalized.
+
+```text title="Syntax"
+cuckoo_filter([false_positive_rate])
+```
+
+The optional `false_positive_rate` is a floating-point value strictly between `0` and `1` (default `0.025` when the argument is omitted). The value is quantized to the fingerprint widths supported by the implementation, currently 8-bit or 16-bit fingerprints. Therefore nearby values can produce the same encoded filter, and smaller requested values only reduce false positives or increase index size when they cross a fingerprint-width boundary.
+
+Supported column and expression types match [`bloom_filter`](#bloom-filter). Index-condition extraction follows the same bloom-filter skip-index paths where applicable; unsupported or unsafe boolean forms (for example nested comparisons around JSON path-presence checks such as `isNotNull(json.path) = 0`) fall back to normal scanning. Refer to the [functions support](#functions-support) table for the intended operator surface.
+
+**Example**
+
+```sql
+SET allow_experimental_cuckoo_filter_index = 1;
+
+CREATE TABLE tab
+(
+    id UInt64,
+    token String,
+    INDEX idx_token token TYPE cuckoo_filter(0.01) GRANULARITY 4
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SELECT count() FROM tab WHERE token = 'abc';
+```
+
+#### Binary fuse filter *(Experimental)* {#binary-fuse-filter}
+
+:::note
+This index type is experimental. Set [`allow_experimental_binary_fuse_filter_index`](/operations/settings/settings#allow_experimental_binary_fuse_filter_index) to `1` when defining a new experimental index or changing an existing experimental index definition. Unrelated `ALTER` queries on tables that already contain the index, and `DROP INDEX`, do not require the setting. The on-disk format is new; use only when you accept the operational risk of mixed versions and upgrades.
+
+Both `cuckoo_filter` and `binary_fuse_filter` are experimental. They are not general replacements for [`bloom_filter`](#bloom-filter). In ClickHouse MergeTree skip indexes, performance and size depend heavily on index `GRANULARITY`, distinct values per index granule, target FPR, and data locality.
+
+Use `bloom_filter` as the default choice. Use these experimental indexes only after benchmarking the target workload.
+
+`binary_fuse_filter` may be smaller than `bloom_filter` in some FPR regimes where its fingerprint width is favorable, but it may also be larger at common FPR values such as `0.025`.
+:::
+
+For each index granule stores a binary fuse filter (xor-style approximate-membership structure following [Graf and Lemire, "Binary Fuse Filters: Fast and Smaller Than Xor Filters"](https://arxiv.org/abs/2201.01174)). It serves the same role as [`bloom_filter`](#bloom-filter): the reader still has to read a granule when the filter reports a possible hit. Construction is one-shot per index granule, so the filter is built when the index granule is finalized. Index size relative to `bloom_filter` is workload-dependent; see [`04204_binary_fuse_filter_benchmark.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/04204_binary_fuse_filter_benchmark.sql) and [`04104_cuckoo_filter_benchmark.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/04104_cuckoo_filter_benchmark.sql) for measured size benchmark coverage; the binary-fuse CI benchmark also includes a representative pruning sanity check.
+
+```text title="Syntax"
+binary_fuse_filter([false_positive_rate])
+```
+
+The optional `false_positive_rate` is a floating-point value strictly between `0` and `1` (default `0.025` when the argument is omitted). The value is quantized to the fingerprint widths supported by the implementation, currently 8-bit or 16-bit fingerprints. Therefore nearby values can produce the same encoded filter, and smaller requested values only reduce false positives or increase index size when they cross a fingerprint-width boundary. Internally the granule is encoded as one of `Empty`, `Single`, `SmallList` (small/exact set), or a `Fuse3`/`Fuse4` filter, depending on the number of distinct keys; this is transparent to the user.
+
+Supported column and expression types match [`bloom_filter`](#bloom-filter). Index-condition extraction follows the same bloom-filter skip-index paths where applicable; unsupported or unsafe boolean forms (for example nested comparisons around JSON path-presence checks such as `isNotNull(json.path) = 0`) fall back to normal scanning. Refer to the [functions support](#functions-support) table for the intended operator surface.
+
+**Example**
+
+```sql
+SET allow_experimental_binary_fuse_filter_index = 1;
+
+CREATE TABLE tab
+(
+    id UInt64,
+    token String,
+    INDEX idx_token token TYPE binary_fuse_filter(0.01) GRANULARITY 4
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SELECT count() FROM tab WHERE token = 'abc';
+```
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
 
@@ -563,47 +643,47 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
-|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
-| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗    |
-| [has](/sql-reference/functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
-| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | cuckoo_filter | binary_fuse_filter | sparse_grams | text |
+|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|---------------|--------------------|--------------|------|
+| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✔    |
+| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✗    |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✗            | ✗                  | ✔            | ✔    |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✗            | ✗                  | ✔            | ✗    |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✗            | ✗                  | ✔            | ✔    |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✗            | ✗                  | ✔            | ✔    |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✗            | ✗                  | ✔            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✔    |
+| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✗    |
+| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✔            | ✗    |
+| [has](/sql-reference/functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✔    |
+| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✗    |
+| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✔                  | ✔            | ✗    |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗                  | ✗            | ✗    |
+| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            |  ✗    |
+| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✔            | ✔                  | ✗            | ✔    |
+| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
+| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✔            | ✔                  | ✗            | ✔    |
+| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✗                  | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, `bloom_filter`, `cuckoo_filter`, and `binary_fuse_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
 

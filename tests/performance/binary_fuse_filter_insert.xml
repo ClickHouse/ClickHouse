@@ -1,0 +1,13 @@
+<test new_server_only="1">
+    <settings>
+        <allow_experimental_binary_fuse_filter_index>1</allow_experimental_binary_fuse_filter_index>
+    </settings>
+    <create_query>DROP TABLE IF EXISTS test_bf</create_query>
+    <create_query>CREATE TABLE test_bf (`id` int, `ary` Array(String), INDEX idx_ary ary TYPE binary_fuse_filter(0.01) GRANULARITY 8192) ENGINE = MergeTree() ORDER BY id</create_query>
+    <create_query>SYSTEM STOP MERGES test_bf</create_query>
+
+    <query>INSERT INTO test_bf SELECT number AS id, [CAST(id, 'String'), CAST(id + 1, 'String'), CAST(id + 2, 'String')] FROM numbers(1000000)</query>
+
+    <drop_query>SYSTEM START MERGES test_bf</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_bf</drop_query>
+</test>

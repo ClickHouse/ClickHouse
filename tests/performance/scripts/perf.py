@@ -400,6 +400,11 @@ all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True) for server in servers
 ]
 
+# Backward-incompatible tests (new index types, experimental settings absent on the
+# reference server) run only on the last connection — the PR build under test.
+new_server_only = root.attrib.get("new_server_only") == "1"
+new_server_index = len(all_connections) - 1
+
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
 # etc.) in parallel so both servers see the same operation at the same wall
 # clock moment.
@@ -434,6 +439,8 @@ if not args.use_existing_tables:
 file_settings = load_settings_file(root, xml_dir)
 inline_settings = root.findall("settings/*")
 for conn_index, c in enumerate(all_connections):
+    if new_server_only and conn_index != new_server_index:
+        continue
     for key, value in file_settings.items():
         c.settings[key] = str(value)
     for s in inline_settings:
@@ -475,6 +482,7 @@ if not args.use_existing_tables:
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))
         for index, connection in enumerate(all_connections)
+        if not new_server_only or index == new_server_index
     ]
 
     for t in threads:
@@ -547,7 +555,11 @@ for query_index in queries_to_run:
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
     query_error_on_connection = [None] * len(all_connections)
-    for conn_index, c in enumerate(all_connections):
+    prewarm_connection_indices = (
+        [new_server_index] if new_server_only else list(range(len(all_connections)))
+    )
+    for conn_index in prewarm_connection_indices:
+        c = all_connections[conn_index]
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
@@ -591,15 +603,23 @@ for query_index in queries_to_run:
     # continue testing the next query.
     # If prewarm fails on one of the servers, run the query on the rest of them.
     no_errors = []
-    for i, e in enumerate(query_error_on_connection):
-        if e:
-            print(e, file=sys.stderr)
-        else:
-            no_errors.append(i)
+    if new_server_only:
+        for i in prewarm_connection_indices:
+            e = query_error_on_connection[i]
+            if e:
+                print(e, file=sys.stderr)
+            else:
+                no_errors.append(i)
+    else:
+        for i, e in enumerate(query_error_on_connection):
+            if e:
+                print(e, file=sys.stderr)
+            else:
+                no_errors.append(i)
 
     if len(no_errors) == 0:
         continue
-    elif len(no_errors) < len(all_connections):
+    elif new_server_only or len(no_errors) < len(all_connections):
         print(f"partial\t{query_index}\t{no_errors}")
 
     this_query_connections = [all_connections[index] for index in no_errors]
@@ -732,6 +752,8 @@ reportStageEnd("run")
 if not args.keep_created_tables and not args.use_existing_tables:
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
+        if new_server_only and conn_index != new_server_index:
+            continue
         for q in drop_queries:
             c.execute(q)
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
