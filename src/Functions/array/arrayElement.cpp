@@ -18,13 +18,20 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool json_type_escape_dots_in_keys;
+}
 
 namespace ErrorCodes
 {
@@ -60,6 +67,11 @@ public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
     static constexpr auto name = (mode == ArrayElementExceptionMode::Zero) ? "arrayElement" : "arrayElementOrNull";
     static FunctionPtr create(ContextPtr context_);
+
+    explicit FunctionArrayElement(ContextPtr context_)
+        : escape_dots_in_json_keys(context_ && context_->getSettingsRef()[Setting::json_type_escape_dots_in_keys])
+    {
+    }
 
     String getName() const override;
 
@@ -189,6 +201,11 @@ private:
     template <typename Matcher>
     static void
     executeMatchConstKeyToIndex(size_t num_rows, size_t num_values, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher);
+
+    /// Escape dots in JSON key if json_type_escape_dots_in_keys setting is enabled.
+    String escapeJSONKeyIfNeeded(const String & key) const;
+
+    bool escape_dots_in_json_keys = false;
 };
 
 
@@ -878,9 +895,9 @@ struct ArrayElementGenericImpl
 }
 
 template <ArrayElementExceptionMode mode>
-FunctionPtr FunctionArrayElement<mode>::create(ContextPtr)
+FunctionPtr FunctionArrayElement<mode>::create(ContextPtr context_)
 {
-    return std::make_shared<FunctionArrayElement>();
+    return std::make_shared<FunctionArrayElement>(std::move(context_));
 }
 
 
@@ -2066,6 +2083,10 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
 
     String key = key_column->getValue<String>();
 
+    /// When json_type_escape_dots_in_keys is enabled, dots in individual path
+    /// elements are stored escaped as %2E. Apply the same escaping to the key.
+    key = escapeJSONKeyIfNeeded(key);
+
     /// Form the combined subcolumn name: @`key`
     auto subcolumn_name = DataTypeObject::getCombinedSubcolumnName(key);
 
@@ -2087,6 +2108,14 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
         result_column = ColumnConst::create(std::move(result_column), input_rows_count);
 
     return result_column;
+}
+
+template <ArrayElementExceptionMode mode>
+String FunctionArrayElement<mode>::escapeJSONKeyIfNeeded(const String & key) const
+{
+    if (escape_dots_in_json_keys)
+        return escapeDotInJSONKey(key);
+    return key;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2196,6 +2225,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeA
                 getName());
 
         auto key = key_col->getValue<String>();
+        key = escapeJSONKeyIfNeeded(key);
 
         /// Form combined subcolumn name: @`key`
         auto combined_name = DataTypeObject::getCombinedSubcolumnName(key);

@@ -29,6 +29,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <stack>
@@ -40,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
 }
@@ -701,6 +703,15 @@ void optimizeJSONArrayElementChain(
 
     /// Reverse to get inner-to-outer order (the JSON path).
     std::reverse(keys.begin(), keys.end());
+
+    /// When json_type_escape_dots_in_keys is enabled, dots in individual path
+    /// elements are stored escaped as %2E. Apply the same escaping to each key.
+    bool escape_dots = ctx.context && ctx.context->getSettingsRef()[Setting::json_type_escape_dots_in_keys];
+    if (escape_dots)
+    {
+        for (auto & key : keys)
+            key = escapeDotInJSONKey(key);
+    }
 
     /// Build subcolumn name: @`key1`.key2.key3...
     /// First element is back-quoted (required by tryGetPrefixedSubcolumn);
