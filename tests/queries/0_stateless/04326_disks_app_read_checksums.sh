@@ -37,4 +37,14 @@ run "read-checksums ${path}checksums.txt" | tail -n +2 | awk '{print $1}' | sort
 echo "--- count.txt: name file_size file_hash ---"
 run "read-checksums ${path}checksums.txt" | awk '$1=="count.txt" {print $1, $2, $3}'
 
+# Negative test: format version 1 is too old and unsupported. The command must reject it
+# instead of printing an empty table.
+echo "--- unsupported format version 1 ---"
+bad_checksums="$(mktemp -p "${CLICKHOUSE_TMP}" rc_v1.XXXXXX)"
+printf 'checksums format version: 1\n' > "$bad_checksums"
+# The disk root is `/`, so the absolute path is reachable from the disk.
+clickhouse-disks -C "$config" --disk "$disk_name" --query "read-checksums ${bad_checksums}" 2>&1 >/dev/null \
+    | grep -o "is not a valid checksums file or uses an unsupported (too old) format" | head -n 1
+rm -f "$bad_checksums"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE rc_test"

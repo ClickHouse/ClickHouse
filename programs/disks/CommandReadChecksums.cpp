@@ -43,8 +43,15 @@ public:
 
         auto in = disk_ptr->readFile(path, getReadSettings());
         MergeTreeDataPartChecksums checksums;
-        if (!checksums.read(*in))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not a valid checksums file", path_arg);
+
+        assertString("checksums format version: ", *in);
+        size_t format_version = 0;
+        readText(format_version, *in);
+        assertChar('\n', *in);
+
+        if (!checksums.read(*in, format_version))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'{}' is not a valid checksums file or uses an unsupported (too old) format", path_arg);
         assertEOF(*in);
 
         WriteBufferFromFileDescriptor out(STDOUT_FILENO);
