@@ -18,8 +18,9 @@ namespace DB
   *
   * `ShellCommand` adds the pid at spawn (opt-in via
   * `Config::register_in_udf_process_registry`, set only by the executable UDF
-  * path) and removes it at reap or wrapper destruction, so idle pool workers
-  * stay registered for as long as they live.
+  * path) and removes it when the child is reaped, so idle pool workers stay
+  * registered for as long as they live. A never-reaped child stays registered:
+  * its pid stays pinned, and a zombie contributes nothing to either metric.
   */
 class UDFProcessRegistry
 {
