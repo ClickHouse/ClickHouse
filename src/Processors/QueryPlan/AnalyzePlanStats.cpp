@@ -16,16 +16,14 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 , execution_query_time_ns(execution_query_time_ns_)
 {
 
-    steps_to_stats.reserve(64);
-
     const auto & processors = pipeline.getProcessors();
 
     for (const auto & proc : processors)
     {
         const auto * step_ptr = proc->getQueryPlanStep();
-        
+
         if (!step_ptr)
-            continue; 
+            continue;
 
         const auto key = std::make_pair(step_ptr, proc->getQueryPlanStepGroup());
         auto & stats = steps_to_stats[key];
@@ -82,14 +80,15 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
     if (!step)
         return ;
 
-    for (size_t group = 0; ;group++)
+    for (auto it = steps_to_stats.lower_bound(std::make_pair(step, 0ul)); it != steps_to_stats.end() && it->first.first == step; ++it)
     {
+        size_t group = it->first.second;
         auto key = std::make_pair(step, group);
-        const auto it = steps_to_stats.find(key);
-        if (it == steps_to_stats.end())
-            return;  
-        
-        const auto & stats = it->second;
+        const auto it_stats = steps_to_stats.find(key);
+        if (it_stats == steps_to_stats.end())
+            return;
+
+        const auto & stats = it_stats->second;
         std::string rows_input = formatReadableQuantity(static_cast<double>(stats.input_rows));
         std::string rows_output = formatReadableQuantity(static_cast<double>(stats.output_rows));
         bool empty_io = (stats.input_bytes == stats.output_bytes && stats.input_bytes == 0);
@@ -106,7 +105,7 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
         std::string group_name = step->getStepGroupName(group);
 
         out << prefix << "Actual";
-        out << (group_name.empty()? ": " : std::format(" ({}): ", group_name));
+        out << (group_name.empty()? ": " : fmt::format(" ({}): ", group_name));
         out << "rows " << rows_input << " → " << rows_output;
 
         if (print_selectivity && stats.input_rows != 0)
@@ -122,7 +121,7 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
         out << info_about_io;
         double parallelism = stats.wall_clock_time_ns
         ? static_cast<double>(stats.sum_elapsed_ns) / static_cast<double>(stats.wall_clock_time_ns)
-        : 0.0; 
+        : 0.0;
         std::string parallelism_string = stats.wall_clock_time_ns ? fmt::format("{:.2f}", parallelism) : "Unknown";
         UInt64 max_parallelism_per_step = std::min(max_num_threads_per_query, stats.total_num_processors);
         std::string max_parallelism_per_step_string = stats.wall_clock_time_ns ? fmt::format("/{}", max_parallelism_per_step) : "";

@@ -14,10 +14,10 @@ public:
     {
         UInt64 new_value = 0;
         UInt64 old_value = threads_and_time.load(std::memory_order_acquire);
-        do 
+        do
         {
             UInt64 cur_num_threads = old_value & MASK_16_BIT;
-            UInt64 time_value = cur_num_threads == 0 ? (clock_gettime_ns() - query_start_time) << 16 : 
+            UInt64 time_value = cur_num_threads == 0 ? (clock_gettime_ns() - query_start_time) << 16 :
                                                         old_value & ~MASK_16_BIT;
             new_value = time_value | (cur_num_threads + 1);
         } while (!threads_and_time.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
@@ -28,7 +28,7 @@ public:
         UInt64 new_value = 0;
         UInt64 old_value = threads_and_time.load(std::memory_order_acquire);
         bool last_thread = false;
-        do 
+        do
         {
             new_value = old_value - 1;
             /// Extract the number of threads after decrement
@@ -47,7 +47,7 @@ public:
 
 private:
 
-    /// The layout: [ 48-bit time ][ 16-bit thread counter ] 
+    /// The layout: [ 48-bit time ][ 16-bit thread counter ]
     std::atomic<UInt64> threads_and_time = 0;
 
     std::atomic<UInt64> wall_clock_time = 0;

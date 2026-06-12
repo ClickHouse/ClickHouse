@@ -1,9 +1,8 @@
 #pragma once
 
 #include <utility>
-#include <unordered_map>
+#include <map>
 #include <string>
-#include <algorithm>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
@@ -41,7 +40,7 @@ struct AnalyzeStats
 class AnalyzeStepsStats
 {
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
-public: 
+public:
     explicit AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 total_query_time_);
 
     /// Print the stats
@@ -49,11 +48,7 @@ public:
 
 private:
 
-    std::unordered_map<
-        StepAndGroup, 
-        AnalyzeStats,
-        boost::hash<StepAndGroup>
-    > steps_to_stats; 
+    std::map<StepAndGroup, AnalyzeStats> steps_to_stats;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;

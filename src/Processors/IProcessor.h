@@ -320,7 +320,7 @@ public:
         size_t bytes = 0;
     };
 
-    /// The getter can be used only after running the query, for counting 
+    /// The getter can be used only after running the query, for counting
     /// the exact number of rows/bytes per port
     /// Should be used only on the pors belonging to the processor
     PortDataCounters getPortDataCounters(const Port & port) const;

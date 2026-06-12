@@ -697,14 +697,19 @@ namespace QueryPlanFormat
         }
     }
 
-    void buildPrettyNamesMap(
-        const QueryPlan & plan,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+    PrettyNames buildPrettyNames(const QueryPlan & plan)
     {
+        std::unordered_map<String, PrettyColumnName> pretty_names;
+        std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+
         if (plan.getRootNode())
             buildPrettyNamesForNode(plan.getRootNode(), pretty_names, runtime_filter_names, subquery_set_names);
+
+        for (const auto & [hash, name] : subquery_set_names)
+            pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+
+        return {pretty_names, runtime_filter_names};
     }
 
 }

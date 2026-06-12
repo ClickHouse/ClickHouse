@@ -36,6 +36,16 @@ struct PrettyColumnName
         : expression(std::move(expression_)), annotation(std::move(annotation_)) {}
 };
 
+using PrettyColumnNameMap = std::unordered_map<String, PrettyColumnName>;
+using PrettyRuntimeFilterNameMap = std::unordered_map<String, RuntimeFilterInfo>;
+using PrettySetNameMap = std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing>;
+
+struct PrettyNames
+{
+    PrettyColumnNameMap pretty_names;
+    PrettyRuntimeFilterNameMap runtime_filter_names;
+};
+
 struct ExplainFormatSettings
 {
     WriteBuffer & out;
@@ -48,30 +58,26 @@ struct ExplainFormatSettings
     bool compact = false;
     bool pretty = false;
     bool compact_repeated_processor_chains = false;
-    std::unordered_map<String, PrettyColumnName> pretty_names;
-    std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
+    const PrettyColumnNameMap & pretty_names;
+    const PrettyRuntimeFilterNameMap & runtime_filter_names;
 };
 
 namespace QueryPlanFormat
 {
     String trimColumnIdentifier(std::string_view name);
-    void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+    void formatOutputColumns(const PrettyColumnNameMap & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
     void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
 
     String formatNodePretty(
         const ActionsDAG::Node * node,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        const PrettyColumnNameMap & pretty_names,
+        const PrettyRuntimeFilterNameMap & runtime_filter_names,
+        PrettySetNameMap & subquery_set_names,
         int parent_precedence = 0);
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    void buildPrettyNamesMap(
-        const QueryPlan & plan,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names);
+    PrettyNames buildPrettyNames(const QueryPlan & plan);
 }
 
 }

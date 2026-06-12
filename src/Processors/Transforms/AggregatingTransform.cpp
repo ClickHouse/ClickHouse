@@ -407,13 +407,15 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        size_t expanded_processors_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
         , updater(std::move(updater_))
+        , expanded_processors(expanded_processors_)
     {
     }
 
@@ -465,6 +467,7 @@ public:
             inputs.emplace_back(out.getHeader(), this);
             connect(out, inputs.back());
             inputs.back().setNeeded();
+            source->setQueryPlanStep(getQueryPlanStep(), expanded_processors);
         }
 
         return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
@@ -670,6 +673,8 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
+    size_t expanded_processors;
+
     bool is_initialized = false;
     bool finished = false;
     bool parallelize_single_level_merge = false;
@@ -804,7 +809,7 @@ private:
 };
 
 AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t expanded_group_)
     : AggregatingTransform(
           std::move(header),
           std::move(params_),
@@ -814,7 +819,8 @@ AggregatingTransform::AggregatingTransform(
           1,
           true /* should_produce_results_in_order_of_bucket_number */,
           false /* skip_merging */,
-          updater_)
+          updater_,
+          expanded_group_)
 {
 }
 
@@ -827,7 +833,8 @@ AggregatingTransform::AggregatingTransform(
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    size_t expanded_group_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
@@ -839,6 +846,7 @@ AggregatingTransform::AggregatingTransform(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
+    , expanded_group(expanded_group_)
 {
 }
 
@@ -945,6 +953,9 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
     is_pipeline_created = true;
+    for (auto & proc : processors)
+        proc->setQueryPlanStep(getQueryPlanStep(), expanded_group);
+
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
@@ -1036,7 +1047,7 @@ void AggregatingTransform::initGenerate()
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
-                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
+                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater, expanded_group));
         }
         else
         {

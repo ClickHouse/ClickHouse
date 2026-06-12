@@ -651,10 +651,9 @@ The settings used for `EXPLAIN ANALYZE` are a subset of settings for `EXPLAIN PL
 - `sorting`
 - `input_headers`
 - `column_structure` 
-- `optimize`
 
 :::note
-  Current version of `EXPLAIN ANALYZE` can be run only on a single node.
+The current version of `EXPLAIN ANALYZE` doesn't support queries executed in distributed mode.
 :::
 
 Example:

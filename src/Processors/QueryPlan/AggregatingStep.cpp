@@ -177,6 +177,19 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
+String AggregatingStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<AggregatingStage>(group))
+    {
+        case AggregatingStage::Grouping: return "grouping";
+        case AggregatingStage::Merging: return "merging";
+        case AggregatingStage::Scatter: return "scatter";
+        case AggregatingStage::AggregatingSharded: return "shard aggregation";
+    }
+    return {};
+}
+
+
 const SortDescription & AggregatingStep::getSortDescription() const
 {
     if (memoryBoundMergingWillBeUsed())
@@ -361,6 +374,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
 
+    size_t expanded_group = static_cast<size_t>(AggregatingStage::Merging);
+
     if (use_sharded_aggregation)
     {
         /// Even though there is no merge phase, two-level can help keep each hash table small
@@ -374,6 +389,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         /// TODO(nihalzp): Support it
         params.stats_collecting_params.disable();
+        expanded_group = static_cast<size_t>(AggregatingStage::AggregatingSharded);
     }
 
     /** Two-level aggregation is useful in two cases:
@@ -430,7 +446,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                             new_merge_threads,
                             new_temporary_data_merge_threads,
                             should_produce_results_in_order_of_bucket_number,
-                            skip_merging);
+                            skip_merging,
+                            nullptr,
+                            expanded_group);
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
@@ -441,7 +459,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 else
                 {
                     auto aggregation_for_set
-                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater);
+                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater, expanded_group);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
                     processors.push_back(aggregation_for_set);
@@ -493,7 +511,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// (ignoring the read-stream-reduced cap) so downstream steps can process the result in parallel.
         pipeline.resize(params.max_threads);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
         return;
     }
 
@@ -542,11 +560,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 pipeline.addSimpleTransform([&](const SharedHeader & header)
                                             { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
                 pipeline.resize(max_threads);
-                aggregating_in_order = collector.detachProcessors(0);
+                aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
                 return;
             }
 
-            aggregating_in_order = collector.detachProcessors(0);
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
 
             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
                 pipeline.getSharedHeader(),
@@ -572,7 +590,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
             }
 
-            aggregating_sorted = collector.detachProcessors(1);
+            aggregating_sorted = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Merging));
         }
         else
         {
@@ -590,10 +608,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
             });
 
-            aggregating_in_order = collector.detachProcessors(0);
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
         }
 
-        finalizing = collector.detachProcessors(2);
         return;
     }
 
@@ -657,13 +674,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 });
         }
 
+        scatter = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Scatter));
+
         pipeline.addSimpleTransform(
             [&](const SharedHeader & shard_header)
-            { return std::make_shared<AggregatingTransform>(shard_header, transform_params, dataflow_cache_updater); });
+            { return std::make_shared<AggregatingTransform>(shard_header, transform_params, dataflow_cache_updater, expanded_group); });
 
         chassert(!should_produce_results_in_order_of_bucket_number);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::AggregatingSharded));
         return;
     }
 
@@ -690,21 +709,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
                     skip_merging,
-                    dataflow_cache_updater);
+                    dataflow_cache_updater,
+                    expanded_group);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
     }
     else
     {
         pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater, expanded_group); });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
     }
 }
 
@@ -734,11 +754,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
 void AggregatingStep::describePipeline(FormatSettings & settings) const
 {
     if (!aggregating.empty())
+    {
         IQueryPlanStep::describePipeline(aggregating, settings);
+        IQueryPlanStep::describePipeline(scatter, settings);
+    }
     else
     {
         /// Processors are printed in reverse order.
-        IQueryPlanStep::describePipeline(finalizing, settings);
         IQueryPlanStep::describePipeline(aggregating_sorted, settings);
         IQueryPlanStep::describePipeline(aggregating_in_order, settings);
     }

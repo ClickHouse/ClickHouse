@@ -558,6 +558,7 @@ void QueryPlan::explainPlan(
     const ExplainPlanOptions & options,
     size_t offset,
     size_t max_description_length,
+    const PrettyNames & precomputed_pretty_names,
     const std::string & parent_tree_prefix,
     bool is_last_child_plan,
     AnalyzeStepsStats * steps_to_stats) const
@@ -571,8 +572,8 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
-        .pretty_names = {},
-        .runtime_filter_names = {}
+        .pretty_names = precomputed_pretty_names.pretty_names,
+        .runtime_filter_names = precomputed_pretty_names.runtime_filter_names
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
@@ -584,14 +585,6 @@ void QueryPlan::explainPlan(
             node = node->children[0];
         return node;
     };
-
-    if (options.pretty)
-    {
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
-        QueryPlanFormat::buildPrettyNamesMap(*this, settings.pretty_names, settings.runtime_filter_names, subquery_set_names);
-        for (const auto & [hash, name] : subquery_set_names)
-            settings.pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-    }
 
     std::deque<ExplainPlan::Frame> stack;
 
@@ -658,7 +651,7 @@ void QueryPlan::explainPlan(
             {
                 bool is_last_plan = (plan_idx + 1 == child_plans.size());
                 child_plan->explainPlan(buffer, options, offset + stack.size(),
-                                        max_description_length, base_prefix, is_last_plan);
+                                        max_description_length, precomputed_pretty_names, base_prefix, is_last_plan);
                 ++plan_idx;
             }
 

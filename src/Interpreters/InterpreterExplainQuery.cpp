@@ -33,11 +33,13 @@
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
@@ -81,6 +83,28 @@ namespace ErrorCodes
 
 namespace
 {
+    bool planHasDistributedStep(const QueryPlan & plan)
+    {
+        std::vector<const QueryPlan::Node *> stack;
+        if (const auto * root = plan.getRootNode())
+            stack.push_back(root);
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+
+            const auto name = node->step->getName();
+            if (name == "ReadFromRemote" || name == "ReadFromRemoteParallelReplicas" || name == "ReadFromCluster")
+                return true;
+
+            for (const auto * child : node->children)
+                stack.push_back(child);
+        }
+
+        return false;
+    }
+
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
     /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
     ///
@@ -454,7 +478,7 @@ struct QueryAnalyzeSettings
         .indexes = true,
         .compact = true,
         .pretty = true,
-    };   
+    };
 
     /// Apply query plan optimizations.
     /// Turning off turns off ALL optimizations
@@ -658,7 +682,7 @@ bool explainQueryTree(
 
 static void formatHeaderExplainAnalyze(
         UInt64 total_time_ns,
-        UInt64 build_ns,
+        UInt64 planning_ns,
         UInt64 execute_ns,
         UInt64 read_rows,
         UInt64 read_bytes,
@@ -667,10 +691,10 @@ static void formatHeaderExplainAnalyze(
 {
     out << "Query summary:\n";
 
-    /// Total time, split into the build (planning + pipeline) and execution phases.
+    /// Total time, split into the planning (logical plan, optimization, physical pipeline) and execution phases.
     out << "  Time:        " << formatReadableTime(static_cast<double>(total_time_ns))
-        << " (build " << formatReadableTime(static_cast<double>(build_ns))
-        << " · execute " << formatReadableTime(static_cast<double>(execute_ns)) << ")\n";
+        << " (planning " << formatReadableTime(static_cast<double>(planning_ns))
+        << " · execution " << formatReadableTime(static_cast<double>(execute_ns)) << ")\n";
 
     /// Rows/bytes read from tables, with throughput relative to the execution time.
     out << "  Read:        " << formatReadableQuantity(static_cast<double>(read_rows)) << " rows, "
@@ -710,8 +734,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
     /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
     auto explain_query_context = Context::createCopy(query_context);
-    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
-    explain_query_context->setSetting("use_query_condition_cache", false);
+
+    if (ast.getKind() != ASTExplainQuery::Analyze)
+    {
+        explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+        explain_query_context->setSetting("use_query_condition_cache", false);
+    }
+
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
     query_context = std::move(explain_query_context);
 
@@ -812,6 +841,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.optimize(optimization_settings);
             }
 
+            PrettyNames precomputed_pretty_names;
+
+            if (settings.query_plan_options.pretty)
+                precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
+
             if (settings.json)
             {
                 if (settings.query_plan_options.distributed)
@@ -834,7 +868,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length], precomputed_pretty_names);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -973,8 +1007,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context;
 
-            UInt64 build_ns = 0;
-            Stopwatch watch;            
+            UInt64 planning_ns = 0;
+            Stopwatch watch;
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
 
@@ -985,25 +1019,30 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             else
             {
                 InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
-                /// Watch In
                 interpreter.buildQueryPlan(plan);
-                /// Watch Out
                 context = interpreter.getContext();
             }
-            build_ns += watch.elapsed();
-            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            planning_ns += watch.elapsed();
 
-            /// TODO: add the same decision branch into EXPLAIN PLAN
-            if (!settings.optimize)
-                optimization_settings.keepOnlyExplicitlyEnabled(context->getSettingsRef());
+            if (planHasDistributedStep(plan))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "The current version of EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
 
             optimization_settings.is_explain = true;
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
 
             watch.restart();
             plan.optimize(optimization_settings);
-            auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
-            build_ns += watch.elapsed();
+            planning_ns += watch.elapsed();
+
+            PrettyNames precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
+
+            watch.restart();
+            auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
+            planning_ns += watch.elapsed();
 
             pipeline_builder->setSinks([](const SharedHeader & header, Pipe::StreamType)-> ProcessorPtr
             {
@@ -1012,7 +1051,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             watch.restart();
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
-            build_ns += watch.elapsed();
+            planning_ns += watch.elapsed();
 
             pipeline.setMeasureStepWallClock(true);
 
@@ -1021,9 +1060,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             watch.restart();
             /// TODO: this function might throw -- wrap into try catch loop
             executor.execute();
+
             UInt64 execute_ns = watch.elapsed();
 
-            UInt64 total_time_ns = execute_ns + build_ns;
+            UInt64 total_time_ns = planning_ns + execute_ns;
 
             UInt64 read_rows = 0;
             UInt64 read_bytes = 0;
@@ -1038,12 +1078,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             AnalyzeStepsStats steps_to_stats(pipeline, execute_ns);
 
-            formatHeaderExplainAnalyze(total_time_ns, build_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
+            formatHeaderExplainAnalyze(total_time_ns, planning_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
 
-            plan.explainPlan(buf, 
-            settings.query_plan_options, 
-            0, 
+            plan.explainPlan(buf,
+            settings.query_plan_options,
+            0,
             query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
+            precomputed_pretty_names,
             "",
             false,
             &steps_to_stats);

@@ -5,8 +5,8 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #endif
@@ -14,7 +14,6 @@
 
 #include <list>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -149,6 +148,7 @@ public:
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
+        const PrettyNames & precomputed_pretty_names = {},
         const std::string & parent_tree_prefix = "",
         bool is_last_child_plan = true,
         AnalyzeStepsStats * steps_to_stats = nullptr) const;
