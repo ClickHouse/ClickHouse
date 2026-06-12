@@ -90,6 +90,11 @@ Chunk ArrowBlockInputFormat::read()
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch_result);
+
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
