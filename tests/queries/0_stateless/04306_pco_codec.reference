@@ -11,6 +11,13 @@ Float64	0
 Date	0
 DateTime	0
 after_merge	0
+Decimal32	0
+Decimal64	0
+IPv4	0
+Enum8	0
+Enum16	0
+Date32	0
+DateTime64	0
 chain_a	0
 chain_b	0
 small	0

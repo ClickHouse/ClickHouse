@@ -58,6 +58,47 @@ SELECT 'DateTime',sum(dt  != toDateTime('2000-01-01 00:00:00') + id) FROM t_pco;
 OPTIMIZE TABLE t_pco FINAL;
 SELECT 'after_merge', sum(i64 != toInt64(id * 1000000 - 500)) FROM t_pco;
 
+-- Backed types accepted via their underlying integer representation: the type mapper treats
+-- Decimal32/Decimal64 and DateTime64 as signed, IPv4 as unsigned, Enum as signed, Date32 as signed.
+DROP TABLE IF EXISTS t_pco_backed;
+CREATE TABLE t_pco_backed
+(
+    id    UInt64,
+    dec32 Decimal32(4) CODEC(PCO),
+    dec64 Decimal64(8) CODEC(PCO),
+    ip4   IPv4 CODEC(PCO),
+    e8    Enum8('a' = 1, 'b' = 2, 'c' = 3) CODEC(PCO),
+    e16   Enum16('x' = -300, 'y' = 5, 'z' = 1000) CODEC(PCO),
+    d32   Date32 CODEC(PCO),
+    dt64  DateTime64(3) CODEC(PCO)
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO t_pco_backed
+SELECT
+    number,
+    toDecimal32(toInt32(number % 100000) - 50000, 4),
+    toDecimal64(toInt64(number) * 1000 - 5, 8),
+    CAST(toUInt32(number * 97 + 12345) AS IPv4),
+    CAST(toInt8(number % 3 + 1) AS Enum8('a' = 1, 'b' = 2, 'c' = 3)),
+    CAST([-300, 5, 1000][number % 3 + 1] AS Enum16('x' = -300, 'y' = 5, 'z' = 1000)),
+    toDate32('1950-01-01') + (number % 20000),
+    addMilliseconds(toDateTime64('2000-01-01 00:00:00', 3), number * 123)
+FROM numbers(20000);
+
+SELECT 'Decimal32',  sum(dec32 != toDecimal32(toInt32(id % 100000) - 50000, 4)) FROM t_pco_backed;
+SELECT 'Decimal64',  sum(dec64 != toDecimal64(toInt64(id) * 1000 - 5, 8)) FROM t_pco_backed;
+SELECT 'IPv4',       sum(ip4 != CAST(toUInt32(id * 97 + 12345) AS IPv4)) FROM t_pco_backed;
+SELECT 'Enum8',      sum(toInt8(e8) != toInt8(id % 3 + 1)) FROM t_pco_backed;
+SELECT 'Enum16',     sum(toInt16(e16) != [-300, 5, 1000][id % 3 + 1]) FROM t_pco_backed;
+SELECT 'Date32',     sum(d32 != toDate32('1950-01-01') + (id % 20000)) FROM t_pco_backed;
+SELECT 'DateTime64', sum(dt64 != addMilliseconds(toDateTime64('2000-01-01 00:00:00', 3), id * 123)) FROM t_pco_backed;
+
+-- 16/32-byte and non-numeric types are rejected.
+CREATE TABLE t_pco_bad (x Decimal128(10) CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_pco_bad (x Decimal256(10) CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_pco_bad (x String CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 -- Codec chaining (Delta then PCO) and an explicit compression level.
 DROP TABLE IF EXISTS t_pco_chain;
 CREATE TABLE t_pco_chain (id UInt64, a Int64 CODEC(Delta, PCO), b UInt32 CODEC(PCO(12))) ENGINE = MergeTree ORDER BY id;
@@ -90,6 +131,7 @@ SELECT 'compresses', (SELECT sum(data_compressed_bytes) FROM system.parts WHERE 
                    < (SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_none_ratio' AND active);
 
 DROP TABLE t_pco;
+DROP TABLE t_pco_backed;
 DROP TABLE t_pco_chain;
 DROP TABLE t_pco_small;
 DROP TABLE t_pco_ratio;
