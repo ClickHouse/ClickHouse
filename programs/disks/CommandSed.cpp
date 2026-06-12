@@ -77,7 +77,7 @@ public:
             /// open `stdin` to be reaped by the blocking destructor -- which would otherwise hang.
             /// Pass the expression as a separate argument so it is never interpreted by the
             /// shell. `sed` reads its input from `stdin` and writes the result to `stdout`.
-            ShellCommand::Config config{R"(exec sed "$0")"};
+            ShellCommand::Config config{R"(exec sed -- "$0")"};
             config.arguments.push_back(expression);
             auto command = ShellCommand::execute(config);
 
