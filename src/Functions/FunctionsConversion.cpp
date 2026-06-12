@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -867,17 +869,39 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples allow conversions for tuples with
-    /// different sets of elements. If element exists in @to_type
-    /// and doesn't exist in @to_type it will be filled by default values.
-    if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+    bool use_names = from_type->hasExplicitNames() && to_type->hasExplicitNames();
+
+    UnorderedMapWithMemoryTracking<String, size_t> from_positions;
+    if (use_names)
     {
         const auto & from_names = from_type->getElementNames();
-        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
         from_positions.reserve(from_names.size());
         for (size_t i = 0; i < from_names.size(); ++i)
             from_positions[from_names[i]] = i;
 
+        if (cast_type != CastType::nonAccurate)
+        {
+            /// Accurate casts implement implicit conversions for comparisons: e.g. `Set::execute`
+            /// casts the left hand side of IN to the type of the set elements. There, mapping the
+            /// elements by name and filling the absent ones with default values would silently
+            /// compare garbage (for example, `(id, str) IN (SELECT tuple(number) FROM ...)` would
+            /// compare a default value instead of throwing). So for accurate casts the elements are
+            /// mapped by names only when both tuples have exactly the same set of names (possibly
+            /// in different order); otherwise fall back to the positional conversion, which keeps
+            /// the behavior of unnamed tuples: same-arity tuples are converted element-wise and
+            /// different arity is an error.
+            const auto & to_names = to_type->getElementNames();
+            use_names = to_names.size() == from_positions.size()
+                && std::all_of(to_names.begin(), to_names.end(), [&](const String & name) { return from_positions.contains(name); });
+        }
+    }
+
+    /// For named tuples allow conversions for tuples with
+    /// different sets of elements. If element exists in @to_type
+    /// and doesn't exist in @from_type it will be filled by default values.
+    if (use_names)
+    {
+        const auto & from_names = from_type->getElementNames();
         const auto & to_names = to_type->getElementNames();
         element_wrappers.reserve(to_names.size());
         to_reverse_index.reserve(from_names.size());
