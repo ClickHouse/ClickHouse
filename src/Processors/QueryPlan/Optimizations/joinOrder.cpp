@@ -1340,6 +1340,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     BitSet exclusion = BitSet::allSet(num_relations);
     for (int i = static_cast<int>(num_relations) - 1; i >= 0; --i)
     {
+        /// Once enumeration is aborted, the result is discarded below, so stop seeding.
+        if (dphyp_unsupported_predicate || search_budget_exceeded)
+            break;
+
         BitSet seed;
         seed.set(static_cast<size_t>(i));
 
