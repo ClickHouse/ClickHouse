@@ -341,8 +341,7 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    auto token_info = TextIndexSerialization::serializePostings(output_postings, *postings_stream, params, postings_serialization);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
@@ -384,8 +383,12 @@ void MergeTextIndexesTask::flushDictionaryBlock()
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
-            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
+            /// Embedded postings are tiny and always carry the `RawPostings` flag,
+            /// so they are written as raw VarUInts.
+            const auto & embedded = *output_infos[i].embedded_postings;
+            std::vector<UInt32> values(embedded.cardinality());
+            embedded.toUint32Array(values.data());
+            TextIndexSerialization::serializeRawPostings(values, ostr);
         }
     }
 

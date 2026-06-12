@@ -225,10 +225,9 @@ MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> &
     WriteBufferFromOwnString out;
     for (const auto & block_docs : blocks)
     {
-        /// Use a segment size large enough to hold all docs in one segment.
-        PostingListCodecBitpackingImpl codec(block_docs.size() + BLOCK_SIZE);
-        for (auto doc : block_docs)
-            codec.insert(doc);
+        /// A segment size large enough to hold all docs in one segment.
+        PostingListCodecBitpackingImpl codec;
+        codec.append(block_docs, 1 << 20);
         codec.encode(out, info);
     }
 

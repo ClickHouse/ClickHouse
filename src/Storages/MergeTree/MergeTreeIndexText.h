@@ -7,6 +7,7 @@
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
+#include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <Formats/MarkInCompressedFile.h>
 
@@ -15,6 +16,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <span>
+#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -43,7 +46,7 @@ namespace DB
   * Then index granule is written in the following way:
   * 1. Posting lists are dumped in blocks of size 'posting_list_block_size'.
   * 2. Offsets in the file to the posting list blocks along with min-max range of the block for each token are saved.
-  * 3. Posting lists are built and saved as Roaring Bitmaps.
+  * 3. Posting lists are encoded with the configured posting list codec ('none' saves them as Roaring Bitmaps).
   * 4. If the cardinality of the posting list is less than a threshold it is embedded into the dictionary.
   * 5. Dictionary blocks are dumped, and the offset in the dictionary file to the block is saved into the sparse index.
   *
@@ -66,9 +69,10 @@ namespace DB
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
   * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInts.
-  * Otherwise, the format is:
-  * - Number of uncompressed bytes of the posting list (VarUInt).
-  * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
+  * Otherwise, the posting list is split into segments of `posting_list_block_size` row ids and
+  * serialized via the configured `IPostingListCodec`. The default codec (`none`) writes each segment
+  * as a portable Roaring Bitmap with a leading VarUInt size; the `bitpacking` codec uses a compact
+  * bit-packed format with its own segment header.
   */
 
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
@@ -84,65 +88,84 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// A struct for building a posting list with optimization for infrequent tokens.
-/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
-/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
+/// A struct for building a posting list during the index build.
+///
+/// The first inline_capacity row ids are stored inline in the hash map cell. It avoids
+/// any heap allocation for infrequent tokens (the majority for large vocabularies) and
+/// keeps their whole hot path within the single cache line loaded by the token lookup.
+///
+/// More frequent tokens spill to Overflow, where row ids are collected as raw values
+/// into a vector. Every time the vector reaches `IPostingListAccumulator::append_granularity`
+/// row ids, it is appended to an accumulator that encodes them into the codec's in-memory
+/// form, splitting them into segments of `posting_list_block_size` row ids. It bounds
+/// the memory usage of the builder, because raw values are stored only for a small
+/// tail of the posting list.
+///
+/// The two states share storage in a variant. This keeps the builder within 56 bytes,
+/// so that a hash map cell fits in one cache line, and the vector of a spilled token
+/// is appended to without leaving the cell's cache line.
+///
+/// The builder is stored by value in the hash map, so it must stay trivially relocatable
+/// (the hash table moves cells with memcpy on resize): Overflow holds only pointers
+/// to the heap, so moving a cell with memcpy is safe.
+///
+/// Values are added in non-descending order; duplicates are skipped
+/// (they are checked against the last added value).
 struct PostingListBuilder
 {
 public:
-    using PostingListsHolder = std::list<PostingList>;
+    /// The maximal capacity that keeps the variant (with its index) within 56 bytes.
+    static constexpr size_t inline_capacity = 11;
 
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
-
-    PostingListBuilder() : small_size(0) {}
-    explicit PostingListBuilder(PostingList * posting_list);
-
-    /// Adds a value to small array or to the large Roaring Bitmap.
-    /// If small array is converted to Roaring Bitmap after adding a value,
-    /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
-
-    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
-    bool isEmpty() const { return size() == 0; }
-    bool isSmall() const { return small_size < max_small_size; }
-    bool isLarge() const { return !isSmall(); }
-
-    UInt32 minimum() const
+    /// Row ids stored inline while the token has no more than inline_capacity of them.
+    struct Inline
     {
-        chassert(!isEmpty());
-        return isSmall() ? small[0] : large.postings->minimum();
-    }
+        std::array<UInt32, inline_capacity> values;
+        UInt8 size = 0;
+    };
 
-    UInt32 maximum() const
+    /// Heap part of the builder for tokens with more than inline_capacity row ids.
+    struct Overflow
     {
-        chassert(!isEmpty());
-        return isSmall() ? small[small_size - 1] : large.postings->maximum();
-    }
+        /// Raw row ids of the current (possibly incomplete) segment. Contains all row ids
+        /// of the token (including the inline ones) until the first segment flush.
+        PODArray<UInt32, 64> values;
+        /// Full segments encoded into the codec's in-memory form.
+        /// Created when the posting list outgrows one segment.
+        std::unique_ptr<IPostingListAccumulator> accumulator;
+        /// The last added row id. Used to skip duplicates, because `values` is cleared on flush.
+        UInt32 last_value = 0;
+    };
 
-    SmallContainer & getSmall() { return small; }
-    const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.postings; }
+    /// Adds the first value of a token (right after the builder is created in the map).
+    void addFirst(UInt32 value);
+
+    /// Adds a value to the inline array or to the overflow vector.
+    /// If the overflow vector reaches the append granularity, it is flushed into the accumulator.
+    void add(UInt32 value, const IPostingListCodec * codec, size_t segment_size);
+
+    size_t size() const;
+    bool hasAccumulator() const;
+
+    /// Returns all collected row ids as a contiguous span.
+    /// Valid only until the first segment flush (see hasAccumulator).
+    std::span<const UInt32> getRawValues() const;
+
+    /// Flushes the remaining row ids into the accumulator and returns it for finalization.
+    IPostingListAccumulator & flushToAccumulator(const IPostingListCodec * codec, size_t segment_size);
+
+    /// Heap memory held by the builder (the builder itself is accounted in the map buffer).
+    size_t memoryUsageBytes() const;
 
 private:
-    struct PostingListWithContext
-    {
-        PostingList * postings;
-        roaring::BulkContext context;
-    };
+    /// Moves the inline values into the overflow and adds the new value to it. Cold path.
+    void spillToOverflow(UInt32 value);
+    /// Appends the buffered raw values to the accumulator (created on the first flush). Cold path.
+    void flushBuffered(const IPostingListCodec * codec, size_t segment_size);
 
-    union
-    {
-        SmallContainer small{};
-        PostingListWithContext large;
-    };
-
-    UInt8 small_size;
+    std::variant<Inline, Overflow> state;
 };
 
-/// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 struct TokenPostingsInfo;
@@ -168,9 +191,6 @@ struct PostingsSerialization
         HasBlockIndex = 1ULL << 4,
     };
 
-    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
@@ -178,9 +198,9 @@ private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations when deserializing
+    /// small posting lists stored as raw VarUInts.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -278,8 +298,17 @@ struct TextIndexSerialization
         const MergeTreeIndexTextParams & params,
         PostingsSerialization & postings_serialization);
 
+    /// The same as above, but for a posting list materialized as a Roaring Bitmap (used on merges).
+    static TokenPostingsInfo serializePostings(
+        const PostingList & postings,
+        MergeTreeIndexWriterStream & postings_stream,
+        const MergeTreeIndexTextParams & params,
+        PostingsSerialization & postings_serialization);
+
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    /// Writes row ids as raw VarUInts (used for embedded and other small posting lists).
+    static void serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
@@ -385,7 +414,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         IPostingListCodec::Type posting_list_codec_type_,
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
-        std::list<PostingList> && posting_lists_,
         std::unique_ptr<Arena> && arena_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
@@ -404,7 +432,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsBuilderMap tokens_map;
-    std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
 };
@@ -431,14 +458,14 @@ struct MergeTreeIndexTextGranuleBuilder
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
+    /// Effective segment size of the posting lists (see IPostingListCodec::getSegmentSize).
+    size_t segment_size = 0;
 
     bool is_empty = true;
     UInt64 current_row = 0;
     UInt64 num_processed_tokens = 0;
-    /// Pointers to posting lists for each token.
+    /// Pointers to posting list builders for each token.
     TokenToPostingsBuilderMap tokens_map;
-    /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
-    std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
 };
