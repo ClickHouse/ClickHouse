@@ -7,24 +7,18 @@
 #include <Functions/FunctionHelpers.h>
 #include <base/find_symbols.h>
 
-#include <array>
-
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
 {
 
-/// Membership table for the optional second argument of trim* functions.
-/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
-/// a trim character set of any length and looks up each byte in O(1).
-using TrimCharsTable = std::array<bool, 256>;
-
-class FunctionTrim final : public IFunction
+class FunctionTrim : public IFunction
 {
 public:
     FunctionTrim(const char * name_, bool trim_left_, bool trim_right_)
@@ -58,7 +52,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::optional<TrimCharsTable> custom_trim_characters;
+        std::optional<SearchSymbols> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
         {
             String trim_characters_string;
@@ -75,10 +69,11 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column type of argument 2 of function {}: {}", getName(), arguments[1].column->getName());
             }
 
-            TrimCharsTable table{};
-            for (char c : trim_characters_string)
-                table[static_cast<UInt8>(c)] = true;
-            custom_trim_characters = table;
+            /// Throw a nicer exception type than SearchSymbols constructor.
+            if (trim_characters_string.size() > SearchSymbols::BUFFER_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Function {} supports at most {} trim characters, but {} were provided.", getName(), std::to_string(SearchSymbols::BUFFER_SIZE), trim_characters_string.size());
+
+            custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
         }
 
         ColumnPtr col_input_full;
@@ -120,7 +115,7 @@ private:
     void vectorImpl(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
+        const std::optional<SearchSymbols> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
@@ -131,8 +126,8 @@ private:
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        const UInt8 * start = nullptr;
-        size_t length = 0;
+        const UInt8 * start;
+        size_t length;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -150,7 +145,7 @@ private:
     void vector(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
+        const std::optional<SearchSymbols> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
@@ -165,7 +160,7 @@ private:
     void vectorFixedImpl(
         const ColumnString::Chars & input_data,
         size_t n,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
+        const std::optional<SearchSymbols> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
@@ -176,8 +171,8 @@ private:
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        const UInt8 * start = nullptr;
-        size_t length = 0;
+        const UInt8 * start;
+        size_t length;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -195,7 +190,7 @@ private:
     void vectorFixed(
         const ColumnString::Chars & input_data,
         size_t n,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
+        const std::optional<SearchSymbols> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
@@ -207,35 +202,38 @@ private:
     }
 
     template <bool do_trim_left, bool do_trim_right>
-    static void executeImpl(const UInt8 * data, size_t size, const std::optional<TrimCharsTable> & custom_trim_characters, const UInt8 *& res_data, size_t & res_size)
+    static void executeImpl(const UInt8 * data, size_t size, const std::optional<SearchSymbols> & custom_trim_characters, const UInt8 *& res_data, size_t & res_size)
     {
         const char * char_begin = reinterpret_cast<const char *>(data);
         const char * char_end = char_begin + size;
 
         if constexpr (do_trim_left)
         {
+            const char * found = nullptr;
             if (!custom_trim_characters)
-                char_begin = find_first_not_symbols<' '>(char_begin, char_end);
+                found = find_first_not_symbols<' '>(char_begin, char_end);
             else
             {
-                const TrimCharsTable & table = *custom_trim_characters;
-                while (char_begin < char_end && table[static_cast<UInt8>(*char_begin)])
-                    ++char_begin;
+                std::string_view input(char_begin, char_end);
+                found = find_first_not_symbols(input, *custom_trim_characters);
             }
+            size_t num_chars = found - char_begin;
+            char_begin += num_chars;
         }
         if constexpr (do_trim_right)
         {
+            const char * found = nullptr;
             if (!custom_trim_characters)
-            {
-                const char * found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
-                char_end = found ? found + 1 : char_begin;
-            }
+                found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
             else
             {
-                const TrimCharsTable & table = *custom_trim_characters;
-                while (char_end > char_begin && table[static_cast<UInt8>(char_end[-1])])
-                    --char_end;
+                std::string_view input(char_begin, char_end);
+                found = find_last_not_symbols_or_null(input, *custom_trim_characters);
             }
+            if (found)
+                char_end = found + 1;
+            else
+                char_end = char_begin;
         }
 
         res_data = reinterpret_cast<const UInt8 *>(char_begin);

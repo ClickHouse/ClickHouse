@@ -16,8 +16,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
 #    if defined(__x86_64__) || defined(__i386__)
@@ -25,6 +23,7 @@
 #    endif
 #    include <simsimd/simsimd.h>
 #endif
+
 
 namespace DB
 {
@@ -77,7 +76,7 @@ struct L2DistanceTransposed
             AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
             d2 += (xi - yi) * (xi - yi);
         }
-        *result = static_cast<Float64>(std::sqrt(d2));
+        *result = static_cast<Float64>(sqrt(d2));
     }
 };
 
@@ -131,8 +130,8 @@ struct CosineDistanceTransposed
         }
         else
         {
-            const auto unclipped_result = AccumulatorType(1) - ab / (std::sqrt(a2) * std::sqrt(b2));
-            *result = unclipped_result > 0 ? static_cast<Float64>(unclipped_result) : Float64{0};
+            const auto unclipped_result = AccumulatorType(1) - ab / (sqrt(a2) * sqrt(b2));
+            *result = unclipped_result > 0 ? unclipped_result : 0;
         }
     }
 };
@@ -399,7 +398,7 @@ private:
 
         /// Add dimension and reference vector as last two arguments
         auto dimension_column = DataTypeUInt64().createColumnConst(1, qbit_dimension);
-        converted_arguments.emplace_back(std::move(dimension_column), std::make_shared<DataTypeUInt64>(), "dimension");
+        converted_arguments.emplace_back(dimension_column, std::make_shared<DataTypeUInt64>(), "dimension");
 
         /// Cast reference vector to match QBit element type to ensure correct dispatch
         auto ref_vec_type = arguments[1].type;
@@ -430,7 +429,7 @@ private:
 
         /// For the sake of speed, downcast the reference vector to CalcT if `precision` is low enough
         const auto & array_data = static_cast<const ColumnVector<RefT> &>(col_y.getData()).getData();
-        const PaddedPODArray<CalcT> * data_ptr = nullptr;
+        const PaddedPODArray<CalcT> * data_ptr;
         PaddedPODArray<CalcT> array_data_downcasted;
         if constexpr (!std::is_same_v<RefT, CalcT>)
         {
@@ -454,7 +453,7 @@ private:
 
         /// We process 32 rows per iteration. It's a magic number, but gives a good trade-off between memory usage and performance
         constexpr size_t block_size = 32;
-        VectorWithMemoryTracking<CalcT> block(block_size * padded_array_size);
+        std::vector<CalcT> block(block_size * padded_array_size);
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
         for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
@@ -499,9 +498,6 @@ private:
 };
 
 /// Used by TupleOrArrayFunction
-FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
-FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
-
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<L2DistanceTransposed>::create(context_);
