@@ -273,15 +273,18 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         /// Exact-size deferred build: when there is no statistics hint to preallocate from, buffer the
         /// right blocks and size each two-level map to the exact row count at build finish, avoiding
         /// rehashes during the build. Skipped when statistics already provide a good hint (then the
-        /// streaming build + `reserveSpaceInHashMaps` is used), when size limits require incremental
-        /// enforcement, for `any_take_last_row`, and for single-level maps (FixedHashMap is already
-        /// exact-size and never rehashes). Coexists with a wrapping `SpillingHashJoin`: the spill
+        /// streaming build + `reserveSpaceInHashMaps` is used), for `any_take_last_row`, and for
+        /// single-level maps (FixedHashMap is already exact-size and never rehashes). Size limits
+        /// (`max_rows_in_join` / `max_bytes_in_join`) do not disable the deferral: they are enforced
+        /// at buffering time against the same global totals the streaming build checks (see
+        /// `addBlockToJoin`); this matters because common configurations set benign limits (e.g. the
+        /// CI test profile sets both to 10G). Coexists with a wrapping `SpillingHashJoin`: the spill
         /// threshold checks consult `getProjectedTotalByteCount` (buffered blocks plus the projected
         /// size of the maps the replay would build), so the wrapper switches to `GraceHashJoin`
         /// before a replay that would overshoot the cap, and on a spill the buffers are handed over
         /// (see `releaseSlotBlocks`) without building the in-memory map.
         deferred_build = !any_take_last_row
-            && !table_join->sizeLimits().hasLimits() && hash_joins[0]->data->twoLevelMapIsUsed()
+            && hash_joins[0]->data->twoLevelMapIsUsed()
             && !getSizeHint(stats_collecting_params).has_value();
 
         /// String-key maps copy every key into the arena at insert time; for the spill projection
@@ -362,8 +365,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     if (deferred_build)
     {
         /// Buffer the per-slot blocks instead of inserting now; they are reserved exactly and replayed
-        /// at `onBuildPhaseFinish` (or handed to GraceHashJoin if the wrapper decides to spill). Size
-        /// limits are not enforced here (deferral is disabled when any limit is set, see the ctor).
+        /// at `onBuildPhaseFinish` (or handed to GraceHashJoin if the wrapper decides to spill).
         /// `buffered_rows`/`buffered_bytes` keep the totals accurate, and the spill checks of the
         /// wrapping `SpillingHashJoin` use `getProjectedTotalByteCount` on top of them to account
         /// for the maps the replay would build.
@@ -384,6 +386,16 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             hash_join->buffered_bytes += dispatched_block.allocatedBytes();
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
         }
+
+        /// The same global enforcement as the streaming build below, with the projected bytes of the
+        /// not-yet-built maps standing in for the map bytes of `getTotalByteCount`: the row count is
+        /// exact during buffering, and the projection sizes the would-be hash-table buffers the same
+        /// way the replay will reserve them, so `throw` fires before the replay allocates them and
+        /// `break` stops the build at the same point as the streaming path. The replay then inserts
+        /// with `check_limits = false`: the limits were already enforced here.
+        if (check_limits && table_join->sizeLimits().hasLimits())
+            return table_join->sizeLimits().check(
+                getTotalRowCount(), getProjectedTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
         return true;
     }
 
