@@ -216,6 +216,15 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             oracle_combination = OracleCombination::WHERE_ONLY;
     }
 
+    /// In the GROUP BY/HAVING combinations the first query references the GROUP BY
+    /// key columns while the second (flat) rewrite references only the predicate
+    /// columns. So a column that fails analysis only in the first query (e.g. a
+    /// group key that cannot be resolved) makes the two queries differ in success
+    /// without any result divergence - a false positive. Only the result is
+    /// comparable here, not the success status. WHERE_ONLY keeps the same column
+    /// footprint in both queries, so its success comparison stays meaningful.
+    can_test_success &= oracle_combination == OracleCombination::WHERE_ONLY;
+
     if (oracle_combination == OracleCombination::WHERE_ONLY)
     {
         /// WHERE-only path: SELECT count() AS s0 FROM T WHERE pred = TRUE
