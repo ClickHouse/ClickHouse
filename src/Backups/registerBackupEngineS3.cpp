@@ -19,6 +19,15 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 #endif
@@ -71,13 +80,10 @@ void registerBackupEngineS3(BackupFactory & factory)
         String role_arn;
         String role_session_name;
         String external_id;
-        bool no_sign_request = false;
-        /// nullopt for explicit url/key args (keep the global default); set for named collections.
-        std::optional<bool> use_environment_credentials;
-        String http_client;
-        String google_adc_client_id;
-        String google_adc_client_secret;
-        String google_adc_refresh_token;
+        /// Set for named collections (a full override of the server-managed credential mechanisms,
+        /// mirroring `S3StorageParsedArguments::fromNamedCollection`); nullopt for explicit url/key args,
+        /// which keep the server `<s3>` config values.
+        std::optional<S3::S3AuthSettings> named_collection_auth;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -87,16 +93,27 @@ void registerBackupEngineS3(BackupFactory & factory)
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
-            no_sign_request = collection->getOrDefault<bool>("no_sign_request", false);
-            /// Default to 0 for named collections so a URL-only backup collection reads anonymously
+
+            /// Every server-managed credential mechanism is taken from the collection, with the collection
+            /// defaults when omitted, so none of them is inherited from the server `<s3>` config.
+            /// `use_environment_credentials` defaults to 0 so a URL-only backup collection reads anonymously
             /// instead of authenticating with the server's own cloud identity (matches s3 table functions).
-            use_environment_credentials = collection->getOrDefault<bool>("use_environment_credentials", false);
-            /// Carry `http_client = gcp_oauth` and the explicit Google ADC triple from the collection so a
-            /// backup can authenticate with a user-supplied ADC rather than the server's GCP metadata service.
-            http_client = collection->getOrDefault<String>("http_client", "");
-            google_adc_client_id = collection->getOrDefault<String>("google_adc_client_id", "");
-            google_adc_client_secret = collection->getOrDefault<String>("google_adc_client_secret", "");
-            google_adc_refresh_token = collection->getOrDefault<String>("google_adc_refresh_token", "");
+            /// Static keys are credentials, not mechanisms, and keep the existing config inheritance.
+            named_collection_auth.emplace();
+            auto & auth = *named_collection_auth;
+            auth[S3AuthSetting::use_environment_credentials]
+                = collection->getOrDefault<bool>("use_environment_credentials", false);
+            auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);
+            auth[S3AuthSetting::role_arn] = role_arn;
+            auth[S3AuthSetting::role_session_name] = role_session_name;
+            auth[S3AuthSetting::external_id] = external_id;
+            auth[S3AuthSetting::http_client] = collection->getOrDefault<String>("http_client", "");
+            auth[S3AuthSetting::service_account] = collection->getOrDefault<String>("service_account", "");
+            auth[S3AuthSetting::metadata_service] = collection->getOrDefault<String>("metadata_service", "");
+            auth[S3AuthSetting::request_token_path] = collection->getOrDefault<String>("request_token_path", "");
+            auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
+            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
+            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
 
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
@@ -160,12 +177,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 role_arn,
                 role_session_name,
                 external_id,
-                no_sign_request,
-                use_environment_credentials,
-                http_client,
-                google_adc_client_id,
-                google_adc_client_secret,
-                google_adc_refresh_token,
+                named_collection_auth,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -186,12 +198,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 role_arn,
                 role_session_name,
                 external_id,
-                no_sign_request,
-                use_environment_credentials,
-                http_client,
-                google_adc_client_id,
-                google_adc_client_secret,
-                google_adc_refresh_token,
+                named_collection_auth,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -212,12 +219,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                     role_arn,
                     role_session_name,
                     external_id,
-                    no_sign_request,
-                    use_environment_credentials,
-                    http_client,
-                    google_adc_client_id,
-                    google_adc_client_secret,
-                    google_adc_refresh_token,
+                    named_collection_auth,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -236,12 +238,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 std::move(role_arn),
                 std::move(role_session_name),
                 std::move(external_id),
-                no_sign_request,
-                use_environment_credentials,
-                http_client,
-                google_adc_client_id,
-                google_adc_client_secret,
-                google_adc_refresh_token,
+                named_collection_auth,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,

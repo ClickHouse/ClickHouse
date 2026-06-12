@@ -266,12 +266,7 @@ BackupReaderS3::BackupReaderS3(
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
-    bool no_sign_request,
-    std::optional<bool> use_environment_credentials,
-    const String & http_client,
-    const String & google_adc_client_id,
-    const String & google_adc_client_secret,
-    const String & google_adc_refresh_token,
+    const std::optional<S3::S3AuthSettings> & named_collection_auth,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -289,28 +284,13 @@ BackupReaderS3::BackupReaderS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
-    /// Carry NOSIGN from the query / named collection so an unsigned restore is honored (and not rejected
-    /// by the server-managed-credentials check, which permits unsigned access).
-    if (no_sign_request)
-        s3_settings.auth_settings[S3AuthSetting::no_sign_request] = true;
-
-    /// Carry the named collection's `use_environment_credentials` (it defaults to 0 for named collections),
-    /// so a URL-only backup collection reads anonymously instead of using the server's own credentials. The
-    /// explicit url/key form leaves this unset and keeps the server `<s3>` config default.
-    if (use_environment_credentials.has_value())
-        s3_settings.auth_settings[S3AuthSetting::use_environment_credentials] = *use_environment_credentials;
-
-    /// Carry `http_client = gcp_oauth` and the explicit Google ADC triple from the named collection so the
-    /// backup authenticates with the user-supplied ADC instead of the server's GCP metadata service. The
-    /// explicit url/key form leaves these empty and keeps the server `<s3>` config values.
-    if (!http_client.empty())
-        s3_settings.auth_settings[S3AuthSetting::http_client] = http_client;
-    if (!google_adc_client_id.empty())
-        s3_settings.auth_settings[S3AuthSetting::google_adc_client_id] = google_adc_client_id;
-    if (!google_adc_client_secret.empty())
-        s3_settings.auth_settings[S3AuthSetting::google_adc_client_secret] = google_adc_client_secret;
-    if (!google_adc_refresh_token.empty())
-        s3_settings.auth_settings[S3AuthSetting::google_adc_refresh_token] = google_adc_refresh_token;
+    /// A backup named collection fully overrides the server-managed credential mechanisms (mirrors
+    /// `S3StorageParsedArguments::fromNamedCollection`): every mechanism field carries the collection's
+    /// value, defaulted when omitted, so a URL-only collection stays anonymous instead of inheriting a
+    /// global `role_arn`, `http_client` or GCP metadata service from the server `<s3>` config. The explicit
+    /// url/key form passes no override and keeps the server `<s3>` config values.
+    if (named_collection_auth)
+        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -394,12 +374,7 @@ BackupWriterS3::BackupWriterS3(
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
-    bool no_sign_request,
-    std::optional<bool> use_environment_credentials,
-    const String & http_client,
-    const String & google_adc_client_id,
-    const String & google_adc_client_secret,
-    const String & google_adc_refresh_token,
+    const std::optional<S3::S3AuthSettings> & named_collection_auth,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -420,27 +395,13 @@ BackupWriterS3::BackupWriterS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
-    /// Carry NOSIGN from the query / named collection so unsigned access is honored.
-    if (no_sign_request)
-        s3_settings.auth_settings[S3AuthSetting::no_sign_request] = true;
-
-    /// Carry the named collection's `use_environment_credentials` (defaults to 0 for named collections), so a
-    /// URL-only backup collection writes anonymously instead of using the server's own credentials. The
-    /// explicit url/key form leaves this unset and keeps the server `<s3>` config default.
-    if (use_environment_credentials.has_value())
-        s3_settings.auth_settings[S3AuthSetting::use_environment_credentials] = *use_environment_credentials;
-
-    /// Carry `http_client = gcp_oauth` and the explicit Google ADC triple from the named collection so the
-    /// backup authenticates with the user-supplied ADC instead of the server's GCP metadata service. The
-    /// explicit url/key form leaves these empty and keeps the server `<s3>` config values.
-    if (!http_client.empty())
-        s3_settings.auth_settings[S3AuthSetting::http_client] = http_client;
-    if (!google_adc_client_id.empty())
-        s3_settings.auth_settings[S3AuthSetting::google_adc_client_id] = google_adc_client_id;
-    if (!google_adc_client_secret.empty())
-        s3_settings.auth_settings[S3AuthSetting::google_adc_client_secret] = google_adc_client_secret;
-    if (!google_adc_refresh_token.empty())
-        s3_settings.auth_settings[S3AuthSetting::google_adc_refresh_token] = google_adc_refresh_token;
+    /// A backup named collection fully overrides the server-managed credential mechanisms (mirrors
+    /// `S3StorageParsedArguments::fromNamedCollection`): every mechanism field carries the collection's
+    /// value, defaulted when omitted, so a URL-only collection stays anonymous instead of inheriting a
+    /// global `role_arn`, `http_client` or GCP metadata service from the server `<s3>` config. The explicit
+    /// url/key form passes no override and keeps the server `<s3>` config values.
+    if (named_collection_auth)
+        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;

@@ -20,6 +20,19 @@ node = cluster.add_instance(
     },
 )
 
+# A separate instance whose server <s3> config carries a global role_arn (and no environment
+# credentials), to verify that user-facing S3 entry points do not inherit it. Separate because a global
+# role_arn would interfere with the profile-file tests above once the override is enabled.
+node_with_server_role = cluster.add_instance(
+    "node_with_server_role",
+    with_minio=True,
+    main_configs=["configs/named_collections.xml", "configs/s3_server_role.xml"],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
 ALLOW = "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
 
 
@@ -94,6 +107,32 @@ def test_url_only_named_collection_stays_anonymous():
     error = node.query_and_get_error(select_with_env)
     assert "ACCESS_DENIED" in error, error
     assert node.query(f"{select_with_env} {ALLOW}").strip() == "7"
+
+
+def test_backup_named_collection_does_not_inherit_server_role():
+    node_with_server_role.query("DROP TABLE IF EXISTS t_backup SYNC")
+    node_with_server_role.query(
+        "CREATE TABLE t_backup (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_with_server_role.query("INSERT INTO t_backup SELECT 1")
+
+    # Control: the positional URL form inherits the global <s3> role_arn, a server-managed credential
+    # source, so the restriction rejects it. This also proves the role config is loaded and visible to
+    # backups.
+    error = node_with_server_role.query_and_get_error(
+        "BACKUP TABLE t_backup TO S3('http://minio1:9001/root/backup_positional/b1')"
+    )
+    assert "server-managed credentials" in error, error
+
+    # A URL-only backup named collection is a full auth override: the global role_arn must not leak into
+    # it, so the backup goes out unsigned and minio rejects the anonymous request instead.
+    error = node_with_server_role.query_and_get_error(
+        "BACKUP TABLE t_backup TO S3(nc_backup_url_only, 'b1')"
+    )
+    assert "server-managed credentials" not in error, error
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    node_with_server_role.query("DROP TABLE t_backup SYNC")
 
 
 def test_server_data_disk_unaffected():
