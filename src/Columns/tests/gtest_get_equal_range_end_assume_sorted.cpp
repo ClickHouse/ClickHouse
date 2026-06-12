@@ -87,11 +87,20 @@ ColumnPtr makeSortedVector(const RunLengths & runs)
     return col;
 }
 
+/// Builds a sorted float column: an optional run of -inf, the finite runs, an optional run of +inf,
+/// and a run of NaNs at the front or at the back depending on `nan_first` (matching the sort order
+/// for nan_direction_hint = -1 or 1 respectively).
 template <typename T>
-ColumnPtr makeSortedFloatWithNaN(const RunLengths & finite_runs, size_t nan_run, bool nan_first)
+ColumnPtr makeSortedFloatWithNaN(
+    const RunLengths & finite_runs, size_t nan_run, bool nan_first, size_t neg_inf_run = 0, size_t pos_inf_run = 0)
 {
     auto col = ColumnVector<T>::create();
     auto & data = col->getData();
+    auto push_repeated = [&](T value, size_t count)
+    {
+        for (size_t k = 0; k < count; ++k)
+            data.push_back(value);
+    };
     auto push_finite = [&]
     {
         size_t value = 0;
@@ -102,21 +111,13 @@ ColumnPtr makeSortedFloatWithNaN(const RunLengths & finite_runs, size_t nan_run,
             ++value;
         }
     };
-    auto push_nan = [&]
-    {
-        for (size_t k = 0; k < nan_run; ++k)
-            data.push_back(std::numeric_limits<T>::quiet_NaN());
-    };
     if (nan_first)
-    {
-        push_nan();
-        push_finite();
-    }
-    else
-    {
-        push_finite();
-        push_nan();
-    }
+        push_repeated(std::numeric_limits<T>::quiet_NaN(), nan_run);
+    push_repeated(-std::numeric_limits<T>::infinity(), neg_inf_run);
+    push_finite();
+    push_repeated(std::numeric_limits<T>::infinity(), pos_inf_run);
+    if (!nan_first)
+        push_repeated(std::numeric_limits<T>::quiet_NaN(), nan_run);
     return col;
 }
 
@@ -298,6 +299,26 @@ TEST(SortedEqualRuns, ColumnVectorFloatsWithNaN)
 
     auto f32_nan_last = makeSortedFloatWithNaN<Float32>({2, 300}, 4, false);
     checkAgainstOracle(*f32_nan_last, 1, "vector<Float32> NaN-last");
+}
+
+TEST(SortedEqualRuns, ColumnVectorFloatsWithInfinities)
+{
+    /// Runs of -inf and +inf long enough to engage the galloping search.
+    auto with_inf = makeSortedFloatWithNaN<Float64>({1, 3, 260, 1}, 0, false, 300, 300);
+    checkAgainstOracle(*with_inf, 1, "vector<Float64> with infinities");
+
+    /// All the special values together: -inf, finite, +inf and a NaN run at either end.
+    auto nan_last = makeSortedFloatWithNaN<Float64>({2, 300}, 5, false, 17, 9);
+    checkAgainstOracle(*nan_last, 1, "vector<Float64> -inf/+inf/NaN-last");
+
+    auto nan_first = makeSortedFloatWithNaN<Float64>({2, 300}, 5, true, 17, 9);
+    checkAgainstOracle(*nan_first, -1, "vector<Float64> NaN-first/-inf/+inf");
+
+    auto f32 = makeSortedFloatWithNaN<Float32>({2, 300}, 4, false, 300, 3);
+    checkAgainstOracle(*f32, 1, "vector<Float32> with infinities");
+
+    auto only_inf = makeSortedFloatWithNaN<Float64>({}, 0, false, 300, 300);
+    checkAgainstOracle(*only_inf, 1, "vector<Float64> only infinities");
 }
 
 TEST(SortedEqualRuns, ColumnDecimal)
