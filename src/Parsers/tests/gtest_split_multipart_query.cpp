@@ -32,7 +32,8 @@ std::pair<std::vector<std::string>, bool> split(const std::string & queries)
         /* max_parser_depth */ 1000,
         /* max_parser_backtracks */ 1000000,
         /* allow_settings_after_format_in_insert */ false,
-        /* implicit_select */ false);
+        /* implicit_select */ false,
+        /* allow_pipe_syntax */ false);
     return {queries_list, res.second};
 }
 
