@@ -357,3 +357,64 @@ SELECT 'Case 15 whole tuple read works:';
 SELECT count() FROM (SELECT data FROM t_named_tuple_alter);
 
 DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 16 (REJECT): key/index/projection safety checks must run even when the
+-- type change would otherwise be metadata-only. If a subcolumn of the modified
+-- column appears in the primary key or partition key, the ALTER must be rejected
+-- to keep `primary.idx` self-consistent across parts.
+-- ============================================================
+
+-- Subcolumn in ORDER BY.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, b UInt64))
+ENGINE = MergeTree ORDER BY (t.a, id)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 16a (subcolumn in ORDER BY rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, b UInt64, c UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- Subcolumn in PARTITION BY.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, b UInt64))
+ENGINE = MergeTree PARTITION BY t.a ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 16b (subcolumn in PARTITION BY rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, b UInt64, c UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- Whole Tuple column in ORDER BY (`primary.idx` would have the wrong arity).
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, b UInt64))
+ENGINE = MergeTree ORDER BY (t, id)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 16c (whole Tuple in ORDER BY rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, b UInt64, c UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- Sanity: appending a subfield to a Tuple that is NOT in any key still works.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, b UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 16d (Tuple not in any key still works):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, b UInt64, c Nullable(UInt64));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;

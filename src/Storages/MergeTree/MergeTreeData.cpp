@@ -4738,10 +4738,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(*getInMemoryMetadataPtr(local_context, false), local_context))
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type)
         {
-            /// This alter will override data on disk. Let's check that it doesn't
-            /// modify immutable column.
+            /// Run key/index/projection safety checks for any `MODIFY_COLUMN` that changes
+            /// the column's type, regardless of whether the change is metadata-only or
+            /// requires a mutation. Previously these checks were gated behind
+            /// `isRequireMutationStage`, but metadata-only conversions (e.g. adding a
+            /// subfield to a named `Tuple` whose subcolumn appears in `ORDER BY`) must
+            /// also be rejected to keep `primary.idx` and partition keys self-consistent.
             if (columns_alter_type_forbidden.contains(command.column_name))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
@@ -4771,37 +4775,34 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// Don't check columns in projections here. If required columns of projections get
             /// modified, it will be checked later in AlterCommands::apply.
 
-            if (command.type == AlterCommand::MODIFY_COLUMN)
+            if (columns_alter_type_check_safe_for_partition.contains(command.column_name))
             {
-                if (columns_alter_type_check_safe_for_partition.contains(command.column_name))
-                {
-                    auto it = old_types.find(command.column_name);
+                auto it = old_types.find(command.column_name);
 
-                    chassert(it != old_types.end());
-                    if (!isSafeForKeyConversion(it->second, command.data_type.get()))
-                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                        "ALTER of partition key column {} from type {} "
-                                        "to type {} is not safe because it can change the representation "
-                                        "of partition key", backQuoteIfNeed(command.column_name),
-                                        it->second->getName(), command.data_type->getName());
-                }
+                chassert(it != old_types.end());
+                if (!isSafeForKeyConversion(it->second, command.data_type.get()))
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                    "ALTER of partition key column {} from type {} "
+                                    "to type {} is not safe because it can change the representation "
+                                    "of partition key", backQuoteIfNeed(command.column_name),
+                                    it->second->getName(), command.data_type->getName());
+            }
 
-                if (columns_alter_type_metadata_only.contains(command.column_name))
-                {
-                    auto it = old_types.find(command.column_name);
-                    chassert(it != old_types.end());
-                    if (!isSafeForKeyConversion(it->second, command.data_type.get()))
-                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                        "ALTER of key column {} from type {} "
-                                        "to type {} is not safe because it can change the representation "
-                                        "of primary key", backQuoteIfNeed(command.column_name),
-                                        it->second->getName(), command.data_type->getName());
-                }
+            if (columns_alter_type_metadata_only.contains(command.column_name))
+            {
+                auto it = old_types.find(command.column_name);
+                chassert(it != old_types.end());
+                if (!isSafeForKeyConversion(it->second, command.data_type.get()))
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                    "ALTER of key column {} from type {} "
+                                    "to type {} is not safe because it can change the representation "
+                                    "of primary key", backQuoteIfNeed(command.column_name),
+                                    it->second->getName(), command.data_type->getName());
+            }
 
-                if (old_metadata.getColumns().has(command.column_name))
-                {
-                    columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
-                }
+            if (old_metadata.getColumns().has(command.column_name))
+            {
+                columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
             }
         }
     }

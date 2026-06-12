@@ -66,3 +66,9 @@ Case 15 new subfields readable:
 100	100	100	100
 Case 15 whole tuple read works:
 100
+Case 16a (subcolumn in ORDER BY rejected):
+Case 16b (subcolumn in PARTITION BY rejected):
+Case 16c (whole Tuple in ORDER BY rejected):
+Case 16d (Tuple not in any key still works):
+mutations:	0
+10	20	\N
