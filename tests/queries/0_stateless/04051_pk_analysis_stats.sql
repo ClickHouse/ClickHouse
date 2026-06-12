@@ -35,6 +35,10 @@ set use_query_condition_cache=1;
 set optimize_move_to_prewhere=1;
 set query_plan_optimize_prewhere=1;
 
+-- The PK-analysis count is a single-node accounting; parallel replicas read
+-- the full mark set and bypass the QCC granule drop, so pin it off.
+set enable_parallel_replicas=0;
+
 -- Pre-warm the query condition cache
 select avg(a) from t where s != 'xxx' format Null;
 
