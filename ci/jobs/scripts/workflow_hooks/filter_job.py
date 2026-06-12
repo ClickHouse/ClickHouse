@@ -127,13 +127,6 @@ def should_skip_job(job_name):
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if (
-        job_name == JobNames.SMOKE_TEST_MACOS
-        and _info_cache.pr_number
-        and Labels.CI_MACOS not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
-
-    if (
         JobNames.BUILD_TOOLCHAIN in job_name
         and _info_cache.pr_number
         and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels

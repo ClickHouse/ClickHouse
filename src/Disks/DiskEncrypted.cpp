@@ -440,7 +440,7 @@ void DiskEncrypted::prepareRead(
     auto encryption_settings = current_settings.get();
     pipeline.needDecryption(
         path,
-        settings.local_fs_buffer_size,
+        settings.local_fs_settings.buffer_size,
         [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
@@ -513,6 +513,7 @@ void DiskEncrypted::applyNewSettings(
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](

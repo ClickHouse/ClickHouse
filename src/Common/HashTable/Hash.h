@@ -117,7 +117,7 @@ inline UInt64 intHashCRC32(T x, UInt64 updated_value)
     if (x == static_cast<T>(0.0))
         return intHashCRC32(0, updated_value);
 
-    UInt64 repr;
+    UInt64 repr = 0;
     if constexpr (sizeof(T) == sizeof(UInt32))
         repr = std::bit_cast<UInt32>(x);
     else

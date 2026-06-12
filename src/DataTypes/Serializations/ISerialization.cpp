@@ -7,6 +7,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
+#include <Formats/ParseError.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -573,6 +574,7 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);
+        rethrowIfNotParseError();
         return false;
     }
 }
@@ -728,7 +730,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
-    assert(prefix_len <= path.size());
+    chassert(prefix_len <= path.size());
     if (prefix_len == 0)
         return {};
 
