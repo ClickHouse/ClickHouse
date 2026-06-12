@@ -829,7 +829,7 @@ SYSTEM CANCEL ALL BACKGROUND
 
 ### SYSTEM REFRESH {#refresh-background}
 
-Trigger one out-of-order refresh or consumption cycle now. It runs exactly once even while the table is stopped or paused, after which the block applies again.
+Trigger one out-of-order refresh or consumption cycle. For a streaming table the cycle runs immediately, exactly once, even while the table is stopped or paused, after which the block applies again. For a refreshable materialized view the command behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the request is remembered and the refresh runs once `SYSTEM START` releases it.
 
 ```sql
 SYSTEM REFRESH [db.]table

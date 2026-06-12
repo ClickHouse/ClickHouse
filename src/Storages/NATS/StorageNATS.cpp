@@ -651,7 +651,7 @@ void StorageNATS::threadFunc()
     try
     {
         /// SYSTEM STOP/PAUSE blocks consumption: skip streaming to views. The streaming task keeps
-        /// rescheduling and waks it via `onActionLockRemove`.
+        /// rescheduling; SYSTEM START wakes it via `onActionLockRemove`.
         if (consumers_connection && consumers_connection->isConnected() && stream_control.shouldRunCycle())
         {
             auto start_time = std::chrono::steady_clock::now();

@@ -302,3 +302,5 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
+
+For JetStream tables, messages are acknowledged only after they have been successfully inserted into the dependent materialized views (at-least-once delivery): a message whose insert fails — or which is interrupted by `SYSTEM STOP` or `SYSTEM CANCEL` — is left unacknowledged and redelivered by the server. Core NATS has no acknowledgement or replay, so an interrupted in-flight message is lost. When `nats_flush_interval_ms` is set explicitly, a consumption cycle stays open for the whole interval rather than flushing as soon as the queue drains.

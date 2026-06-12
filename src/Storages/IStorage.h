@@ -112,7 +112,7 @@ public:
     virtual bool isMessageQueue() const { return false; }
 
     /// Returns true if the storage continuously consumes from an external source in the background
-    /// (Kafka, RabbitMQ, NATS, S3, [...Azure]).
+    /// (Kafka, RabbitMQ, NATS, S3Queue/AzureQueue).
     virtual bool isStreamingStorage() const { return false; }
 
     /// Returns true if the storage receives data from a remote server or servers.
@@ -604,7 +604,7 @@ public:
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 
     /// Trigger an out-of-order run of the table's background activity now.
-    /// Also used to resume promptly after resume). No-op for tables without such activity.
+    /// Also used to resume promptly after SYSTEM START. No-op for tables without such activity.
     virtual void triggerBackgroundActivity() {}
 
     /// Run exactly one unit of background activity now (without resuming further activity).

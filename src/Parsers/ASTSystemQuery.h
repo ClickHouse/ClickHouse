@@ -277,7 +277,7 @@ protected:
 
 }
 
-/// ASTSystemQuery::Type has more enumerators than the default magic_enum range [-128, 127],
+/// ASTSystemQuery::Type has more enumerators than the default magic_enum range [-128, 127]
 template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
 {
     static constexpr int min = 0;
