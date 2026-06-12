@@ -37,7 +37,7 @@ public:
         return res;
     }
 
-    QueryKind getQueryKind() const override { return QueryKind::Select; }
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

@@ -1003,9 +1003,6 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
-
-    if (!internal)
-        auditLog(elem, context, ast);
 }
 
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
@@ -1104,49 +1101,6 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
             if (!object_names.empty())
                 object_names += ",";
             object_names += view;
-        }
-
-        /// For EXCEPTION_BEFORE_START records, query_tables/query_views may be empty because
-        /// logQueryStart never ran. Fall back to QueryAccessInfo which the analyzer may have
-        /// partially populated before the failure (e.g. access denied after resolving tables).
-        if (object_names.empty())
-        {
-            const auto & access_info = context->getQueryAccessInfo();
-            std::lock_guard lock(access_info.mutex);
-            for (const auto & table : access_info.tables)
-            {
-                if (!object_names.empty())
-                    object_names += ",";
-                object_names += table;
-            }
-            for (const auto & view : access_info.views)
-            {
-                if (!object_names.empty())
-                    object_names += ",";
-                object_names += view;
-            }
-        }
-
-        /// If QueryAccessInfo was also empty (e.g. the query failed before analysis),
-        /// extract the target table directly from the AST.
-        if (object_names.empty() && ast)
-        {
-            String database;
-            String table;
-
-            if (const auto * insert = ast->as<ASTInsertQuery>())
-            {
-                database = insert->table_id.database_name;
-                table = insert->table_id.table_name;
-            }
-            else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
-            {
-                database = query_with_table->getDatabase();
-                table = query_with_table->getTable();
-            }
-
-            if (!table.empty())
-                object_names = database.empty() ? table : (database + "." + table);
         }
     }
 
