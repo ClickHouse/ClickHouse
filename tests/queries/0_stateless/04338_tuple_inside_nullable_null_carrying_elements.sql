@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 -- { echo }
 -- Elements of a `Nullable(Tuple(...))` that can represent NULL themselves without being wrapped into
 -- Nullable: Dynamic, Variant and LowCardinality(Nullable(...)). Rows where the outer tuple is NULL must
