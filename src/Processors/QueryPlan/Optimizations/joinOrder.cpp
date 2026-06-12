@@ -135,17 +135,8 @@ void QueryGraph::buildColumnEquivalences()
         /// for all rows and the transitive equivalence would be invalid.
         auto lhs_it = join_kinds.find(*lhs_rel);
         auto rhs_it = join_kinds.find(*rhs_rel);
-        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.kind))
-            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.kind)))
-            continue;
-
-        /// Skip pinned predicates: they're conditionally applicable (only when the
-        /// pin relations are joined first), so the equality doesn't hold unconditionally
-        /// and the transitive equivalence cannot bypass the pin's constraint. Without
-        /// this skip, `areTransitivelyConnected` would consider `(A,C)` connected via
-        /// `a.w=c.w` even when that edge is pinned to require B, letting greedy commit
-        /// to a dead-end first pair.
-        if (auto pin_it = pinned.find(edge); pin_it != pinned.end() && pin_it->second.any())
+        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
+            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
@@ -538,19 +529,14 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         if (!isSubsetOf(edge_sources, joined_rels))
             continue;
 
-        auto pin_it = query_graph.pinned.find(edge);
-        if (pin_it != query_graph.pinned.end())
+        auto pin_it = query_graph.outer_join_conditions.find(edge);
+        if (pin_it != query_graph.outer_join_conditions.end())
         {
-            /** We pin the expression in two cases:
-              * 1. The expression is part of an OUTER JOIN ON clause — pinned to the
-              *    NULL-supplying side.
-              * 2. The expression of an INNER join sits above a child outer-join
-              *    boundary it cannot legally be pushed past — pinned to the
-              *    null-supplying relations of every such boundary it crosses.
-              * The pin set is the relations that MUST all be in `joined_rels`
-              * before the edge is applicable, so check subset.
-              */
-            if (!isSubsetOf(pin_it->second, joined_rels))
+            /// ON-clause predicates of an outer join can be applied only when the
+            /// null-supplying relation is joined. That relation appears as a singleton
+            /// on one side of the join step (enforced by isValidJoinOrder), so the
+            /// predicate becomes applicable exactly at that step.
+            if (!joined_rels.test(pin_it->second))
                 continue;
         }
 
@@ -601,9 +587,19 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     if (join_kind == JoinKind::Inner && !connected)
                         join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
-                    JoinOperator join_operator(
-                        join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
-                        std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
+                    JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
+                    bool is_inner_step = isInner(join_kind.value()) || isCrossOrComma(join_kind.value());
+                    for (const auto * e : edge)
+                    {
+                        /// A filter predicate applied at an outer join step must not go to the
+                        /// ON clause, where it would affect matching instead of filtering and
+                        /// let non-matching rows of the preserved side survive NULL-extended.
+                        /// Apply it after the join instead.
+                        if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
+                            join_operator.expression.push_back(*e);
+                        else
+                            join_operator.residual_filter.push_back(*e);
+                    }
                     applied_edge = std::move(edge);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
                     best_i = i;
@@ -810,12 +806,9 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
             auto it = query_graph.join_kinds.find(rel_id.value());
             if (it != query_graph.join_kinds.end())
             {
-                const auto & restriction = it->second;
-                if (!isSubsetOf(restriction.required_partners, rhs))
-                    return {};
-                if ((rhs & restriction.forbidden_partners).any())
-                    return {};
-                return restriction.kind;
+                if (isSubsetOf(it->second.first, rhs))
+                    return it->second.second;
+                return {};
             }
         }
         return JoinKind::Inner;
