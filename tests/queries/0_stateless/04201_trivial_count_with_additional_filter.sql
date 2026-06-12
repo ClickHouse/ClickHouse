@@ -28,7 +28,8 @@ SET optimize_use_projections = 0;
 
 -- Baseline: no filter at all, trivial-count fires.
 SELECT 'baseline';
-SELECT explain FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
+SELECT trimBoth(replaceRegexpAll(explain, '(\\(pool:[^)]*\\))| [0-9]+ → [0-9]+', '')) AS explain
+FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
 WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%'
    OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%'
    OR explain LIKE '%Resize%' OR explain LIKE '%Filter%'
@@ -36,7 +37,8 @@ WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTre
 
 -- Filter targets THIS table: trivial-count is disabled.
 SELECT 'filtered_this_table';
-SELECT explain FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
+SELECT trimBoth(replaceRegexpAll(explain, '(\\(pool:[^)]*\\))| [0-9]+ → [0-9]+', '')) AS explain
+FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
 WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%'
    OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%'
    OR explain LIKE '%Resize%' OR explain LIKE '%Filter%'
@@ -46,7 +48,8 @@ SETTINGS additional_table_filters = {'t_trivial_count_filter': 'id < 5'};
 -- Without the fix the optimization was disabled whenever any
 -- additional_table_filters entry was present.
 SELECT 'filter_other_table';
-SELECT explain FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
+SELECT trimBoth(replaceRegexpAll(explain, '(\\(pool:[^)]*\\))| [0-9]+ → [0-9]+', '')) AS explain
+FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
 WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%'
    OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%'
    OR explain LIKE '%Resize%' OR explain LIKE '%Filter%'
