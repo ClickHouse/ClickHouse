@@ -1301,10 +1301,10 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
 {
 }
 
-void PostingListBuilder::addFirst(UInt32 value)
+PostingListBuilder::PostingListBuilder(UInt32 first_value)
 {
     auto & inline_state = std::get<Inline>(state);
-    inline_state.values[0] = value;
+    inline_state.values[0] = first_value;
     inline_state.size = 1;
 }
 
@@ -1425,8 +1425,10 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
             tokens_map.emplace(key_holder, it, inserted);
 
+            /// The hash map requires the mapped value of an inserted key to be
+            /// constructed in place (see the comment for HashTable::emplace).
             if (inserted)
-                it->getMapped().addFirst(static_cast<UInt32>(current_row));
+                new (&it->getMapped()) PostingListBuilder(static_cast<UInt32>(current_row));
             else
                 it->getMapped().add(static_cast<UInt32>(current_row), posting_list_codec, segment_size);
 

@@ -118,10 +118,14 @@ public:
     static constexpr size_t inline_capacity = 11;
 
     /// Row ids stored inline while the token has no more than inline_capacity of them.
+    /// No default member initializers: they are parsed in the complete-class context of the
+    /// outer class, which would make the variant's default constructor (which requires Inline
+    /// to be default-constructible) unavailable within PostingListBuilder itself.
+    /// The default constructor of the variant value-initializes Inline, so `size` is zeroed.
     struct Inline
     {
         std::array<UInt32, inline_capacity> values;
-        UInt8 size = 0;
+        UInt8 size;
     };
 
     /// Heap part of the builder for tokens with more than inline_capacity row ids.
@@ -137,8 +141,9 @@ public:
         UInt32 last_value = 0;
     };
 
-    /// Adds the first value of a token (right after the builder is created in the map).
-    void addFirst(UInt32 value);
+    PostingListBuilder() = default;
+    /// The builder is constructed with the first value of a token (in place in the map).
+    explicit PostingListBuilder(UInt32 first_value);
 
     /// Adds a value to the inline array or to the overflow vector.
     /// If the overflow vector reaches the append granularity, it is flushed into the accumulator.
