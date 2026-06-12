@@ -1,4 +1,4 @@
--- Tags: no-random-settings, long
+-- Tags: no-random-settings
 -- Bloom filter over a LowCardinality(String) column whose single insert block has
 -- more than 65536 distinct values, so the index positions are UInt32 (not UInt8/UInt16).
 -- Exercises the UInt32 branch of ColumnLowCardinality::getDistinctIndexes used by the
