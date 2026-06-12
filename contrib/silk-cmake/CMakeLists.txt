@@ -8,6 +8,17 @@ if(NOT (ARCH_AMD64 OR ARCH_AARCH64))
     return()
 endif()
 
+if(USE_MUSL)
+    message(STATUS "Not building silk because it requires glibc")
+    return()
+endif()
+
+# Silk needs support for 128-bit atomics.
+if(ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
+    message(STATUS "Not building silk because it requires x86-64-v2 or higher")
+    return()
+endif()
+
 if(NOT TARGET ch_contrib::liburing)
     message(STATUS "Not building silk because liburing is disabled")
     return()

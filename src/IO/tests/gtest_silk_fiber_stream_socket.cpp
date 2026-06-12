@@ -9,6 +9,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SilkThrottler.h>
+#include <Common/tests/gtest_ephemeral_certificate.h>
 
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
@@ -57,16 +58,6 @@ public:
 ::testing::Environment * const silk_env = ::testing::AddGlobalTestEnvironment(new SilkEnvironment);
 
 
-Poco::Net::Context::Ptr makeContext(Poco::Net::Context::Usage usage)
-{
-    Poco::Net::Context::Params params;
-    params.privateKeyFile = std::string(CLICKHOUSE_TESTS_CONFIG_DIR) + "/server.key";
-    params.certificateFile = std::string(CLICKHOUSE_TESTS_CONFIG_DIR) + "/server.crt";
-    params.verificationMode = Poco::Net::Context::VERIFY_NONE;
-    return new Poco::Net::Context(usage, params);
-}
-
-
 struct PlainPolicy
 {
     using Listener = Poco::Net::ServerSocket;
@@ -80,8 +71,9 @@ struct SecurePolicy
 {
     using Listener = Poco::Net::SecureServerSocket;
 
-    Poco::Net::Context::Ptr server_ctx{makeContext(Poco::Net::Context::SERVER_USE)};
-    Poco::Net::Context::Ptr client_ctx{makeContext(Poco::Net::Context::CLIENT_USE)};
+    EphemeralCert cert;
+    Poco::Net::Context::Ptr server_ctx{cert.makeContext(Poco::Net::Context::SERVER_USE)};
+    Poco::Net::Context::Ptr client_ctx{cert.makeContext(Poco::Net::Context::CLIENT_USE)};
 
     Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
 
@@ -131,7 +123,7 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             socket.sendBytes("!", 1);
 
             std::string response;
-            char buf[16];
+            char buf[16] = {};
             while (response.size() < 3)
             {
                 int n = socket.receiveBytes(buf, sizeof(buf));
@@ -150,7 +142,7 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
 
     auto peer = listener.acceptConnection();
     std::string request;
-    char buf[16];
+    char buf[16] = {};
     while (request.size() < 12)
     {
         int n = peer.receiveBytes(buf, sizeof(buf));
@@ -184,7 +176,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             socket.sendBytes("ping", 4);
-            char prime[4];
+            char prime[4] = {};
             int received = 0;
             while (received < 4)
             {
@@ -198,7 +190,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             EXPECT_FALSE(socket.poll(Poco::Timespan(0, 50'000), Poco::Net::Socket::SELECT_READ));
             EXPECT_TRUE(socket.poll(Poco::Timespan(0, 500'000), Poco::Net::Socket::SELECT_READ));
 
-            char data[1];
+            char data[1] = {};
             EXPECT_EQ(socket.receiveBytes(data, 1), 1);
 
             socket.setReceiveTimeout(Poco::Timespan(0, 100'000));
@@ -211,7 +203,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
-    char prime[4];
+    char prime[4] = {};
     int received = 0;
     while (received < 4)
     {
@@ -282,14 +274,14 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             /// An unthrottled exchange first: it drives the TLS handshake for the secure
             /// variant and keeps the connection open until the server is done with it.
             socket.sendBytes("x", 1);
-            char pong[1];
+            char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
             socket.setSendThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
             EXPECT_THROW(socket.sendBytes("x", 1), DB::Exception);
 
             socket.setReceiveThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
-            char buf[1];
+            char buf[1] = {};
             EXPECT_THROW(socket.receiveBytes(buf, sizeof(buf)), DB::Exception);
 
             socket.close();
@@ -300,7 +292,7 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
-    char buf[1];
+    char buf[1] = {};
     ASSERT_EQ(peer.receiveBytes(buf, sizeof(buf)), 1);
     peer.sendBytes("y", 1);
 

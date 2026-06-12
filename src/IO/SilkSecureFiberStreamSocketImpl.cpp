@@ -4,6 +4,8 @@
 
 #include <IO/SilkFiberStreamSocketImpl.h>
 
+#include <base/MemorySanitizer.h>
+
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
 
@@ -52,6 +54,9 @@ int silkBioRead(BIO * bio, char * buf, int len)
 
     if (r == 0)
     {
+        /// TODO(mstetsyuk): should be done at Silk level.
+        __msan_unpoison(buf, bytes_read);
+
         if (bytes_read == 0)
             BIO_set_flags(bio, BIO_FLAGS_IN_EOF);
         return static_cast<int>(bytes_read);
