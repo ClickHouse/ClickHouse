@@ -70,8 +70,25 @@ Expression ((Project names + Projection))
 0
 Expression ((Project names + Projection))
   Aggregating
-    Filter
-      ReadFromPreparedSource (_minmax_count_projection)
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_partition)
+        Indexes:
+          Min-Max
+            Condition: true
+            Parts: 10/10
+            Granules: 250/250
+          Partition
+            Keys:
+              p
+            Condition: (nullIf(p, 255) in [5, 5])
+            Parts: 1/10
+            Granules: 25/250
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 25/25
+          Ranges: 1
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)

@@ -34,7 +34,7 @@ CREATE TABLE t_nullif_partition (p UInt64, v UInt8) ENGINE = MergeTree PARTITION
 INSERT INTO t_nullif_partition SELECT number % 10, number FROM numbers(2000000);
 OPTIMIZE TABLE t_nullif_partition FINAL;
 
-EXPLAIN indexes = 1 SELECT count() FROM t_nullif_partition WHERE nullIf(p, 255) = 5;
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_partition WHERE nullIf(p, 255) = 5 SETTINGS optimize_use_implicit_projections = 0;
 DROP TABLE t_nullif_partition;
 
 -- Regression test for MinMax Skip Index Pruning
