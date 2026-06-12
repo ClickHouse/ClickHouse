@@ -3522,6 +3522,19 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// This function is called by RPNBuilder once for every leaf of the predicate tree. RPNBuilder walks the
+/// WHERE expression and handles the logical operators itself, so only the nodes between them reach this
+/// function. For example, `WHERE a = 1 AND (b < 2 OR c IN (1, 2))` has three leaves, and this function is
+/// called separately for `a = 1`, for `b < 2` and for `c IN (1, 2)`.
+///
+/// For each leaf, it tries to build the atoms for all key columns that the leaf can constrain, one after
+/// another. For example, for a table with `ORDER BY (toYYYYMM(ts), toDate(ts), ts)` and the simple
+/// condition `WHERE ts >= X`, this call fills `out` with three atoms: `toYYYYMM(ts) >= toYYYYMM(X)`,
+/// `toDate(ts) >= toDate(X)` and `ts >= X`.
+///
+/// RPNBuilder then combines the produced atoms with AND in place of the leaf (it emits
+/// `atom0 atom1 AND atom2 AND ...` in the RPN). An empty `out` means that the leaf could not be analyzed,
+/// and RPNBuilder turns it into FUNCTION_UNKNOWN.
 void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
 {
     out.clear();
@@ -3535,8 +3548,10 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         return;
     }
 
+    /// For example, `ORDER BY a` and `WHERE a = 1`.
     if (node.isFunction())
         extractAtomsFromFunction(node, info, out);
+    /// For example, `ORDER BY a` and `WHERE 0 AND a = 1`, where this leaf is the constant `0`.
     else
         extractAtomsFromConstant(node, out);
 }
