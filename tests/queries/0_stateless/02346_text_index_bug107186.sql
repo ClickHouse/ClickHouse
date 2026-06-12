@@ -100,3 +100,16 @@ INSERT INTO tab VALUES ('Hello World, Foo');
 SELECT '- coarse + preprocessor, with index', count() FROM tab WHERE hasToken(s, 'hello');
 SELECT '- coarse + preprocessor, no index', count() FROM tab WHERE hasToken(s, 'hello') SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
+
+SELECT 'preprocessed needle maps to no index token but a preprocessor is active (was a false negative)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = ngrams(4), preprocessor = lower(s))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('ABC');
+-- The needle 'abc' is lowered then tokenized by ngrams(4), which yields no 4-gram (too short), so the index cannot
+-- prove a match. With a preprocessor the documented rewrite must still run: hasToken(s, 'abc') -> hasToken(lower(s),
+-- 'abc') matches the lowered row (must be 1). Without the index the predicate is the raw case-sensitive
+-- hasToken('ABC', 'abc') (must be 0): the documented preprocessor divergence is preserved.
+SELECT '- preprocessor + empty index tokens, with index', count() FROM tab WHERE hasToken(s, 'abc');
+SELECT '- preprocessor + empty index tokens, no index', count() FROM tab WHERE hasToken(s, 'abc') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;

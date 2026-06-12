@@ -943,11 +943,25 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         auto tokens = stringToTokens(value_field);
-        /// An empty needle (separator-only, or shorter than the tokenizer can represent, e.g. "abc" with
-        /// ngrams(4)) maps to no index token, so the index offers nothing: decline and let the row-level
-        /// hasToken decide (it also throws BAD_ARGUMENTS / returns NULL for an invalid needle).
+        /// The preprocessed needle maps to no index token (separator-only, or shorter than the tokenizer
+        /// can represent, e.g. "abc" with ngrams(4)), so the index cannot prove a row matches.
         if (tokens.empty())
-            return false;
+        {
+            /// Without a preprocessor the index offers nothing over row-level evaluation: decline and let
+            /// the raw row-level hasToken decide (it returns the match, or throws BAD_ARGUMENTS / returns
+            /// NULL for an invalid needle).
+            if (!preprocessor || !preprocessor->hasActions())
+                return false;
+
+            /// With a preprocessor the condition still carries the documented hasToken rewrite
+            /// (hasToken(s, n) -> hasToken(preproc(s), preproc(n))). Keep it in None mode and non-prunable
+            /// so the index neither prunes a granule nor replaces the predicate; the preprocessed row-level
+            /// hasToken decides. Same shape as the coarse-tokenizer preprocessor path below.
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.prunable = false;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
+            return true;
+        }
 
         if (!isConservativeHasTokenTokenizer())
         {

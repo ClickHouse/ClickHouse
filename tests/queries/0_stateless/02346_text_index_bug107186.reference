@@ -29,3 +29,6 @@ splitByNonAlpha tokenizer with preprocessor (documented divergence still works, 
 coarse tokenizer with preprocessor: documented divergence kept, granule pruning suppressed (was a false negative)
 - coarse + preprocessor, with index	1
 - coarse + preprocessor, no index	0
+preprocessed needle maps to no index token but a preprocessor is active (was a false negative)
+- preprocessor + empty index tokens, with index	1
+- preprocessor + empty index tokens, no index	0
