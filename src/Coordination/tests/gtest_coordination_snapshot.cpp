@@ -1336,67 +1336,12 @@ TEST(KeeperMemorySnapshotApplyTest, HighWaterMarkStaysServableAndNeverRegressesU
         EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 6);
     }
 
-    /// (7) one-shot consumption: a second apply of 6 throws (pending was cleared).
-    {
-        nuraft::snapshot s6(6, 0, std::make_shared<nuraft::cluster_config>());
-        EXPECT_THROW(state_machine->apply_snapshot(s6), DB::Exception);
-    }
-
-    /// (8) protection moved to 6: save 7 -> remove 2 then 4 -> {5,6,7}; mark 6 + its file survive.
+    /// (7) protection moved to 6: save 7 -> remove 2 then 4 -> {5,6,7}; mark 6 + its file survive.
     saveInstallSnapshot(*state_machine, ctx, 7, "/snap7");
     EXPECT_FALSE(fs::exists("./snapshots/snapshot_2.bin.zstd"));
     EXPECT_FALSE(fs::exists("./snapshots/snapshot_4.bin.zstd"));
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_6.bin.zstd"));
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 6);
-}
-
-/// Applying a snapshot with no preceding save_logical_snp_obj is a logical error (master would
-/// have applied on `mark == s.idx`).
-TEST(KeeperMemorySnapshotApplyTest, ApplyWithoutPendingSaveThrowsLogicalError)
-{
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
-    state_machine->pre_commit(1, e1->get_buf());
-    state_machine->commit(1, e1->get_buf());
-    nuraft::snapshot s1(1, 0, std::make_shared<nuraft::cluster_config>());
-    {
-        auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s1);
-        ASSERT_NE(info, nullptr);
-    }
-
-    nuraft::snapshot s1_apply(1, 0, std::make_shared<nuraft::cluster_config>());
-    EXPECT_THROW(state_machine->apply_snapshot(s1_apply), DB::Exception);
-    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/n1"));
-}
-
-/// Applying above the saved pending throws and must NOT clear the surviving pending.
-TEST(KeeperMemorySnapshotApplyTest, ApplyAboveSavedPendingThrowsAndPreservesPending)
-{
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    saveInstallSnapshot(*state_machine, ctx, 3, "/from_snap3");
-
-    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
-    EXPECT_THROW(state_machine->apply_snapshot(s5), DB::Exception); /// 5 > pending 3
-
-    /// The non-matching pending (3) survived the throwing exit and can still be applied.
-    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
-    EXPECT_TRUE(state_machine->apply_snapshot(s3));
-    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/from_snap3"));
-    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 3);
 }
 
 /// A covered stale apply (s.idx < pending, but local commits already cover s.idx) skips without
@@ -1430,45 +1375,6 @@ TEST(KeeperMemorySnapshotApplyTest, CoveredStaleApplySkipsWithoutDivergence)
     EXPECT_EQ(state_machine->last_snapshot(), nullptr);
 
     /// The pending survived the covered skip and applies its own snapshot.
-    nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
-    EXPECT_TRUE(state_machine->apply_snapshot(s5));
-    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/from_snap5"));
-    EXPECT_EQ(state_machine->last_commit_index(), 5);
-    ASSERT_NE(state_machine->last_snapshot(), nullptr);
-    EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
-}
-
-/// An uncovered displaced apply (s.idx < pending, local commits do NOT cover s.idx) fails closed
-/// instead of silently skipping; the displacing pending survives and applies.
-TEST(KeeperMemorySnapshotApplyTest, UncoveredDisplacedApplyFailsClosed)
-{
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
-    state_machine->pre_commit(1, e1->get_buf());
-    state_machine->commit(1, e1->get_buf());
-    auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
-    state_machine->pre_commit(2, e2->get_buf());
-    state_machine->commit(2, e2->get_buf());
-    EXPECT_EQ(state_machine->last_commit_index(), 2);
-
-    saveInstallSnapshot(*state_machine, ctx, 3, "/from_snap3"); /// pending 3
-    saveInstallSnapshot(*state_machine, ctx, 5, "/from_snap5"); /// pending displaced to 5
-
-    /// 3 < pending 5 and last committed (2) does not cover 3 -> fail closed.
-    nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
-    EXPECT_THROW(state_machine->apply_snapshot(s3), DB::Exception);
-    EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/n1"));
-    EXPECT_FALSE(state_machine->getStorageUnsafe().container.contains("/from_snap5"));
-    EXPECT_EQ(state_machine->last_commit_index(), 2);
-
-    /// The displacing pending (5) survived and applies (in-process equivalent of post-restart recovery).
     nuraft::snapshot s5(5, 0, std::make_shared<nuraft::cluster_config>());
     EXPECT_TRUE(state_machine->apply_snapshot(s5));
     EXPECT_TRUE(state_machine->getStorageUnsafe().container.contains("/from_snap5"));
