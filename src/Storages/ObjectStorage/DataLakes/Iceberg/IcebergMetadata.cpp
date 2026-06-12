@@ -83,19 +83,6 @@
 
 #include <Common/FieldVisitorToString.h>
 
-#if CLICKHOUSE_CLOUD
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergDataMergerMutator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergMergeMode.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergMergePredicate.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergMergeSelector.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergDataCollector.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergDeleteCollector.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergStorageConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergDataFilesMergeTask.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/IcebergDeleteFilesMergeTask.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction/DataCleaner.h>
-#endif
-
 #include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
