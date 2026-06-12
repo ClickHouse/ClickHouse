@@ -80,3 +80,9 @@ mutations:	0
 10	100	\N
 Case 18a (explicit set skip index on whole column rejected, default mode):
 Case 18b (explicit skip index rejected even with rebuild mode):
+Case 19a (pure reorder triggers mutation):
+mutations:	1
+(20,10)
+Case 19b (insertion preserving order is metadata-only):
+mutations:	0
+10	20	\N

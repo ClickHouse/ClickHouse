@@ -508,3 +508,40 @@ ALTER TABLE t_named_tuple_alter
     MODIFY COLUMN t Tuple(a UInt64, b UInt64, c UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 19: pure reorder of existing fields (without any additions) is not
+-- metadata-only. `primary.idx` bytes and explicit skip-index bytes for any
+-- embedded tuple value are serialized in the old field order; the new type
+-- deserializes and compares in the new order. Even on a column not in any
+-- key, the relative order of existing fields must be preserved to take the
+-- metadata-only path.
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, b UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 19a (pure reorder triggers mutation):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(b UInt64, a UInt64) SETTINGS alter_sync = 2;
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;
+
+-- Insertion preserving relative order is still metadata-only.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, b UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 19b (insertion preserving order is metadata-only):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(c Nullable(UInt64), a UInt64, b UInt64);
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;

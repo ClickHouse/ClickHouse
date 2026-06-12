@@ -1127,20 +1127,28 @@ bool isNamedTupleMetadataOnlyChange(const DataTypeTuple & from, const DataTypeTu
     const auto & to_names = to.getElementNames();
     const auto & to_types = to.getElements();
 
-    std::unordered_map<std::string_view, const IDataType *> to_by_name;
-    to_by_name.reserve(to_names.size());
+    std::unordered_map<std::string_view, size_t> to_index_by_name;
+    to_index_by_name.reserve(to_names.size());
     for (size_t i = 0; i < to_names.size(); ++i)
-        to_by_name.emplace(to_names[i], to_types[i].get());
+        to_index_by_name.emplace(to_names[i], i);
 
-    /// Every old subfield must still exist (by name) with a metadata-only-compatible type change.
-    /// New subfields (present in `to` but not in `from`) are allowed in any position — the type's
-    /// default value will be filled on read.
+    /// Every old subfield must still exist in `to` (by name) with a metadata-only-compatible
+    /// type change, AND must appear in the same relative order. Reordering existing fields
+    /// is not metadata-only: `primary.idx` and explicit skip-index bytes for embedded tuple
+    /// values are serialized in the old field order, while the new type deserializes and
+    /// compares in the new order. New subfields can be inserted at any position.
+    size_t last_to_index = 0;
+    bool first = true;
     for (size_t i = 0; i < from_names.size(); ++i)
     {
-        auto it = to_by_name.find(from_names[i]);
-        if (it == to_by_name.end())
+        auto it = to_index_by_name.find(from_names[i]);
+        if (it == to_index_by_name.end())
             return false;
-        if (!isMetadataOnlyConversion(from_types[i].get(), it->second, context))
+        if (!first && it->second <= last_to_index)
+            return false;
+        last_to_index = it->second;
+        first = false;
+        if (!isMetadataOnlyConversion(from_types[i].get(), to_types[it->second].get(), context))
             return false;
     }
     return true;
@@ -1283,19 +1291,28 @@ bool tupleAddsSubfieldsOnlyImpl(const IDataType * from, const IDataType * to, co
     const auto & to_names = tuple_to->getElementNames();
     const auto & to_types = tuple_to->getElements();
 
-    std::unordered_map<std::string_view, const IDataType *> to_by_name;
-    to_by_name.reserve(to_names.size());
+    std::unordered_map<std::string_view, size_t> to_index_by_name;
+    to_index_by_name.reserve(to_names.size());
     for (size_t i = 0; i < to_names.size(); ++i)
-        to_by_name.emplace(to_names[i], to_types[i].get());
+        to_index_by_name.emplace(to_names[i], i);
 
+    /// Same relative-order constraint as `isNamedTupleMetadataOnlyChange`: reordering
+    /// existing fields is not metadata-only and must not be misidentified as a
+    /// pure addition.
     bool found_addition = to_names.size() > from_names.size();
+    size_t last_to_index = 0;
+    bool first = true;
     for (size_t i = 0; i < from_names.size(); ++i)
     {
-        auto it = to_by_name.find(from_names[i]);
-        if (it == to_by_name.end())
+        auto it = to_index_by_name.find(from_names[i]);
+        if (it == to_index_by_name.end())
             return false;
+        if (!first && it->second <= last_to_index)
+            return false;
+        last_to_index = it->second;
+        first = false;
         const IDataType * old_elem = from_types[i].get();
-        const IDataType * new_elem = it->second;
+        const IDataType * new_elem = to_types[it->second].get();
         if (old_elem->equals(*new_elem))
             continue;
 
