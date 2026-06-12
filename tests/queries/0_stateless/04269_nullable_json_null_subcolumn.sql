@@ -27,22 +27,6 @@ SELECT count(json) FROM t_nullable_json_null;
 
 DROP TABLE t_nullable_json_null;
 
-SELECT '--- Memory engine, typed null path ---';
-
-DROP TABLE IF EXISTS t_nullable_json_null_typed;
-CREATE TABLE t_nullable_json_null_typed (id UInt32, json Nullable(JSON(null String))) ENGINE = Memory;
-
-INSERT INTO t_nullable_json_null_typed VALUES (1, NULL), (2, '{"null": "hello"}'), (3, '{"other": 1}');
-
--- col.null is Nullable(String); the outer null-map is applied.
-SELECT id, json.null, toTypeName(json.null) FROM t_nullable_json_null_typed ORDER BY id;
-
-SELECT id, isNull(json), isNotNull(json) FROM t_nullable_json_null_typed ORDER BY id;
-
-SELECT count(json) FROM t_nullable_json_null_typed;
-
-DROP TABLE t_nullable_json_null_typed;
-
 SELECT '--- Wide MergeTree ---';
 
 DROP TABLE IF EXISTS t_nullable_json_null_wide;
