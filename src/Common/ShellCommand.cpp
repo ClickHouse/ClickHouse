@@ -115,8 +115,6 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {} (seconds)", pid, timeout_in_seconds);
 
     wait_called = true;
-    if (config.register_in_udf_process_registry)
-        UDFProcessRegistry::instance().remove(pid);
 
     in.close();
     out.close();
@@ -128,7 +126,12 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    return waitForPid(pid, timeout_in_seconds);
+    bool process_terminated_normally = waitForPid(pid, timeout_in_seconds);
+
+    if (process_terminated_normally && config.register_in_udf_process_registry)
+        UDFProcessRegistry::instance().remove(pid);
+
+    return process_terminated_normally;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])

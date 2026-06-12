@@ -55,6 +55,8 @@ def started_cluster():
 
         node.restart_clickhouse()
 
+        assert _wait_for(lambda: _memory_resident() is not None)
+
         yield cluster
     finally:
         cluster.shutdown()
