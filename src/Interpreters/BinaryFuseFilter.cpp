@@ -207,8 +207,6 @@ bool BinaryFuseFilter::buildFromHashesImpl(const HashSet<UInt64> & hashes)
     keys.reserve(hashes.size());
     for (const auto & cell : hashes)
         keys.push_back(cell.getKey());
-    std::sort(keys.begin(), keys.end());
-    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
 
     if (keys.size() == 1)
     {
@@ -222,6 +220,7 @@ bool BinaryFuseFilter::buildFromHashesImpl(const HashSet<UInt64> & hashes)
     {
         variant = Variant::SmallList;
         small_hashes = std::move(keys);
+        std::sort(small_hashes.begin(), small_hashes.end());
         resetFusePayload();
         return true;
     }
@@ -231,41 +230,50 @@ bool BinaryFuseFilter::buildFromHashesImpl(const HashSet<UInt64> & hashes)
         0x452821e638d01377ULL, 0xbe5466cf34e90c6cULL, 0xc0ac29b7c97c50ddULL, 0x3f84d5b5b5470917ULL,
         0x9216d5d98979fb1bULL, 0xd1310ba698dfb5acULL, 0x2ffd72dbd01adfb7ULL, 0xb8e1afed6a267e96ULL};
 
-    FuseCandidate best;
+    FuseCandidate best_fuse4;
     for (UInt64 s : seeds)
     {
         BinaryFuseFilter f4(f_bits, s);
         if (f4.tryBuildFuse4(keys, s))
         {
-            FuseCandidate c;
-            c.variant = Variant::Fuse4;
-            c.seed = s;
-            c.arity = 4;
-            c.segment_length = f4.segment_length;
-            c.segment_count = f4.segment_count;
-            c.array_size = f4.array_size;
-            c.bytes = f4.packed_fingerprints;
-            c.ok = true;
-            if (!best.ok || c.bytes.size() < best.bytes.size())
-                best = std::move(c);
-        }
-
-        BinaryFuseFilter f3(f_bits, s ^ 0x9e3779b97f4a7c15ULL);
-        if (f3.tryBuildFuse3(keys, s ^ 0x9e3779b97f4a7c15ULL))
-        {
-            FuseCandidate c;
-            c.variant = Variant::Fuse3;
-            c.seed = f3.seed;
-            c.arity = 3;
-            c.segment_length = f3.segment_length;
-            c.segment_count = f3.segment_count;
-            c.array_size = f3.array_size;
-            c.bytes = f3.packed_fingerprints;
-            c.ok = true;
-            if (!best.ok || c.bytes.size() < best.bytes.size())
-                best = std::move(c);
+            best_fuse4.variant = Variant::Fuse4;
+            best_fuse4.seed = s;
+            best_fuse4.arity = 4;
+            best_fuse4.segment_length = f4.segment_length;
+            best_fuse4.segment_count = f4.segment_count;
+            best_fuse4.array_size = f4.array_size;
+            best_fuse4.bytes = f4.packed_fingerprints;
+            best_fuse4.ok = true;
+            break;
         }
     }
+
+    FuseCandidate best_fuse3;
+    for (UInt64 s : seeds)
+    {
+        const UInt64 seed3 = s ^ 0x9e3779b97f4a7c15ULL;
+        BinaryFuseFilter f3(f_bits, seed3);
+        if (f3.tryBuildFuse3(keys, seed3))
+        {
+            best_fuse3.variant = Variant::Fuse3;
+            best_fuse3.seed = f3.seed;
+            best_fuse3.arity = 3;
+            best_fuse3.segment_length = f3.segment_length;
+            best_fuse3.segment_count = f3.segment_count;
+            best_fuse3.array_size = f3.array_size;
+            best_fuse3.bytes = f3.packed_fingerprints;
+            best_fuse3.ok = true;
+            break;
+        }
+    }
+
+    FuseCandidate best;
+    if (best_fuse4.ok && best_fuse3.ok)
+        best = (best_fuse4.bytes.size() <= best_fuse3.bytes.size()) ? std::move(best_fuse4) : std::move(best_fuse3);
+    else if (best_fuse4.ok)
+        best = std::move(best_fuse4);
+    else if (best_fuse3.ok)
+        best = std::move(best_fuse3);
 
     if (!best.ok)
         return false;
