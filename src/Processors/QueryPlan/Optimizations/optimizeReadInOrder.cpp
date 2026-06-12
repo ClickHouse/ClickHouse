@@ -1601,7 +1601,9 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
