@@ -99,54 +99,6 @@ struct OwnRunnableForTextLog;
 class AsyncLogMessage;
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
-/// A lock-free bounded MPSC queue of log messages with drop-on-overflow semantics.
-/// Producers are the threads calling `log`, the single consumer is the background thread
-/// passing the messages to the channel (or to the system.text_log queue).
-class AsyncLogMessageQueue
-{
-public:
-    explicit AsyncLogMessageQueue(
-        size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_);
-
-    /// Enqueues a single message notification. If the queue is full, the message is dropped,
-    /// and a warning about the dropped messages is enqueued later, when there is room again.
-    void enqueueMessage(AsyncLogMessagePtr message);
-
-    /// Dequeues a single message notification. If the queue is empty, sleeps for a bit and tries once more,
-    /// so it might return an empty notification; this gives the caller a chance to react to shutdown and flush requests.
-    AsyncLogMessagePtr waitDequeueMessage();
-
-    /// Dequeues a single message notification without sleeping on an empty queue (returns an empty
-    /// notification instead). Unlike waitDequeueMessage, if the message at the head of the queue is still
-    /// being written by a producer, waits for it to appear, so a flush cannot skip a fully enqueued message.
-    AsyncLogMessagePtr dequeueMessage();
-
-    /// Gets the current size of the queue (imprecise if called in parallel with other operations).
-    size_t getCurrentMessageSize() const;
-
-    /// Set externally to request the consumer to flush the whole queue; the consumer resets it once done.
-    /// Only used for the system.text_log queue (see `OwnAsyncSplitChannel::flushTextLogs`).
-    std::atomic<bool> request_flush = false;
-
-private:
-    /// How long the consumer sleeps when the queue is empty before checking it again.
-    /// The queue serves the logging subsystem, which is rarely silent for long, so we expect the queue
-    /// to be non-empty most of the time. Therefore, instead of futex-based waiting (which would also make
-    /// pushing into an empty queue more expensive for producers), the consumer just polls the queue,
-    /// sleeping in between when it has nothing to do.
-    static constexpr size_t sleep_on_empty_queue_ms = 10;
-
-    /// The capacity is fixed at construction (max_size rounded up to a power of two);
-    /// when the consumer doesn't keep up and the queue overflows, new messages are dropped.
-    NonblockingBoundedQueue<AsyncLogMessagePtr> queue;
-    const ProfileEvents::Event & event_on_passed_message;
-    const ProfileEvents::Event & event_on_drop_message;
-    /// The number of messages dropped due to overflow so far. Reported (and reset) by enqueueing
-    /// a warning message once there is room in the queue again.
-    std::atomic<size_t> dropped_messages = 0;
-};
-
-
 /// Same as OwnSplitChannel but it uses separate threads for logging.
 /// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
 /// to ensure the order is kept
@@ -181,18 +133,49 @@ public:
     AsyncLogQueueSizes getAsynchronousMetrics();
 
 private:
+    /// The message queue of one async logging channel: a lock-free bounded MPSC queue plus drop-on-overflow
+    /// accounting. Producers are the threads calling `log`, the single consumer is the background thread
+    /// passing the messages to the channel (or to the system.text_log queue).
+    struct LogQueue : boost::noncopyable
+    {
+        LogQueue(
+            size_t max_size,
+            const ProfileEvents::Event & event_on_passed_message_,
+            const ProfileEvents::Event & event_on_dropped_message_)
+            : messages(max_size)
+            , event_on_passed_message(event_on_passed_message_)
+            , event_on_dropped_message(event_on_dropped_message_)
+        {
+        }
+
+        /// The capacity is fixed at construction (max_size rounded up to a power of two) and the slots are
+        /// preallocated; when the consumer doesn't keep up and the queue overflows, new messages are dropped.
+        NonblockingBoundedQueue<AsyncLogMessagePtr> messages;
+        const ProfileEvents::Event & event_on_passed_message;
+        const ProfileEvents::Event & event_on_dropped_message;
+        /// The number of messages dropped due to overflow so far. Incremented by the producers;
+        /// the consumer reports it with a warning message logged directly to the channel and resets it.
+        std::atomic<size_t> dropped_messages = 0;
+    };
+
+    /// Pushes the message into the queue. If the queue is full, drops the message and counts the drop.
+    static void enqueueMessage(LogQueue & queue, AsyncLogMessagePtr message);
+
     std::atomic<bool> is_open = false;
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
     MapWithMemoryTracking<std::string, ChannelPtr> name_to_channels;
     VectorWithMemoryTracking<OwnFormattingChannel *> channels;
-    VectorWithMemoryTracking<std::unique_ptr<AsyncLogMessageQueue>> queues;
+    VectorWithMemoryTracking<std::unique_ptr<LogQueue>> queues;
     VectorWithMemoryTracking<std::unique_ptr<Poco::Thread>> threads;
     VectorWithMemoryTracking<std::unique_ptr<OwnRunnableForChannel>> runnables;
 
     /// system.text_log does not have a channel, but it's also async
-    AsyncLogMessageQueue text_log_queue;
+    LogQueue text_log_queue;
+    /// Set by flushTextLogs to request the text log thread to flush the whole queue; the thread resets it
+    /// (and notifies the waiters) once done.
+    std::atomic<bool> text_log_flush_requested = false;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
