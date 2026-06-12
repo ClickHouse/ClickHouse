@@ -853,6 +853,11 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchIssuedCacheBytes, "Bytes ReaderExecutor prefetch reads served from cache tiers (near-free), whether or not later consumed.", ValueType::Bytes) \
     M(ReaderExecutorMachineInterrupted, "Number of times a ReaderExecutor background machine wrapped up early at an interrupt point on request (collect takeover or cancel).", ValueType::Number) \
     M(ReaderExecutorPartialCollects, "Number of ReaderExecutor collects that served a non-empty partial prefix fetched before the machine was interrupted; the remainder is read by the normal dispatch.", ValueType::Number) \
+    M(ReaderExecutorPutScheduled, "Number of deferred cache fills (put steps) ReaderExecutor scheduled on the shared pool after serving a collected window.", ValueType::Number) \
+    M(ReaderExecutorPutPoolFull, "Number of times the shared pool's queue rejected a ReaderExecutor put step at schedule; the fill parks and is rescheduled once at the next executor touch.", ValueType::Number) \
+    M(ReaderExecutorPutAbandoned, "Number of deferred ReaderExecutor cache fills dropped without writing (parked twice, over the per-executor cap, or pending at teardown); the segments stay partial and a later read re-fetches.", ValueType::Number) \
+    M(ReaderExecutorPutFailed, "Number of ReaderExecutor put steps that threw; logged and abandoned, never the query's error - a read must not fail because cache population failed.", ValueType::Number) \
+    M(ReaderExecutorPutWaitMicroseconds, "Time ReaderExecutor put steps spent queued on the shared pool before running.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
     M(ReaderExecutorPrefetchWastedCacheBytes, "Cache-tier bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded - near-free, unlike wasted source bytes.", ValueType::Bytes) \
     M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a LiveConnectionLimit slot for a live-buffer read.", ValueType::Number) \

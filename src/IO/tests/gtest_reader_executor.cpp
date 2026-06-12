@@ -78,6 +78,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorBytesFromPageCache;
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
@@ -86,6 +87,9 @@ namespace ProfileEvents
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
+    extern const Event ReaderExecutorPutScheduled;
+    extern const Event ReaderExecutorPutPoolFull;
+    extern const Event ReaderExecutorPutAbandoned;
 }
 
 namespace
@@ -3666,12 +3670,12 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
 /// prefetch worker credits `ReaderExecutorBytesPushedToCacheAsync`. `stats` are
 /// flushed to `ProfileEvents` in `~ReaderExecutor`, so each delta is read only
 /// after the executor scope closes.
-TEST(ReaderExecutor, PopulateBytesAreSyncIncludingPrefetch)
+TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
 {
-    /// A prefetch worker is a pure source fetch now and does NO cache work - the cache
-    /// backfill (`put`) runs on the foreground at consume. So every populate, foreground
-    /// gap read OR prefetched window, is attributed to the SYNC counter; the async
-    /// counter stays the seam a future dedicated write pool will use.
+    /// The write-side split: a sync-path window populates synchronously on the
+    /// foreground (`BytesPushedToCacheSync`); a machine-collected window defers
+    /// its fill to a put step (`BytesPushedToCacheAsync`). Every byte lands in
+    /// exactly one of the two.
     constexpr size_t file_size = 2048;
     constexpr size_t window = 512;
     String content(file_size, 'P');
@@ -3697,9 +3701,10 @@ TEST(ReaderExecutor, PopulateBytesAreSyncIncludingPrefetch)
         EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u);
     }
 
-    /// `SyncPrefetchPool` runs each submitted task inline; the prefetched windows it
-    /// reads ahead are backfilled by the foreground at consume - so the populate is
-    /// still SYNC, and nothing lands on the async counter.
+    /// `SyncPrefetchPool` runs each submitted job inline: every window after the
+    /// first is machine-collected, so its fill goes through a put step (async);
+    /// only the first (sync-path) window populates synchronously. Together they
+    /// still cover the whole file.
     {
         const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
         const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
@@ -3710,10 +3715,10 @@ TEST(ReaderExecutor, PopulateBytesAreSyncIncludingPrefetch)
             executor.setPrefetchPool(pool);
             while (!executor.readNextWindow().empty()) {}
         }
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before, file_size)
-            << "prefetch-driven populates run on the foreground at consume -> sync";
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u)
-            << "no async populate without a dedicated write pool";
+        const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before;
+        const auto async_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before;
+        EXPECT_EQ(sync_delta, window) << "only the first (sync-path) window populates synchronously";
+        EXPECT_EQ(async_delta, file_size - window) << "machine-collected windows defer their fill to put steps";
     }
 }
 
@@ -4161,4 +4166,214 @@ TEST(ReaderExecutor, TakeoverServesPartialPrefixWithoutDataLoss)
     /// comment) - recorded so CI history shows the partial path is exercised.
     RecordProperty("partial_collects", static_cast<int>(partials));
     RecordProperty("machine_interrupted", static_cast<int>(interrupted));
+}
+
+namespace
+{
+
+/// Page-cache fixture for the deferred-fill tests: a real in-process PageCache
+/// + provider over the single object "obj".
+struct PageCacheFixture
+{
+    static constexpr size_t CAP = 64ull << 20;
+
+    std::shared_ptr<PageCache> cache = std::make_shared<PageCache>(
+        std::chrono::milliseconds(2000), "LRU", 0.5,
+        /*min_size_in_bytes=*/CAP, /*max_size_in_bytes=*/CAP,
+        /*free_memory_ratio=*/0.0, /*num_shards=*/1);
+
+    std::shared_ptr<PageCacheProvider> provider(size_t block, size_t file_size) const
+    {
+        PageCacheFile file;
+        file.path = "obj";
+        return std::make_shared<PageCacheProvider>(
+            cache, std::move(file), block, /*inject_eviction=*/false,
+            /*bypass_if_missing=*/false, /*file_size_in_bytes=*/file_size);
+    }
+};
+
+/// Inline pool whose submitJob can be toggled to reject ("queue full"): runs
+/// accepted jobs synchronously on the calling thread - deterministic put-step
+/// scheduling outcomes with zero worker-thread timing.
+class TogglePool : public PrefetchThreadPool
+{
+public:
+    TogglePool() : PrefetchThreadPool(NoWorkers{}) {}
+    std::shared_ptr<JobHandle> submitJob(std::function<void()> task) override
+    {
+        if (fail.load())
+            return nullptr;
+        task();
+        return makeCompletedJobHandleForTest();
+    }
+    std::atomic<bool> fail{false};
+};
+
+}
+
+TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
+{
+    /// Stage-3 contract: a machine-collected window's cache fill runs as a
+    /// background put step (`BytesPushedToCacheAsync`); the first window (sync
+    /// path, no machine yet) still writes synchronously. The warm pass is
+    /// deterministic: `planResidencyWindow` joins every deferred fill before
+    /// rebuilding, so after seek(0) the whole file is page-cache resident.
+    constexpr size_t FILE_SIZE = 16000;
+    constexpr size_t WINDOW = 2000;
+    constexpr size_t BLOCK = 500;
+    String content(FILE_SIZE, 0);
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('A' + (i % 29));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", FILE_SIZE);
+
+    PageCacheFixture pc;
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(pc.provider(BLOCK, FILE_SIZE));
+
+    /// Inline pool: machine fetches complete at launch, so every collect is a
+    /// full one and deterministically defers its fill to a put step. (A real
+    /// pool in a zero-think-time drain loop revokes/interrupts most machines
+    /// before their first block - covered by the gated takeover test.)
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    TestThreadGroup tg;
+    {
+        ReaderExecutor executor(source, objects, caches, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
+        executor.setPrefetchPool(pool);
+
+        String cold;
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            for (const auto & node : rope.getNodes())
+                cold.append(node.data(), node.size);
+        }
+        EXPECT_EQ(cold, content);
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u)
+            << "machine-collected windows must defer their fill to put steps";
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheSync), 0u)
+            << "the first (sync-path) window still writes synchronously";
+        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u);
+    }
+    /// Cold executor destroyed: its teardown joined every deferred fill, so the
+    /// page cache now holds the whole file.
+
+    /// Warm pass with a FRESH executor over the same cache: its residency plan
+    /// sees the deferred fills as plain hits - nothing from the source. (A seek
+    /// within the cold executor would NOT show this: its plan geometry is an
+    /// immutable all-miss snapshot, so its machines re-fetch and only the
+    /// collect prefers the cache copies.)
+    {
+        ReaderExecutor executor(source, objects, caches, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
+        executor.setPrefetchPool(pool);
+        const auto src_before = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
+        String warm;
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            for (const auto & node : rope.getNodes())
+                warm.append(node.data(), node.size);
+        }
+        EXPECT_EQ(warm, content);
+        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), src_before)
+            << "warm pass must be served entirely from the page cache";
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesFromPageCache), 0u);
+    }
+}
+
+TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
+{
+    /// Pool-full handling for deferred fills: rejected at schedule -> parked
+    /// (`PutPoolFull`), one reschedule at the next executor touch, abandoned if
+    /// still rejected (`PutAbandoned`) - and reads stay byte-correct either way
+    /// (a dropped fill only loses cache residency).
+    constexpr size_t FILE_SIZE = 8000;
+    constexpr size_t WINDOW = 2000;
+    constexpr size_t BLOCK = 500;
+    String content(FILE_SIZE, 0);
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('0' + (i % 10));
+
+    auto make_objects = [&]
+    {
+        StoredObjects objects;
+        objects.emplace_back("obj", "", FILE_SIZE);
+        return objects;
+    };
+
+    /// Reschedule case: park the put at window 2's collect, let the next
+    /// window's sweep reschedule it successfully.
+    {
+        auto source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"obj", content}});
+        PageCacheFixture pc;
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(pc.provider(BLOCK, FILE_SIZE));
+        auto pool = std::make_shared<TogglePool>();
+        TestThreadGroup tg;
+        {
+            ReaderExecutor executor(source, make_objects(), caches, WINDOW, 0, BLOCK);
+            executor.setPrefetchPool(pool);
+
+            auto w1 = executor.readNextWindow();   /// sync; launches machine for w2 (inline fetch)
+            ASSERT_FALSE(w1.empty());
+            pool->fail.store(true);                /// w2's collect: put schedule rejected -> parked
+            auto w2 = executor.readNextWindow();
+            ASSERT_FALSE(w2.empty());
+            EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutPoolFull), 0u);
+            pool->fail.store(false);               /// next sweep grants the reschedule
+            String rest;
+            while (true)
+            {
+                auto rope = executor.readNextWindow();
+                if (rope.empty())
+                    break;
+                for (const auto & node : rope.getNodes())
+                    rest.append(node.data(), node.size);
+            }
+            EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u)
+                << "a granted reschedule must not abandon the fill";
+            EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u);
+        }
+    }
+
+    /// Abandon case: the pool stays full through the reschedule.
+    {
+        auto source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"obj", content}});
+        PageCacheFixture pc;
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(pc.provider(BLOCK, FILE_SIZE));
+        auto pool = std::make_shared<TogglePool>();
+        TestThreadGroup tg;
+        String all;
+        {
+            ReaderExecutor executor(source, make_objects(), caches, WINDOW, 0, BLOCK);
+            executor.setPrefetchPool(pool);
+
+            auto w1 = executor.readNextWindow();
+            ASSERT_FALSE(w1.empty());
+            for (const auto & node : w1.getNodes())
+                all.append(node.data(), node.size);
+            pool->fail.store(true);                /// parks w2's put AND blocks new launches
+            while (true)
+            {
+                auto rope = executor.readNextWindow();
+                if (rope.empty())
+                    break;
+                for (const auto & node : rope.getNodes())
+                    all.append(node.data(), node.size);
+            }
+        }
+        EXPECT_EQ(all, content) << "an abandoned fill must not affect served bytes";
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u)
+            << "a put parked twice must be abandoned";
+    }
 }

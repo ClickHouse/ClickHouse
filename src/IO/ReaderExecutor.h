@@ -315,24 +315,25 @@ private:
     /// already fetched from the source). FOREGROUND-only: serve any late-hit from cache
     /// (`serveLateHits`), append the still-missing ranges from `source_bytes` (clamped to
     /// what it actually delivered) into `result` through `covered` (assembly truth is the
-    /// SOURCE Rope), then push the assembled misses into the plan's held write buffers
-    /// (`pushAssembledToWriteBuffers`, fire-and-forget). The plan's held write buffers
-    /// (not a per-window collection) take the writes, so their deferred LRU-bump runs
-    /// after the writes and the in-flight segment can be pinned from them.
+    /// SOURCE Rope), then - when `push_to_writers` - push the assembled misses into the
+    /// plan's held write buffers (`pushAssembledToWriteBuffers`, fire-and-forget). A
+    /// machine collect passes false and defers that push to the put step
+    /// (`schedulePutStep`) with the same assembled rope.
     void backfillBytes(
         ByteRange physical_window, ByteRange requested_window, const Rope & source_bytes,
-        Rope & result, IntervalSet & covered, Stats & out_stats);
+        Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats);
 
-    /// Shared assembly tail of both gap paths (sync `fetchAndBackfillGaps` and prefetch
-    /// `backfillBytes`), run AFTER `recreditCommittedPrefixes` + `serveLateHits`: append the
-    /// `source_bytes` for the still-uncovered gaps of `fetch_window` into `result` (in offset
-    /// order, clamped to what the source actually delivered), account OVER-READ, and push the
-    /// assembled window into the held write buffers. Over-read is the single rule for both
-    /// paths: source bytes that did NOT serve `requested_window` (alignment slack fetched only
-    /// to fill a cache cell, redundant copies of late-hit ranges, bridged holes) (`[CF-overread]`).
+    /// Shared assembly tail of both gap paths (sync `fetchAndBackfillGaps` and the
+    /// collect's `backfillBytes`), run AFTER `recreditCommittedPrefixes` + `serveLateHits`:
+    /// append the `source_bytes` for the still-uncovered gaps of `fetch_window` into
+    /// `result` (in offset order, clamped to what the source actually delivered), account
+    /// OVER-READ, and - when `push_to_writers` - push the assembled window into the held
+    /// write buffers. Over-read is the single rule for both paths: source bytes that did
+    /// NOT serve `requested_window` (alignment slack fetched only to fill a cache cell,
+    /// redundant copies of late-hit ranges, bridged holes) (`[CF-overread]`).
     void assembleAndWriteBack(
         ByteRange fetch_window, ByteRange requested_window, const Rope & source_bytes,
-        Rope & result, IntervalSet & covered, Stats & out_stats);
+        Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats);
 
     /// Shared tail of an assembled window: re-point the Strategy-A pin to the partial
     /// segment under `pin_frontier` - the frontier the live connection actually reached,
@@ -349,8 +350,46 @@ private:
     /// affects only `BytesPushedToCacheSync`, never `result` (`[CF-contiguity]`). Writes
     /// only into the plan's authoritative `BufEntry::writers` (`chassert(writer)`); never
     /// the planResidency view's null-writer misses (`[CF-mutate]`). The write side of an
-    /// assembled window.
+    /// assembled window - the SYNCHRONOUS one; a machine collect defers the same
+    /// work to a put step (`schedulePutStep`).
     void pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats);
+
+    /// The per-writer-list body shared by the sync push above and the machine's
+    /// put step: write `rope ∩ writer-range ∩ window` into each writer, counted
+    /// as `BytesPushedToCache{Sync,Async}` per `async`. `interrupt` (nullable)
+    /// is polled between writers - the put step's interrupt point; remaining
+    /// writers are left untouched for the caller's abandon path.
+    void pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
+        const Rope & rope, bool async, const std::atomic<bool> * interrupt, Stats & out_stats);
+
+    /// The retrigger verb: turn a just-collected machine into its PUT step.
+    /// BORROW the writers overlapping its aligned window from `read_plan.bufs`
+    /// into the machine (joining any earlier put still holding them), hand it
+    /// the assembled rope, and schedule on the shared pool. Pool full -> the
+    /// machine parks `ParkedPoolFull` in `put_machines` (reschedule once at the
+    /// next sweep, then abandon); over the `MAX_PUT_MACHINES` cap -> the new
+    /// fill is skipped outright (droppable; the writers stay home).
+    void schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope & assembled);
+
+    /// Return a put machine's borrowed writers to their `read_plan.bufs` homes
+    /// and fold its stats in (logging a failed step - never the client's
+    /// error). The shared reap tail of the sweep/join below; bufs indices are
+    /// valid because every reap precedes the plan teardown.
+    void reapPutMachine(FetchMachine & m);
+
+    /// Reap finished put machines, give each parked one its single reschedule,
+    /// abandon beyond that (the writers still return home - a later window may
+    /// fill them). `wait` joins running ones too (plan rebuild / destruction).
+    void sweepPutMachines(bool wait);
+
+    /// Join (wait + reap) every put machine whose window - or, with
+    /// `writers_too`, whose borrowed writer ranges - intersects `window`,
+    /// BEFORE the foreground touches those ranges. Window overlap protects a
+    /// fetch from re-reading uncommitted bytes (inflating R/O); writer overlap
+    /// matters only to callers that need the writers home (a sync push, the
+    /// next borrow) - a machine LAUNCH passes false, since its fetch step never
+    /// touches writers, keeping the fetch/fill overlap for spanning writers.
+    void joinPutMachinesOverlapping(ByteRange window, bool writers_too);
 
     /// Promote a range just served from `from_tier` up into every populatable cache
     /// faster than it (those all miss it, since `from_tier` was the fastest hit). Walks
@@ -818,6 +857,17 @@ private:
     /// waits on each; running calls sweep finished ones to keep the vector
     /// bounded under seek-heavy workloads.
     VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> abandoned_machines;
+    /// Machines running (or parked at) their PUT step - the deferred cache fill
+    /// of an already-served window, holding plan writers ON LOAN. Capped at
+    /// MAX_PUT_MACHINES live entries (beyond it the NEW fill is skipped: fills
+    /// are droppable, the writers stay home and a later window may still fill
+    /// them). Swept by `sweepPutMachines` (the reap returns the borrowed
+    /// writers); joined before any foreground touch of the same ranges
+    /// (`joinPutMachinesOverlapping`) - a fetch would re-read uncommitted bytes
+    /// from the source, a sync push would find its writers missing - and
+    /// unconditionally at plan rebuild / destruction (`[CF-plan-rebuild]`).
+    VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> put_machines;
+    static constexpr size_t MAX_PUT_MACHINES = 2;
     /// Set when the source returned fewer bytes than requested AND the
     /// total file size is unknown — in that mode the short return IS the
     /// EOF marker. `readNextWindow` consults this so a subsequent call
@@ -1027,6 +1077,16 @@ private:
             /// Collects that served a non-empty partial prefix of an
             /// interrupted fetch; the remainder goes through normal dispatch.
             PartialCollects,
+            /// Deferred cache fills: scheduled as put steps / rejected by the
+            /// queue at schedule / abandoned (parked twice, over the cap, or
+            /// dropped at teardown with writers pending) / failed (the step
+            /// threw - logged, never the client's error).
+            PutScheduled,
+            PutPoolFull,
+            PutAbandoned,
+            PutFailed,
+            /// Time a scheduled put step spent queued before running.
+            PutWaitMicroseconds,
             NumCounters
         };
 
@@ -1118,6 +1178,24 @@ private:
         /// The fetch step's product: the raw PHYSICAL source bytes of
         /// `physical_window` (short at EOF).
         Rope fetched;
+        /// The put step's inputs (set at retrigger, after collect): the writers
+        /// BORROWED from `read_plan.bufs` for this window - moved out so the put
+        /// owns them exclusively while it writes, and RETURNED home by the reap
+        /// (`writer_origins` records each one's `bufs` index). A writer commonly
+        /// spans many windows (one fs segment / page miss run covers the whole
+        /// plan span), so it must come back for the next window's fill; the plan
+        /// teardown finalizes it exactly as before (`[CF-lru]` order preserved).
+        /// `fill_rope` is the assembled window they are filled from (refcounted
+        /// nodes shared with the served slice).
+        VectorWithMemoryTracking<MissEntry> writers;
+        VectorWithMemoryTracking<size_t> writer_origins;
+        Rope fill_rope;
+        /// One reschedule is granted to a `ParkedPoolFull` put before it is
+        /// abandoned (the park -> reschedule once -> abandon ladder).
+        bool put_rescheduled = false;
+        /// Queue-wait probe for the put step: started at schedule, read at the
+        /// step's entry into `PutWaitMicroseconds`.
+        Stopwatch put_wait;
         /// `ReaderExecutorPrefetchInFlight` for this machine's lifetime (launch
         /// through collect / cancel / abandon-drain) - RAII replaces the old
         /// pool-side add/sub pair.

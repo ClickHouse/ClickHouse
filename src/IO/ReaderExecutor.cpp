@@ -54,6 +54,11 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchWastedCacheBytes;
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
+    extern const Event ReaderExecutorPutScheduled;
+    extern const Event ReaderExecutorPutPoolFull;
+    extern const Event ReaderExecutorPutAbandoned;
+    extern const Event ReaderExecutorPutFailed;
+    extern const Event ReaderExecutorPutWaitMicroseconds;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
 }
@@ -162,6 +167,11 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case PrefetchWastedCacheBytes:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedCacheBytes, value); break;
         case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
         case PartialCollects:           ProfileEvents::increment(ProfileEvents::ReaderExecutorPartialCollects, value); break;
+        case PutScheduled:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPutScheduled, value); break;
+        case PutPoolFull:               ProfileEvents::increment(ProfileEvents::ReaderExecutorPutPoolFull, value); break;
+        case PutAbandoned:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPutAbandoned, value); break;
+        case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
+        case PutWaitMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorPutWaitMicroseconds, value); break;
         case NumCounters:               break;
     }
 }
@@ -206,6 +216,9 @@ ReaderExecutor::~ReaderExecutor()
     /// allocates - safe from this `noexcept` destructor.
     cancelMachine(/*cancelled=*/false);
     drainAbandonedMachines(/*wait_finished=*/true);
+    /// Deferred fills hold plan writers; let the bounded writes finish (one
+    /// window of local I/O each) so bytes in hand are not dropped.
+    sweepPutMachines(/*wait=*/true);
 
     /// A transient `readBigAt` executor rolls its stats into the parent via
     /// mergeTransientStats; emitting ProfileEvents / a reader_executor_log row
@@ -726,6 +739,13 @@ void ReaderExecutor::maybeTriggerPrefetch()
         return StepResult::AwaitCollect;
     };
 
+    /// The machine's window must not race a still-uncommitted fill of the same
+    /// cells (its fetch would re-read them from the source). Writer ranges are
+    /// NOT joined on: the fetch step never touches writers, and waiting here
+    /// would serialize the next fetch behind the previous window's put whenever
+    /// one writer spans both (the common case).
+    joinPutMachinesOverlapping(next_physical_window, /*writers_too=*/false);
+
     if (!runner->schedule(m, StepKind::Fetch))
     {
         LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
@@ -1007,6 +1027,9 @@ Rope ReaderExecutor::readNextWindow()
     /// prefetch waits) - the executor's direct contribution to query read latency.
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
+    /// Reap finished deferred fills; grant a parked one its reschedule.
+    sweepPutMachines(/*wait=*/false);
+
     const size_t logical_size = totalSize();
 
     /// EOF return - but a machine launched before EOF can have its worker latch
@@ -1257,9 +1280,11 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         const size_t fetched_logical_end = m->fetched.range().end() - data_start_offset;
         if (fetched_logical_end <= position)
         {
-            Rope unused;
+            Rope assembled;
             IntervalSet covered_unused;
-            backfillBytes(m->physical_window, requested_phys, m->fetched, unused, covered_unused, stats);
+            backfillBytes(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
+                /*push_to_writers=*/false, stats);
+            schedulePutStep(std::move(m), assembled);
             return false;
         }
         stats.add(Stats::PartialCollects);
@@ -1285,9 +1310,14 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         : requested_phys;
     Rope result;
     IntervalSet covered;
-    backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered, stats);
+    backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered,
+        /*push_to_writers=*/false, stats);
     rope = finalizeAssembledWindow(slice_window, pin_frontier,
         result, foreground_connection_state, reached_eof);
+    /// The deferred write side of this window: the put step takes the writers and
+    /// the assembled rope to the background. After `finalizeAssembledWindow` - the
+    /// pin was just taken from the plan's writers while they were still here.
+    schedulePutStep(std::move(m), result);
     if (data_start_offset)
         rope.shift(-static_cast<ssize_t>(data_start_offset));
 
@@ -1714,6 +1744,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, ConnState & c
     /// only the requested bytes; the pin uses the aligned frontier.
     const ByteRange fetch_window = geometry.fetchWindowAt(physical_window);
 
+    /// A still-uncommitted deferred fill overlapping this window must land first:
+    /// the aligned head below can reach back into its cell (fetching those bytes
+    /// again from the source would silently inflate R/O), and the sync push at
+    /// the end needs its writers home.
+    joinPutMachinesOverlapping(fetch_window, /*writers_too=*/true);
+
     /// Serve resident bytes over the ALIGNED window: a byte that is a miss on the tier
     /// driving the alignment but resident on a faster tier is covered here, so the gap
     /// read below never re-fetches it.
@@ -2082,7 +2118,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
         }
     }
 
-    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, out_stats);
+    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, /*push_to_writers=*/true, out_stats);
     return !fetch_ranges.empty();
 }
 
@@ -2150,7 +2186,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
 
 void ReaderExecutor::backfillBytes(
     ByteRange physical_window, ByteRange requested_window, const Rope & source_bytes,
-    Rope & result, IntervalSet & covered, Stats & out_stats)
+    Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
 {
     /// The prefetch-CONSUME gap path: the worker already fetched the whole aligned
     /// `physical_window` into `source_bytes` (it does no cache work). Serve any grown
@@ -2160,12 +2196,12 @@ void ReaderExecutor::backfillBytes(
     /// uses, so over-read counts identically.
     recreditCommittedPrefixes(physical_window, result, covered, out_stats);
     serveLateHits(physical_window, result, covered, out_stats);
-    assembleAndWriteBack(physical_window, requested_window, source_bytes, result, covered, out_stats);
+    assembleAndWriteBack(physical_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
 }
 
 void ReaderExecutor::assembleAndWriteBack(
     ByteRange fetch_window, ByteRange requested_window,
-    const Rope & source_bytes, Rope & result, IntervalSet & covered, Stats & out_stats)
+    const Rope & source_bytes, Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
 {
     /// Append the source bytes for the still-uncovered gaps of `fetch_window`, in offset
     /// order (assembly truth is the SOURCE Rope, `[CF-contiguity]`). CLAMP every append to
@@ -2198,7 +2234,39 @@ void ReaderExecutor::assembleAndWriteBack(
     /// bridged sub-`min_bytes_for_seek` hole (`[CF-overread]`).
     out_stats.add(Stats::OverReadBytes, source_bytes.totalBytes() - served_requested);
 
-    pushAssembledToWriteBuffers(fetch_window, result, out_stats);
+    if (push_to_writers)
+        pushAssembledToWriteBuffers(fetch_window, result, out_stats);
+}
+
+void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
+    const Rope & rope, bool async, const std::atomic<bool> * interrupt, Stats & out_stats)
+{
+    for (auto & w : writers)
+    {
+        /// The put step's interrupt point: stop between writers, leaving the
+        /// remaining ones untouched for the caller's abandon path.
+        if (interrupt && interrupt->load(std::memory_order_relaxed))
+            break;
+
+        chassert(w.writer);
+        /// Clamp the write target to the window's served portion and the buffer's own
+        /// aligned range; the buffer further skips already-committed bytes internally
+        /// (committed-set idempotency), so an out-of-order/overlapping slice from an
+        /// interleaved promotion never double-counts.
+        const size_t lo = std::max(w.writer->range().offset, window.offset);
+        const size_t hi = std::min(w.writer->range().end(), window.end());
+        if (lo >= hi)
+            continue;
+        auto slice = rope.slice(ByteRange{lo, hi - lo});
+        if (slice.empty())
+            continue;
+        out_stats.add(Stats::CachePopulateRequests);
+        StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
+        out_stats.add(async ? Stats::BytesPushedToCacheAsync : Stats::BytesPushedToCacheSync,
+            w.writer->write(std::move(slice)));
+        HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+            static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+    }
 }
 
 void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats)
@@ -2209,30 +2277,198 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
     /// `result` (`[CF-contiguity]`). Writes only into the authoritative `BufEntry::writers`
     /// (`chassert(writer)`), never the view's null-writer misses (`[CF-mutate]`). `result`
     /// is disjoint, so each slice has at most one node per byte (it may be short at EOF).
+    /// This is the SYNCHRONOUS write side (the no-pool/sync paths); a machine collect
+    /// defers the same work to a put step (`schedulePutStep`).
     for (auto & buf : read_plan.bufs)
+        pushRopeToWriters(buf.writers, physical_window, result, /*async=*/false, /*interrupt=*/nullptr, out_stats);
+}
+
+void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope & assembled)
+{
+    /// Over the cap: the NEW fill is skipped - droppable by the invariant
+    /// (mandatory work never queues behind it). The writers stay home, the
+    /// segments stay partial; a later window may still fill them.
+    if (put_machines.size() >= MAX_PUT_MACHINES)
     {
-        for (auto & w : buf.writers)
+        stats.add(Stats::PutAbandoned);
+        return;
+    }
+
+    /// An earlier put may still be borrowing writers that span this window too
+    /// (one fs segment / page run covers many windows) - join it so each writer
+    /// has exactly one owner.
+    joinPutMachinesOverlapping(m->physical_window, /*writers_too=*/true);
+
+    /// BORROW this window's writers from the plan into the machine: the put step
+    /// owns them exclusively while it writes; the reap returns them home
+    /// (`writer_origins`) so the next window's fill - and the plan teardown's
+    /// finalize - find them where they have always lived. Runs AFTER
+    /// `finalizeAssembledWindow`, so the in-flight pin was taken first.
+    for (size_t i = 0; i < read_plan.bufs.size(); ++i)
+    {
+        auto & buf = read_plan.bufs[i];
+        auto kept = std::stable_partition(buf.writers.begin(), buf.writers.end(),
+            [&](const MissEntry & w)
+            {
+                return !(w.writer && w.range.offset < m->physical_window.end()
+                         && m->physical_window.offset < w.range.end());
+            });
+        for (auto it = kept; it != buf.writers.end(); ++it)
         {
-            chassert(w.writer);
-            /// Clamp the write target to the window's served portion and the buffer's own
-            /// aligned range; the buffer further skips already-committed bytes internally
-            /// (committed-set idempotency), so an out-of-order/overlapping slice from an
-            /// interleaved promotion never double-counts.
-            const size_t lo = std::max(w.writer->range().offset, physical_window.offset);
-            const size_t hi = std::min(w.writer->range().end(), physical_window.end());
-            if (lo >= hi)
-                continue;
-            auto slice = result.slice(ByteRange{lo, hi - lo});
-            if (slice.empty())
-                continue;
-            out_stats.add(Stats::CachePopulateRequests);
-            StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-            /// Always synchronous: the prefetch worker does no cache work, so a prefetched
-            /// window is backfilled on the foreground at consume.
-            out_stats.add(Stats::BytesPushedToCacheSync, w.writer->write(std::move(slice)));
-            HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-                static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+            m->writers.push_back(std::move(*it));
+            m->writer_origins.push_back(i);
         }
+        buf.writers.erase(kept, buf.writers.end());
+    }
+    if (m->writers.empty())
+        return;  /// nothing to fill for this window
+
+    m->fill_rope = assembled;
+    /// The machine is being re-armed for a second step: a takeover collect set
+    /// `interrupt_requested` to stop the FETCH - the put must not inherit it.
+    m->interrupt_requested.store(false);
+    m->current_step.reset();
+    m->put_wait.restart();
+    m->run_step = [this, self = m.get()]
+    {
+        self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
+        pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
+            /*async=*/true, &self->interrupt_requested, self->stats);
+        /// The writers are NOT released here - the reap returns them home (a
+        /// writer spans many windows and the next one needs it). Only the rope
+        /// is dropped: the fill is committed (or abandoned on interrupt).
+        self->fill_rope = {};
+        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
+    };
+
+    if (runner->schedule(m, StepKind::Put))
+        stats.add(Stats::PutScheduled);
+    else
+        stats.add(Stats::PutPoolFull);  /// parked; the sweep grants one reschedule
+    put_machines.push_back(std::move(m));
+}
+
+void ReaderExecutor::reapPutMachine(FetchMachine & m)
+{
+    /// Return the borrowed writers home so the next window's fill and the plan
+    /// teardown's finalize find them where they have always lived. Valid by
+    /// construction: every reap precedes the plan teardown, so the recorded
+    /// bufs indices still address the borrowing plan.
+    chassert(m.writers.size() == m.writer_origins.size());
+    for (size_t i = 0; i < m.writers.size(); ++i)
+    {
+        chassert(m.writer_origins[i] < read_plan.bufs.size());
+        read_plan.bufs[m.writer_origins[i]].writers.push_back(std::move(m.writers[i]));
+    }
+    m.writers.clear();
+    m.writer_origins.clear();
+
+    /// A failed put is logged, never thrown - a read must not fail because
+    /// cache population failed.
+    if (m.failure)
+    {
+        stats.add(Stats::PutFailed);
+        tryLogException(m.failure, log, "Deferred cache fill failed", LogsLevel::debug);
+    }
+    stats += m.stats;
+}
+
+void ReaderExecutor::sweepPutMachines(bool wait)
+{
+    if (put_machines.empty())
+        return;
+    for (auto it = put_machines.begin(); it != put_machines.end();)
+    {
+        auto & m = **it;
+        switch (m.state.load())
+        {
+            case MachineState::Scheduled:
+            case MachineState::Running:
+            {
+                if (!wait)
+                {
+                    ++it;
+                    continue;
+                }
+                /// Plan rebuild / destruction: let the bounded write finish
+                /// (one window of local I/O) rather than drop bytes in hand.
+                runner->waitReleased(m);
+                break;
+            }
+            case MachineState::ParkedPoolFull:
+            {
+                /// The ladder: one reschedule, then abandon (the fill is skipped;
+                /// the writers still return home). A rebuild/teardown sweep
+                /// abandons outright - the plan it would fill is going away.
+                if (!wait && !m.put_rescheduled)
+                {
+                    m.put_rescheduled = true;
+                    if (runner->schedule(*it, StepKind::Put))
+                    {
+                        stats.add(Stats::PutScheduled);
+                        ++it;
+                        continue;
+                    }
+                }
+                stats.add(Stats::PutAbandoned);
+                break;
+            }
+            case MachineState::Constructed:
+            case MachineState::AwaitCollect:
+            case MachineState::Interrupted:
+            case MachineState::Done:
+            case MachineState::Cancelled:
+            case MachineState::Failed:
+                break;
+        }
+
+        reapPutMachine(m);
+        it = put_machines.erase(it);
+    }
+}
+
+void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_too)
+{
+    if (put_machines.empty())
+        return;
+    for (auto it = put_machines.begin(); it != put_machines.end();)
+    {
+        auto & m = **it;
+        /// The machine touches `window` through its own aligned window OR - for
+        /// callers that need the writers home - any borrowed writer's range
+        /// (writers span many windows).
+        bool overlaps = m.physical_window.offset < window.end()
+            && window.offset < m.physical_window.end();
+        if (writers_too)
+        {
+            for (const auto & w : m.writers)
+            {
+                if (overlaps)
+                    break;
+                overlaps = w.range.offset < window.end() && window.offset < w.range.end();
+            }
+        }
+        if (!overlaps)
+        {
+            ++it;
+            continue;
+        }
+        if (m.state.load() == MachineState::ParkedPoolFull)
+        {
+            /// A parked fill whose ranges the foreground is about to need: write it
+            /// HERE rather than skip - skipping would re-fetch the bytes from the
+            /// source AND drop the fill (double loss). The one case a deferred
+            /// write runs on the client thread, bounded by one window.
+            pushRopeToWriters(m.writers, m.physical_window, m.fill_rope,
+                /*async=*/false, /*interrupt=*/nullptr, m.stats);
+            m.fill_rope = {};
+        }
+        else
+        {
+            runner->waitReleased(m);
+        }
+        reapPutMachine(m);
+        it = put_machines.erase(it);
     }
 }
 
@@ -2357,8 +2593,13 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
 {
     /// Machine-check the threading invariant: the held read/write buffers are
     /// foreground-private and must never be torn down / rebuilt while a prefetch worker
-    /// is in flight (the worker co-owns only the immutable geometry).
+    /// is in flight (the worker co-owns only the immutable geometry). Deferred fills
+    /// are joined first for the same reason - and so a segment is never aliased by a
+    /// machine-held writer and a fresh `openWriteBuffers` of the next plan
+    /// (`[CF-plan-rebuild]`).
     chassert(!machine);
+    sweepPutMachines(/*wait=*/true);
+    chassert(put_machines.empty());
 
     /// Reset the in-flight segment pin BEFORE tearing down the held buffers
     /// (`[CF-plan-rebuild]`): the pin aliases a held write buffer's own bare segment ref,
