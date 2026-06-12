@@ -683,6 +683,8 @@ void RPNBuilder<RPNElement>::traverseTree(
             /// Mark every element that continues the group (the second and subsequent atoms
             /// and the AND operators combining them) so that consumers relying on a
             /// one-element-per-leaf RPN layout can treat the whole group as a single position.
+            /// The `requires` check makes this a no-op for element types that do not
+            /// declare the flag; such conditions do not participate in disjunction tracking.
             if constexpr (requires (RPNElement & e) { e.continues_multi_atom_group = true; })
             {
                 if (i != 0)

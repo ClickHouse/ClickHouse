@@ -368,6 +368,9 @@ static String extractCommonPrefixFromAlternationBranches(const String & expressi
 namespace
 {
 
+/// Since `const < key` is the same as `key > const`, this rewrites the comparison to
+/// the one with the arguments swapped. It returns false for functions that are not
+/// inequalities.
 bool mirrorInequalityDirection(std::string & func_name)
 {
     if (func_name == "less")
@@ -394,6 +397,10 @@ bool mirrorInequalityDirection(std::string & func_name)
     return false;
 }
 
+/// This rewrites `const <op> key_expr` into the equivalent `key_expr <op'> const` form
+/// that atom building expects. It returns false when no equivalent form exists: the
+/// constant of a pattern function is not a comparable value, so for example
+/// `'p' LIKE key` cannot become a key range.
 bool mirrorComparisonForSwappedArguments(std::string & func_name)
 {
     if (mirrorInequalityDirection(func_name))
@@ -407,6 +414,10 @@ bool mirrorComparisonForSwappedArguments(std::string & func_name)
     return true;
 }
 
+/// A strict comparison does not survive a relaxed constant: after the constant has been
+/// transformed by a non-injective monotonic key function, only the non-strict bound is
+/// implied. For example, `x > 5` implies `round(x) >= round(5)`, but it does not imply
+/// `round(x) > round(5)`.
 void relaxComparisonForTransformedConstant(std::string & func_name)
 {
     if (func_name == "less")
@@ -2443,6 +2454,9 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 
     chassert(set_types.size() == set_columns.size());
 
+    /// This lambda is kept in sync with the `try_build_atom` in `tryPrepareSetAtomsForHas`.
+    /// The only difference is the tuple-repack special case below, which `has` does not
+    /// need because it always supplies a single set column.
     auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
                               const std::vector<std::optional<DeterministicKeyTransformDag>> & atom_set_transforming_dags,
                               const DataTypes & atom_data_types,
@@ -2513,6 +2527,9 @@ void KeyCondition::tryPrepareSetAtomsForIn(
         if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
             relaxed = true;
 
+    /// This records the key columns that are already covered by the direct atom.
+    /// The wrapped-set candidates below only fill in the columns that have no atom yet,
+    /// because the direct atom is more precise.
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
     for (const auto & element : out)
     {
@@ -2639,6 +2656,9 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    /// This lambda is kept in sync with the `try_build_atom` in `tryPrepareSetAtomsForIn`.
+    /// The tuple-repack special case is not needed here because there is always a single
+    /// set column.
     auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
                               const std::vector<std::optional<DeterministicKeyTransformDag>> & atom_set_transforming_dags,
                               const DataTypes & atom_data_types,
@@ -2686,6 +2706,9 @@ void KeyCondition::tryPrepareSetAtomsForHas(
         if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
             relaxed = true;
 
+    /// This records the key columns that are already covered by the direct atom.
+    /// The wrapped-set candidates below only fill in the columns that have no atom yet,
+    /// because the direct atom is more precise.
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
     for (const auto & element : out)
     {
@@ -3766,19 +3789,30 @@ void KeyCondition::extractBinaryComparisonAtoms(
         return;
     }
 
+    /// A candidate describes one possible atom of this comparison: a key column to
+    /// compare against, together with the constant in that column's key space.
     struct ComparisonAtomCandidate
     {
         size_t key_column_num = 0;
+        /// This is the type of the matched key expression after `chain` is applied;
+        /// the comparison happens in this type.
         DataTypePtr key_expr_type;
+        /// The check-time chain is stored in the atom and is applied to granule key
+        /// ranges during evaluation.
         MonotonicFunctionsChain chain;
         std::optional<size_t> argument_num_of_space_filling_curve;
         Field const_value;
         DataTypePtr const_type;
+        /// This is true when the transformed constant makes the atom relaxed, i.e. the
+        /// atom describes a superset of the matching values. Exact conversions keep it
+        /// false.
         bool is_constant_transformed = false;
     };
 
     std::vector<ComparisonAtomCandidate> candidates;
 
+    /// The predicate expression itself reaches a key column. The discovered chain stays
+    /// in the atom, and the constant is used as-is.
     auto add_direct_key_candidate = [&](size_t key_column_num,
                                         DataTypePtr key_expr_type,
                                         MonotonicFunctionsChain chain,
@@ -3794,6 +3828,8 @@ void KeyCondition::extractBinaryComparisonAtoms(
             .is_constant_transformed = false});
     };
 
+    /// The constant was already pushed through a key-side recipe, so it compares
+    /// against the key column directly and the check-time chain is empty.
     auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool allow_constant_relaxation)
     {
         candidates.push_back(ComparisonAtomCandidate{
@@ -3806,7 +3842,11 @@ void KeyCondition::extractBinaryComparisonAtoms(
             .is_constant_transformed = allow_constant_relaxation});
     };
 
-    /// Try: func(key_expr, const) where key_expr is (possibly monotonic) wrapping of a key column.
+    /// Candidates are collected from three sources in priority order. The emission loop
+    /// below keeps the first candidate per key column, so the order is observable.
+
+    /// 1. The direct key match handles `func(key_expr, const)` where `key_expr` is a
+    /// (possibly monotonic) wrapping of a key column.
     {
         DataTypePtr key_expr_type;
         size_t key_column_num = size_t(-1);
@@ -3830,7 +3870,12 @@ void KeyCondition::extractBinaryComparisonAtoms(
         }
     }
 
-    /// Try infer key constraints by transforming the constant with key functions.
+    /// 2. The monotonic constant transform infers key constraints by transforming the
+    /// constant with key functions. Such candidates are always relaxed, because the
+    /// transformed range is a superset of the exact matches. A relaxed atom under a
+    /// complement-producing function (see `no_relaxed_atom_functions`) would become
+    /// stricter instead and could prune matching rows, which is why this source is
+    /// gated.
     if (allow_constant_transformation)
     {
         auto transformed_candidates = transformConstantByMonotonicKeyFunctions(
@@ -3855,6 +3900,13 @@ void KeyCondition::extractBinaryComparisonAtoms(
             add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
     }
 
+    /// 3. The deterministic constant transform is tried only when nothing else matched.
+    /// Equality (in both polarities) is the only comparison that an arbitrary
+    /// deterministic `f` translates: `x = c` implies `f(x) = f(c)`, but order
+    /// comparisons are not preserved. `notEquals` is tolerable even though the
+    /// transform may relax the atom (when the transform is not injective), because
+    /// evaluation forces `can_be_false = true` for relaxed elements, so such an atom
+    /// never prunes.
     if (candidates.empty() && (func_name == "equals" || func_name == "notEquals"))
     {
         auto transformed_candidates = transformConstantByDeterministicKeyFunctions(
@@ -3873,6 +3925,10 @@ void KeyCondition::extractBinaryComparisonAtoms(
     if (key_arg_pos == 1 && !mirrorComparisonForSwappedArguments(base_func_name))
         return;
 
+    /// A candidate brought into the key column's comparison space. It holds the
+    /// (possibly relaxed) comparison function, the (possibly converted) constant from
+    /// which the atom range is built, and the pre-filled element into which the atom is
+    /// emitted.
     struct NormalizedCandidate
     {
         std::string func_name;
@@ -3880,6 +3936,17 @@ void KeyCondition::extractBinaryComparisonAtoms(
         RPNElement element;
     };
 
+    /// The normalization proceeds in three stages.
+    ///  1. It resolves the type mismatch between the matched key expression and the
+    ///     constant, either by an exact String conversion (pattern constants are kept
+    ///     as-is), or by the float-literal rewrite for integer keys (which may fold the
+    ///     comparison to a constant), or by a conversion to the least supertype with
+    ///     the corresponding cast appended to the check-time chain.
+    ///  2. It weakens the comparison if the constant got relaxed anywhere: for example,
+    ///     `x > 5` must weaken to `round(x) >= 5`.
+    ///  3. It pre-fills the element with the key column, the chain and the relaxation
+    ///     flag; the caller builds the atom range into it.
+    /// The lambda returns nullopt when no sound comparison can be built for this candidate.
     auto normalize_candidate = [&](const ComparisonAtomCandidate & candidate, std::string candidate_func_name) -> std::optional<NormalizedCandidate>
     {
         bool is_constant_transformed = candidate.is_constant_transformed;
@@ -3998,6 +4065,9 @@ void KeyCondition::extractBinaryComparisonAtoms(
             .element = std::move(element)};
     };
 
+    /// The deduplication per key column is first-wins. Candidates were collected in
+    /// source priority order, so a less precise candidate never replaces a more
+    /// precise one for the same key column.
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
 
     for (const auto & candidate : candidates)
