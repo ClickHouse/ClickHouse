@@ -169,6 +169,9 @@ private:
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
+    /// Whether the backup was created with `use_same_s3_credentials_for_base_backup`, in which case
+    /// the metadata stores the base backup locator without credentials (see `writeBackupMetadata`).
+    bool base_backup_use_same_s3_credentials = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;

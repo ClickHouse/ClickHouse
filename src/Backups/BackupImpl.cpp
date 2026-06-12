@@ -311,10 +311,25 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
 {
     if (!base_backup && base_backup_info)
     {
+        /// Copy the credentials into a local copy only used for opening the base backup.
+        /// The stored `base_backup_info` must stay unchanged because `writeBackupMetadata`
+        /// serializes it into the `.backup` file, and the copied credentials must not be persisted there.
+        BackupInfo effective_base_backup_info = *base_backup_info;
         if (params.use_same_s3_credentials_for_base_backup)
-            backup_info.copyS3CredentialsTo(*base_backup_info);
+        {
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        }
+        else if (base_backup_use_same_s3_credentials && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+        {
+            /// The backup was created with `use_same_s3_credentials_for_base_backup`, so its metadata
+            /// stores the base backup locator without credentials. Copy them from this backup's locator
+            /// without requiring the setting at restore time. This is best-effort: if this backup was
+            /// opened without copyable inline credentials (e.g. via a named collection), the base backup
+            /// is opened as written, with server-side credentials.
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        }
 
-        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(*base_backup_info, archive_params.password);
+        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -420,8 +435,16 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            *out << "<base_backup>" << xml << base_backup_info->toString() << "</base_backup>";
+            /// The base backup locator is always persisted without inline `S3` credentials (locators of other
+            /// backup engines, e.g. `AzureBlobStorage`, are persisted as is for now). To open the base backup
+            /// at restore time the credentials are taken from the restore source locator (with the
+            /// `use_same_s3_credentials_for_base_backup` setting or the marker below), from the `base_backup`
+            /// setting, or from the server-side configuration. Existing backups with credentials embedded
+            /// in the metadata by older versions remain restorable as is.
+            *out << "<base_backup>" << xml << base_backup_info->withoutS3Credentials(params.context).toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
+            if (params.use_same_s3_credentials_for_base_backup)
+                *out << "<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>";
         }
     }
 
@@ -530,7 +553,13 @@ void BackupImpl::readBackupMetadata()
     uuid = parse<UUID>(getString(config_root, "uuid"));
 
     if (config_root->getNodeByPath("base_backup") && !base_backup_info)
+    {
         base_backup_info = BackupInfo::fromString(getString(config_root, "base_backup"));
+
+        /// The marker is honored only when the base backup locator itself comes from the metadata:
+        /// if the locator was overridden with the `base_backup` setting, the override is used as is.
+        base_backup_use_same_s3_credentials = getBool(config_root, "use_same_s3_credentials_for_base_backup", false);
+    }
 
     if (config_root->getNodeByPath("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));

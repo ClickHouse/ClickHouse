@@ -27,6 +27,19 @@ struct BackupInfo
 
     void copyS3CredentialsTo(BackupInfo & dest) const;
 
+    /// Whether `copyS3CredentialsTo` would succeed (both sides are `S3` without named collections
+    /// and this backup locator carries explicit credentials).
+    bool canCopyS3CredentialsTo(const BackupInfo & dest) const;
+
+    /// Returns a copy without the `S3` credential arguments: S3('url', 'access_key_id',
+    /// 'secret_access_key') becomes S3('url'), and credential key-value arguments are removed.
+    /// Used to serialize the base backup locator into the `.backup` metadata, which must never
+    /// contain credentials; on restore they are taken from the restore source locator, from the
+    /// `base_backup` setting, or from the server-side configuration.
+    /// The context is used to evaluate non-literal `url` overrides the same way `getNamedCollection`
+    /// does; without a context such overrides are rejected.
+    BackupInfo withoutS3Credentials(ContextPtr context = nullptr) const;
+
     /// Gets the named collection specified by id_arg, checks access rights,
     /// and applies any key-value overrides from kv_args.
     /// Returns nullptr if id_arg is empty (i.e., no named collection is used).
