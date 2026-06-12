@@ -39,8 +39,9 @@ public:
     /// from running. False if the task is Running, Done, or already Cancelled.
     bool tryCancel();
 
-    /// Block until the task completes; rethrow exceptions thrown by the task.
-    /// Only valid after `tryCancel` returned false.
+    /// Block until the task resolves; rethrow an exception the TASK BODY
+    /// threw. A revoked task resolves cleanly - cancellation is a correct
+    /// outcome, not an error; read `state()` for the verdict.
     void get();
 
     /// Non-blocking probe: true once the worker has set the promise.

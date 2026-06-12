@@ -69,18 +69,12 @@ void FetchMachineRunner::waitReleased(MachineBase & machine)
 {
     if (!machine.current_step)
         return;
-    try
-    {
-        machine.current_step->get();
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-        /// Swallowing is Ok here: only a revoked step's handle throws ("task
-        /// was cancelled" - an expected outcome, not an error); step-body
-        /// exceptions are captured into `machine.failure` by the schedule
-        /// wrapper and handled by the executor. Either way the handle resolved
-        /// - the release (happens-before) edge over the payload is established.
-    }
+    /// Cannot throw for a machine step: the schedule wrapper captures every
+    /// step-body exception into `machine.failure`, and a revoked step's handle
+    /// resolves with a value (cancellation is a correct outcome, not an
+    /// error). The return establishes the release (happens-before) edge over
+    /// the machine's payload.
+    machine.current_step->get();
     /// Joined exactly once: drop the consumed handle (see the header note).
     machine.current_step.reset();
 }

@@ -130,7 +130,7 @@ TEST(FetchMachine, CancelQueuedReclaimsUntouchedMachine)
     /// Drain the pool through the revoked job's no-op pickup.
     worker_latch.count_down();
     blocker->get();
-    runner.waitReleased(*m);  /// the cancelled handle resolves with the known exception, swallowed
+    runner.waitReleased(*m);  /// the revoked handle resolves cleanly (no exception)
 
     EXPECT_EQ(m->runs.load(), 0u) << "a revoked step must never run";
 }

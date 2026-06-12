@@ -76,13 +76,12 @@ std::shared_ptr<JobHandle> PrefetchThreadPool::submitJob(std::function<void()> t
         auto expected = JobHandle::State::Queued;
         if (!handle->current_state.compare_exchange_strong(expected, JobHandle::State::Running))
         {
-            /// Cancelled before we picked it up — set an exception so anyone
-            /// who (incorrectly) waits on the future gets a defined failure
-            /// rather than a hang on a broken promise. std::runtime_error, not
-            /// DB::Exception(LOGICAL_ERROR, ...): this path is reachable in
-            /// normal operation and must not abort debug builds.
-            handle->promise.set_exception(std::make_exception_ptr(
-                std::runtime_error("JobHandle: task was cancelled")));
+            /// Revoked before we picked it up (state is already Cancelled,
+            /// stored by the revoker's CAS). Resolve the promise with a VALUE:
+            /// cancellation is a correct outcome, not an error - a joiner
+            /// unblocks cleanly and reads `state()` for the verdict. No
+            /// exception ever flows on this path.
+            handle->promise.set_value();
             return;
         }
         try

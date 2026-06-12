@@ -830,16 +830,9 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                     return true;
                 if (!wait_finished && !m->current_step->isFinished())
                     return false;
-                try
-                {
-                    m->current_step->get();
-                }
-                catch (...)
-                {
-                    /// A revoked step's handle throws `JobHandle: task was
-                    /// cancelled` here. Debug level keeps the error log clean.
-                    tryLogCurrentException(log, "Abandoned prefetch task threw", LogsLevel::debug);
-                }
+                /// Join: cannot throw - a revoked handle resolves with a
+                /// value, and step-body exceptions live in `m->failure`.
+                m->current_step->get();
                 if (m->failure)
                     tryLogException(m->failure, log, "Cancelled prefetch task threw", LogsLevel::debug);
                 /// Reconcile the reaped machine: its fetch really happened, so

@@ -58,9 +58,11 @@ TEST(PrefetchThreadPool, JobCancelWhenQueued)
     worker_latch.count_down();
     blocker->get();
 
-    /// get() blocks until the worker reached the cancelled task and rethrows
-    /// its "task was cancelled" exception — the deterministic sync point.
-    EXPECT_THROW(handle->get(), std::runtime_error);
+    /// get() blocks until the worker reached the cancelled task and resolved
+    /// it - CLEANLY: cancellation is a correct outcome, not an error; the
+    /// verdict lives in state().
+    EXPECT_NO_THROW(handle->get());
+    EXPECT_EQ(handle->state(), JobHandle::State::Cancelled);
     EXPECT_FALSE(body_ran.load()) << "Cancelled job body must not run";
 }
 
@@ -118,10 +120,11 @@ TEST(PrefetchThreadPool, JobQueueOverflowReturnsNullptr)
     q2->get();
 }
 
-TEST(PrefetchThreadPool, CancelledFutureGetRethrowsKnownException)
+TEST(PrefetchThreadPool, CancelledHandleResolvesCleanly)
 {
-    /// If a caller incorrectly waits on a cancelled handle's future, they
-    /// must get a definite exception (not a broken_promise hang).
+    /// A waiter on a revoked handle must neither hang on a broken promise nor
+    /// see an exception: the no-op pickup resolves the promise with a VALUE
+    /// (cancellation is a correct outcome) and state() carries the verdict.
 
     PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
@@ -133,12 +136,12 @@ TEST(PrefetchThreadPool, CancelledFutureGetRethrowsKnownException)
     ASSERT_NE(handle, nullptr);
     ASSERT_TRUE(handle->tryCancel());
 
-    /// Let the worker process the cancelled task — it will set the
-    /// "task was cancelled" exception on the promise.
+    /// Let the worker process the cancelled task — it resolves the promise.
     worker_latch.count_down();
     blocker->get();
 
-    EXPECT_THROW(handle->get(), std::runtime_error);
+    EXPECT_NO_THROW(handle->get());
+    EXPECT_EQ(handle->state(), JobHandle::State::Cancelled);
 }
 
 TEST(PrefetchThreadPool, CompletedJobHandleForTest)
