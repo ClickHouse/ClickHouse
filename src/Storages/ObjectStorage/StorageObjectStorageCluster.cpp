@@ -316,7 +316,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
-                sleepForSeconds(60);
+                sleepForSeconds(10);
             });
 
             auto task = task_distributor->getNextTask(number_of_current_replica);
