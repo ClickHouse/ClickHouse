@@ -16,11 +16,10 @@ namespace DB
   * asynchronous metrics `ExecutableUserDefinedFunctionMemoryResident`
   * and `ExecutableUserDefinedFunctionProcesses`.
   *
-  * `ShellCommand` adds the pid at spawn (opt-in via
-  * `Config::register_in_udf_process_registry`, set only by the executable UDF
-  * path) and removes it when the child is reaped, so idle pool workers stay
-  * registered for as long as they live. A never-reaped child stays registered:
-  * its pid stays pinned, and a zombie contributes nothing to either metric.
+  * `ShellCommand` adds the pid at spawn and removes it when the child is
+  * reaped, so idle pool workers stay registered for as long as they live.
+  * A never-reaped child stays registered: its pid stays pinned, and a zombie
+  * contributes nothing to either metric.
   */
 class UDFProcessRegistry
 {
@@ -34,7 +33,7 @@ public:
     struct Sample
     {
         /// Sum of VmRSS over all live registered processes and their descendants.
-        /// Shared pages are counted once per process, so this is an upper bound.
+        /// Shared pages are counted once per process.
         UInt64 memory_resident_bytes = 0;
 
         /// Number of processes the memory sum was taken over.
