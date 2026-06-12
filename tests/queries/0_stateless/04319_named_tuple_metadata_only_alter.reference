@@ -72,3 +72,11 @@ Case 16c (whole Tuple in ORDER BY rejected):
 Case 16d (Tuple not in any key still works):
 mutations:	0
 10	20	\N
+Case 17a (nested addition, subcolumn under it in ORDER BY rejected):
+Case 17b (nested addition with whole Tuple in ORDER BY rejected):
+Case 17c (nested addition, sibling subcolumn in ORDER BY rejected):
+Case 17d (nested addition, no key dep, succeeds as metadata-only):
+mutations:	0
+10	100	\N
+Case 18a (explicit set skip index on whole column rejected, default mode):
+Case 18b (explicit skip index rejected even with rebuild mode):

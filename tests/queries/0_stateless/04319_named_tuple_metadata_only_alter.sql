@@ -418,3 +418,93 @@ SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatab
 SELECT t.a, t.b, t.c FROM t_named_tuple_alter;
 
 DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 17 (REJECT): nested-Tuple subfield additions still trigger the key/index
+-- safety check. The outer Tuple has the same field count, but a nested Tuple
+-- gains a field, which is still a metadata-only conversion that changes the
+-- on-disk shape of any embedded Tuple value in a key column.
+-- ============================================================
+
+-- A subcolumn that is *underneath* the nested addition is part of ORDER BY.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, sub Tuple(x UInt64)))
+ENGINE = MergeTree ORDER BY (t.sub.x, id)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, (100)));
+
+SELECT 'Case 17a (nested addition, subcolumn under it in ORDER BY rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, sub Tuple(x UInt64, y UInt64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- The whole Tuple column is in ORDER BY and a nested Tuple inside gains a field.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, sub Tuple(x UInt64)))
+ENGINE = MergeTree ORDER BY (t, id)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, (100)));
+
+SELECT 'Case 17b (nested addition with whole Tuple in ORDER BY rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, sub Tuple(x UInt64, y UInt64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- A sibling subcolumn (not under the nested addition) is in ORDER BY. The check
+-- still must reject because the modified column as a whole appears in keys.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, sub Tuple(x UInt64)))
+ENGINE = MergeTree ORDER BY (t.a, id)
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, (100)));
+
+SELECT 'Case 17c (nested addition, sibling subcolumn in ORDER BY rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, sub Tuple(x UInt64, y UInt64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- Nested addition with no key dependency — must succeed and be metadata-only.
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a UInt64, sub Tuple(x UInt64)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, (100)));
+
+SELECT 'Case 17d (nested addition, no key dep, succeeds as metadata-only):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, sub Tuple(x UInt64, y Nullable(UInt64)));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.sub.x, t.sub.y FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 18 (REJECT): explicit skip indexes on the whole column block Tuple
+-- subfield additions, because the on-disk index bytes (`skp_idx_*.idx`) are
+-- serialized with the old tuple shape and metadata-only ALTER never refreshes
+-- them via `MutationsInterpreter`. Rejected unconditionally, independent of
+-- the `alter_column_secondary_index_mode` setting.
+-- ============================================================
+
+CREATE TABLE t_named_tuple_alter
+(id UInt64, t Tuple(a UInt64, b UInt64), INDEX idx_t t TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 20));
+
+SELECT 'Case 18a (explicit set skip index on whole column rejected, default mode):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, b UInt64, c UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+-- Even with `rebuild` mode, reject — the rebuild path is mutation-based and the
+-- metadata-only Tuple addition does not emit any `MutationCommand` for it.
+SELECT 'Case 18b (explicit skip index rejected even with rebuild mode):';
+ALTER TABLE t_named_tuple_alter MODIFY SETTING alter_column_secondary_index_mode = 'rebuild';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a UInt64, b UInt64, c UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;

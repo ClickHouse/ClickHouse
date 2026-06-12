@@ -4840,17 +4840,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
                 }
 
-                if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
+                /// Explicit skip indexes that depend on this column have on-disk bytes
+                /// (skp_idx_*.idx) serialized with the old Tuple shape. Metadata-only
+                /// ALTER does not produce a `MutationCommand::READ_COLUMN`, so the
+                /// rebuild/drop logic in `MutationsInterpreter` cannot refresh them.
+                /// Reject unconditionally — independent of `alter_column_secondary_index_mode` —
+                /// because no mode can recover the stale index bytes for this code path.
+                if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
-                    {
-                        throw Exception(
-                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
-                            "'alter_column_secondary_index_mode' to change this behaviour",
-                            backQuoteIfNeed(command.column_name),
-                            it->second);
-                    }
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Adding new Tuple subfields to column '{}' is forbidden because it is used by the explicit skip index '{}'. "
+                        "Drop the index first, then re-create it after the ALTER",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
                 }
             }
         }
