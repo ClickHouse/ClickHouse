@@ -102,7 +102,20 @@ FROM
     FROM numbers(10000)
 );
 
+-- Empty-state non-floating return path: `quantileKLL` over an empty Date/DateTime input
+-- must return the zero value of the storage type rather than the implementation-defined
+-- result of converting Float64 NaN to integer storage.
+SELECT quantileKLL(200, 0.5)(toDate(number)) FROM numbers(0);
+SELECT quantileKLL(200, 0.5)(toDateTime(number)) FROM numbers(0);
+
+-- `k` boundary tests: `MIN_K` (8) and `MAX_K` (65535) are valid; out-of-range values are rejected.
+SELECT quantileKLL(8, 0.5)(number + 1) BETWEEN 1 AND 1000 FROM numbers(1000);
+SELECT quantileKLL(65535, 0.5)(number + 1) BETWEEN 480 AND 520 FROM numbers(1000);
+
 -- Error cases.
 SELECT quantileKLL()(number) FROM numbers(10); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT quantileKLL(7, 0.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 SELECT quantileKLL(0.5, 0.5)(number) FROM numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- `k = 65536` and `k > Int64::max` exceed `MAX_K` and are rejected before reaching DataSketches.
+SELECT quantileKLL(65536, 0.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+SELECT quantileKLL(18446744073709551615, 0.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
