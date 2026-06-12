@@ -63,17 +63,17 @@ QUERY id: 0
                   FUNCTION id: 28, function_name: plus, function_type: ordinary, result_type: UInt64
                     ARGUMENTS
                       LIST id: 29, nodes: 2
-                        COLUMN id: 30, column_name: a, result_type: UInt64, source_id: 25
-                        CONSTANT id: 31, constant_value: UInt64_1, constant_value_type: UInt8
-                  COLUMN id: 32, column_name: b, result_type: UInt64, source_id: 25
+                        COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 25
+                        CONSTANT id: 30, constant_value: UInt64_1, constant_value_type: UInt8
+                  COLUMN id: 31, column_name: b, result_type: UInt64, source_id: 25
       JOIN EXPRESSION
-        FUNCTION id: 33, function_name: equals, function_type: ordinary, result_type: UInt8
+        FUNCTION id: 32, function_name: equals, function_type: ordinary, result_type: UInt8
           ARGUMENTS
-            LIST id: 34, nodes: 2
-              COLUMN id: 35, column_name: a, result_type: UInt64, source_id: 6
-              COLUMN id: 36, column_name: x, result_type: UInt64, source_id: 9
+            LIST id: 33, nodes: 2
+              COLUMN id: 21, column_name: a, result_type: UInt64, source_id: 6
+              COLUMN id: 34, column_name: x, result_type: UInt64, source_id: 9
   WHERE
-    CONSTANT id: 37, constant_value: UInt64_1, constant_value_type: UInt8
+    CONSTANT id: 35, constant_value: UInt64_1, constant_value_type: UInt8
 EXPLAIN QUERY TREE
 SELECT * FROM t1, t2, (SELECT a as x from t3 where a + 1 = b ) as t3
 WHERE t1.a = if(t2.b > 0, t2.a, 0) AND t2.a = t3.x AND 1
@@ -114,33 +114,33 @@ QUERY id: 0
                   FUNCTION id: 16, function_name: plus, function_type: ordinary, result_type: UInt64
                     ARGUMENTS
                       LIST id: 17, nodes: 2
-                        COLUMN id: 18, column_name: a, result_type: UInt64, source_id: 13
-                        CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
-                  COLUMN id: 20, column_name: b, result_type: UInt64, source_id: 13
+                        COLUMN id: 12, column_name: a, result_type: UInt64, source_id: 13
+                        CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+                  COLUMN id: 19, column_name: b, result_type: UInt64, source_id: 13
   WHERE
-    FUNCTION id: 21, function_name: and, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 20, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
-        LIST id: 22, nodes: 3
-          FUNCTION id: 23, function_name: equals, function_type: ordinary, result_type: UInt8
+        LIST id: 21, nodes: 3
+          FUNCTION id: 22, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 24, nodes: 2
-                COLUMN id: 25, column_name: a, result_type: UInt64, source_id: 3
-                FUNCTION id: 26, function_name: if, function_type: ordinary, result_type: UInt64
+              LIST id: 23, nodes: 2
+                COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 3
+                FUNCTION id: 25, function_name: if, function_type: ordinary, result_type: UInt64
                   ARGUMENTS
-                    LIST id: 27, nodes: 3
-                      FUNCTION id: 28, function_name: greater, function_type: ordinary, result_type: UInt8
+                    LIST id: 26, nodes: 3
+                      FUNCTION id: 27, function_name: greater, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 29, nodes: 2
-                            COLUMN id: 30, column_name: b, result_type: UInt64, source_id: 6
-                            CONSTANT id: 31, constant_value: UInt64_0, constant_value_type: UInt8
-                      COLUMN id: 32, column_name: a, result_type: UInt64, source_id: 6
-                      CONSTANT id: 33, constant_value: UInt64_0, constant_value_type: UInt8
-          FUNCTION id: 34, function_name: equals, function_type: ordinary, result_type: UInt8
+                          LIST id: 28, nodes: 2
+                            COLUMN id: 29, column_name: b, result_type: UInt64, source_id: 6
+                            CONSTANT id: 30, constant_value: UInt64_0, constant_value_type: UInt8
+                      COLUMN id: 31, column_name: a, result_type: UInt64, source_id: 6
+                      CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 33, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 35, nodes: 2
-                COLUMN id: 36, column_name: a, result_type: UInt64, source_id: 6
-                COLUMN id: 37, column_name: x, result_type: UInt64, source_id: 9
-          CONSTANT id: 38, constant_value: UInt64_1, constant_value_type: UInt8
+              LIST id: 34, nodes: 2
+                COLUMN id: 31, column_name: a, result_type: UInt64, source_id: 6
+                COLUMN id: 35, column_name: x, result_type: UInt64, source_id: 9
+          CONSTANT id: 36, constant_value: UInt64_1, constant_value_type: UInt8
   SETTINGS cross_to_inner_join_rewrite=0
 EXPLAIN QUERY TREE
 SELECT * FROM t1, t2, (SELECT a as x from t3 where a + 1 = b ) as t3
@@ -198,9 +198,9 @@ QUERY id: 0
                   FUNCTION id: 28, function_name: plus, function_type: ordinary, result_type: UInt64
                     ARGUMENTS
                       LIST id: 29, nodes: 2
-                        COLUMN id: 30, column_name: a, result_type: UInt64, source_id: 25
-                        CONSTANT id: 31, constant_value: UInt64_1, constant_value_type: UInt8
-                  COLUMN id: 32, column_name: b, result_type: UInt64, source_id: 25
+                        COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 25
+                        CONSTANT id: 30, constant_value: UInt64_1, constant_value_type: UInt8
+                  COLUMN id: 31, column_name: b, result_type: UInt64, source_id: 25
 EXPLAIN QUERY TREE dump_ast=1
 SELECT * FROM t1, t2, t3, t4, t5
 WHERE t2.a = t3.a AND t1.b = t5.b;
@@ -402,25 +402,25 @@ QUERY id: 0
                   FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
                       LIST id: 27, nodes: 2
-                        COLUMN id: 28, column_name: a, result_type: UInt64, source_id: 3
-                        COLUMN id: 29, column_name: a, result_type: UInt64, source_id: 12
-                  FUNCTION id: 30, function_name: equals, function_type: ordinary, result_type: UInt8
+                        COLUMN id: 22, column_name: a, result_type: UInt64, source_id: 3
+                        COLUMN id: 28, column_name: a, result_type: UInt64, source_id: 12
+                  FUNCTION id: 29, function_name: equals, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
-                      LIST id: 31, nodes: 2
-                        COLUMN id: 32, column_name: b, result_type: UInt64, source_id: 9
-                        COLUMN id: 33, column_name: b, result_type: UInt64, source_id: 12
+                      LIST id: 30, nodes: 2
+                        COLUMN id: 31, column_name: b, result_type: UInt64, source_id: 9
+                        COLUMN id: 32, column_name: b, result_type: UInt64, source_id: 12
       TABLE EXPRESSION
-        JOIN id: 34, strictness: ALL, kind: INNER
+        JOIN id: 33, strictness: ALL, kind: INNER
           LEFT TABLE EXPRESSION
             TABLE id: 6, alias: __table2, table_name: default.t2
           RIGHT TABLE EXPRESSION
             TABLE id: 15, alias: __table5, table_name: default.t5
           JOIN EXPRESSION
-            FUNCTION id: 35, function_name: equals, function_type: ordinary, result_type: UInt8
+            FUNCTION id: 34, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
-                LIST id: 36, nodes: 2
-                  COLUMN id: 37, column_name: a, result_type: UInt64, source_id: 6
-                  COLUMN id: 38, column_name: a, result_type: UInt64, source_id: 15
+                LIST id: 35, nodes: 2
+                  COLUMN id: 36, column_name: a, result_type: UInt64, source_id: 6
+                  COLUMN id: 37, column_name: a, result_type: UInt64, source_id: 15
 
 SELECT
     __table1.a AS `t1.a`,
@@ -494,60 +494,60 @@ QUERY id: 0
                       FUNCTION id: 27, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 28, nodes: 2
-                            COLUMN id: 29, column_name: a, result_type: UInt64, source_id: 3
-                            COLUMN id: 30, column_name: a, result_type: UInt64, source_id: 9
-                      FUNCTION id: 31, function_name: equals, function_type: ordinary, result_type: UInt8
+                            COLUMN id: 23, column_name: a, result_type: UInt64, source_id: 3
+                            COLUMN id: 29, column_name: a, result_type: UInt64, source_id: 9
+                      FUNCTION id: 30, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 32, nodes: 2
-                            COLUMN id: 33, column_name: a, result_type: UInt64, source_id: 6
-                            COLUMN id: 34, column_name: a, result_type: UInt64, source_id: 9
+                          LIST id: 31, nodes: 2
+                            COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 6
+                            COLUMN id: 29, column_name: a, result_type: UInt64, source_id: 9
           RIGHT TABLE EXPRESSION
             TABLE id: 12, alias: __table4, table_name: default.t4
           JOIN EXPRESSION
-            FUNCTION id: 35, function_name: and, function_type: ordinary, result_type: UInt8
+            FUNCTION id: 32, function_name: and, function_type: ordinary, result_type: UInt8
               ARGUMENTS
-                LIST id: 36, nodes: 3
+                LIST id: 33, nodes: 3
+                  FUNCTION id: 34, function_name: equals, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 35, nodes: 2
+                        COLUMN id: 23, column_name: a, result_type: UInt64, source_id: 3
+                        COLUMN id: 36, column_name: a, result_type: UInt64, source_id: 12
                   FUNCTION id: 37, function_name: equals, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
                       LIST id: 38, nodes: 2
-                        COLUMN id: 39, column_name: a, result_type: UInt64, source_id: 3
-                        COLUMN id: 40, column_name: a, result_type: UInt64, source_id: 12
-                  FUNCTION id: 41, function_name: equals, function_type: ordinary, result_type: UInt8
+                        COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 6
+                        COLUMN id: 36, column_name: a, result_type: UInt64, source_id: 12
+                  FUNCTION id: 39, function_name: equals, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
-                      LIST id: 42, nodes: 2
-                        COLUMN id: 43, column_name: a, result_type: UInt64, source_id: 6
-                        COLUMN id: 44, column_name: a, result_type: UInt64, source_id: 12
-                  FUNCTION id: 45, function_name: equals, function_type: ordinary, result_type: UInt8
-                    ARGUMENTS
-                      LIST id: 46, nodes: 2
-                        COLUMN id: 47, column_name: a, result_type: UInt64, source_id: 9
-                        COLUMN id: 48, column_name: a, result_type: UInt64, source_id: 12
+                      LIST id: 40, nodes: 2
+                        COLUMN id: 29, column_name: a, result_type: UInt64, source_id: 9
+                        COLUMN id: 36, column_name: a, result_type: UInt64, source_id: 12
       RIGHT TABLE EXPRESSION
         TABLE id: 15, alias: __table5, table_name: default.t5
       JOIN EXPRESSION
-        FUNCTION id: 49, function_name: and, function_type: ordinary, result_type: UInt8
+        FUNCTION id: 41, function_name: and, function_type: ordinary, result_type: UInt8
           ARGUMENTS
-            LIST id: 50, nodes: 4
-              FUNCTION id: 51, function_name: equals, function_type: ordinary, result_type: UInt8
+            LIST id: 42, nodes: 4
+              FUNCTION id: 43, function_name: equals, function_type: ordinary, result_type: UInt8
                 ARGUMENTS
-                  LIST id: 52, nodes: 2
-                    COLUMN id: 53, column_name: a, result_type: UInt64, source_id: 3
-                    COLUMN id: 54, column_name: a, result_type: UInt64, source_id: 15
-              FUNCTION id: 55, function_name: equals, function_type: ordinary, result_type: UInt8
+                  LIST id: 44, nodes: 2
+                    COLUMN id: 23, column_name: a, result_type: UInt64, source_id: 3
+                    COLUMN id: 45, column_name: a, result_type: UInt64, source_id: 15
+              FUNCTION id: 46, function_name: equals, function_type: ordinary, result_type: UInt8
                 ARGUMENTS
-                  LIST id: 56, nodes: 2
-                    COLUMN id: 57, column_name: a, result_type: UInt64, source_id: 6
-                    COLUMN id: 58, column_name: a, result_type: UInt64, source_id: 15
-              FUNCTION id: 59, function_name: equals, function_type: ordinary, result_type: UInt8
+                  LIST id: 47, nodes: 2
+                    COLUMN id: 24, column_name: a, result_type: UInt64, source_id: 6
+                    COLUMN id: 45, column_name: a, result_type: UInt64, source_id: 15
+              FUNCTION id: 48, function_name: equals, function_type: ordinary, result_type: UInt8
                 ARGUMENTS
-                  LIST id: 60, nodes: 2
-                    COLUMN id: 61, column_name: a, result_type: UInt64, source_id: 9
-                    COLUMN id: 62, column_name: a, result_type: UInt64, source_id: 15
-              FUNCTION id: 63, function_name: equals, function_type: ordinary, result_type: UInt8
+                  LIST id: 49, nodes: 2
+                    COLUMN id: 29, column_name: a, result_type: UInt64, source_id: 9
+                    COLUMN id: 45, column_name: a, result_type: UInt64, source_id: 15
+              FUNCTION id: 50, function_name: equals, function_type: ordinary, result_type: UInt8
                 ARGUMENTS
-                  LIST id: 64, nodes: 2
-                    COLUMN id: 65, column_name: a, result_type: UInt64, source_id: 12
-                    COLUMN id: 66, column_name: a, result_type: UInt64, source_id: 15
+                  LIST id: 51, nodes: 2
+                    COLUMN id: 36, column_name: a, result_type: UInt64, source_id: 12
+                    COLUMN id: 45, column_name: a, result_type: UInt64, source_id: 15
 
 SELECT
     __table1.a AS `t1.a`,

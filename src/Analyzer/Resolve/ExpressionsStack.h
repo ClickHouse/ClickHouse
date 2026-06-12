@@ -24,14 +24,6 @@ public:
         {
             if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
                 ++aggregate_functions_counter;
-
-            /// Capture the decision here and replay it in pop(); it can't be recomputed there
-            /// because resolving an IN rewrites its right-hand side in place (e.g. `x IN table`
-            /// -> `x IN (subquery)`), which would unbalance subquery_function_depth.
-            const bool is_subquery_scope = isSubqueryScopeFunction(function);
-            subquery_function_scope_stack.push_back(is_subquery_scope);
-            if (is_subquery_scope)
-                ++subquery_function_depth;
         }
 
         expressions.emplace_back(node);
@@ -56,11 +48,6 @@ public:
         {
             if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
                 --aggregate_functions_counter;
-
-            /// Replay the decision captured in push() rather than recomputing it; see push().
-            if (subquery_function_scope_stack.back())
-                --subquery_function_depth;
-            subquery_function_scope_stack.pop_back();
         }
 
         expressions.pop_back();
@@ -91,11 +78,6 @@ public:
     bool hasAggregateFunction() const
     {
         return aggregate_functions_counter > 0;
-    }
-
-    bool isInsideSubqueryFunction() const
-    {
-        return subquery_function_depth > 0;
     }
 
     QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
@@ -191,9 +173,6 @@ private:
 
     QueryTreeNodes expressions;
     size_t aggregate_functions_counter = 0;
-    size_t subquery_function_depth = 0;
-    /// Per-pushed-function record of isSubqueryScopeFunction, replayed in pop(); see push().
-    std::vector<char> subquery_function_scope_stack;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 

@@ -1500,8 +1500,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
-    const bool inside_subquery_function = scope.expressions_in_resolve_process_stack.isInsideSubqueryFunction();
-
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
     bool already_in_resolve_process = false;
@@ -1512,11 +1510,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
     else
     {
-        if (!inside_subquery_function)
+        auto cached_result = scope.findCachedIdentifier(identifier_lookup, identifier_resolve_context);
+        if (cached_result)
         {
-            auto cached_result = scope.findCachedIdentifier(identifier_lookup, identifier_resolve_context);
-            if (cached_result)
-                return *cached_result;
+            validateSubqueryDepth(cached_result->resolved_identifier, scope.subquery_depth, scope.context->getSettingsRef()[Setting::max_subquery_depth]);
+            return *cached_result;
         }
 
         auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
@@ -1611,7 +1609,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
     if (!resolve_result.resolved_identifier
         && identifier_lookup.isExpressionLookup()
-        && identifier_resolve_context.scope_to_resolve_alias_expression == nullptr
+        && identifier_resolve_context.isInitialContext()
         && identifier_resolve_context.allow_to_resolve_niladic_functions)
     {
         const auto & function_factory = FunctionFactory::instance();
@@ -1632,7 +1630,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (it->second.count == 0)
     {
         scope.identifier_in_lookup_process.erase(it);
-        if (resolve_result.resolved_identifier && !inside_subquery_function)
+        if (resolve_result.resolved_identifier)
             scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
     }
 
@@ -3742,6 +3740,12 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 scope.nullable_group_by_keys.insert(group_by_elem);
         }
     }
+
+    if (!scope.nullable_group_by_keys.empty())
+    {
+        resolved_expressions.clear();
+        scope.clearIdentifierCache();
+    }
 }
 
 /** Validate data types of GROUP BY key.
@@ -5840,12 +5844,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasGroupBy())
         resolveGroupByNode(query_node_typed, scope);
-
-    if (scope.group_by_use_nulls)
-    {
-        resolved_expressions.clear();
-        scope.clearIdentifierCache();
-    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
