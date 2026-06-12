@@ -37,6 +37,7 @@
 #include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/ThreadStackSize.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
@@ -617,7 +618,7 @@ void LocalServer::startServers(const ServerType & server_type)
             /* minCapacity */ 3,
             /* maxCapacity */ server_settings[ServerSetting::max_connections],
             /* idleTime */ 60,
-            /* stackSize */ POCO_THREAD_STACK_SIZE,
+            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
             server_settings[ServerSetting::global_profiler_real_time_period_ns],
             server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
