@@ -79,7 +79,7 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 
         for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
         {
-            if (typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
+            if (hasAggregateFunctionType(col.type))
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "TTL expression cannot reference column '{}' with type {}",
                     col.name, col.type->getName());
@@ -363,6 +363,18 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
 
     checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+
+    if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+    {
+        for (const auto & col : where_expression->getRequiredColumnsWithTypes())
+        {
+            if (hasAggregateFunctionType(col.type))
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                    "TTL WHERE expression cannot reference column '{}' with type {}",
+                    col.name, col.type->getName());
+        }
+    }
+
     return result;
 }
 
