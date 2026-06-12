@@ -980,6 +980,16 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// See `truncating_settings`: with this on, `count()` over an empty input
     /// returns zero rows while the NoREC `countIf` form returns one `0` row.
     oracle_context->setSetting("empty_result_for_aggregation_by_empty_set", Field(false));
+    /// Constraint-based optimization trusts `CONSTRAINT ... ASSUME ...`
+    /// without checking. When a table's data violates its ASSUME constraint
+    /// (the fuzz corpus has such tables, e.g. `constraint_test_*`), the
+    /// optimizer may simplify a predicate using the (false) assumption in one
+    /// rewrite form but evaluate the real data in another, so the reference
+    /// and rewrite legitimately disagree — optimizer-dependent by design, not
+    /// a bug. Evaluate real data consistently by pinning the constraint
+    /// optimizer (and the CNF conversion that feeds it) off.
+    oracle_context->setSetting("optimize_using_constraints", Field(false));
+    oracle_context->setSetting("convert_query_to_cnf", Field(false));
     /// Neutralize session-leaked read/result caps (a seed's `SET
     /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
     /// oracle sub-queries asymmetrically — see `truncating_settings`).
