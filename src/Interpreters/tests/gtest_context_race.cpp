@@ -229,6 +229,52 @@ TEST(Context, MakeQueryContextDoesNotInheritPrivileges)
     }
 }
 
+/// Regression test for a data race on `ContextSharedPart::trace_collector`.
+///
+/// `hasTraceCollector()` used to read `std::optional<TraceCollector>::has_value()`
+/// while another thread mutated that optional via `createTraceCollector()` /
+/// `shutdown()`. The fix reads a separate `std::atomic<bool>` instead. This races
+/// concurrent `hasTraceCollector()` readers against a `createTraceCollector()`
+/// writer: under TSan it reports a race on the unfixed code and is clean with the
+/// fix; on non-instrumented builds it just exercises the path. See STID 2604-3ab7.
+TEST(Context, TraceCollectorPresenceRace)
+{
+    /// `createCopy` keeps the same `ContextSharedPart`, so the calls below act on
+    /// the process-global trace_collector. A second `ContextSharedPart` cannot be
+    /// constructed in one process (the constructor enforces a singleton), so this
+    /// shared copy is the only way to exercise the create/observe transition.
+    auto context = Context::createCopy(getContext().context);
+
+    constexpr size_t num_reader_threads = 4;
+    std::atomic<bool> stop{false};
+
+    std::vector<std::thread> readers;
+    readers.reserve(num_reader_threads);
+    for (size_t i = 0; i < num_reader_threads; ++i)
+    {
+        readers.emplace_back([&]
+        {
+            while (!stop.load(std::memory_order_relaxed))
+                (void)context->hasTraceCollector();
+        });
+    }
+
+    /// Writer: create the trace collector while readers observe presence. The
+    /// `emplace()` inside `createTraceCollector()` is the write that races the
+    /// readers' `has_value()` read on the unfixed code. `createTraceCollector()`
+    /// is idempotent, so a single call is enough to exercise the transition.
+    context->createTraceCollector();
+    EXPECT_TRUE(context->hasTraceCollector());
+
+    /// Keep observing the post-create state too, then stop the readers.
+    for (size_t i = 0; i < 1000; ++i)
+        (void)context->hasTraceCollector();
+
+    stop.store(true, std::memory_order_relaxed);
+    for (auto & t : readers)
+        t.join();
+}
+
 /// Regression test for a startup race between DNSCacheUpdater and ConfigReloader.
 ///
 /// DNSCacheUpdater::run() can call Context::reloadClusterConfig() before the first
