@@ -104,7 +104,9 @@ void Rope::extendIntervalsFront(size_t bytes)
 
 void Rope::advance(size_t bytes)
 {
-    if (nodes.empty())
+    /// advance(0) must stay a pure no-op: anchoring `consumed_pos` to the front without
+    /// consuming anything would make a fresh rope reject legal out-of-order appends.
+    if (bytes == 0 || nodes.empty())
         return;
 
     /// Work from an absolute position, not by popping the front node's physical size: that

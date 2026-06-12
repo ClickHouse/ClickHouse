@@ -212,8 +212,9 @@ private:
     /// front node is released or when nodes are empty.
     size_t front_offset = 0;
 
-    /// Highest logical position consumed so far (set by `advance` / `tryRewind`).
-    /// `append` / `slice` use it as the consumed frontier -- unlike
+    /// The consumed frontier: the logical position consumption has reached (set by
+    /// `advance` / `tryRewind`; a backward rewind lowers it, re-opening bytes).
+    /// `append` / `slice` clamp against it -- unlike
     /// `front().logical_offset + front_offset`, it stays correct after `advance`
     /// drops the front node into a gap. `0` on a fresh rope, so out-of-order appends work.
     size_t consumed_pos = 0;
