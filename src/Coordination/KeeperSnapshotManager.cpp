@@ -1258,6 +1258,12 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
 }
 
 template<typename Storage>
+std::map<uint64_t, SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const
+{
+    return existing_snapshots;
+}
+
+template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getSnapshotPin(uint64_t log_idx) const
 {
     auto it = existing_snapshots.find(log_idx);
