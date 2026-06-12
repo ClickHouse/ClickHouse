@@ -44,3 +44,13 @@ open('$TMP_DIR/ice/metadata/version-hint.text', 'w').write('1')
 "
 $CLICKHOUSE_LOCAL --query "DESCRIBE TABLE icebergLocal('$TMP_DIR/ice') FORMAT Null" 2>&1 \
     | grep -qF 'JSONException' && echo 'iceberg_depth OK' || echo 'iceberg_depth FAIL'
+
+# Paimon parses its schema file (schema/schema-N) with Poco before validation; a deeply nested
+# schema must be rejected with a JSON exception, not crash (reachable at default settings).
+mkdir -p "$TMP_DIR/pm/schema"
+python3 -c "
+N = 50000
+open('$TMP_DIR/pm/schema/schema-0', 'wb').write(b'{' + b'\"a\":{' * N + b'\"x\":1' + b'}' * N + b'}')
+"
+$CLICKHOUSE_LOCAL --query "DESCRIBE TABLE paimonLocal('$TMP_DIR/pm') FORMAT Null" 2>&1 \
+    | grep -qF 'JSONException' && echo 'paimon_depth OK' || echo 'paimon_depth FAIL'
