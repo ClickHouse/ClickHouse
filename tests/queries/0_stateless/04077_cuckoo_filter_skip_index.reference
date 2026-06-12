@@ -1,0 +1,217 @@
+-- { echo }
+
+DROP TABLE IF EXISTS t_cuckoo;
+DROP TABLE IF EXISTS t_bloom;
+CREATE TABLE t_cuckoo
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE cuckoo_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+CREATE TABLE t_bloom
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+INSERT INTO t_cuckoo SELECT number FROM numbers(200);
+INSERT INTO t_bloom SELECT number FROM numbers(200);
+SELECT count() FROM t_cuckoo WHERE k = 137;
+1
+SELECT count() FROM t_bloom WHERE k = 137;
+1
+SELECT count() FROM t_cuckoo WHERE k != 7;
+199
+SELECT count() FROM t_bloom WHERE k != 7;
+199
+SELECT count() FROM t_cuckoo WHERE k NOT IN (7);
+199
+SELECT count() FROM t_bloom WHERE k NOT IN (7);
+199
+SELECT count() FROM t_cuckoo WHERE k IN (SELECT number FROM numbers(200));
+200
+SELECT count() FROM t_bloom WHERE k IN (SELECT number FROM numbers(200));
+200
+SELECT count() FROM t_cuckoo WHERE k IN (1000000, 1000001, 1000002)
+SETTINGS force_data_skipping_indices = 'idx_k';
+0
+SELECT (sum(explain LIKE '%Skip%') > 0) AND (sum(explain LIKE '%idx_k%') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT * FROM t_cuckoo WHERE k = 42
+);
+1
+SELECT (sum(explain LIKE '%Skip%') > 0) AND (sum(explain LIKE '%idx_k%') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT * FROM t_bloom WHERE k = 42
+);
+1
+DROP TABLE t_cuckoo;
+DROP TABLE t_bloom;
+DROP TABLE IF EXISTS t_empty_c;
+DROP TABLE IF EXISTS t_empty_b;
+CREATE TABLE t_empty_c
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE cuckoo_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+CREATE TABLE t_empty_b
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+SELECT count() FROM t_empty_c WHERE k = 0;
+0
+SELECT count() FROM t_empty_b WHERE k = 0;
+0
+DROP TABLE t_empty_c;
+DROP TABLE t_empty_b;
+DROP TABLE IF EXISTS t_str_c;
+DROP TABLE IF EXISTS t_str_b;
+CREATE TABLE t_str_c
+(
+    `s` String,
+    INDEX idx_s s TYPE cuckoo_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY s
+SETTINGS index_granularity = 64;
+CREATE TABLE t_str_b
+(
+    `s` String,
+    INDEX idx_s s TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY s
+SETTINGS index_granularity = 64;
+INSERT INTO t_str_c SELECT toString(number % 3) FROM numbers(300);
+INSERT INTO t_str_b SELECT toString(number % 3) FROM numbers(300);
+SELECT count() FROM t_str_c WHERE s = '1';
+100
+SELECT count() FROM t_str_b WHERE s = '1';
+100
+SELECT count() FROM t_str_c WHERE s != '0';
+200
+SELECT count() FROM t_str_b WHERE s != '0';
+200
+DROP TABLE t_str_c;
+DROP TABLE t_str_b;
+DROP TABLE IF EXISTS t_map_c;
+DROP TABLE IF EXISTS t_map_b;
+CREATE TABLE t_map_c
+(
+    `id` UInt32,
+    `m` Map(String, String),
+    INDEX idx_mk mapKeys(m) TYPE cuckoo_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+CREATE TABLE t_map_b
+(
+    `id` UInt32,
+    `m` Map(String, String),
+    INDEX idx_mk mapKeys(m) TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO t_map_c VALUES (0, {'K0': 'V0'}), (1, {'K1': 'V1'});
+INSERT INTO t_map_b VALUES (0, {'K0': 'V0'}), (1, {'K1': 'V1'});
+SELECT count() FROM t_map_c WHERE m['K0'] = 'V0' SETTINGS force_data_skipping_indices = 'idx_mk';
+1
+SELECT count() FROM t_map_b WHERE m['K0'] = 'V0' SETTINGS force_data_skipping_indices = 'idx_mk';
+1
+SELECT count() FROM t_map_c WHERE m['K9'] = 'V9' SETTINGS force_data_skipping_indices = 'idx_mk';
+0
+SELECT count() FROM t_map_b WHERE m['K9'] = 'V9' SETTINGS force_data_skipping_indices = 'idx_mk';
+0
+DROP TABLE t_map_c;
+DROP TABLE t_map_b;
+DROP TABLE IF EXISTS t_arr_c;
+DROP TABLE IF EXISTS t_arr_b;
+CREATE TABLE t_arr_c
+(
+    `id` UInt32,
+    `a` Array(String),
+    INDEX idx_a a TYPE cuckoo_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+CREATE TABLE t_arr_b
+(
+    `id` UInt32,
+    `a` Array(String),
+    INDEX idx_a a TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO t_arr_c VALUES (0, ['p', 'q']), (1, ['r']);
+INSERT INTO t_arr_b VALUES (0, ['p', 'q']), (1, ['r']);
+SELECT count() FROM t_arr_c WHERE hasAny(a, ['p']) SETTINGS force_data_skipping_indices = 'idx_a';
+1
+SELECT count() FROM t_arr_b WHERE hasAny(a, ['p']) SETTINGS force_data_skipping_indices = 'idx_a';
+1
+SELECT count() FROM t_arr_c WHERE hasAny(a, ['zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+0
+SELECT count() FROM t_arr_b WHERE hasAny(a, ['zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+0
+SELECT count() FROM t_arr_c WHERE hasAll(a, ['p', 'q']) SETTINGS force_data_skipping_indices = 'idx_a';
+1
+SELECT count() FROM t_arr_b WHERE hasAll(a, ['p', 'q']) SETTINGS force_data_skipping_indices = 'idx_a';
+1
+SELECT count() FROM t_arr_c WHERE hasAll(a, ['p', 'zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+0
+SELECT count() FROM t_arr_b WHERE hasAll(a, ['p', 'zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+0
+DROP TABLE t_arr_c;
+DROP TABLE t_arr_b;
+DROP TABLE IF EXISTS t_tpl_c;
+DROP TABLE IF EXISTS t_tpl_b;
+CREATE TABLE t_tpl_c
+(
+    `id` UInt32,
+    `x` UInt64,
+    `y` UInt64,
+    INDEX idx_xy tuple(x, y) TYPE cuckoo_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+CREATE TABLE t_tpl_b
+(
+    `id` UInt32,
+    `x` UInt64,
+    `y` UInt64,
+    INDEX idx_xy tuple(x, y) TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO t_tpl_c VALUES (0, 10, 20), (1, 30, 40);
+INSERT INTO t_tpl_b VALUES (0, 10, 20), (1, 30, 40);
+SELECT count() FROM t_tpl_c WHERE x = 10 AND y = 20 SETTINGS force_data_skipping_indices = 'idx_xy';
+1
+SELECT count() FROM t_tpl_b WHERE x = 10 AND y = 20 SETTINGS force_data_skipping_indices = 'idx_xy';
+1
+SELECT count() FROM t_tpl_c WHERE x = 99 AND y = 99 SETTINGS force_data_skipping_indices = 'idx_xy';
+0
+SELECT count() FROM t_tpl_b WHERE x = 99 AND y = 99 SETTINGS force_data_skipping_indices = 'idx_xy';
+0
+DROP TABLE t_tpl_c;
+DROP TABLE t_tpl_b;

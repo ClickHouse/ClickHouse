@@ -1,0 +1,232 @@
+SET allow_experimental_binary_fuse_filter_index = 1;
+
+-- { echo }
+
+DROP TABLE IF EXISTS t_bf;
+DROP TABLE IF EXISTS t_bloom;
+
+CREATE TABLE t_bf
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE binary_fuse_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+
+CREATE TABLE t_bloom
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+
+INSERT INTO t_bf SELECT number FROM numbers(200);
+INSERT INTO t_bloom SELECT number FROM numbers(200);
+
+SELECT count() FROM t_bf WHERE k = 137;
+SELECT count() FROM t_bloom WHERE k = 137;
+
+SELECT count() FROM t_bf WHERE k != 7;
+SELECT count() FROM t_bloom WHERE k != 7;
+
+SELECT count() FROM t_bf WHERE k NOT IN (7);
+SELECT count() FROM t_bloom WHERE k NOT IN (7);
+
+SELECT count() FROM t_bf WHERE k IN (SELECT number FROM numbers(200));
+SELECT count() FROM t_bloom WHERE k IN (SELECT number FROM numbers(200));
+
+SELECT count() FROM t_bf WHERE k IN (1000000, 1000001, 1000002)
+SETTINGS force_data_skipping_indices = 'idx_k';
+
+SELECT (sum(explain LIKE '%Skip%') > 0) AND (sum(explain LIKE '%idx_k%') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT * FROM t_bf WHERE k = 42
+);
+
+SELECT (sum(explain LIKE '%Skip%') > 0) AND (sum(explain LIKE '%idx_k%') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT * FROM t_bloom WHERE k = 42
+);
+
+DROP TABLE t_bf;
+DROP TABLE t_bloom;
+
+DROP TABLE IF EXISTS t_empty_bf;
+DROP TABLE IF EXISTS t_empty_b;
+
+CREATE TABLE t_empty_bf
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE binary_fuse_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+
+CREATE TABLE t_empty_b
+(
+    `k` UInt64,
+    INDEX idx_k k TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 64;
+
+SELECT count() FROM t_empty_bf WHERE k = 0;
+SELECT count() FROM t_empty_b WHERE k = 0;
+
+DROP TABLE t_empty_bf;
+DROP TABLE t_empty_b;
+
+DROP TABLE IF EXISTS t_str_bf;
+DROP TABLE IF EXISTS t_str_b;
+
+CREATE TABLE t_str_bf
+(
+    `s` String,
+    INDEX idx_s s TYPE binary_fuse_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY s
+SETTINGS index_granularity = 64;
+
+CREATE TABLE t_str_b
+(
+    `s` String,
+    INDEX idx_s s TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY s
+SETTINGS index_granularity = 64;
+
+INSERT INTO t_str_bf SELECT toString(number % 3) FROM numbers(300);
+INSERT INTO t_str_b SELECT toString(number % 3) FROM numbers(300);
+
+SELECT count() FROM t_str_bf WHERE s = '1';
+SELECT count() FROM t_str_b WHERE s = '1';
+
+SELECT count() FROM t_str_bf WHERE s != '0';
+SELECT count() FROM t_str_b WHERE s != '0';
+
+DROP TABLE t_str_bf;
+DROP TABLE t_str_b;
+
+DROP TABLE IF EXISTS t_map_bf;
+DROP TABLE IF EXISTS t_map_b;
+
+CREATE TABLE t_map_bf
+(
+    `id` UInt32,
+    `m` Map(String, String),
+    INDEX idx_mk mapKeys(m) TYPE binary_fuse_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+CREATE TABLE t_map_b
+(
+    `id` UInt32,
+    `m` Map(String, String),
+    INDEX idx_mk mapKeys(m) TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_map_bf VALUES (0, {'K0': 'V0'}), (1, {'K1': 'V1'});
+INSERT INTO t_map_b VALUES (0, {'K0': 'V0'}), (1, {'K1': 'V1'});
+
+SELECT count() FROM t_map_bf WHERE m['K0'] = 'V0' SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_b WHERE m['K0'] = 'V0' SETTINGS force_data_skipping_indices = 'idx_mk';
+
+SELECT count() FROM t_map_bf WHERE m['K9'] = 'V9' SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT count() FROM t_map_b WHERE m['K9'] = 'V9' SETTINGS force_data_skipping_indices = 'idx_mk';
+
+DROP TABLE t_map_bf;
+DROP TABLE t_map_b;
+
+DROP TABLE IF EXISTS t_arr_bf;
+DROP TABLE IF EXISTS t_arr_b;
+
+CREATE TABLE t_arr_bf
+(
+    `id` UInt32,
+    `a` Array(String),
+    INDEX idx_a a TYPE binary_fuse_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+CREATE TABLE t_arr_b
+(
+    `id` UInt32,
+    `a` Array(String),
+    INDEX idx_a a TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_arr_bf VALUES (0, ['p', 'q']), (1, ['r']);
+INSERT INTO t_arr_b VALUES (0, ['p', 'q']), (1, ['r']);
+
+SELECT count() FROM t_arr_bf WHERE hasAny(a, ['p']) SETTINGS force_data_skipping_indices = 'idx_a';
+SELECT count() FROM t_arr_b WHERE hasAny(a, ['p']) SETTINGS force_data_skipping_indices = 'idx_a';
+
+SELECT count() FROM t_arr_bf WHERE hasAny(a, ['zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+SELECT count() FROM t_arr_b WHERE hasAny(a, ['zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+
+SELECT count() FROM t_arr_bf WHERE hasAll(a, ['p', 'q']) SETTINGS force_data_skipping_indices = 'idx_a';
+SELECT count() FROM t_arr_b WHERE hasAll(a, ['p', 'q']) SETTINGS force_data_skipping_indices = 'idx_a';
+
+SELECT count() FROM t_arr_bf WHERE hasAll(a, ['p', 'zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+SELECT count() FROM t_arr_b WHERE hasAll(a, ['p', 'zzz']) SETTINGS force_data_skipping_indices = 'idx_a';
+
+DROP TABLE t_arr_bf;
+DROP TABLE t_arr_b;
+
+DROP TABLE IF EXISTS t_tpl_bf;
+DROP TABLE IF EXISTS t_tpl_b;
+
+CREATE TABLE t_tpl_bf
+(
+    `id` UInt32,
+    `x` UInt64,
+    `y` UInt64,
+    INDEX idx_xy tuple(x, y) TYPE binary_fuse_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+CREATE TABLE t_tpl_b
+(
+    `id` UInt32,
+    `x` UInt64,
+    `y` UInt64,
+    INDEX idx_xy tuple(x, y) TYPE bloom_filter(0.05) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_tpl_bf VALUES (0, 10, 20), (1, 30, 40);
+INSERT INTO t_tpl_b VALUES (0, 10, 20), (1, 30, 40);
+
+SELECT count() FROM t_tpl_bf WHERE x = 10 AND y = 20 SETTINGS force_data_skipping_indices = 'idx_xy';
+SELECT count() FROM t_tpl_b WHERE x = 10 AND y = 20 SETTINGS force_data_skipping_indices = 'idx_xy';
+
+SELECT count() FROM t_tpl_bf WHERE x = 99 AND y = 99 SETTINGS force_data_skipping_indices = 'idx_xy';
+SELECT count() FROM t_tpl_b WHERE x = 99 AND y = 99 SETTINGS force_data_skipping_indices = 'idx_xy';
+
+DROP TABLE t_tpl_bf;
+DROP TABLE t_tpl_b;
