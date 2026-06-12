@@ -24,30 +24,30 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-DiskCacheProvider::DiskCacheProvider(
-    FileCachePtr cache_,
-    const FilesystemCacheSettings & cache_settings_,
-    const String & query_id_,
-    ThrottlerPtr local_throttler_,
-    std::optional<FileCacheKey> custom_cache_key_,
-    std::optional<FileCacheOriginInfo> custom_origin_)
-    : cache(std::move(cache_))
-    , cache_settings(cache_settings_)
-    , local_throttler(std::move(local_throttler_))
-    , custom_cache_key(std::move(custom_cache_key_))
-    , custom_origin(std::move(custom_origin_))
-    /// 16 keep-alive anchors, untracked metrics; `EqualWeightFunction` makes the
-    /// byte cap an entry count.
-    , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
+std::shared_ptr<ReadBufferFromFileBase> StreamingReaderSlot::tryCheckout(const String & p, size_t offset)
 {
-    /// Register a per-query context if `query_id_` is non-empty and the
-    /// cache settings request a per-query download budget. `getQueryContextHolder`
-    /// returns null when `filesystem_cache_max_download_size == 0` or no query
-    /// limit is configured on the cache, which is the unbounded path.
-    query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
+    std::lock_guard lock(mutex);
+    if (checked_out || !reader || path != p || next_position != offset)
+        return nullptr;
+    checked_out = true;
+    return reader;
 }
 
+void StreamingReaderSlot::checkin(const String & p, std::shared_ptr<ReadBufferFromFileBase> r, size_t next_pos)
+{
+    std::lock_guard lock(mutex);
+    path = p;
+    reader = std::move(r);
+    next_position = next_pos;
+    checked_out = false;
+}
+
+void StreamingReaderSlot::abandon()
+{
+    std::lock_guard lock(mutex);
+    reader = nullptr;
+    checked_out = false;
+}
 
 namespace
 {
@@ -135,7 +135,6 @@ void preadSegmentNode(
 }
 
 }
-
 
 DiskCacheReader::DiskCacheReader(
     std::shared_ptr<FileSegmentsHolder> holder_,
@@ -243,7 +242,6 @@ Rope DiskCacheReader::read(ByteRange sub)
     return result;
 }
 
-
 DiskCacheWriter::DiskCacheWriter(
     FileCachePtr cache_,
     size_t object_file_offset_,
@@ -262,42 +260,6 @@ bool DiskCacheWriter::complete() const
 {
     /// `committed_ranges` covers the whole aligned range iff subtracting it leaves nothing.
     return committed_ranges.subtract(aligned_range).empty();
-}
-
-bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset)
-{
-    /// `FileSegment::write` leaves the segment in
-    /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION` on `ErrnoException`. Disk-full /
-    /// quota are fail-open; other errors honour `skipCacheOnDiskFailure`.
-    try
-    {
-        segment.write(data, size, offset);
-        return true;
-    }
-    catch (ErrnoException & e)
-    {
-        const int code = e.getErrno();
-        const bool is_no_space_left = code == 28 || code == 122;
-        chassert(segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-        if (is_no_space_left)
-        {
-            LOG_INFO(log, "DiskCacheWriter::write: insert into cache skipped due to insufficient disk space: {}",
-                e.displayText());
-        }
-        else if (cache->skipCacheOnDiskFailure())
-        {
-            LOG_ERROR(log, "DiskCacheWriter::write: insert into cache skipped due to disk IO error: {}",
-                e.displayText());
-        }
-        else
-        {
-            throw Exception(ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK,
-                "Filesystem cache disk IO error (errno {}): {}. "
-                "Consider setting skip_cache_on_disk_failure=true in cache config.",
-                code, e.displayText());
-        }
-        return false;
-    }
 }
 
 size_t DiskCacheWriter::write(Rope data)
@@ -496,6 +458,41 @@ CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
     return nullptr;
 }
 
+bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset)
+{
+    /// `FileSegment::write` leaves the segment in
+    /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION` on `ErrnoException`. Disk-full /
+    /// quota are fail-open; other errors honour `skipCacheOnDiskFailure`.
+    try
+    {
+        segment.write(data, size, offset);
+        return true;
+    }
+    catch (ErrnoException & e)
+    {
+        const int code = e.getErrno();
+        const bool is_no_space_left = code == 28 || code == 122;
+        chassert(segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        if (is_no_space_left)
+        {
+            LOG_INFO(log, "DiskCacheWriter::write: insert into cache skipped due to insufficient disk space: {}",
+                e.displayText());
+        }
+        else if (cache->skipCacheOnDiskFailure())
+        {
+            LOG_ERROR(log, "DiskCacheWriter::write: insert into cache skipped due to disk IO error: {}",
+                e.displayText());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK,
+                "Filesystem cache disk IO error (errno {}): {}. "
+                "Consider setting skip_cache_on_disk_failure=true in cache config.",
+                code, e.displayText());
+        }
+        return false;
+    }
+}
 
 DiskCacheView::DiskCacheView(
     std::shared_ptr<FileSegmentsHolder> read_holder_,
@@ -556,6 +553,28 @@ DiskCacheView::~DiskCacheView()
     }
 }
 
+DiskCacheProvider::DiskCacheProvider(
+    FileCachePtr cache_,
+    const FilesystemCacheSettings & cache_settings_,
+    const String & query_id_,
+    ThrottlerPtr local_throttler_,
+    std::optional<FileCacheKey> custom_cache_key_,
+    std::optional<FileCacheOriginInfo> custom_origin_)
+    : cache(std::move(cache_))
+    , cache_settings(cache_settings_)
+    , local_throttler(std::move(local_throttler_))
+    , custom_cache_key(std::move(custom_cache_key_))
+    , custom_origin(std::move(custom_origin_))
+    /// 16 keep-alive anchors, untracked metrics; `EqualWeightFunction` makes the
+    /// byte cap an entry count.
+    , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
+{
+    /// Register a per-query context if `query_id_` is non-empty and the
+    /// cache settings request a per-query download budget. `getQueryContextHolder`
+    /// returns null when `filesystem_cache_max_download_size == 0` or no query
+    /// limit is configured on the cache, which is the unbounded path.
+    query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
+}
 
 CacheViewPtr DiskCacheProvider::planResidencyView(
     const StoredObject & object,

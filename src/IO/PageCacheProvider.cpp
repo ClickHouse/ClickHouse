@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <algorithm>
 #include <cstring>
-#include <vector>
 
 namespace DB
 {
@@ -15,14 +14,24 @@ namespace ErrorCodes
 }
 
 
+PageCacheRopeBuffer::PageCacheRopeBuffer(PageCache::MappedPtr cell_)
+    : cell(std::move(cell_))
+{
+}
+
+
+PageCacheReader::PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_)
+    : range_member(range_in_file)
+    , cells(std::move(cells_))
+{
+}
+
 Rope PageCacheReader::read(ByteRange sub)
 {
     Rope result;
 
-    /// Clamp `sub` to this buffer's own range first: a `read` for a `sub` outside
-    /// `range_member` would otherwise reach into a neighbouring hit's cells. The
-    /// contract is `sub` within `[range().offset, readable())`; clamp defensively,
-    /// mirroring `DiskCacheReader::read`.
+    /// Clamp `sub` to this buffer's own range: a `read` outside `range_member`
+    /// would otherwise reach into a neighbouring hit's cells.
     {
         const size_t lo = std::max(sub.offset, range_member.offset);
         const size_t hi = std::min(sub.end(), range_member.end());
@@ -31,8 +40,7 @@ Rope PageCacheReader::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Build zero-copy `PageCacheRopeBuffer` nodes from the held cells overlapping
-    /// `sub`.
+    /// Zero-copy nodes from the held cells overlapping `sub`.
     for (const auto & held : cells)
     {
         if (!held.cell)
@@ -54,37 +62,50 @@ Rope PageCacheReader::read(ByteRange sub)
 }
 
 
+PageCacheWriter::PageCacheWriter(
+    PageCachePtr cache_,
+    PageCacheFile file_,
+    size_t block_size_,
+    size_t file_size_in_bytes_,
+    bool inject_eviction_,
+    bool bypass_if_missing_,
+    ByteRange aligned_range_in_file)
+    : cache(std::move(cache_))
+    , file(std::move(file_))
+    , block_size(block_size_)
+    , file_size_in_bytes(file_size_in_bytes_)
+    , inject_eviction(inject_eviction_)
+    , bypass_if_missing(bypass_if_missing_)
+    , range_member(aligned_range_in_file)
+{
+}
+
 bool PageCacheWriter::complete() const
 {
-    /// `committed_ranges` covers the whole aligned range iff subtracting it leaves nothing.
     return committed_ranges.subtract(range_member).empty();
 }
 
 size_t PageCacheWriter::write(Rope data)
 {
-    /// Bypass mode is a read-only probe: a miss must not populate the shared cache.
-    /// Skip entirely before any `getOrSet` — a bypass tier populates nothing.
+    /// A bypass tier populates nothing - skip before any `getOrSet`.
     if (bypass_if_missing)
         return 0;
 
     SipHash base_hash = file.baseHash();
 
     size_t bytes_written = 0;
-    /// Walk whole blocks of the aligned range; only act on those still uncommitted
-    /// that `data` FULLY covers (the executor delivers block-aligned data, so a
-    /// partially-covered block is left for a later `write`).
+    /// Walk whole blocks of the aligned range; only act on uncommitted blocks
+    /// that `data` FULLY covers (a partially-covered block is left for a later
+    /// `write`).
     for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
     {
-        /// Tail block is clamped to the file's real byte length so the cell carries
-        /// only valid bytes.
+        /// Tail block clamped to the file's real byte length.
         size_t this_block_size = std::min(block_size, file_size_in_bytes - offset);
         ByteRange block_range{offset, this_block_size};
 
-        /// Already committed (by us or a first-writer-wins peer adopted earlier) — skip.
         if (committed_ranges.subtract(block_range).empty())
             continue;
 
-        /// Skip a block `data` does not fully cover; it is left for a later write.
         if (!data.covers(block_range))
             continue;
 
@@ -92,7 +113,7 @@ size_t PageCacheWriter::write(Rope data)
         UInt128 key_hash = byte_range.hash(base_hash);
 
         /// First-writer-wins: if another thread cached this block concurrently,
-        /// `getOrSet` returns the existing cell and does not call the load lambda.
+        /// `getOrSet` returns the existing cell and skips the load lambda.
         bool loaded = false;
         size_t loaded_bytes = 0;
         auto cell = cache->getOrSet(
@@ -102,10 +123,9 @@ size_t PageCacheWriter::write(Rope data)
             inject_eviction,
             [&](const PageCache::MappedPtr & new_cell)
             {
-                /// `data` must start at the block boundary and be contiguous: the
-                /// cell expects block-relative layout, so a wrong start offset or an
-                /// internal gap would poison it. Partial-at-end (EOF) is fine;
-                /// leading/internal gaps throw. Same as the legacy `put`.
+                /// The cell expects block-relative layout: data must start at
+                /// the block boundary and have no internal gaps. Partial-at-end
+                /// (EOF) is fine.
                 Rope slice = data.slice(block_range);
                 ByteRange covered = slice.range();
                 size_t pos = covered.size;
@@ -134,11 +154,10 @@ size_t PageCacheWriter::write(Rope data)
             },
             key_hash);
 
-        /// ALWAYS adopt the returned cell (loaded by us OR an existing first-writer
-        /// cell). The byte is now cached either way, so mark the block committed —
-        /// otherwise `complete()` never becomes true under contention. Return only
-        /// the bytes WE wrote (`loaded_bytes`); a first-writer-wins loss contributes
-        /// 0 to the return but still advances `committed`.
+        /// ALWAYS adopt the returned cell (loaded by us OR an existing
+        /// first-writer cell) and mark the block committed - otherwise
+        /// `complete` never becomes true under contention. Return only the
+        /// bytes WE wrote.
         if (cell)
         {
             AdoptedBlock adopted;
@@ -174,8 +193,7 @@ Rope PageCacheWriter::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Serve from the adopted cells (self-populated page blocks) overlapping `sub`,
-    /// zero-copy — the page write buffer doubles as a read buffer.
+    /// Serve the self-populated blocks overlapping `sub`, zero-copy.
     for (const auto & block : blocks)
     {
         if (!block.cell)
@@ -197,12 +215,63 @@ Rope PageCacheWriter::read(ByteRange sub)
 }
 
 
+PageCacheProvider::PageCacheProvider(
+    PageCachePtr cache_,
+    PageCacheFile file_,
+    size_t block_size_,
+    bool inject_eviction_,
+    bool bypass_if_missing_,
+    size_t file_size_in_bytes_)
+    : cache(std::move(cache_))
+    , file(std::move(file_))
+    , block_size(block_size_)
+    , inject_eviction(inject_eviction_)
+    , bypass_if_missing(bypass_if_missing_)
+    , file_size_in_bytes(file_size_in_bytes_)
+{
+}
+
+CacheViewPtr PageCacheProvider::planResidencyView(
+    const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range_in_file)
+{
+    return buildView(range_in_file);
+}
+
+VectorWithMemoryTracking<MissEntry> PageCacheProvider::openWriteBuffers(
+    const StoredObject & /*object*/,
+    size_t /*object_file_offset*/,
+    const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
+{
+    if (!populatesOnMiss())
+        return {};
+
+    VectorWithMemoryTracking<MissEntry> result;
+    result.reserve(aligned_miss_ranges.size());
+
+    /// PageCache is file-level - `object` / `object_file_offset` are ignored.
+    /// Cells are created lazily on the first `write` of each block.
+    for (const auto & aligned_file : aligned_miss_ranges)
+    {
+        auto writer = std::make_unique<PageCacheWriter>(
+            cache,
+            file,
+            block_size,
+            file_size_in_bytes,
+            inject_eviction,
+            bypass_if_missing,
+            aligned_file);
+        result.push_back(MissEntry{aligned_file, std::move(writer)});
+    }
+
+    return result;
+}
+
 CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
 {
     auto view = std::make_unique<PageCacheView>();
 
-    /// Block-align the request; the tail block is clamped to the file's real byte
-    /// length so a hit cell carries only valid bytes.
+    /// Block-align the request; the tail block is clamped to the file's real
+    /// byte length so a hit cell carries only valid bytes.
     size_t aligned_start = (range_in_file.offset / block_size) * block_size;
     size_t aligned_end = ((range_in_file.end() + block_size - 1) / block_size) * block_size;
     if (aligned_end > file_size_in_bytes)
@@ -210,8 +279,8 @@ CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
 
     SipHash base_hash = file.baseHash();
 
-    /// Accumulators for coalescing runs of adjacent same-kind blocks. A hit run
-    /// collects its cells; a miss run only tracks the spanned range.
+    /// Coalesce runs of adjacent same-kind blocks: a hit run collects its
+    /// cells; a miss run only tracks the spanned range.
     VectorWithMemoryTracking<PageCacheReader::HeldCell> run_cells;
     ByteRange run_range{0, 0};
     bool run_active = false;
@@ -228,8 +297,7 @@ CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
         }
         else
         {
-            /// `planResidencyView` never opens writers; that is
-            /// `openWriteBuffers`' job. Carry `writer == nullptr`.
+            /// Writers are `openWriteBuffers`' job; views carry null.
             view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
         }
         run_cells.clear();
@@ -243,11 +311,10 @@ CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
         UInt128 key_hash = byte_range.hash(base_hash);
         ByteRange block_file{offset, this_block_size};
 
-        /// Read-only probe — `cache->get` never creates a cell.
+        /// Read-only probe - `cache->get` never creates a cell.
         auto cell = cache->get(key_hash, inject_eviction);
         const bool is_hit = (cell != nullptr);
 
-        /// Break the run when the kind flips, then start/extend the current run.
         if (run_active && run_is_hit != is_hit)
             flush_run();
 
@@ -271,42 +338,6 @@ CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
         range_in_file.offset, range_in_file.end(), view->hit_entries.size(), view->miss_entries.size());
 
     return view;
-}
-
-CacheViewPtr PageCacheProvider::planResidencyView(
-    const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range_in_file)
-{
-    return buildView(range_in_file);
-}
-
-VectorWithMemoryTracking<MissEntry> PageCacheProvider::openWriteBuffers(
-    const StoredObject & /*object*/,
-    size_t /*object_file_offset*/,
-    const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
-{
-    /// A bypass tier populates nothing on miss, so it opens no writers.
-    if (!populatesOnMiss())
-        return {};
-
-    VectorWithMemoryTracking<MissEntry> result;
-    result.reserve(aligned_miss_ranges.size());
-
-    /// PageCache is file-level — `object` / `object_file_offset` are ignored.
-    /// Cells are created lazily on the first `write` of each block.
-    for (const auto & aligned_file : aligned_miss_ranges)
-    {
-        auto writer = std::make_unique<PageCacheWriter>(
-            cache,
-            file,
-            block_size,
-            file_size_in_bytes,
-            inject_eviction,
-            bypass_if_missing,
-            aligned_file);
-        result.push_back(MissEntry{aligned_file, std::move(writer)});
-    }
-
-    return result;
 }
 
 }

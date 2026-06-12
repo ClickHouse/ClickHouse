@@ -6,91 +6,74 @@
 #include <base/types.h>
 
 #include <memory>
-#include <vector>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
-/// Which storage tier a cache provider represents. Drives per-tier byte
-/// attribution in observability (`ReaderExecutorBytesFromPageCache` vs
-/// `ReaderExecutorBytesFromFilesystemCache`).
+/// Which storage tier a cache provider represents; drives per-tier byte
+/// attribution in observability.
 enum class CacheTier
 {
     PageCache,
     FilesystemCache,
 };
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// Per-range buffer API.
-///
-/// `planResidencyView` + `openWriteBuffers` decompose a request into HIT ranges,
-/// each owning a held `CacheReader`, and MISS ranges, each owning a held
-/// `CacheWriter`. The buffers are PER-RANGE and held by the executor's plan
-/// across many read windows: a read buffer is freely re-readable; a write buffer
-/// appends incrementally and owns its OWN segment ref(s), so it survives across
-/// windows and is finalized only at destruction. Coordinates are FILE-LEVEL
-/// throughout.
-/// ─────────────────────────────────────────────────────────────────────────────
+/// Per-range buffer API: `planResidencyView` + `openWriteBuffers` decompose a
+/// request into HIT ranges (each owning a held `CacheReader`) and MISS ranges
+/// (each owning a held `CacheWriter`). The buffers are held by the executor's
+/// plan across many read windows. Coordinates are FILE-LEVEL throughout.
 
 /// Held, re-readable view of ONE resident (hit) file-level range. Owns the pin
-/// that keeps its bytes alive for the buffer's whole lifetime. Re-readable any
-/// number of times, any sub-range; holds NO cursor (the executor's Rope owns it).
+/// that keeps its bytes alive; holds NO cursor (the executor's Rope owns it).
 class CacheReader
 {
 public:
     virtual ~CacheReader() = default;
 
-    /// Cache-aligned file-level range this buffer can serve (segment/block-aligned;
-    /// may be wider than the hit the plan asked for - the executor clamps).
+    /// Cache-aligned range this buffer can serve (may be wider than the hit
+    /// the plan asked for - the executor clamps).
     virtual ByteRange range() const = 0;
 
-    /// Committed-prefix end, file-level. == `range().end()` for a fully-resident
-    /// segment/block; for a partially-downloaded disk segment the LIVE current
-    /// write offset mapped to file-level, re-evaluated each call so a concurrent
-    /// downloader's growth is visible. The executor reads only up to `readable()`.
+    /// Committed-prefix end. == `range().end()` for a fully-resident segment
+    /// or block; for a partially-downloaded disk segment the LIVE write
+    /// offset, re-evaluated each call. Reads must stay below it.
     virtual size_t readable() const = 0;
 
-    /// Read `sub` (within `[range().offset, readable())`) as a Rope of file-level
-    /// nodes. Records `sub` on the owning `CacheView` for the deferred LRU bump.
+    /// Read `sub` (within `[range().offset, readable())`) as a Rope of
+    /// file-level nodes. Records `sub` for the view's deferred LRU bump.
     virtual Rope read(ByteRange sub) = 0;
 };
 
-/// Held, incrementally-fillable target for ONE miss file-level range. Owns its own
-/// writable segment ref(s) - NOT a shared holder a single `put` consumes - so it
-/// appends across many windows and is finalized only at destruction.
+/// Held, incrementally-fillable target for ONE miss file-level range. Owns its
+/// own writable segment ref(s), so it appends across many windows and is
+/// finalized only at destruction.
 class CacheWriter
 {
 public:
     virtual ~CacheWriter() = default;
 
-    /// Cache-ALIGNED file-level range. May extend BEYOND the requested miss range
-    /// (head/prefix below offset for disk; whole block for page).
+    /// Cache-ALIGNED range; may extend beyond the requested miss range.
     virtual ByteRange range() const = 0;
 
-    /// Bytes within `range()` already committed by this buffer (any order). The
-    /// next byte to fetch-and-store is the first offset in `range()` not committed.
+    /// Bytes within `range()` already committed by this buffer (any order).
     virtual const IntervalSet & committed() const = 0;
 
-    /// True once `range()` is fully committed; further `write` over committed bytes
-    /// is a no-op returning 0.
     virtual bool complete() const = 0;
 
-    /// Store the portion of `data` within (`range()` minus `committed()`), any
-    /// order. Returns bytes that newly landed (== bytes added to `committed()`); 0
-    /// for bytes outside `range()`, already committed, a lost downloader race,
-    /// reservation failure, bypass mode, or first-writer-wins. NEVER throws on
-    /// those - degrades to a partial or zero return.
+    /// Store the portion of `data` within `range()` minus `committed()`.
+    /// Returns the bytes that newly landed; 0 for bytes outside the range,
+    /// already committed, a lost downloader race, reservation failure or
+    /// bypass - NEVER throws on those, degrades to a partial or zero return.
     virtual size_t write(Rope data) = 0;
 
-    /// Serve an already-committed sub-range from this buffer's own held segment /
-    /// cells, without a source round-trip. `sub` must lie in `committed()`.
+    /// Serve an already-committed sub-range from this buffer's own held
+    /// segments/cells, without a source round-trip.
     virtual Rope read(ByteRange sub) = 0;
 
-    /// Opaque token keeping the partial segment under `frontier` non-evictable
-    /// while the live source connection streams into it (the bare segment ref this
-    /// buffer already holds). Null unless that segment is partially-downloaded with
-    /// a committed prefix and not detached. Default no-op (e.g. page cache).
+    /// Opaque token keeping the partial segment under `frontier`
+    /// non-evictable while the live source connection streams into it.
+    /// Default no-op (e.g. page cache).
     using CacheSegmentPin = std::shared_ptr<void>;
     virtual CacheSegmentPin pin(size_t /*frontier*/) const { return nullptr; }
 };
@@ -103,16 +86,16 @@ struct HitEntry { ByteRange range; CacheReaderPtr reader; };
 /// One miss range (cache-aligned) + its held write buffer (null on read-only/bypass).
 struct MissEntry { ByteRange range; CacheWriterPtr writer; };
 
-/// Decomposed lookup result: the hit/miss map with per-range buffers, held by the
-/// plan across windows. Its destructor is the SINGLE place the deferred LRU bump
-/// runs, and it must run AFTER finalizing every owned write buffer.
+/// Decomposed lookup result, held by the plan across windows. Its destructor
+/// is the SINGLE place the deferred LRU bump runs, after every owned write
+/// buffer is finalized.
 class CacheView
 {
 public:
     virtual ~CacheView() = default;
 
-    /// Sorted, disjoint; hits + misses tile the lookup range (clamped to EOF /
-    /// object end). Miss ranges are cache-ALIGNED and may extend beyond the request.
+    /// Sorted, disjoint; hits + misses tile the lookup range (clamped to
+    /// EOF / object end). Miss ranges are cache-ALIGNED.
     virtual const VectorWithMemoryTracking<HitEntry> & hits() const = 0;
     virtual const VectorWithMemoryTracking<MissEntry> & misses() const = 0;
 
@@ -127,47 +110,34 @@ class ICacheProvider
 public:
     virtual ~ICacheProvider() = default;
 
-    /// The storage tier this provider represents, used to attribute served
-    /// bytes to the right counter.
     virtual CacheTier tier() const = 0;
 
     /// Whether a miss on this tier is populated (write-through) or bypassed
-    /// (read-only, `put` is a no-op). Drives `WritePlan` promotion: a range served
-    /// from a slower tier is written up into the faster tiers that miss it, but
-    /// only the ones that populate. Mirrors the per-tier
-    /// `read_from_{filesystem,page}_cache_if_exists_otherwise_bypass_cache` setting.
-    /// Default: write-through.
+    /// (read-only, writes are no-ops). Drives promotion: a range served from
+    /// a slower tier is written up only into faster tiers that populate.
     virtual bool populatesOnMiss() const { return true; }
 
-    /// Granularity the foreground rounds the HEAD of a fetch DOWN to, so a read that
-    /// starts mid-cell fills that cell's aligned prefix (the segment/block this read
-    /// lands inside is created at the aligned floor, and its write buffer appends from
-    /// `cwo` = the aligned floor - a fetch that skipped the prefix would land nothing).
-    /// The aligned-prefix slack outside the requested window is counted as over-read.
-    /// `1` disables head over-read. Disk: `boundary_alignment`. Page: `block_size`.
+    /// Granularity the fetch HEAD is rounded DOWN to, so a read starting
+    /// mid-cell fills the cell's aligned prefix. The slack is counted as
+    /// over-read. `1` disables. Disk: `boundary_alignment`; page: `block_size`.
     virtual size_t fetchHeadAlignment() const { return 1; }
 
-    /// Granularity the foreground rounds the TAIL of a fetch UP to. Only tiers that
-    /// require WHOLE-cell writes need this (a page-cache block is first-writer-wins, so
-    /// a partially-written block can never be completed later). `1` disables tail
-    /// over-read - the right choice for incrementally-fillable tiers (a disk segment
-    /// appends at `cwo` and is continued by the next window). Page: `block_size`.
+    /// Granularity the fetch TAIL is rounded UP to. Needed only by tiers with
+    /// whole-cell writes (a page block is first-writer-wins, never completed
+    /// later); `1` for incrementally-fillable tiers.
     virtual size_t fetchTailAlignment() const { return 1; }
 
     virtual String name() const = 0;
 
-    /// Read-only residency probe over a (typically large) look-ahead range, held
-    /// across many stream windows: hit read buffers (pinning their resident segments)
-    /// + writer-null cache-aligned misses. MUST NOT mutate the cache (no segment
-    /// creation), so a fully-resident range costs only the probe. Misses are returned
-    /// cache-ALIGNED (alignment folded in - no separate `alignToCaches`). Default
-    /// throws until the provider implements it.
+    /// Read-only residency probe over a (typically large) look-ahead range:
+    /// hit read buffers (pinning their resident segments) + writer-null
+    /// cache-aligned misses. MUST NOT mutate the cache - a fully-resident
+    /// range costs only the probe. Default throws until implemented.
     virtual CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file);
 
-    /// Open ONLY the write buffers for already-known cache-aligned miss ranges,
-    /// without re-probing residency. Each buffer owns its writable segment ref(s) and
-    /// appends incrementally across windows. Returns empty when `!populatesOnMiss()`.
+    /// Open ONLY the write buffers for already-known cache-aligned miss
+    /// ranges, without re-probing residency. Empty when `!populatesOnMiss()`.
     /// Default throws until implemented.
     virtual VectorWithMemoryTracking<MissEntry> openWriteBuffers(
         const StoredObject & object, size_t object_file_offset,

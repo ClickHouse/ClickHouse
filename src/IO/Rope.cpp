@@ -39,160 +39,11 @@ void OwnedRopeBuffer::transferTo(MemoryTracker * /* new_tracker */)
     /// Will be implemented when PageCacheProvider needs it.
 }
 
-ByteRange Rope::range() const
-{
-    if (intervals.empty())
-        return {0, 0};
-    size_t start = intervals.front().offset;
-    size_t end = intervals.back().end();
-    return {start, end - start};
-}
-
-Rope::Span Rope::peek() const
-{
-    if (nodes.empty())
-        return {};
-    const RopeNode & n = nodes.front();
-    return Span{
-        const_cast<char *>(n.data()) + front_offset,
-        n.size - front_offset,
-        n.logical_offset + front_offset,
-    };
-}
-
-void Rope::shrinkIntervalsFront(size_t bytes)
-{
-    if (bytes == 0 || intervals.empty())
-        return;
-    ByteRange & first = intervals.front();
-    if (bytes >= first.size)
-    {
-        intervals.erase(intervals.begin());
-    }
-    else
-    {
-        first.offset += bytes;
-        first.size -= bytes;
-    }
-}
-
-void Rope::extendIntervalsFront(size_t bytes)
-{
-    if (bytes == 0)
-        return;
-    chassert(!intervals.empty());
-    chassert(intervals.front().offset >= bytes);
-    intervals.front().offset -= bytes;
-    intervals.front().size += bytes;
-}
-
-void Rope::advance(size_t bytes)
-{
-    while (bytes > 0 && !nodes.empty())
-    {
-        const size_t available = nodes.front().size - front_offset;
-        if (bytes >= available)
-        {
-            /// Consume the rest of the front node and release it.
-            shrinkIntervalsFront(available);
-            nodes.pop_front();
-            front_offset = 0;
-            bytes -= available;
-        }
-        else
-        {
-            /// Partial consumption inside the front node.
-            shrinkIntervalsFront(bytes);
-            front_offset += bytes;
-            bytes = 0;
-        }
-    }
-    /// If `bytes > 0` here the caller advanced past EOF — silently clamp.
-}
-
-bool Rope::tryRewind(size_t new_position)
-{
-    if (nodes.empty())
-        return false;
-
-    /// Reachable from the cursor = entire held nodes (their buffers are
-    /// alive). The lowest reachable byte is the ORIGINAL start of the
-    /// front node (`logical_offset`, not `+ front_offset`), because a
-    /// backward rewind into the buffer is supported.
-    const size_t reachable_lo = nodes.front().logical_offset;
-    const size_t reachable_hi = nodes.back().logical_offset + nodes.back().size;
-    if (new_position < reachable_lo || new_position > reachable_hi)
-        return false;
-
-    const RopeNode & front = nodes.front();
-    const size_t front_end = front.logical_offset + front.size;
-
-    if (new_position < front_end)
-    {
-        /// Inside the front node — just adjust `front_offset`. Going
-        /// backward extends `intervals.front()` so coverage queries
-        /// report the rewound-into bytes; going forward shrinks it.
-        const size_t new_front_offset = new_position - front.logical_offset;
-        if (new_front_offset > front_offset)
-            shrinkIntervalsFront(new_front_offset - front_offset);
-        else if (new_front_offset < front_offset)
-            extendIntervalsFront(front_offset - new_front_offset);
-        front_offset = new_front_offset;
-        return true;
-    }
-
-    /// new_position is past the front node. Walk later nodes by physical size
-    /// (advance() pops whole nodes, so a logical gap contributes no bytes).
-    /// Reject positions that land in a gap - no held node covers them, and a
-    /// successful tryRewind must leave the cursor exactly on new_position.
-    size_t phys = front.size - front_offset;
-    for (size_t i = 1; i < nodes.size(); ++i)
-    {
-        const RopeNode & node = nodes[i];
-        if (new_position < node.logical_offset)
-            return false;
-        if (new_position < node.logical_offset + node.size)
-        {
-            advance(phys + (new_position - node.logical_offset));
-            return true;
-        }
-        phys += node.size;
-    }
-
-    /// new_position == reachable_hi (exclusive end of the last node): EOF.
-    advance(phys);
-    return true;
-}
-
-void Rope::mergeInterval(ByteRange iv)
-{
-    if (iv.size == 0)
-        return;
-
-    /// Find the first existing interval that touches or overlaps `iv` — i.e.
-    /// the first one whose `end() >= iv.offset`. Anything strictly before
-    /// (end() < iv.offset) is left alone.
-    auto it = std::lower_bound(intervals.begin(), intervals.end(), iv.offset,
-        [](const ByteRange & ex, size_t v) { return ex.end() < v; });
-
-    size_t merged_start = iv.offset;
-    size_t merged_end = iv.end();
-    auto erase_begin = it;
-    while (it != intervals.end() && it->offset <= merged_end)
-    {
-        merged_start = std::min(merged_start, it->offset);
-        merged_end = std::max(merged_end, it->end());
-        ++it;
-    }
-    auto erase_end = it;
-    auto pos = intervals.erase(erase_begin, erase_end);
-    intervals.insert(pos, ByteRange{merged_start, merged_end - merged_start});
-}
 
 void Rope::append(RopeNode node)
 {
-    /// Insert into `nodes` keeping the sort by logical_offset (stable on tie:
-    /// equal-offset nodes keep insertion order).
+    /// Insert keeping the sort by `logical_offset` (stable on tie: equal-offset
+    /// nodes keep insertion order).
     ByteRange node_range = node.range();
     auto it = std::upper_bound(nodes.begin(), nodes.end(), node.logical_offset,
         [](size_t v, const RopeNode & n) { return v < n.logical_offset; });
@@ -206,10 +57,9 @@ void Rope::append(Rope && other)
         return;
 
     /// A partially-consumed `other` keeps its consumed prefix in the front node
-    /// (at the original `logical_offset`), while its intervals already start past
-    /// it - splicing the raw node would let `peek` resurrect those bytes that
-    /// `range`/`covers` report as gone. Normalize to the live range first; `slice`
-    /// trims the consumed prefix and yields `front_offset == 0`.
+    /// while its intervals already start past it - splicing the raw node would
+    /// let `peek` resurrect bytes that `range`/`covers` report as gone.
+    /// Normalize to the live range first; `slice` trims the consumed prefix.
     if (other.front_offset != 0)
     {
         append(other.slice(other.range()));
@@ -219,7 +69,7 @@ void Rope::append(Rope && other)
         return;
     }
 
-    /// Splice nodes then in-place merge — both halves are individually sorted
+    /// Splice nodes then in-place merge - both halves are individually sorted
     /// by `logical_offset` by invariant.
     size_t split_idx = nodes.size();
     nodes.insert(
@@ -239,12 +89,165 @@ void Rope::append(Rope && other)
     other.intervals.clear();
 }
 
+Rope::Span Rope::peek() const
+{
+    if (nodes.empty())
+        return {};
+    const RopeNode & n = nodes.front();
+    return Span{
+        const_cast<char *>(n.data()) + front_offset,
+        n.size - front_offset,
+        n.logical_offset + front_offset,
+    };
+}
+
+void Rope::advance(size_t bytes)
+{
+    while (bytes > 0 && !nodes.empty())
+    {
+        const size_t available = nodes.front().size - front_offset;
+        if (bytes >= available)
+        {
+            shrinkIntervalsFront(available);
+            nodes.pop_front();
+            front_offset = 0;
+            bytes -= available;
+        }
+        else
+        {
+            shrinkIntervalsFront(bytes);
+            front_offset += bytes;
+            bytes = 0;
+        }
+    }
+    /// If `bytes > 0` here the caller advanced past EOF - silently clamp.
+}
+
+bool Rope::tryRewind(size_t new_position)
+{
+    if (nodes.empty())
+        return false;
+
+    /// Reachable from the cursor = entire held nodes (their buffers are
+    /// alive). The lowest reachable byte is the ORIGINAL start of the front
+    /// node (`logical_offset`, not `+ front_offset`), because a backward
+    /// rewind into the buffer is supported.
+    const size_t reachable_lo = nodes.front().logical_offset;
+    const size_t reachable_hi = nodes.back().logical_offset + nodes.back().size;
+    if (new_position < reachable_lo || new_position > reachable_hi)
+        return false;
+
+    const RopeNode & front = nodes.front();
+    const size_t front_end = front.logical_offset + front.size;
+
+    if (new_position < front_end)
+    {
+        /// Inside the front node - just adjust `front_offset`, keeping
+        /// interval coverage in sync in both directions.
+        const size_t new_front_offset = new_position - front.logical_offset;
+        if (new_front_offset > front_offset)
+            shrinkIntervalsFront(new_front_offset - front_offset);
+        else if (new_front_offset < front_offset)
+            extendIntervalsFront(front_offset - new_front_offset);
+        front_offset = new_front_offset;
+        return true;
+    }
+
+    /// Past the front node. Walk later nodes by physical size (`advance` pops
+    /// whole nodes, so a logical gap contributes no bytes). Reject positions
+    /// that land in a gap - no held node covers them, and a successful
+    /// `tryRewind` must leave the cursor exactly on `new_position`.
+    size_t phys = front.size - front_offset;
+    for (size_t i = 1; i < nodes.size(); ++i)
+    {
+        const RopeNode & node = nodes[i];
+        if (new_position < node.logical_offset)
+            return false;
+        if (new_position < node.logical_offset + node.size)
+        {
+            advance(phys + (new_position - node.logical_offset));
+            return true;
+        }
+        phys += node.size;
+    }
+
+    /// new_position == reachable_hi (exclusive end of the last node): EOF.
+    advance(phys);
+    return true;
+}
+
+ByteRange Rope::range() const
+{
+    if (intervals.empty())
+        return {0, 0};
+    size_t start = intervals.front().offset;
+    size_t end = intervals.back().end();
+    return {start, end - start};
+}
+
+bool Rope::covers(ByteRange req) const
+{
+    if (req.size == 0)
+        return true;
+    /// By the disjoint invariant, `req` is fully covered iff the first
+    /// interval ending past `req.offset` spans all of it.
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
+    return it != intervals.end() && it->offset <= req.offset && it->end() >= req.end();
+}
+
+VectorWithMemoryTracking<ByteRange> Rope::gaps(ByteRange req) const
+{
+    VectorWithMemoryTracking<ByteRange> result;
+    if (req.size == 0)
+        return result;
+
+    size_t cur = req.offset;
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
+    for (; it != intervals.end() && it->offset < req.end(); ++it)
+    {
+        if (it->offset > cur)
+            result.push_back({cur, it->offset - cur});
+        cur = std::max(cur, it->end());
+    }
+    if (cur < req.end())
+        result.push_back({cur, req.end() - cur});
+    return result;
+}
+
+size_t Rope::coveredBytes(ByteRange req) const
+{
+    if (req.size == 0)
+        return 0;
+    size_t total = 0;
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
+    for (; it != intervals.end() && it->offset < req.end(); ++it)
+    {
+        size_t lo = std::max(it->offset, req.offset);
+        size_t hi = std::min(it->end(), req.end());
+        if (lo < hi)
+            total += hi - lo;
+    }
+    return total;
+}
+
+size_t Rope::totalBytes() const
+{
+    if (nodes.empty())
+        return 0;
+    size_t total = 0;
+    for (const auto & node : nodes)
+        total += node.size;
+    return total - front_offset;
+}
+
 Rope Rope::slice(ByteRange req) const
 {
     Rope result;
-    /// Nodes are sorted by `logical_offset`, so we can stop early. The
-    /// first node has `front_offset` bytes already consumed by the cursor
-    /// — those bytes are not slice-able. Subsequent nodes are unaffected.
+    /// Nodes are sorted, so we can stop early. The first node's `front_offset`
+    /// bytes are already consumed and not slice-able.
     bool first = true;
     for (const auto & node : nodes)
     {
@@ -277,93 +280,21 @@ Rope Rope::slice(ByteRange req) const
         sliced.buffer_offset = effective_buffer_offset + trim_front;
         sliced.size = overlap_end - overlap_start;
         sliced.logical_offset = overlap_start;
-        /// Go through `append` so intervals on the result are maintained.
+        /// Through `append` so intervals on the result are maintained.
         result.append(std::move(sliced));
     }
     return result;
 }
 
-size_t Rope::totalBytes() const
-{
-    if (nodes.empty())
-        return 0;
-    size_t total = 0;
-    for (const auto & node : nodes)
-        total += node.size;
-    return total - front_offset;
-}
-
-size_t Rope::coveredBytes(ByteRange req) const
-{
-    if (req.size == 0)
-        return 0;
-    size_t total = 0;
-    /// First interval whose `end > req.offset` — the first one that could
-    /// contribute coverage.
-    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
-        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
-    for (; it != intervals.end() && it->offset < req.end(); ++it)
-    {
-        size_t lo = std::max(it->offset, req.offset);
-        size_t hi = std::min(it->end(), req.end());
-        if (lo < hi)
-            total += hi - lo;
-    }
-    return total;
-}
-
-VectorWithMemoryTracking<ByteRange> Rope::gaps(ByteRange req) const
-{
-    VectorWithMemoryTracking<ByteRange> result;
-    if (req.size == 0)
-        return result;
-
-    size_t cur = req.offset;
-    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
-        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
-    for (; it != intervals.end() && it->offset < req.end(); ++it)
-    {
-        if (it->offset > cur)
-            result.push_back({cur, it->offset - cur});
-        cur = std::max(cur, it->end());
-    }
-    if (cur < req.end())
-        result.push_back({cur, req.end() - cur});
-    return result;
-}
-
-bool Rope::covers(ByteRange req) const
-{
-    if (req.size == 0)
-        return true;
-    /// Find the first interval whose end is past req.offset. By the disjoint
-    /// invariant, `req` is fully covered iff that interval starts at or
-    /// before `req.offset` AND ends at or after `req.end()`.
-    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
-        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
-    return it != intervals.end() && it->offset <= req.offset && it->end() >= req.end();
-}
-
 Rope Rope::extract(ByteRange req) const
 {
-    chassert(covers(req)); /// caller's invariant
+    chassert(covers(req));
     return slice(req);
-}
-
-void Rope::shift(ssize_t delta)
-{
-    for (auto & node : nodes)
-        node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
-    for (auto & iv : intervals)
-        iv.offset = static_cast<size_t>(static_cast<ssize_t>(iv.offset) + delta);
 }
 
 size_t Rope::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
-    /// Nodes are sorted by logical_offset (invariant). The first node's
-    /// `front_offset` bytes are already consumed — they're not part of
-    /// the reachable bytes and `covers(req)` must have ruled them out.
     size_t written = 0;
     bool first = true;
     for (const auto & n : nodes)
@@ -391,6 +322,64 @@ size_t Rope::copyTo(char * dst, ByteRange req) const
         written += copy;
     }
     return written;
+}
+
+void Rope::shift(ssize_t delta)
+{
+    for (auto & node : nodes)
+        node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
+    for (auto & iv : intervals)
+        iv.offset = static_cast<size_t>(static_cast<ssize_t>(iv.offset) + delta);
+}
+
+void Rope::mergeInterval(ByteRange iv)
+{
+    if (iv.size == 0)
+        return;
+
+    /// First existing interval that touches or overlaps `iv`; anything
+    /// strictly before is left alone.
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), iv.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() < v; });
+
+    size_t merged_start = iv.offset;
+    size_t merged_end = iv.end();
+    auto erase_begin = it;
+    while (it != intervals.end() && it->offset <= merged_end)
+    {
+        merged_start = std::min(merged_start, it->offset);
+        merged_end = std::max(merged_end, it->end());
+        ++it;
+    }
+    auto erase_end = it;
+    auto pos = intervals.erase(erase_begin, erase_end);
+    intervals.insert(pos, ByteRange{merged_start, merged_end - merged_start});
+}
+
+void Rope::shrinkIntervalsFront(size_t bytes)
+{
+    if (bytes == 0 || intervals.empty())
+        return;
+    ByteRange & first = intervals.front();
+    if (bytes >= first.size)
+    {
+        intervals.erase(intervals.begin());
+    }
+    else
+    {
+        first.offset += bytes;
+        first.size -= bytes;
+    }
+}
+
+void Rope::extendIntervalsFront(size_t bytes)
+{
+    if (bytes == 0)
+        return;
+    chassert(!intervals.empty());
+    chassert(intervals.front().offset >= bytes);
+    intervals.front().offset -= bytes;
+    intervals.front().size += bytes;
 }
 
 }
