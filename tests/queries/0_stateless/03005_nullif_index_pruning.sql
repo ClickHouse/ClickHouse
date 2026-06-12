@@ -17,3 +17,13 @@ EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND null
 EXPLAIN indexes = 1 SELECT count() FROM t_nullif_pruning WHERE team = 1 AND nullIf(k, toInt16(5)) = 5;
 
 DROP TABLE t_nullif_pruning;
+
+-- Regression test for FixedString zero-padding type matching
+DROP TABLE IF EXISTS t_nullif_fixedstring;
+CREATE TABLE t_nullif_fixedstring (s FixedString(5)) ENGINE = MergeTree ORDER BY s;
+INSERT INTO t_nullif_fixedstring VALUES ('abc\0\0');
+
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_fixedstring WHERE nullIf(s, 'abc') = 'abc\0';
+SELECT count() FROM t_nullif_fixedstring WHERE nullIf(s, 'abc') = 'abc\0';
+
+DROP TABLE IF EXISTS t_nullif_fixedstring;
