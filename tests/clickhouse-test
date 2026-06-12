@@ -1154,8 +1154,9 @@ def is_asan_build(args):
 # test: print_*_stacktraces also run from the end-of-run hung check, where no
 # single test owns the dump. The CI job runs clickhouse-test from its output
 # dir and attaches these files to the report, while stdout keeps only a
-# trimmed preview. Append-only with a per-block header, so the rare case of two
-# --jobs workers timing out at once stays readable instead of corrupting data.
+# trimmed preview. Append with a per-block header so successive dumps stay
+# separated; two --jobs workers timing out at once may still interleave (a
+# large write is not atomic), but the headers keep the result readable.
 SQL_STACKTRACES_LOG = "sql_stacktraces.log"
 C_STACKTRACES_LOG = "c_stacktraces.log"
 
@@ -1213,7 +1214,7 @@ def print_c_stacktraces(args) -> None:
         if bt and len(bt) >= 1000:
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
-            print(trim_for_log(block))
+            print(trim_for_log(block, 100))
             print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
@@ -1238,7 +1239,7 @@ def print_sql_stacktraces(args) -> None:
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
         _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
-        print(trim_for_log(bt))
+        print(trim_for_log(bt, 100))
         print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
 
 
@@ -4567,7 +4568,7 @@ def run_tests_array(
                 # Bound the timeout/cleanup diagnostic like every other dump in
                 # this file: lldb "thread backtrace all" over every server
                 # process is unbounded and otherwise floods the log/report.
-                description += trim_for_log(cleanup_output.getvalue())
+                description += trim_for_log(cleanup_output.getvalue(), 100)
 
             if is_concurrent:
                 description = (
