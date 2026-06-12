@@ -10,3 +10,5 @@ float64_asc_nulls_first
 float64_desc_nulls_last
 datetime_asc
 datetime_desc
+optimization_applied_guard
+1

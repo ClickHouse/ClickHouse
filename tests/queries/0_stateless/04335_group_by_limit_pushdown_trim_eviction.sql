@@ -76,3 +76,16 @@ SELECT k, uniqExact(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number
 
 SELECT 'Const-key block arriving after its key was evicted';
 SELECT k, count(), sum(v) FROM (SELECT 2::UInt32 AS k, 1 AS v FROM numbers(5) UNION ALL SELECT 1::UInt32, 1 FROM numbers(5) UNION ALL SELECT 2::UInt32, 1 FROM numbers(5)) GROUP BY k ORDER BY k ASC LIMIT 1;
+
+-- Guard against the environment silently disabling the optimization (e.g. via a
+-- profile setting), which would degrade the comparisons above to off-vs-off.
+SELECT 'optimization_applied_guard';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
+
+-- Runtime guard: the queries above must have actually exercised the heap's
+-- skip and eviction machinery, not just carried the plan annotation.
+SELECT 'heap_engaged_guard';
+SYSTEM FLUSH LOGS query_log;
+SELECT sum(ProfileEvents['AggregationTopKRowsSkipped']) > 0, sum(ProfileEvents['AggregationTopKKeysEvicted']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';

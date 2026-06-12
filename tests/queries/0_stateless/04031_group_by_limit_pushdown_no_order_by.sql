@@ -209,3 +209,10 @@ SELECT count() FROM (
 );
 
 DROP TABLE t_gbylimit_noob;
+
+-- Guard against the environment silently disabling the optimization (e.g. via a
+-- profile setting), which would degrade the comparisons above to off-vs-off.
+-- The trivial analyzer pass handles `GROUP BY ... LIMIT` ahead of the plan-level
+-- Pattern 2, so disable it for the plan-shape check.
+SELECT 'optimization_applied_guard';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k LIMIT 5 SETTINGS optimize_trivial_group_by_limit_query = 0) WHERE explain LIKE '%Top-K%';

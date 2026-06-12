@@ -162,9 +162,11 @@ struct TopKAggregationHeap
     /// for erasing it from the hash table and destroying aggregate states if needed.
     /// The caller decides whether pruning is possible (see
     /// `Aggregator::trimHeapAndPruneHashTable`) and passes a no-op callback otherwise.
+    /// Returns the number of evicted keys.
     template <typename EvictCallback>
-    void trimAndCompact(EvictCallback && on_evict)
+    size_t trimAndCompact(EvictCallback && on_evict)
     {
+        size_t evicted_count = 0;
         const HeapComparator cmp{this};
         while (heap_indices.size() > capacity)
         {
@@ -172,12 +174,13 @@ struct TopKAggregationHeap
             const size_t evicted = heap_indices.back();
             heap_indices.pop_back();
             on_evict(evicted);
+            ++evicted_count;
         }
 
         /// Compact the `heap_column`: filter out dead slots and remap indices.
         const size_t col_size = heap_column->size();
         if (col_size <= heap_indices.size())
-            return;
+            return evicted_count;
 
         IColumn::Filter filter(col_size, 0);
         for (size_t idx : heap_indices)
@@ -199,6 +202,8 @@ struct TopKAggregationHeap
         /// invariant is preserved by construction — no `std::make_heap` needed.
         for (auto & idx : heap_indices)
             idx = old_to_new[idx];
+
+        return evicted_count;
     }
 
 private:

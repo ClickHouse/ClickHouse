@@ -56,6 +56,8 @@ namespace ProfileEvents
     extern const Event ExternalAggregationUncompressedBytes;
     extern const Event ExternalAggregationWritePart;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event AggregationTopKRowsSkipped;
+    extern const Event AggregationTopKKeysEvicted;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
@@ -1097,11 +1099,11 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
     /// still rejects rows in flight, only the memory saving is reduced.
     if constexpr (!requires(DataType d, KeyType k) { d.erase(k); })
     {
-        method.top_k_heap.trimAndCompact([](size_t) {});
+        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
     }
     else if (method.top_k_heap.is_prefix_mode)
     {
-        method.top_k_heap.trimAndCompact([](size_t) {});
+        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
     }
     else
     {
@@ -1130,7 +1132,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
 
         typename Method::StateNoCache trim_state(heap_columns, key_sizes, aggregation_state_cache);
 
-        method.top_k_heap.trimAndCompact([&](size_t evicted)
+        const size_t evicted_count = method.top_k_heap.trimAndCompact([&](size_t evicted)
         {
             /// A NULL key lives in the special null slot, not in the hash table.
             if (method.top_k_heap.heap_column->isNullAt(evicted))
@@ -1161,6 +1163,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
             method.data.erase(key);
             keyHolderDiscardKey(key_holder);
         });
+        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, evicted_count);
     }
 }
 
@@ -1306,6 +1309,9 @@ void NO_INLINE Aggregator::executeImplBatch(
         return false;
     };
 
+    /// Accumulated locally and flushed once per batch to keep the per-row path cheap.
+    [[maybe_unused]] size_t top_k_rows_skipped = 0;
+
     if (is_simple_count)
     {
         if (all_keys_are_const)
@@ -1347,7 +1353,10 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     if (method.top_k_heap.size() >= params.top_k_keys
                             && heap_should_skip(i))
-                            continue;
+                    {
+                        ++top_k_rows_skipped;
+                        continue;
+                    }
                 }
 
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
@@ -1382,6 +1391,8 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
         }
 
+        if constexpr (top_k)
+            ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
         return;
     }
 
@@ -1452,6 +1463,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     && heap_should_skip(i))
                 {
                     places[i] = nullptr;
+                    ++top_k_rows_skipped;
                     continue;
                 }
             }
@@ -1544,6 +1556,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// unconditionally when `all_keys_are_const`) is incompatible with mixed
     /// kept/skipped rows, so it must not see a null place either: when the sole
     /// constant key was skipped, there is nothing to aggregate at all.
+    if constexpr (top_k)
+        ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
+
     const bool has_only_one_value = top_k ? false : state.hasOnlyOneValueSinceLastReset();
     const bool use_jit = use_compiled_functions && !top_k;
     const bool skip_aggregation = top_k && all_keys_are_const && places[key_start] == nullptr;

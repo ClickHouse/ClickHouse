@@ -14,3 +14,5 @@ nullable_nulls_first_desc
 nullable_nulls_last_desc
 composite_nullable_nulls_first
 composite_nullable_nulls_last
+optimization_applied_guard
+1

@@ -8,3 +8,5 @@ int64_asc
 int64_desc
 date32_asc
 date32_desc
+optimization_applied_guard
+1

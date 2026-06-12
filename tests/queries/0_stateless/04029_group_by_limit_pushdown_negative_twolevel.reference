@@ -8,3 +8,5 @@ negative_order_by_aggregate
 negative_multi_key
 two_level
 two_level_string
+optimization_applied_guard
+1

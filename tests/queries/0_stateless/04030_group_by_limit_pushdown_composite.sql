@@ -268,3 +268,8 @@ FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_comp;
+
+-- Guard against the environment silently disabling the optimization (e.g. via a
+-- profile setting), which would degrade the comparisons above to off-vs-off.
+SELECT 'optimization_applied_guard';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

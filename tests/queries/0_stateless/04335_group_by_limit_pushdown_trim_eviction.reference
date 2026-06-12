@@ -174,3 +174,7 @@ Stateful aggregate under eviction (uniqExact)
 4	2
 Const-key block arriving after its key was evicted
 1	5	5
+optimization_applied_guard
+1
+heap_engaged_guard
+1	1

@@ -5,3 +5,5 @@ nullable_key32
 nullable_key_string
 low_cardinality_key64
 low_cardinality_key_string
+optimization_applied_guard
+1

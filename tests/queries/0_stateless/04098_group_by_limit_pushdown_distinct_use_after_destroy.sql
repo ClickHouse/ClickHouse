@@ -25,3 +25,8 @@ LIMIT 5
 SETTINGS enable_group_by_top_k_optimization = 1;
 
 DROP TABLE t_gbylimit_distinct;
+
+-- Guard against the environment silently disabling the optimization (e.g. via a
+-- profile setting), which would degrade the comparisons above to off-vs-off.
+SELECT 'optimization_applied_guard';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
