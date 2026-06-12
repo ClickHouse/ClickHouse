@@ -78,6 +78,7 @@ public:
             /// Pass the expression as a separate argument so it is never interpreted by the
             /// shell. `sed` reads its input from `stdin` and writes the result to `stdout`.
             ShellCommand::Config config{R"(exec sed -- "$0")"};
+            config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true, SIGTERM);
             config.arguments.push_back(expression);
             auto command = ShellCommand::execute(config);
 
@@ -145,9 +146,26 @@ public:
                 throw;
             }
 
-            /// `sed` exited successfully, so any feeder error (e.g. a disk read failure) is real.
             if (feeder_exception)
-                std::rethrow_exception(feeder_exception);
+            {
+                /// sed exited successfully, but the feeder still failed. One case is
+                /// benign: a valid script may stop reading its input early (e.g. `1q`),
+                /// which closes the read end of the pipe; once the pipe buffer fills,
+                /// our write to sed's stdin fails with EPIPE. Since sed exited with 0,
+                /// that broken pipe is expected behavior, not an error.
+                /// Anything else (e.g. a disk read error on the source file) must
+                /// propagate: sed would have seen a premature EOF and still exited 0,
+                /// and ignoring the error would replace the file with truncated output.
+                try
+                {
+                    std::rethrow_exception(feeder_exception);
+                }
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() != EPIPE)
+                        throw;
+                }
+            }
 
             out->finalize();
 
