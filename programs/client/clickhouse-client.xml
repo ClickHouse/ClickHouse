@@ -70,9 +70,6 @@
     <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
     <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
 
-    <!-- Disable rainbow parentheses. Useful where they clash with terminal color settings. -->
-    <!-- <rainbow_parentheses>false</rainbow_parentheses> -->
-
     <!--
         Settings adjustable via command-line parameters
         can take their defaults from that config file, see examples:
