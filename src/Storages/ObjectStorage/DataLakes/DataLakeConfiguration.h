@@ -358,18 +358,10 @@ public:
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Don't use deprecated settings storage_catalog_type and storage_catalog_url");
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        /// `tryGetDatabase` may return nullptr in two valid runtime states:
-        ///   1. The parent database does not exist as a `DatabaseDataLake` (most common case
-        ///      - e.g. a regular `Atomic`/`Ordinary` database hosting an `Iceberg` engine table).
-        ///   2. The parent database is transiently not registered in `DatabaseCatalog`,
-        ///      for example during async metadata loading after server restart, or while a
-        ///      sibling table's load is detaching the database due to a fault. This is what
-        ///      stress tests with thread-allocation fault injection have been hitting in
-        ///      `AsyncLoader::worker` -> `loadTableFromMetadata`.
-        /// Both cases mean "no `DataLake` catalog is associated with this storage" and the
-        /// correct response is to return nullptr - not throw `LOGICAL_ERROR`. Returning
-        /// nullptr matches the behaviour of this function before #100334 and matches the
-        /// existing branch below for non-DataLake databases.
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
         auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
         if (!datalake_database)
             return nullptr;
