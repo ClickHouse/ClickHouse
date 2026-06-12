@@ -128,12 +128,15 @@ WHERE explain LIKE '%__topKFilter%';
 --     is established the minmax index rejects the remaining granules: the query must
 --     read only a fraction of the table instead of all 10000 rows. `max_block_size` is
 --     small so the threshold is published before the whole (small) table is read, and
---     `max_threads = 1` keeps the amount of read-ahead bounded.
+--     `max_threads = 1` keeps the amount of read-ahead bounded. `max_rows_to_read` must be
+--     reset: the CI test profile sets it to 20M, and a non-zero value together with the
+--     default `read_overflow_mode = 'throw'` disables the whole on-data-read skip-index
+--     path (see `ReadFromMergeTree::supportsSkipIndexesOnDataRead`).
 SELECT 'alias_filtered_skip_index_execution';
 SELECT body_alias FROM test_lazy_alias_topk WHERE severity = 'medium' ORDER BY time DESC LIMIT 3
 SETTINGS use_skip_indexes = 1, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1,
          use_top_k_dynamic_filtering = 0, query_plan_max_limit_for_top_k_optimization = 1000,
-         max_threads = 1, max_block_size = 128, enable_parallel_replicas = 0,
+         max_threads = 1, max_block_size = 128, enable_parallel_replicas = 0, max_rows_to_read = 0,
          merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
          log_comment = '04076_alias_filtered_skip_index';
 
