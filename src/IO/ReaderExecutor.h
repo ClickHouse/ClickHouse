@@ -61,16 +61,37 @@ public:
     /// when this is below `window_size`.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD = 64 * 1024 * 1024; /// 64 MiB
 
+    /// Everything configurable beyond the data path itself: the executor is
+    /// fully wired at construction, there are no post-construction setters.
+    struct Options
+    {
+        size_t window_size = DEFAULT_WINDOW_SIZE;
+        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK;
+        size_t block_size = ROPE_BLOCK_SIZE;
+        String log_file_path;
+        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
+        size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD;
+        /// 0 = use `window_size` (override comes from
+        /// `reader_executor_live_connection_min_read_bytes`).
+        size_t live_connection_min_read_bytes = 0;
+        std::shared_ptr<PrefetchThreadPool> prefetch_pool;
+        std::shared_ptr<LiveConnectionLimit> buffer_limit;
+        std::shared_ptr<ReaderExecutorLog> reader_executor_log;
+    };
+
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches,
-        size_t window_size = DEFAULT_WINDOW_SIZE,
-        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
-        size_t block_size = ROPE_BLOCK_SIZE,
-        String log_file_path = {},
-        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN,
-        size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD);
+        Options options);
+
+    /// All-defaults overload (cannot be a default argument: `Options{}` in a
+    /// member declaration would need the initializers in a complete-class
+    /// context).
+    ReaderExecutor(
+        std::shared_ptr<IFileBasedSourceReader> source,
+        const StoredObjects & objects,
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches);
 
     /// Out-of-line because `Connection` holds `unique_ptr<ReadBufferFromFileBase>`.
     ~ReaderExecutor();
@@ -107,15 +128,6 @@ public:
     /// All current sources support concurrent `open`, so this is true whenever
     /// a source is configured; future non-reusable sources can opt out.
     bool canReadAt() const { return static_cast<bool>(source); }
-
-    // ─── Configuration ───────────────────────────────────────────────────
-
-    void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
-    void setBufferLimit(std::shared_ptr<LiveConnectionLimit> limit);
-    /// Override the live-connection gap-reach threshold (0 keeps the
-    /// `window_size` default). From `reader_executor_live_connection_min_read_bytes`.
-    void setLiveConnectionMinReadBytes(size_t bytes);
-    void setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log_);
 
     // ─── Decryption ──────────────────────────────────────────────────────
 

@@ -368,9 +368,14 @@ public:
         else
             caches.push_back(makeDiskProvider(fc));
         auto src = std::make_shared<MemBoundedSource>(data);
-        ReaderExecutor executor(src, objects, std::move(caches), WINDOW, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK,
-                                BLOCK, /*log_file_path=*/{}, /*max_tail_for_drain=*/MAX_TAIL_FOR_DRAIN);
-        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(buffer_slots));
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = WINDOW;
+        executor_options.min_bytes_for_seek = MIN_BYTES_FOR_SEEK;
+        executor_options.block_size = BLOCK;
+        executor_options.log_file_path = {};
+        executor_options.max_tail_for_drain = MAX_TAIL_FOR_DRAIN;
+        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(buffer_slots);
+        ReaderExecutor executor(src, objects, std::move(caches), executor_options);
 
         size_t total = 0;
         for (const auto & rd : reads)

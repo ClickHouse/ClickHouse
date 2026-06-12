@@ -201,7 +201,9 @@ TEST(ReaderExecutor, ReadSingleObjectNoCaches)
     StoredObjects objects;
     objects.emplace_back("obj_a", "", 1000);
 
-    ReaderExecutor executor(source, objects, {}, 512);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_FALSE(rope.empty());
@@ -237,7 +239,9 @@ TEST(ReaderExecutor, ReadMultiObject)
     objects.emplace_back("blob_0", "", 300);
     objects.emplace_back("blob_1", "", 200);
 
-    ReaderExecutor executor(source, objects, {}, 400);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 400;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().offset, 0);
@@ -266,7 +270,9 @@ TEST(ReaderExecutor, Seek)
     StoredObjects objects;
     objects.emplace_back("obj", "", 1000);
 
-    ReaderExecutor executor(source, objects, {}, 100);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 100;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     executor.seek(500);
     auto rope = executor.readNextWindow();
@@ -499,7 +505,9 @@ TEST(ReaderExecutor, CacheMissPopulatesCache)
 
     auto cache = std::make_shared<MockCacheProvider>(512);
 
-    ReaderExecutor executor(source, objects, {cache}, 512);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    ReaderExecutor executor(source, objects, {cache}, executor_options);
 
     /// First read: miss, fetches from source, populates cache
     auto rope = executor.readNextWindow();
@@ -525,7 +533,9 @@ TEST(ReaderExecutor, CacheHitSkipsSource)
 
     /// Warm up cache
     {
-        ReaderExecutor warmup(source, objects, {cache}, 512);
+        ReaderExecutor::Options warmup_options;
+        warmup_options.window_size = 512;
+        ReaderExecutor warmup(source, objects, {cache}, warmup_options);
         warmup.readNextWindow();
     }
 
@@ -534,7 +544,9 @@ TEST(ReaderExecutor, CacheHitSkipsSource)
     auto alt_source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", alt_content}});
 
-    ReaderExecutor executor(alt_source, objects, {cache}, 512);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    ReaderExecutor executor(alt_source, objects, {cache}, executor_options);
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 512);
 
@@ -553,8 +565,10 @@ TEST(ReaderExecutor, PrefetchTriggersOnReadNextWindow)
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
 
-    ReaderExecutor executor(source, objects, {}, 1000);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope1 = executor.readNextWindow();
     EXPECT_EQ(rope1.range().size, 1000);
@@ -595,9 +609,12 @@ TEST(ReaderExecutor, PrefetchBoxRoundTripKeepsSingleConnection)
     String result;
     {
         /// min_bytes_for_seek=0: contiguous windows continue the open connection.
-        ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-        executor.setPrefetchPool(pool);
-        executor.setBufferLimit(limit);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 1000;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.prefetch_pool = pool;
+        executor_options.buffer_limit = limit;
+        ReaderExecutor executor(source, objects, {}, executor_options);
 
         while (true)
         {
@@ -644,8 +661,10 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
     objects.emplace_back("obj", "", 2000);
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope1 = executor.readNextWindow();
     EXPECT_EQ(rope1.range().offset, 0u);
@@ -674,8 +693,10 @@ TEST(ReaderExecutor, SeekDiscardsPrefetch)
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
 
-    ReaderExecutor executor(source, objects, {}, 500);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope1 = executor.readNextWindow();
     EXPECT_EQ(rope1.range().offset, 0);
@@ -701,8 +722,10 @@ TEST(ReaderExecutor, SeekTriggersPrefetch)
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Before the first readNextWindow nothing has been prefetched yet.
     EXPECT_FALSE(executor.hasInflightPrefetch());
@@ -730,8 +753,10 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
     StoredObjects objects;
     objects.emplace_back("obj", "", 1000);
 
-    ReaderExecutor executor(source, objects, {}, 200);
-    /// No setPrefetchPool — leave prefetch_pool null.
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 200;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+    /// No `prefetch_pool` in Options — sync path.
 
     executor.seek(400);
     EXPECT_FALSE(executor.hasInflightPrefetch());
@@ -759,10 +784,13 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 
         auto pool = std::make_shared<PrefetchThreadPool>(2);
         auto limit = std::make_shared<LiveConnectionLimit>(0);   // present but no slots -> stateless window reads
-        ReaderExecutor executor(source, objects, {},
-            /*window_size=*/256u << 10, /*min_bytes_for_seek=*/0, /*block_size=*/32u << 10);
-        executor.setPrefetchPool(pool);
-        executor.setBufferLimit(limit);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 256u << 10;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = 32u << 10;
+        executor_options.prefetch_pool = pool;
+        executor_options.buffer_limit = limit;
+        ReaderExecutor executor(source, objects, {}, executor_options);
 
         Rope rope = executor.readNextWindow();   // synchronous full-window read, then schedules a prefetch
         return {rope.range().size, executor.hasInflightPrefetch(), executor.inflightPrefetchSize()};
@@ -852,7 +880,9 @@ TEST(ReaderExecutor, TotalSizeSaturatesOnUndersizedEncryptedFile)
     StoredObjects objects;
     objects.emplace_back("obj", "", 10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/512);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer("layer0", 64, [](UInt128, const String &) { return String{}; });
     executor.addDecryptionLayer("layer1", 64, [](UInt128, const String &) { return String{}; });
 
@@ -959,8 +989,9 @@ TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
     /// Window larger than the plaintext so the entire file is read in one
     /// readNextWindow call — the >3 MiB ciphertext is served as several nodes,
     /// each decrypted by decryptInPlace (3 full blocks + 1 partial).
-    ReaderExecutor executor(source, objects, {},
-        /*window_size=*/plaintext_size + ReaderExecutor::ROPE_BLOCK_SIZE);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = plaintext_size + ReaderExecutor::ROPE_BLOCK_SIZE;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer(
         "/test", 0,
         [&](UInt128 got_fp, const String &)
@@ -997,8 +1028,10 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
 
     auto buffer_limit = std::make_shared<LiveConnectionLimit>(4);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/512);
-    executor.setBufferLimit(buffer_limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    executor_options.buffer_limit = buffer_limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer(
         "/test", 0,
         [&](UInt128, const String &) { return key; });
@@ -1029,7 +1062,9 @@ TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_bytes.size());
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/4096);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 4096;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer("/t", 0,
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
@@ -1109,8 +1144,9 @@ TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_bytes.size());
 
-    ReaderExecutor executor(source, objects, {},
-        /*window_size=*/plaintext.size() + 2048);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = plaintext.size() + 2048;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     /// Layers are added outermost-first, innermost-last — same order the
     /// stacked-disk prepareRead chain produces (each layer recurses into
     /// its delegate before appending its own `needDecryption`).
@@ -1167,7 +1203,9 @@ TEST(ReaderExecutor, ShortReadThrows)
     objects.emplace_back("obj_a", "", 1000);  /// claims 1000 but actual is 300
     objects.emplace_back("obj_b", "", 500);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/1500);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1500;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     EXPECT_THROW(executor.readNextWindow(), Exception);
 }
 
@@ -1193,7 +1231,9 @@ TEST(ReaderExecutor, CacheHitBetweenColdGapsNoDuplicateCoverage)
         String warm_content(300, 'W');
         auto warm_source = std::make_shared<MemorySourceReader>(
             std::unordered_map<String, String>{{"obj", warm_content}});
-        ReaderExecutor warmup(warm_source, objects, {cache}, /*window_size=*/100);
+        ReaderExecutor::Options warmup_options;
+        warmup_options.window_size = 100;
+        ReaderExecutor warmup(warm_source, objects, {cache}, warmup_options);
         warmup.seek(100);
         warmup.readNextWindow();
         ASSERT_TRUE(cache->hasBlock(1));
@@ -1203,10 +1243,10 @@ TEST(ReaderExecutor, CacheHitBetweenColdGapsNoDuplicateCoverage)
     auto real_source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", real_content}});
 
-    ReaderExecutor executor(
-        real_source, objects, {cache},
-        /*window_size=*/300,
-        /*min_bytes_for_seek=*/8 * 1024 * 1024);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 300;
+    executor_options.min_bytes_for_seek = 8 * 1024 * 1024;
+    ReaderExecutor executor(real_source, objects, {cache}, executor_options);
 
     /// Drain to EOF: the plan serves the run at the cursor (gap or resident) one
     /// call at a time.
@@ -1288,8 +1328,10 @@ TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
     auto pool = std::make_shared<PrefetchThreadPool>(2);
 
     {
-        ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
-        executor.setPrefetchPool(pool);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 500;
+        executor_options.prefetch_pool = pool;
+        ReaderExecutor executor(source, objects, {}, executor_options);
 
         /// First sync read consumes the 1st open() and primes maybeTriggerPrefetch,
         /// which submits a task whose 2nd open() will throw on the pool thread.
@@ -1317,8 +1359,10 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
     auto pool = std::make_shared<PrefetchThreadPool>(2);
 
     {
-        ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
-        executor.setPrefetchPool(pool);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 500;
+        executor_options.prefetch_pool = pool;
+        ReaderExecutor executor(source, objects, {}, executor_options);
 
         /// 1st readNextWindow: synchronous open (success) + queues a prefetch
         /// whose worker will call `open()` again and throw.
@@ -1377,11 +1421,11 @@ TEST(ReaderExecutor, ConfiguredBlockSizeControlsNodeSize)
     objects.emplace_back("obj", "", file_size);
 
     /// No buffer_limit, no caches -> stateless local path.
-    ReaderExecutor executor(
-        source, objects, {},
-        /*window_size=*/4 * 1024 * 1024,
-        /*min_bytes_for_seek=*/0,
-        /*block_size=*/configured_block);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 4 * 1024 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = configured_block;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto w = executor.readNextWindow();
     ASSERT_FALSE(w.empty());
@@ -1421,8 +1465,11 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
     ASSERT_TRUE(blocker != nullptr);
     worker_started.get_future().wait();   /// the one worker is now busy in `blocker`
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Window 1: synchronous read, then maybeTriggerPrefetch submits a prefetch
     /// for window 2 that queues behind the blocked worker.
@@ -1466,8 +1513,11 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchStashedBeforeThrowingSyncRead)
     ASSERT_TRUE(blocker != nullptr);
     worker_started.get_future().wait();
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto w1 = executor.readNextWindow();
     ASSERT_FALSE(w1.empty());
@@ -1491,11 +1541,18 @@ TEST(ReaderExecutor, ConstructorRejectsZeroWindowOrBlockSize)
     StoredObjects objects;
     objects.emplace_back("obj", "", 10);
 
+    ReaderExecutor::Options zero_window_options;
+    zero_window_options.window_size = 0;
     EXPECT_THROW(
-        ReaderExecutor(source, objects, {}, /*window_size=*/0),
+        ReaderExecutor(source, objects, {}, zero_window_options),
         DB::Exception);
+
+    ReaderExecutor::Options zero_block_options;
+    zero_block_options.window_size = 500;
+    zero_block_options.min_bytes_for_seek = 0;
+    zero_block_options.block_size = 0;
     EXPECT_THROW(
-        ReaderExecutor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0, /*block_size=*/0),
+        ReaderExecutor(source, objects, {}, zero_block_options),
         DB::Exception);
 }
 
@@ -1530,8 +1587,11 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     String result;
     while (true)
@@ -1565,8 +1625,11 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
 
     auto limit = std::make_shared<LiveConnectionLimit>(0);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     String result;
     while (true)
@@ -1847,8 +1910,11 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor->setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
     auto consume = [&](Rope rope)
@@ -1896,8 +1962,11 @@ TEST(ReaderExecutor, MultipleEvictionsKeepSingleConnection)
     caches.push_back(cache);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
-    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor->setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
     while (true)
@@ -1943,9 +2012,12 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
 
     auto pool = std::make_shared<SyncPrefetchPool>();
     auto limit = std::make_shared<LiveConnectionLimit>(10);
-    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor->setPrefetchPool(pool);
-    executor->setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    executor_options.buffer_limit = limit;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
     auto consume = [&](Rope rope)
@@ -1995,8 +2067,11 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+    ReaderExecutor executor(source, objects, caches, executor_options);
 
     ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
     ASSERT_EQ(cache->downloaded[0], 1000u);
@@ -2029,8 +2104,11 @@ TEST(ReaderExecutor, PutFailedTakesNoPin)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+    ReaderExecutor executor(source, objects, caches, executor_options);
 
     auto rope = executor.readNextWindow();   /// [0,1000)
     ASSERT_FALSE(rope.empty());
@@ -2053,7 +2131,10 @@ TEST(ReaderExecutor, TransientReadDoesNotPin)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(source, objects, caches, executor_options);
     auto transient = executor.makeTransientForReadAt(0, /*read_size=*/4000);
     ASSERT_TRUE(transient != nullptr);
     auto rope = transient->readNextWindow();
@@ -2166,8 +2247,11 @@ TEST(ReaderExecutor, ReadBigAtBoundsConnectionToRequest)
     objects.emplace_back("obj", "", 1u << 20);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);   // a unit is free, but a transient never takes one
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 64u << 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     TestThreadGroup tg;
     auto transient = executor.makeTransientForReadAt(offset, want);
@@ -2216,8 +2300,11 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionOnEncryptedFile)
     objects.emplace_back("obj", "", file_bytes.size());
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);   // slot available -> live path
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/256u << 10, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 256u << 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer("/test", 0, [&](UInt128, const String &) { return key; });
     executor.initDecryption();   // parses the header -> data_start_offset = 64
 
@@ -2269,8 +2356,11 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
     objects.emplace_back("o1", "", s1);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);   // slot available -> live path on the first object
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/1u << 20, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1u << 20;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     const size_t offset = 90u << 10;   // 90 KiB into o0
     const size_t want = 50u << 10;     // ends at 140 KiB -> 40 KiB into o1
@@ -2314,8 +2404,11 @@ TEST(ReaderExecutor, SequentialReaderBoundsConnectionToAdvertisedExtent)
     objects.emplace_back("obj", "", file_size);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 64u << 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     TestThreadGroup tg;
 
@@ -2363,8 +2456,11 @@ TEST(ReaderExecutor, UnknownSizeReaderWithExtentBoundsAndReleasesConnection)
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 64u << 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.setReadExtent(extent);
 
     size_t total = 0;
@@ -2402,8 +2498,11 @@ TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    /// No setBufferLimit -> no slot -> the stateless one-shot path.
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
+    /// No `buffer_limit` in Options -> no slot -> the stateless one-shot path.
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 64u << 10;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(source, objects, {}, executor_options);
     executor.setReadExtent(extent);
 
     size_t total = 0;
@@ -2436,9 +2535,10 @@ TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
     StoredObjects objects;
     objects.emplace_back("obj", "", 4000);
 
-    auto parent = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{},
-        /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options parent_options;
+    parent_options.window_size = 1000;
+    parent_options.min_bytes_for_seek = 0;
+    auto parent = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, parent_options);
 
     {
         auto transient = parent->makeTransientForReadAt(0, /*read_size=*/4000);
@@ -2532,8 +2632,11 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Read every window — last call returns an empty rope (EOF).
     auto r1 = executor.readNextWindow();
@@ -2576,7 +2679,9 @@ TEST(ReaderExecutor, UnknownSizeStreamsToEof)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     String collected;
     while (true)
@@ -2603,7 +2708,9 @@ TEST(ReaderExecutor, UnknownSizeEofIsLatchedUntilSeek)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/1000);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto r1 = executor.readNextWindow();   /// reads all 600 bytes, latches EOF
     EXPECT_EQ(r1.range().size, 600u);
@@ -2634,8 +2741,10 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalReleasesLiveSlot)
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     String collected;
     while (true)
@@ -2667,7 +2776,9 @@ TEST(ReaderExecutor, UnknownSizeMultiObjectRejected)
     objects.emplace_back("b", "", 2);
 
     EXPECT_ANY_THROW({
-        ReaderExecutor executor(source, objects, {}, /*window_size=*/100);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 100;
+        ReaderExecutor executor(source, objects, {}, executor_options);
     });
 }
 
@@ -2684,8 +2795,11 @@ TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Read to EOF.
     while (!executor.readNextWindow().empty()) {}
@@ -2723,8 +2837,11 @@ TEST(ReaderExecutor, CacheOnlyWindowClosesStaleLiveBuffer)
     caches.push_back(cache);
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/window_bytes, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = window_bytes;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, caches, executor_options);
 
     /// Window 1 [0, window): cold gap (reach 2 windows) -> live connection + lease.
     ASSERT_FALSE(executor.readNextWindow().empty());
@@ -2759,8 +2876,11 @@ TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Read from object "a" — opens a live buffer + acquires a slot.
     auto rope = executor.readNextWindow();
@@ -2790,8 +2910,11 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Read first window (opens live buffer).
     auto rope1 = executor.readNextWindow();
@@ -3042,9 +3165,10 @@ TEST(ReaderExecutor, ChainTwoTierDisjointHits)
     page_cache->seedBlock(0, 'P');
     disk_cache->seedBlock(1, 'D');
 
-    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
-                             /*window_size=*/128 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 128 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 128u * 1024u);
@@ -3067,9 +3191,10 @@ TEST(ReaderExecutor, ChainLowerCacheHitCoversUpperHit)
     page_cache->seedBlock(0, 'P');
     disk_cache->seedBlock(0, 'D');
 
-    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
-                             /*window_size=*/128 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 128 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 128u * 1024u);
@@ -3094,9 +3219,10 @@ TEST(ReaderExecutor, ChainThreeTierCascading)
     mid_cache->seedBlock(0, 'M');
     disk_cache->seedBlock(0, 'D');
 
-    ReaderExecutor executor(src, objects, {page_cache, mid_cache, disk_cache},
-                             /*window_size=*/128 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 128 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, mid_cache, disk_cache}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 128u * 1024u);
@@ -3119,9 +3245,10 @@ TEST(ReaderExecutor, ChainLowerCacheFilledFullyAfterRead)
     auto disk_cache = std::make_shared<WideGranularityMockCache>(4 * 1024 * 1024, "DiskMock");
     page_cache->seedBlock(0, 'P');
 
-    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
-                             /*window_size=*/128 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 128 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
     size_t total = 0;
     while (true)
@@ -3150,9 +3277,10 @@ TEST(ReaderExecutor, ChainPutReceivesDisjointRope)
     auto disk_cache = std::make_shared<WideGranularityMockCache>(4 * 1024 * 1024, "DiskMock");
     page_cache->seedBlock(0, 'P');
 
-    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
-                             /*window_size=*/128 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 128 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
     /// Drain: the resident prefix and the cold gap are served in separate calls;
     /// the gap's backfill is the put we are checking.
@@ -3178,9 +3306,10 @@ TEST(ReaderExecutor, ChainHitExtendsBeyondWindowEnd)
     auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
     page_cache->seedBlock(0, 'P');
 
-    ReaderExecutor executor(src, objects, {page_cache},
-                             /*window_size=*/50 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 50 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().offset, 0u);
@@ -3200,9 +3329,10 @@ TEST(ReaderExecutor, ChainHitExtendsBeforeWindowStart)
     auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
     page_cache->seedBlock(0, 'P');
 
-    ReaderExecutor executor(src, objects, {page_cache},
-                             /*window_size=*/40 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 40 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache}, executor_options);
 
     executor.seek(10 * 1024);
     auto rope = executor.readNextWindow();
@@ -3223,9 +3353,10 @@ TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
 
     auto disk_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "DiskMock");
 
-    ReaderExecutor executor(src, objects, {disk_cache},
-                             /*window_size=*/50 * 1024,
-                             /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 50 * 1024;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {disk_cache}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 50u * 1024u);
@@ -3251,8 +3382,10 @@ TEST(ReaderExecutor, PrunesLowerTierMissCoveredByFasterTier)
     auto disk_cache = std::make_shared<WideGranularityMockCache>(block, "DiskMock");
     page_cache->seedBlock(0, 'P');  // page holds the whole disk cell [0,64K)
 
-    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
-                             /*window_size=*/block, /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = block;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
     size_t total = 0;
     while (true)
@@ -3287,8 +3420,10 @@ TEST(ReaderExecutor, ProactivelyFillsLowerCellAcrossEmbeddedFasterHit)
     auto disk_cache = std::make_shared<WideGranularityMockCache>(disk_block, "DiskMock");
     page_cache->seedBlock(1, 'P');  // page holds [1K,2K), embedded in the disk cell [0,4K)
 
-    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
-                             /*window_size=*/file, /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = file;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
     executor.seek(page_block);  // request starts at 1K
 
     size_t delivered = 0;
@@ -3385,10 +3520,9 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
 
     auto tracker = std::make_shared<TrackingCacheProvider>();
 
-    ReaderExecutor executor(
-        source, objects,
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{tracker},
-        /*window_size=*/500);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    ReaderExecutor executor(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{tracker}, executor_options);
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 500u);
@@ -3436,8 +3570,11 @@ TEST(ReaderExecutor, MultiObjectWindowReusesOneLeaseAcrossObjects)
     auto limit = std::make_shared<LiveConnectionLimit>(10);
     /// window 600 < the 1000-byte file, so the plan spans more than a window -> a wide
     /// plan that takes the lease; the [0, 600) window still straddles "a" (500) and "b".
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/600, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 600;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope = executor.readNextWindow();
     ASSERT_EQ(rope.range().size, 600u);
@@ -3469,8 +3606,11 @@ TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 200;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Seek past the first object before any reads.
     executor.seek(700);
@@ -3501,8 +3641,11 @@ TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
 
     auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 200;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// First read from object A.
     auto r1 = executor.readNextWindow();
@@ -3542,9 +3685,12 @@ TEST(ReaderExecutor, PreAcquiredSlotReleasedWhenPrefetchNotSubmitted)
     auto limit = std::make_shared<LiveConnectionLimit>(10);
     auto pool = std::make_shared<FakePrefetchPool>();
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 200;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    executor_options.buffer_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// `seek(0)`'s tail `maybeTriggerPrefetch` pre-acquires an obj_A slot, then
     /// `submit` returns nullptr -> the slot is released right away.
@@ -3586,8 +3732,11 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     auto pool = std::make_shared<SyncPrefetchPool>();
 
     constexpr size_t window = 16;
-    ReaderExecutor executor(source, objects, {}, window, /*min_bytes_for_seek=*/0);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = window;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// First call: sync-read [0, 16). At the end of the call,
     /// `maybeTriggerPrefetch` submits P1 for [16, 32). The synchronous
@@ -3635,7 +3784,9 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     {
         auto warm_source = std::make_shared<MemorySourceReader>(
             std::unordered_map<String, String>{{"obj", content}});
-        ReaderExecutor warmup(warm_source, objects, {cache}, /*window_size=*/100);
+        ReaderExecutor::Options warmup_options;
+        warmup_options.window_size = 100;
+        ReaderExecutor warmup(warm_source, objects, {cache}, warmup_options);
         warmup.seek(100);
         warmup.readNextWindow();
         ASSERT_TRUE(cache->hasBlock(1));
@@ -3644,8 +3795,11 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", content}});
     auto pool = std::make_shared<SyncPrefetchPool>();
-    ReaderExecutor executor(source, objects, {cache}, /*window_size=*/total, /*min_bytes_for_seek=*/0);
-    executor.setPrefetchPool(pool);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = total;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {cache}, executor_options);
 
     /// Cold gap [0,100); advances the cursor to the resident run at 100.
     auto r1 = executor.readNextWindow();
@@ -3700,7 +3854,9 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
         const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
-            ReaderExecutor executor(source, objects, {cache}, window);
+            ReaderExecutor::Options executor_options;
+            executor_options.window_size = window;
+            ReaderExecutor executor(source, objects, {cache}, executor_options);
             while (!executor.readNextWindow().empty()) {}
         }
         EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before, file_size)
@@ -3718,8 +3874,10 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
             auto pool = std::make_shared<SyncPrefetchPool>();
-            ReaderExecutor executor(source, objects, {cache}, window);
-            executor.setPrefetchPool(pool);
+            ReaderExecutor::Options executor_options;
+            executor_options.window_size = window;
+            executor_options.prefetch_pool = pool;
+            ReaderExecutor executor(source, objects, {cache}, executor_options);
             while (!executor.readNextWindow().empty()) {}
         }
         const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before;
@@ -3761,7 +3919,10 @@ TEST(ReaderExecutor, MemoryBackedFileBufferIsReadFully)
     StoredObjects objects;
     objects.emplace_back("memfile", "", total);
 
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/32, /*min_bytes_for_seek=*/0);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 32;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Drive multiple windows to make sure subsequent reads also work,
     /// not just the first. Pre-fix the very first read would throw
@@ -3864,8 +4025,11 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
     auto limit = std::make_shared<LiveConnectionLimit>(10);
     /// NOTE: no prefetch pool — keep reads synchronous so the flood between
     /// windows is deterministic.
-    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/2000, /*min_bytes_for_seek=*/0);
-    executor->setBufferLimit(limit);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 2000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.buffer_limit = limit;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     /// Flood the cache with unrelated keys to force eviction of any releasable
     /// segment. The streamed segment must survive because it is pinned.
@@ -3937,7 +4101,9 @@ TEST(ReaderExecutor, ProfileEventsCountSourceReadsAndBytes)
     StoredObjects objects;
     objects.emplace_back("obj", "", size);
     {
-        ReaderExecutor executor(source, objects, {}, /*window_size=*/256 * 1024);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 256 * 1024;
+        ReaderExecutor executor(source, objects, {}, executor_options);
         while (!executor.readNextWindow().empty()) {}
     }
 
@@ -3966,7 +4132,9 @@ TEST(ReaderExecutor, ModeledCostMatchesFormula)
     StoredObjects objects;
     objects.emplace_back("obj", "", size);
     {
-        ReaderExecutor executor(source, objects, {}, /*window_size=*/256 * 1024);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 256 * 1024;
+        ReaderExecutor executor(source, objects, {}, executor_options);
         while (!executor.readNextWindow().empty()) {}
     }
 
@@ -3993,7 +4161,9 @@ TEST(ReaderExecutor, ModeledCostScalesWithSourceRequests)
             std::unordered_map<String, String>{{"a.bin", String(size, 'a')}});
         StoredObjects objects;
         objects.emplace_back("a.bin", "", size);
-        ReaderExecutor coarse(source, objects, {}, /*window_size=*/1024 * 1024);
+        ReaderExecutor::Options coarse_options;
+        coarse_options.window_size = 1024 * 1024;
+        ReaderExecutor coarse(source, objects, {}, coarse_options);
         while (!coarse.readNextWindow().empty()) {}
     }
     const auto cost_after_coarse = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
@@ -4003,7 +4173,9 @@ TEST(ReaderExecutor, ModeledCostScalesWithSourceRequests)
             std::unordered_map<String, String>{{"b.bin", String(size, 'b')}});
         StoredObjects objects;
         objects.emplace_back("b.bin", "", size);
-        ReaderExecutor fine(source, objects, {}, /*window_size=*/64 * 1024);
+        ReaderExecutor::Options fine_options;
+        fine_options.window_size = 64 * 1024;
+        ReaderExecutor fine(source, objects, {}, fine_options);
         while (!fine.readNextWindow().empty()) {}
     }
     const auto cost_after_fine = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
@@ -4137,8 +4309,12 @@ TEST(ReaderExecutor, TakeoverServesPartialPrefixWithoutDataLoss)
     TestThreadGroup tg;
     String result;
     {
-        ReaderExecutor executor(source, objects, {}, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
-        executor.setPrefetchPool(pool);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = WINDOW;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = BLOCK;
+        executor_options.prefetch_pool = pool;
+        ReaderExecutor executor(source, objects, {}, executor_options);
 
         auto w1 = executor.readNextWindow();
         ASSERT_EQ(w1.range().size, WINDOW);
@@ -4248,8 +4424,12 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
     auto pool = std::make_shared<SyncPrefetchPool>();
     TestThreadGroup tg;
     {
-        ReaderExecutor executor(source, objects, caches, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
-        executor.setPrefetchPool(pool);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = WINDOW;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = BLOCK;
+        executor_options.prefetch_pool = pool;
+        ReaderExecutor executor(source, objects, caches, executor_options);
 
         String cold;
         while (true)
@@ -4276,8 +4456,12 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
     /// immutable all-miss snapshot, so its machines re-fetch and only the
     /// collect prefers the cache copies.)
     {
-        ReaderExecutor executor(source, objects, caches, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
-        executor.setPrefetchPool(pool);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = WINDOW;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = BLOCK;
+        executor_options.prefetch_pool = pool;
+        ReaderExecutor executor(source, objects, caches, executor_options);
         const auto src_before = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
         String warm;
         while (true)
@@ -4326,8 +4510,12 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
         auto pool = std::make_shared<TogglePool>();
         TestThreadGroup tg;
         {
-            ReaderExecutor executor(source, make_objects(), caches, WINDOW, 0, BLOCK);
-            executor.setPrefetchPool(pool);
+            ReaderExecutor::Options executor_options;
+            executor_options.window_size = WINDOW;
+            executor_options.min_bytes_for_seek = 0;
+            executor_options.block_size = BLOCK;
+            executor_options.prefetch_pool = pool;
+            ReaderExecutor executor(source, make_objects(), caches, executor_options);
 
             auto w1 = executor.readNextWindow();   /// sync; launches machine for w2 (inline fetch)
             ASSERT_FALSE(w1.empty());
@@ -4362,8 +4550,12 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
         TestThreadGroup tg;
         String all;
         {
-            ReaderExecutor executor(source, make_objects(), caches, WINDOW, 0, BLOCK);
-            executor.setPrefetchPool(pool);
+            ReaderExecutor::Options executor_options;
+            executor_options.window_size = WINDOW;
+            executor_options.min_bytes_for_seek = 0;
+            executor_options.block_size = BLOCK;
+            executor_options.prefetch_pool = pool;
+            ReaderExecutor executor(source, make_objects(), caches, executor_options);
 
             auto w1 = executor.readNextWindow();
             ASSERT_FALSE(w1.empty());
@@ -4412,8 +4604,12 @@ TEST(ReaderExecutor, WarmServeDefersPromoteToPutStep)
     auto pool = std::make_shared<SyncPrefetchPool>();
     TestThreadGroup tg;
     {
-        ReaderExecutor executor(source, objects, caches, WINDOW, /*min_bytes_for_seek=*/0, BLOCK);
-        executor.setPrefetchPool(pool);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = WINDOW;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = BLOCK;
+        executor_options.prefetch_pool = pool;
+        ReaderExecutor executor(source, objects, caches, executor_options);
 
         String result;
         while (true)

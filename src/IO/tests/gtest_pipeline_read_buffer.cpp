@@ -61,8 +61,9 @@ TEST(PipelineReadBuffer, ReadAll)
     StoredObjects objects;
     objects.emplace_back("test", "", content.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 20);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 20;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -82,8 +83,9 @@ TEST(PipelineReadBuffer, SeekNegativeOffsetThrows)
     StoredObjects objects;
     objects.emplace_back("test", "", content.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 100);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 100;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -103,8 +105,9 @@ TEST(PipelineReadBuffer, Seek)
     StoredObjects objects;
     objects.emplace_back("test", "", content.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 8);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 8;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -122,8 +125,9 @@ TEST(PipelineReadBuffer, GetPosition)
     StoredObjects objects;
     objects.emplace_back("test", "", 100);
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 30);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 30;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -144,8 +148,9 @@ TEST(PipelineReadBuffer, TryGetFileSize)
     StoredObjects objects;
     objects.emplace_back("test", "", 500);
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 100);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 100;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -169,8 +174,9 @@ TEST(PipelineReadBuffer, TryGetFileSizeReturnsNulloptForUnknownSize)
     StoredObjects objects;
     objects.emplace_back("test", "", StoredObject::UnknownSize);
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 100);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 100;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -235,8 +241,9 @@ TEST(PipelineReadBuffer, MMapSourceDoesNotReturnImmediateEof)
     StoredObjects objects;
     objects.emplace_back("test", "", content.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 1024);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1024;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 

@@ -433,29 +433,26 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
 
     String log_file_path = source->objects.empty() ? "" : source->objects.front().remote_path;
 
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = settings.reader_executor_window_size;
+    executor_options.min_bytes_for_seek = min_bytes_for_seek;
+    executor_options.block_size = settings.reader_executor_block_size;
+    executor_options.log_file_path = std::move(log_file_path);
+    executor_options.max_tail_for_drain = settings.reader_executor_max_tail_for_drain;
+    executor_options.live_connection_min_read_bytes = settings.reader_executor_live_connection_min_read_bytes;
+    executor_options.prefetch_pool = prefetch_pool;
+    executor_options.buffer_limit = buffer_limit;
+    if (settings.enable_reader_executor_log)
+    {
+        if (auto global = Context::getGlobalContextInstance())
+            executor_options.reader_executor_log = global->getReaderExecutorLog();
+    }
+
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader,
         source->objects,
         std::move(executor_caches),
-        settings.reader_executor_window_size,
-        min_bytes_for_seek,
-        settings.reader_executor_block_size,
-        std::move(log_file_path),
-        settings.reader_executor_max_tail_for_drain);
-
-    if (prefetch_pool)
-        executor->setPrefetchPool(prefetch_pool);
-
-    if (buffer_limit)
-        executor->setBufferLimit(buffer_limit);
-
-    executor->setLiveConnectionMinReadBytes(settings.reader_executor_live_connection_min_read_bytes);
-
-    if (settings.enable_reader_executor_log)
-    {
-        if (auto global = Context::getGlobalContextInstance())
-            executor->setReaderExecutorLog(global->getReaderExecutorLog());
-    }
+        std::move(executor_options));
 
     for (const auto & dec : decryption_stages)
         executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);

@@ -422,22 +422,22 @@ ReaderExecutor::ReaderExecutor(
     std::shared_ptr<IFileBasedSourceReader> source_,
     const StoredObjects & objects,
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches_,
-    size_t window_size_,
-    size_t min_bytes_for_seek_,
-    size_t block_size_,
-    String log_file_path_,
-    size_t max_tail_for_drain_,
-    size_t plan_look_ahead_window_)
+    Options options)
     : source(std::move(source_))
     , stored_objects(objects)
     , caches(std::move(caches_))
-    , log_file_path(std::move(log_file_path_))
-    , window_size(window_size_)
-    , min_bytes_for_seek(min_bytes_for_seek_)
-    , block_size(block_size_)
-    , max_tail_for_drain(max_tail_for_drain_)
-    , live_connection_min_read_bytes(window_size_)
-    , plan_look_ahead_window(std::max(plan_look_ahead_window_, window_size_))
+    , log_file_path(std::move(options.log_file_path))
+    , window_size(options.window_size)
+    , min_bytes_for_seek(options.min_bytes_for_seek)
+    , block_size(options.block_size)
+    , max_tail_for_drain(options.max_tail_for_drain)
+    , live_connection_min_read_bytes(
+          options.live_connection_min_read_bytes ? options.live_connection_min_read_bytes : options.window_size)
+    , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
+    , prefetch_pool(std::move(options.prefetch_pool))
+    , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
+    , buffer_limit(std::move(options.buffer_limit))
+    , reader_executor_log(std::move(options.reader_executor_log))
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     if (window_size == 0 || block_size == 0)
@@ -449,6 +449,14 @@ ReaderExecutor::ReaderExecutor(
     creator_query_id = String(CurrentThread::getQueryId());
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, block_size, caches.size());
+}
+
+ReaderExecutor::ReaderExecutor(
+    std::shared_ptr<IFileBasedSourceReader> source_,
+    const StoredObjects & objects,
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches_)
+    : ReaderExecutor(std::move(source_), objects, std::move(caches_), Options{})
+{
 }
 
 ReaderExecutor::~ReaderExecutor()
@@ -750,13 +758,16 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// `readBigAt` can't amortise prefetch latency (and would steal slots
     /// from a concurrent sequential reader), and per-call log rows would
     /// spam `system.reader_executor_log`.
-    auto t = std::make_unique<ReaderExecutor>(
-        source, stored_objects, caches,
-        window_size, min_bytes_for_seek, block_size, log_file_path, max_tail_for_drain,
-        plan_look_ahead_window);  /// plans over its one-shot range (clamped to the read extent)
-
-    t->buffer_limit = buffer_limit;
-    t->live_connection_min_read_bytes = live_connection_min_read_bytes;
+    Options transient_options;
+    transient_options.window_size = window_size;
+    transient_options.min_bytes_for_seek = min_bytes_for_seek;
+    transient_options.block_size = block_size;
+    transient_options.log_file_path = log_file_path;
+    transient_options.max_tail_for_drain = max_tail_for_drain;
+    transient_options.plan_look_ahead_window = plan_look_ahead_window;
+    transient_options.live_connection_min_read_bytes = live_connection_min_read_bytes;
+    transient_options.buffer_limit = buffer_limit;
+    auto t = std::make_unique<ReaderExecutor>(source, stored_objects, caches, std::move(transient_options));
 
 #if USE_SSL
     t->decryption_layers = decryption_layers;
@@ -777,29 +788,6 @@ void ReaderExecutor::mergeTransientStats(const ReaderExecutor & transient)
     /// thread group), so this only accumulates into the parent's report aggregate.
     std::lock_guard lock(transient_stats_mutex);
     stats += transient.stats;
-}
-
-void ReaderExecutor::setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
-{
-    prefetch_pool = std::move(pool);
-    runner = prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr;
-}
-
-void ReaderExecutor::setBufferLimit(std::shared_ptr<LiveConnectionLimit> limit)
-{
-    buffer_limit = std::move(limit);
-}
-
-void ReaderExecutor::setLiveConnectionMinReadBytes(size_t bytes)
-{
-    /// 0 keeps the `window_size` default the constructor set.
-    if (bytes)
-        live_connection_min_read_bytes = bytes;
-}
-
-void ReaderExecutor::setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log_)
-{
-    reader_executor_log = std::move(log_);
 }
 
 void ReaderExecutor::addDecryptionLayer(

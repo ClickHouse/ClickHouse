@@ -2044,13 +2044,12 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
 
     /// First read: cache miss, populates cache.
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            source_reader, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-            /*window_size=*/30,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2070,13 +2069,12 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
         "BrokenSource");
 
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            broken_source, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-            /*window_size=*/30,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(broken_source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2130,13 +2128,12 @@ TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
     StoredObjects objects;
     objects.emplace_back(file_path, "", data.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source_reader, objects,
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider},
-        /*window_size=*/30,
-        /*min_bytes_for_seek=*/0,
-        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-        file_path);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 30;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
     WriteBufferFromOwnString result;
@@ -2187,13 +2184,12 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
 
     /// Read with small window to exercise multiple readNextWindow calls.
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            source_reader, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-            /*window_size=*/10,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 10;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2205,13 +2201,12 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
 
     /// Seek read: read only the middle segment.
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            source_reader, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-            /*window_size=*/10,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 10;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         buf.seek(10, SEEK_SET);
@@ -2286,13 +2281,12 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
     /// with a partial segment. The executor's new contiguity check would
     /// throw LOGICAL_ERROR if the assembled rope had a hole here.
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            source, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-            /*window_size=*/20,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 20;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2310,13 +2304,12 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
     /// match the original data.
     source_open_count->store(0);
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            source, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-            /*window_size=*/20,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 20;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2389,13 +2382,12 @@ TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
         auto outer_provider = std::make_shared<DiskCacheProvider>(outer_cache, cache_settings);
         auto source_reader = std::make_shared<LocalSourceReader>();
 
-        auto executor = std::make_unique<ReaderExecutor>(
-            source_reader, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider},
-            /*window_size=*/30,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2422,13 +2414,12 @@ TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
         "BrokenSource");
 
     {
-        auto executor = std::make_unique<ReaderExecutor>(
-            broken_source, objects,
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider, inner_provider},
-            /*window_size=*/30,
-            /*min_bytes_for_seek=*/0,
-            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-            file_path);
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(broken_source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider, inner_provider}, executor_options);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2489,13 +2480,12 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
     StoredObjects objects;
     objects.emplace_back(file_path, "", data.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source_reader, objects,
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-        /*window_size=*/ReaderExecutor::DEFAULT_WINDOW_SIZE,
-        /*min_bytes_for_seek=*/0,
-        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-        file_path);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = ReaderExecutor::DEFAULT_WINDOW_SIZE;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -2580,13 +2570,12 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
     StoredObjects objects;
     objects.emplace_back(file_path, "", data.size());
 
-    auto executor = std::make_unique<ReaderExecutor>(
-        source_reader, objects,
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
-        /*window_size=*/16,
-        /*min_bytes_for_seek=*/0,
-        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-        file_path);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 16;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
     PipelineReadBuffer buf(std::move(executor));
 
     /// Read first 32 bytes sequentially.
@@ -2709,13 +2698,12 @@ TEST_F(FileCacheTest, ReaderExecutorClampsHitToRequestedWindow)
 
     /// window_size = 10, segment "hit" size = 30. Each readNextWindow should
     /// trigger get() with a range no larger than the window, not the segment.
-    auto executor = std::make_unique<ReaderExecutor>(
-        source_reader, objects,
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{recording},
-        /*window_size=*/10,
-        /*min_bytes_for_seek=*/0,
-        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
-        file_path);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::ROPE_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{recording}, executor_options);
 
     PipelineReadBuffer buf(std::move(executor));
     WriteBufferFromOwnString result;
