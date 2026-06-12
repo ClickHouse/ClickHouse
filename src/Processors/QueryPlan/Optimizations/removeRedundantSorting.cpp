@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
@@ -65,15 +66,16 @@ public:
         }
 
         if (typeid_cast<LimitStep *>(current_step)
-            || typeid_cast<NegativeLimitStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<NegativeOffsetStep *>(current_step) /// (2) if there are OFFSETs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<LimitByStep *>(current_step) /// (3) if there are LIMIT BYs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FractionalLimitStep *>(current_step) /// (4) if there are fractional LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FractionalOffsetStep *>(current_step) /// (5) if there are fractional OFFSETs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<OffsetStep *>(current_step) /// (6) if there are OFFSETs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (7) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (8) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step) /// (9) aggregation changes order
+            || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<NegativeLimitStep *>(current_step) /// negative LIMIT depends on order, so the ORDER BY is non-removable
+            || typeid_cast<NegativeLimitByStep *>(current_step) /// negative LIMIT BY depends on order, so the ORDER BY is non-removable
+            || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FractionalOffsetStep *>(current_step) /// (3) FractionalOffset Steps on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<OffsetStep *>(current_step) /// (4) OFFSET on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<NegativeOffsetStep *>(current_step) /// negative OFFSET depends on order, so the ORDER BY is non-removable
+            || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
             )
         {
             logStep("nodes_affect_order/push", current_node);

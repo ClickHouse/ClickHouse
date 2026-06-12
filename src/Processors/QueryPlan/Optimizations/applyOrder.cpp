@@ -39,7 +39,7 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
@@ -71,19 +71,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            SortDescription prefix_sort_description;
-            const auto & column_names = distinct_step->getColumnNames();
-            std::unordered_set<std::string_view> columns(column_names.begin(), column_names.end());
-
-            for (auto & sort_column_desc : properties->sort_description)
-            {
-                if (!columns.contains(sort_column_desc.column_name))
-                    break;
-
-                prefix_sort_description.emplace_back(sort_column_desc);
-            }
-
-            distinct_step->applyOrder(std::move(prefix_sort_description));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
         /// Distinct never breaks global order
@@ -137,14 +125,26 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-            limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
+        if (prefix.size() == limit_by_step->getColumns().size())
+            limit_by_step->applyOrder();
+
+        return std::move(*properties);
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-            negative_limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
+        if (prefix.size() == negative_limit_by_step->getColumns().size())
+            negative_limit_by_step->applyOrder();
+
+        return std::move(*properties);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

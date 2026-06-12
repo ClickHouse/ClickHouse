@@ -718,14 +718,32 @@ void ColumnVariant::deserializeBinaryIntoVariant(ColumnVariant::Discriminator gl
 void ColumnVariant::insertDefault()
 {
     getLocalDiscriminators().push_back(NULL_DISCRIMINATOR);
-    getOffsets().emplace_back();
+    /// Keep local_discriminators and offsets in sync even if appending to offsets throws
+    /// (e.g. on a memory limit), otherwise popBack would over-pop the shorter one.
+    try
+    {
+        getOffsets().emplace_back();
+    }
+    catch (...)
+    {
+        getLocalDiscriminators().pop_back();
+        throw;
+    }
 }
 
 void ColumnVariant::insertManyDefaults(size_t length)
 {
-    size_t size = local_discriminators->size();
-    getLocalDiscriminators().resize_fill(size + length, NULL_DISCRIMINATOR);
-    getOffsets().resize_fill(size + length);
+    size_t prev_size = local_discriminators->size();
+    getLocalDiscriminators().resize_fill(prev_size + length, NULL_DISCRIMINATOR);
+    try
+    {
+        getOffsets().resize_fill(prev_size + length);
+    }
+    catch (...)
+    {
+        getLocalDiscriminators().resize_assume_reserved(prev_size);
+        throw;
+    }
 }
 
 void ColumnVariant::popBack(size_t n)
@@ -824,7 +842,7 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
@@ -841,7 +859,7 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     if (global_discr == NULL_DISCRIMINATOR)
@@ -1752,6 +1770,16 @@ void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map
 void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
     applyNullMapImpl<true>(null_map);
+}
+
+ColumnPtr ColumnVariant::createNullMap() const
+{
+    const auto & discriminators = getLocalDiscriminators();
+    auto null_map = ColumnUInt8::create(discriminators.size(), UInt8(0));
+    auto & null_map_data = null_map->getData();
+    for (size_t i = 0; i < discriminators.size(); ++i)
+        null_map_data[i] = (discriminators[i] == NULL_DISCRIMINATOR);
+    return null_map;
 }
 
 template <bool inverted>

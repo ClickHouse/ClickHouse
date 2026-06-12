@@ -161,7 +161,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         }
 
         WhichDataType type_info{nested_type};
-        Field::Types::Which field_type;
+        Field::Types::Which field_type = {};
 
         /// Promote integers to 64 bit types
         if (type_info.isNativeUInt())
@@ -666,6 +666,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
                 return false;
             nested_types = map_type->getKeyValueTypes();
         }
+
+        if (nested_types.size() != type_info.nested_types.size())
+            return false;
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
