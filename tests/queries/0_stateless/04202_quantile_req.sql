@@ -105,7 +105,17 @@ SELECT quantileREQ(12, 0.5)(toFloat32(number + 1)) BETWEEN toFloat32(480) AND to
 -- Negative Int32 values: single element, exact result.
 SELECT quantileREQ(12, 0.5)(toInt32(number + 1) * -1) FROM numbers(1) SETTINGS enable_analyzer = 0;
 
+-- k=4 (lower bound) is accepted.
+SELECT quantileREQ(4, 0.5)(number + 1) BETWEEN 400 AND 600 FROM numbers(1000);
+
+-- k=1024 (upper bound) is accepted.
+SELECT quantileREQ(1024, 0.5)(number + 1) BETWEEN 480 AND 520 FROM numbers(1000);
+
 -- Error cases.
 SELECT quantileREQ()(number) FROM numbers(10); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT quantileREQ(3, 0.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 SELECT quantileREQ(0.5, 0.5)(number) FROM numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- k above the documented upper bound (1024) is rejected before any silent narrowing.
+SELECT quantileREQ(1025, 0.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+-- Large UInt64 that would silently truncate to a small `uint16_t` is rejected.
+SELECT quantileREQ(70000, 0.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }

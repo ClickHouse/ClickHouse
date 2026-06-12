@@ -50,22 +50,31 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
     if (params.empty())
         throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-            "Aggregate function {} requires at least one parameter: k (even integer >= 4)", name);
+            "Aggregate function {} requires at least one parameter: k (even integer in [4, 1024])", name);
 
     const auto & k_field = params[0];
     if (!isInt64OrUInt64FieldType(k_field.getType()))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "First parameter (k) of aggregate function {} must be an integer", name);
 
-    ssize_t k;
+    /// The vendored REQ sketch documents `k` as supported in `[4, 1024]`. Reject values
+    /// outside that range BEFORE narrowing to `uint16_t`, so e.g. `quantileREQ(70000)`
+    /// doesn't silently truncate to a smaller value.
+    Int64 k;
     if (k_field.getType() == Field::Types::Int64)
-        k = static_cast<ssize_t>(k_field.safeGet<Int64>());
+        k = k_field.safeGet<Int64>();
     else
-        k = static_cast<ssize_t>(k_field.safeGet<UInt64>());
+    {
+        UInt64 k_unsigned = k_field.safeGet<UInt64>();
+        if (k_unsigned > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Parameter k of aggregate function {} must be in [4, 1024] (got {})", name, k_unsigned);
+        k = static_cast<Int64>(k_unsigned);
+    }
 
-    if (k < 4)
+    if (k < 4 || k > 1024)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Parameter k of aggregate function {} must be >= 4 (got {})", name, k);
+            "Parameter k of aggregate function {} must be in [4, 1024] (got {})", name, k);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);
@@ -111,8 +120,8 @@ quantileREQ(k[, level])(expr)
         {"expr", "Column with numeric data.", {"(U)Int*", "Float*"}}
     };
     FunctionDocumentation::Parameters parameters = {
-        {"k", "Sketch size parameter. Must be >= 4; odd values are rounded down to the nearest even number. "
-              "Larger values give more accurate results. Default recommended value: 12 (≈1% relative rank error "
+        {"k", "Sketch size parameter. Must be in `[4, 1024]`; odd values are rounded down to the nearest even number. "
+              "Larger values give more accurate results. Default recommended value: 12 (~1% relative rank error "
               "at 95% confidence for high ranks).", {"UInt*"}},
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. "
                   "Default value: 0.5. At `level=0.5` the function calculates the median.", {"Float64"}}
@@ -138,12 +147,54 @@ SELECT quantilesREQ(12, 0.5, 0.9, 0.99)(number + 1) FROM numbers(10000);
 └─────────────────────────────────────────────────────┘
          )"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction(NameQuantileREQ::name, {createAggregateFunctionQuantile<FuncQuantileREQ>, documentation});
-    factory.registerFunction(NameQuantilesREQ::name, {createAggregateFunctionQuantile<FuncQuantilesREQ>, {}, properties});
+
+    FunctionDocumentation::Description description_quantiles = R"(
+Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data
+sequence at different levels simultaneously using the
+[REQ (Relative Error Quantiles) sketch](https://datasketches.apache.org/docs/REQ/ReqSketch.html)
+algorithm from the Apache DataSketches library.
+
+This function works similarly with [`quantileREQ`](/sql-reference/aggregate-functions/reference/quantileREQ)
+but allows computing multiple quantile levels in a single pass, which is more efficient than calling
+individual quantile functions.
+
+Like `quantileREQ`, the sketch is configured with High Rank Accuracy (HRA) mode: tail accuracy
+(p99, p999) is prioritised over accuracy near the median.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles = R"(
+quantilesREQ(k, level1[, level2, ...])(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles = {
+        {"expr", "Column with numeric data.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles = {
+        {"k", "Sketch size parameter. Must be in `[4, 1024]`; odd values are rounded down to the nearest even number. "
+              "Larger values give more accurate results. Recommended starting value: 12 (~1% relative rank error "
+              "at 95% confidence for high ranks).", {"UInt*"}},
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified.", {"Array(Float64)"}};
+    FunctionDocumentation::Examples examples_quantiles = {
+        {"Computing multiple quantiles with REQ algorithm",
+         R"(
+SELECT quantilesREQ(12, 0.5, 0.9, 0.99)(number + 1) FROM numbers(10000);
+         )",
+         R"(
+┌─quantilesREQ(12, 0.5, 0.9, 0.99)(plus(number, 1))─┐
+│ [5001,9001,9901]                                    │
+└─────────────────────────────────────────────────────┘
+         )"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {26, 7};
+    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
+
+    factory.registerFunction(NameQuantilesREQ::name, {createAggregateFunctionQuantile<FuncQuantilesREQ>, documentation_quantiles, properties});
 
     factory.registerAlias("medianREQ", NameQuantileREQ::name);
 }
