@@ -52,6 +52,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
+    DECLARE(String, upload_checksum_algorithm, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
@@ -243,6 +244,13 @@ void S3RequestSettings::validateUploadSettings()
             "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
             (*this)[S3RequestSetting::storage_class_name].value);
 
+    NameSet upload_checksum_algorithms {"CRC32", "SHA256"};
+    if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && !upload_checksum_algorithms.contains((*this)[S3RequestSetting::upload_checksum_algorithm]))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_checksum_algorithm has invalid value {} which only supports CRC32 and SHA256",
+            (*this)[S3RequestSetting::upload_checksum_algorithm].value);
+
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
 }
@@ -302,6 +310,9 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && (*this)[S3RequestSetting::storage_class_name].changed)
         (*this)[S3RequestSetting::storage_class_name] = Poco::toUpperInPlace((*this)[S3RequestSetting::storage_class_name].value);
+
+    if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && (*this)[S3RequestSetting::upload_checksum_algorithm].changed)
+        (*this)[S3RequestSetting::upload_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::upload_checksum_algorithm].value);
 }
 
 void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const

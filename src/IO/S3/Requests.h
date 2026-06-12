@@ -37,27 +37,82 @@ namespace Model = Aws::S3::Model;
 /// Used only for S3Express
 namespace RequestChecksum
 {
-inline void setPartChecksum(Model::CompletedPart & part, const std::string & checksum)
+enum class Algorithm
 {
-    part.SetChecksumCRC32(checksum);
+    None,
+    CRC32,
+    SHA256,
+};
+
+inline Aws::S3::Model::ChecksumAlgorithm toSDKAlgorithm(Algorithm algorithm)
+{
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            return Model::ChecksumAlgorithm::CRC32;
+        case Algorithm::SHA256:
+            return Model::ChecksumAlgorithm::SHA256;
+        case Algorithm::None:
+            break;
+    }
+    UNREACHABLE();
 }
 
-inline void setRequestChecksum(Model::UploadPartRequest & req, const std::string & checksum)
+inline void setPartChecksum(Model::CompletedPart & part, Algorithm algorithm, const std::string & checksum)
 {
-    req.SetChecksumCRC32(checksum);
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            part.SetChecksumCRC32(checksum);
+            return;
+        case Algorithm::SHA256:
+            part.SetChecksumSHA256(checksum);
+            return;
+        case Algorithm::None:
+            break;
+    }
+    UNREACHABLE();
 }
 
-inline std::string calculateChecksum(Model::UploadPartRequest & req)
+inline void setRequestChecksum(Model::UploadPartRequest & req, Algorithm algorithm, const std::string & checksum)
 {
-    chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
-    return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            req.SetChecksumCRC32(checksum);
+            return;
+        case Algorithm::SHA256:
+            req.SetChecksumSHA256(checksum);
+            return;
+        case Algorithm::None:
+            break;
+    }
+    UNREACHABLE();
+}
+
+inline std::string calculateChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
+{
+    chassert(req.GetChecksumAlgorithm() == toSDKAlgorithm(algorithm));
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
+        case Algorithm::SHA256:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(*(req.GetBody())));
+        case Algorithm::None:
+            break;
+    }
+    UNREACHABLE();
 }
 
 template <typename R>
-inline void setChecksumAlgorithm(R & request)
+inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
+    if (algorithm == Algorithm::None)
+        return;
+
     if constexpr (requires { request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32); })
-        request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32);
+        request.SetChecksumAlgorithm(toSDKAlgorithm(algorithm));
 }
 };
 
@@ -89,7 +144,7 @@ public:
         /// AWSClient::AddChecksumToRequest [1] for more details).
         ///
         ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
-        if (!is_s3express_bucket && !checksum)
+        if (!hasRequestChecksum() && !checksum)
             return "";
         return BaseRequest::GetChecksumAlgorithmName();
     }
@@ -131,7 +186,21 @@ public:
     void setIsS3ExpressBucket()
     {
         is_s3express_bucket = true;
-        RequestChecksum::setChecksumAlgorithm(*this);
+        RequestChecksum::setChecksumAlgorithm(*this, RequestChecksum::Algorithm::CRC32);
+    }
+
+    void setUploadChecksumAlgorithm(RequestChecksum::Algorithm algorithm)
+    {
+        if (algorithm == RequestChecksum::Algorithm::None)
+            return;
+
+        upload_checksum_algorithm = algorithm;
+        RequestChecksum::setChecksumAlgorithm(*this, algorithm);
+    }
+
+    bool hasRequestChecksum() const
+    {
+        return is_s3express_bucket || upload_checksum_algorithm != RequestChecksum::Algorithm::None;
     }
 
 protected:
@@ -140,6 +209,7 @@ protected:
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
     bool is_s3express_bucket = false;
+    RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::None;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
@@ -163,15 +233,15 @@ class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+    bool RequestChecksumRequired() const override { return hasRequestChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasRequestChecksum() && checksum; }
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
 {
 public:
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+    bool RequestChecksumRequired() const override { return hasRequestChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasRequestChecksum() && checksum; }
 };
 
 class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>

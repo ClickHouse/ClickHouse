@@ -55,6 +55,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 strict_upload_part_size;
+    extern const S3RequestSettingsString upload_checksum_algorithm;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_factor;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_parts_count_threshold;
 }
@@ -423,6 +424,9 @@ void WriteBufferFromS3::createMultipartUpload()
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
+    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm != S3::RequestChecksum::Algorithm::None)
+        req.setUploadChecksumAlgorithm(checksum_algorithm);
+
     client_ptr->setKMSHeaders(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
@@ -498,6 +502,20 @@ void WriteBufferFromS3::abortMultipartUpload()
     LOG_INFO(log, "Multipart upload has been aborted successfully. {}", getVerboseLogDetails());
 }
 
+S3::RequestChecksum::Algorithm WriteBufferFromS3::getUploadChecksumAlgorithm() const
+{
+    if (client_ptr->isS3ExpressBucket())
+        return S3::RequestChecksum::Algorithm::CRC32;
+
+    const auto & algorithm = request_settings[S3RequestSetting::upload_checksum_algorithm].value;
+    if (algorithm == "CRC32")
+        return S3::RequestChecksum::Algorithm::CRC32;
+    if (algorithm == "SHA256")
+        return S3::RequestChecksum::Algorithm::SHA256;
+
+    return S3::RequestChecksum::Algorithm::None;
+}
+
 S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
@@ -514,11 +532,13 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
-    if (client_ptr->isS3ExpressBucket())
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate them manually and store in multipart_checksums.
+    const auto checksum_algorithm = getUploadChecksumAlgorithm();
+    req.setUploadChecksumAlgorithm(checksum_algorithm);
+    if (checksum_algorithm != S3::RequestChecksum::Algorithm::None)
     {
-        auto checksum = S3::RequestChecksum::calculateChecksum(req);
-        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        auto checksum = S3::RequestChecksum::calculateChecksum(req, checksum_algorithm);
+        S3::RequestChecksum::setRequestChecksum(req, checksum_algorithm, checksum);
         multipart_checksums.push_back(std::move(checksum));
     }
 
@@ -647,12 +667,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
         req.SetIfMatch(write_settings.object_storage_write_if_match);
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
+    const auto checksum_algorithm = getUploadChecksumAlgorithm();
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
         part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
         if (!multipart_checksums.empty())
-            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+            S3::RequestChecksum::setPartChecksum(part, checksum_algorithm, multipart_checksums.at(i));
         multipart_upload.AddParts(part);
     }
 
@@ -719,6 +740,9 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
         req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+
+    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm != S3::RequestChecksum::Algorithm::None)
+        req.setUploadChecksumAlgorithm(checksum_algorithm);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);

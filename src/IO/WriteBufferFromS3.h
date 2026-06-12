@@ -75,6 +75,7 @@ private:
     bool completeMultipartUpload();
     void abortMultipartUpload();
     void tryToAbortMultipartUpload() noexcept;
+    S3::RequestChecksum::Algorithm getUploadChecksumAlgorithm() const;
 
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
