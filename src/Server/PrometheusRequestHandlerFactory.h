@@ -75,7 +75,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         </handler>
 ///     </my_rule_1>
 ///     <my_rule2>
-///         <url>/prometheus/api/v1</url>
+///         <url_prefix:/prometheus/api/v1</url_prefix>
 ///         <handler>
 ///             <type>prometheus_api_v1</type>
 ///             <table>db.time_series_table_name</table>
