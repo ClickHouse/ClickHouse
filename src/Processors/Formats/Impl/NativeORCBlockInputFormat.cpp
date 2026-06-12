@@ -1,6 +1,9 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 
 #if USE_ORC
+
+#include <Common/checkStackSize.h>
+#include <Core/Defines.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -58,6 +61,7 @@ extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -190,9 +194,23 @@ static DataTypePtr parseORCType(
     bool skip_columns_with_unsupported_types,
     bool dictionary_as_low_cardinality,
     const orc::StripeInformation * stripe_info,
-    bool & skipped)
+    bool & skipped,
+    size_t max_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
+    size_t depth = 0)
 {
     chassert(orc_type != nullptr);
+
+    /// ORC LIST/MAP/STRUCT types can be nested arbitrarily deep and the ORC library does not bound
+    /// the nesting, so reject deep nesting early (before building the type) with an explicit limit.
+    /// This keeps schema inference cheap and interruptible instead of recursing over (and later
+    /// walking) a pathologically deep type. checkStackSize is a last-resort backstop.
+    if (depth > max_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while parsing the ORC schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            max_depth);
+    checkStackSize();
 
     const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
     switch (orc_type->getKind())
@@ -248,7 +266,7 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
 
             DataTypePtr nested_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -259,12 +277,12 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
 
             DataTypePtr key_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
             DataTypePtr value_type = parseORCType(
-                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -279,7 +297,7 @@ static DataTypePtr parseORCType(
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 auto parsed_type = parseORCType(
-                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
                 if (skipped)
                     return {};
 
@@ -581,7 +599,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped), format_settings);
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped, format_settings.max_parser_depth), format_settings);
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -1180,7 +1198,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
             format_settings.orc.dictionary_as_low_cardinality,
             stripe_info.get(),
-            skipped);
+            skipped,
+            format_settings.max_parser_depth);
         if (!skipped)
             header.insert(ColumnWithTypeAndName{type, name});
     }
@@ -1724,6 +1743,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     bool inside_nullable,
     DataTypePtr type_hint) const
 {
+    /// Reading a nested LIST/MAP/STRUCT recurses through this function over the ORC type tree, whose
+    /// depth is attacker-controlled, so guard the native stack on the data-read path as well.
+    checkStackSize();
+
     bool skipped = false;
 
     if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
