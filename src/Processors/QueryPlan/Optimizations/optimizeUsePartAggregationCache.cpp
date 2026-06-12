@@ -268,9 +268,17 @@ void optimizeUsePartAggregationCache(
         SipHash extra_hash;
         extra_hash.update(query_hash.low64);
         extra_hash.update(query_hash.high64);
+
+        /// As in `calculateQueryHash`, every variable-length component needs an explicit
+        /// boundary: the action count before the loop and a length prefix before each string.
+        /// `SipHash::update(String)` feeds raw bytes only, so without boundaries different
+        /// action/filter sequences could concatenate to the same byte stream and alias
+        /// incompatible queries to one cache key.
+        extra_hash.update(intermediate_actions.size());
         for (const auto & action : intermediate_actions)
         {
             action.actions->getActionsDAG().updateHash(extra_hash);
+            extra_hash.update(action.filter_column_name.size());
             extra_hash.update(action.filter_column_name);
             extra_hash.update(action.remove_filter_column);
         }
