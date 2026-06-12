@@ -29,6 +29,12 @@ SET automatic_parallel_replicas_mode = 0;
 -- reading, so the timeout fires reliably regardless of how fast the hardware is. The work is spread across replicas,
 -- so each leaf accumulates several seconds of sleep, far exceeding the one second timeout.
 
+-- 'max_threads = 1' makes each replica sleep serially. With a higher (default or randomized) 'max_threads',
+-- the sleeps run in parallel reading streams and the query can finish before the one second timeout fires:
+-- 1000 rows * 0.01 s over 3 replicas leaves only ~1.1 s of wall-clock time per replica already with 3 threads,
+-- and far less on machines with more cores.
+SET max_threads = 1;
+
 -- The whole-query timeout 'max_execution_time' aborts the query.
 SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED }
 -- The leaf timeout 'max_execution_time_leaf' aborts the per-replica (leaf) execution.
