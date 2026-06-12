@@ -31,7 +31,7 @@ function run_cancel_check()
     # pinned against randomization. 1000 rows x 0.001s = 1s per block, ~100s natural query duration.
     $CLICKHOUSE_CLIENT --query-id="$query_id" -q "
         SELECT x, count() FROM t_dp_cancel WHERE NOT sleepEachRow(0.001) GROUP BY x FORMAT Null
-        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
+        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
             distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0, max_execution_time = 300,
             max_block_size = 1000$extra_settings
     " 2> "$client_log" &
