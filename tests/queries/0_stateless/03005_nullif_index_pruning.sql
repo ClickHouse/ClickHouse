@@ -27,3 +27,21 @@ EXPLAIN indexes = 1 SELECT count() FROM t_nullif_fixedstring WHERE nullIf(s, 'ab
 SELECT count() FROM t_nullif_fixedstring WHERE nullIf(s, 'abc') = 'abc\0';
 
 DROP TABLE IF EXISTS t_nullif_fixedstring;
+
+-- Regression test for Partition Pruning
+DROP TABLE IF EXISTS t_nullif_partition;
+CREATE TABLE t_nullif_partition (p UInt64, v UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 8192;
+INSERT INTO t_nullif_partition SELECT number % 10, number FROM numbers(2000000);
+OPTIMIZE TABLE t_nullif_partition FINAL;
+
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_partition WHERE nullIf(p, 255) = 5;
+DROP TABLE t_nullif_partition;
+
+-- Regression test for MinMax Skip Index Pruning
+DROP TABLE IF EXISTS t_nullif_skip_index;
+CREATE TABLE t_nullif_skip_index (id UInt64, s UInt16, INDEX idx_s s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO t_nullif_skip_index SELECT number, number % 100 FROM numbers(2000000);
+OPTIMIZE TABLE t_nullif_skip_index FINAL;
+
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_skip_index WHERE nullIf(s, 999) = 50;
+DROP TABLE t_nullif_skip_index;
