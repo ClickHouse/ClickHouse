@@ -184,19 +184,17 @@ void CompressionCodecPco::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecPco::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    /// Safe upper bound on the standalone stream. A mode may split each value into two latents
-    /// (primary + secondary), each using at most MAX_ANS_BITS + width*8 bits, plus up to
-    /// 2^MAX_ANS_BITS bins of metadata per latent variable. This must cover the value the
-    /// standalone encoder writes directly into `dest` (encodeStandaloneMaxSize), plus our 2-byte
-    /// header and the raw partial-value tail. The encoder splits blocks larger than MAX_ENTRIES
-    /// values into several chunks, each adding a small fixed framing cost.
+    /// Tight no-expansion bound, matching `encodeStandaloneMaxSize`: the encoder commits each
+    /// chunk to the output only if it fits `trivialChunkMaxSize` (raw data size + 32 bytes of
+    /// framing per chunk), re-encoding it with the guaranteed-small trivial configuration
+    /// otherwise. Add our 2-byte header and the raw partial-value tail. `CompressedWriteBuffer`
+    /// allocates this much per block, so it must stay close to the raw size.
     UInt8 width = data_bytes_size == 0 ? 1 : data_bytes_size;
-    /// Computed in 64-bit: for wide (1-byte) blocks the intermediate product can exceed `UInt32`, and
-    /// a wraparound here would under-reserve the destination buffer and let the encoder write past it.
+    /// Computed in 64-bit: near the 4 GiB block-size limit the sum can exceed `UInt32`, and a
+    /// wraparound here would under-reserve the destination buffer and let the encoder write past it.
     UInt64 n = static_cast<UInt64>(uncompressed_size) / width + 1;
-    UInt64 num_chunks = (n + Pcodec::MAX_ENTRIES - 1) / Pcodec::MAX_ENTRIES;
-    UInt64 bound = UInt64{2} + width + 256
-        + 2 * n * (static_cast<UInt64>(width) + Pcodec::MAX_ANS_BYTES + 2) + (UInt64{1} << 17) + 64 + num_chunks * 256;
+    UInt64 num_chunks = (n + Pcodec::ENCODE_CHUNK_N - 1) / Pcodec::ENCODE_CHUNK_N;
+    UInt64 bound = UInt64{2} + width + n * width + num_chunks * 32 + 64;
 
     /// The result (and `CompressedWriteBuffer`'s reserve) is a `UInt32`, so a genuinely larger bound
     /// cannot be represented. Fail closed rather than silently truncating to a too-small reservation.
