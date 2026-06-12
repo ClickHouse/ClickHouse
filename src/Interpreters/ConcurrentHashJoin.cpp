@@ -164,6 +164,40 @@ void reserveSpaceInHashMaps(
         reserveBucketsBySize(hash_join, ind, hint->ht_size, slots, external_join_threshold);
 }
 
+/// Bytes the buffers of the two-level map buckets will occupy (summed across all slots; every bucket
+/// is owned by exactly one slot) once `total_rows` entries are inserted, mirroring `reserveBucketsBySize`
+/// and `HashTableGrower::set`: each bucket gets `total_rows / NUM_BUCKETS` entries and its buffer grows
+/// to `2^(floor(log2(n - 1)) + 2)` cells, i.e. into [2n, 4n). Deliberately not capped by the
+/// `budget_entries` cap of `reserveBucketsBySize`: rehashes during the replay grow the buffers to this
+/// size regardless of the initial reserve. Used to project the memory footprint of a deferred build
+/// before committing to the replay (see `getProjectedTotalByteCount`).
+size_t projectedTwoLevelMapBytes(const HashJoin & hash_join, size_t total_rows)
+{
+    size_t projected_bytes = 0;
+    auto compute = [&](auto & maps, HashJoin::Type type)
+    {
+        APPLY_TO_MAP(
+            INVOKE_WITH_MAP,
+            type,
+            maps,
+            [&](auto & map)
+            {
+                using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
+                constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
+
+                const size_t per_bucket_elems = total_rows / map.NUM_BUCKETS;
+                /// Buckets that stay at their initial size are already accounted by `getTotalByteCount`.
+                if (per_bucket_elems <= 1)
+                    return;
+                const size_t per_bucket_buf_cells = 4ull << (63 - std::countl_zero(per_bucket_elems - 1));
+                projected_bytes = map.NUM_BUCKETS * per_bucket_buf_cells * cell_size;
+            })
+    };
+    const auto & right_data = hash_join.getJoinedData();
+    std::visit([&](auto & maps) { compute(maps, right_data->type); }, right_data->maps.at(0));
+    return projected_bytes;
+}
+
 template <typename HashTable>
 concept HasGetBucketFromHashMemberFunc = requires {
     { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) };
@@ -241,13 +275,21 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         /// rehashes during the build. Skipped when statistics already provide a good hint (then the
         /// streaming build + `reserveSpaceInHashMaps` is used), when size limits require incremental
         /// enforcement, for `any_take_last_row`, and for single-level maps (FixedHashMap is already
-        /// exact-size and never rehashes). Coexists with a wrapping `SpillingHashJoin`: the buffered
-        /// data is reported by `getTotalByteCount`/`getTotalRowCount` so the spill threshold check
-        /// still fires, and on a spill the buffers are handed to `GraceHashJoin` (see
-        /// `releaseSlotBlocks`) without building the in-memory map.
+        /// exact-size and never rehashes). Coexists with a wrapping `SpillingHashJoin`: the spill
+        /// threshold checks consult `getProjectedTotalByteCount` (buffered blocks plus the projected
+        /// size of the maps the replay would build), so the wrapper switches to `GraceHashJoin`
+        /// before a replay that would overshoot the cap, and on a spill the buffers are handed over
+        /// (see `releaseSlotBlocks`) without building the in-memory map.
         deferred_build = !any_take_last_row
             && !table_join->sizeLimits().hasLimits() && hash_joins[0]->data->twoLevelMapIsUsed()
             && !getSizeHint(stats_collecting_params).has_value();
+
+        /// String-key maps copy every key into the arena at insert time; for the spill projection
+        /// those bytes are tracked at buffering time (other key types live in the cells, whose size
+        /// is projected from the row count alone).
+        const auto map_type = getData(hash_joins[0])->type;
+        track_buffered_key_bytes = deferred_build
+            && (map_type == HashJoin::Type::two_level_key_string || map_type == HashJoin::Type::two_level_key_fixed_string);
     }
     catch (...)
     {
@@ -306,6 +348,15 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
+    /// See `getProjectedTotalByteCount`: the replay will copy these key bytes into the arena.
+    if (track_buffered_key_bytes)
+    {
+        size_t key_bytes = 0;
+        for (const auto & name : table_join->getOnlyClause().key_names_right)
+            key_bytes += right_block.getByName(name).column->byteSize();
+        buffered_key_bytes.fetch_add(key_bytes, std::memory_order_relaxed);
+    }
+
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
 
     if (deferred_build)
@@ -313,7 +364,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         /// Buffer the per-slot blocks instead of inserting now; they are reserved exactly and replayed
         /// at `onBuildPhaseFinish` (or handed to GraceHashJoin if the wrapper decides to spill). Size
         /// limits are not enforced here (deferral is disabled when any limit is set, see the ctor).
-        /// `buffered_rows`/`buffered_bytes` keep the totals accurate so the spill check stays correct.
+        /// `buffered_rows`/`buffered_bytes` keep the totals accurate, and the spill checks of the
+        /// wrapping `SpillingHashJoin` use `getProjectedTotalByteCount` on top of them to account
+        /// for the maps the replay would build.
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
             auto & dispatched_block = dispatched_blocks[i];

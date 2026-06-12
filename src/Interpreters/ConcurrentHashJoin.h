@@ -66,6 +66,15 @@ public:
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+
+    /// `getTotalByteCount` plus a projection of the memory the pending deferred build will allocate
+    /// once it is replayed at `onBuildPhaseFinish`: the hash-table buffers sized for the buffered
+    /// rows and, for string-key maps, the arena copies of the keys. During a deferred build the maps
+    /// are still empty, so `getTotalByteCount` alone would let the wrapping `SpillingHashJoin` pass
+    /// its spill threshold and the replay would then overshoot the cap with no spill opportunity
+    /// left. Equals `getTotalByteCount` when nothing is buffered (non-deferred builds).
+    size_t getProjectedTotalByteCount() const;
+
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
@@ -114,9 +123,10 @@ public:
         /// slot's hash map is reserved to the exact row count and the blocks are replayed, so the map
         /// is filled without any rehash. Only used when `deferred_build` is set (no statistics hint).
         /// `buffered_rows`/`buffered_bytes` keep `getTotalRowCount`/`getTotalByteCount` accurate while
-        /// the data is parked here, so the wrapping `SpillingHashJoin` can still decide to spill. On a
-        /// spill the buffered blocks are handed to `GraceHashJoin` directly (see `releaseSlotBlocks`),
-        /// without ever building the in-memory map.
+        /// the data is parked here, and `getProjectedTotalByteCount` projects the size of the maps the
+        /// replay would build on top of them, so the wrapping `SpillingHashJoin` can still decide to
+        /// spill. On a spill the buffered blocks are handed to `GraceHashJoin` directly (see
+        /// `releaseSlotBlocks`), without ever building the in-memory map.
         std::vector<ScatteredBlock> buffered_blocks;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
@@ -139,6 +149,13 @@ private:
     /// at `onBuildPhaseFinish` after being reserved to the exact row count (no rehash during build).
     /// Enabled only when there is no statistics-driven preallocation to fall back on (see the ctor).
     bool deferred_build = false;
+
+    /// Deferred build with a string-key map: the replay will copy every key into the arena, so the
+    /// key bytes of the buffered blocks are tracked here (accumulated once per source block, before
+    /// dispatch) and included in `getProjectedTotalByteCount`. Monotone; meaningful only during the
+    /// build phase, which is the only time the projection is consulted.
+    bool track_buffered_key_bytes = false;
+    std::atomic<size_t> buffered_key_bytes = 0;
 
     std::mutex totals_mutex;
     Block totals;
