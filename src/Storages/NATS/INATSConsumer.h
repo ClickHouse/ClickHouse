@@ -8,6 +8,8 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Storages/NATS/StorageNATS.h>
 
+#include <optional>
+
 namespace Poco
 {
 class Logger;
@@ -56,10 +58,9 @@ public:
     auto getSubject() const { return current.subject; }
     const String & getCurrentMessage() const { return current.message; }
 
-    /// Return read buffer containing next available message
-    /// or nullptr if there are no messages to process.
-    ReadBufferPtr consume();
-    ReadBufferPtr consume(UInt64 timeout_ms);
+    /// Return read buffer containing next available message or nullptr if there are no messages to
+    /// process. With `timeout_ms` set, waits up to that long for a message; without it, returns at once.
+    ReadBufferPtr consume(std::optional<UInt64> timeout_ms = std::nullopt);
 
 protected:
     const NATSConnectionPtr & getConnection() { return connection; }

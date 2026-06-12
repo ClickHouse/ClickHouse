@@ -42,20 +42,13 @@ void INATSConsumer::unsubscribe()
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
-ReadBufferPtr INATSConsumer::consume()
+ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
 {
-    if (stopped || !received.tryPop(current))
+    if (stopped)
         return nullptr;
 
-    if (current.msg)
-        consumed_messages.push_back(std::move(current.msg));
-
-    return std::make_shared<ReadBufferFromMemory>(current.message);
-}
-
-ReadBufferPtr INATSConsumer::consume(UInt64 timeout_ms)
-{
-    if (stopped || !received.tryPop(current, timeout_ms))
+    const bool popped = timeout_ms ? received.tryPop(current, *timeout_ms) : received.tryPop(current);
+    if (!popped)
         return nullptr;
 
     if (current.msg)
