@@ -35,7 +35,6 @@ public:
     EnumeratorCheckerWithCosts(const size_t nr_relations_, optimizer_t & optimizer_)
         : nr_relations(nr_relations_), dptab(nr_relations_), optimizer(optimizer_) {}
     double computeJoinCost(Tuint S1, Tuint S2, double selectivity) const;
-    double computeCardinality(Tuint S1, Tuint S2, double selectivity) const;
     void accept(Tuint S, Tuint S1, Tuint S2);
     inline size_t n() const { return nr_relations; }
     inline dptable_t & dptable() { return dptab; }
@@ -58,16 +57,6 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::computeJoinCost(const T
         * static_cast<double>(dptab[S2].estimated_rows.value_or(1));
 }
 
-template <class Tdptable, class Toptimizer, std::unsigned_integral Tuint>
-double
-EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::computeCardinality(const Tuint S1,
-                                                                            const Tuint S2,
-                                                                            const double selectivity) const
-{
-    return std::max(selectivity * static_cast<double>(dptab[S1].estimated_rows.value_or(1)) *
-                    static_cast<double>(dptab[S2].estimated_rows.value_or(1)),
-                    1.0);
-}
 
 template <class Tdptable, class Toptimizer, std::unsigned_integral Tuint>
 void
@@ -77,13 +66,27 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
     auto lhs = BitSet::fromUint(S1);
     auto rhs = BitSet::fromUint(S2);
 
+    /// A child is usable only if it is a base relation or a subset for which a valid join
+    /// was already recorded. The enumerator's `setTableNeighbor` creates a DP entry for
+    /// every connected subset to propagate neighbor info, but for non-Inner joins `accept`
+    /// may have rejected the only ordering that builds that subset (e.g. {t2, t3} when t2's
+    /// LEFT join requires t1). Such a polluted entry has no recorded join (left == right == 0)
+    /// and must not be used as a building block, otherwise `buildPhysicalPlan` mistakes it for
+    /// a leaf and emits an incomplete tree.
+    auto is_buildable = [&](Tuint s)
+    {
+        return std::popcount(s) == 1 || (dptab.map().contains(s) && (dptab[s].left != 0 || dptab[s].right != 0));
+    };
+    if (!is_buildable(S1) || !is_buildable(S2))
+        return;
+
     auto join_kind = optimizer.isValidJoinOrder(lhs, rhs);
     if (!join_kind)
         return;
 
-    /// FIXME: Restrict to Inner joins for now because isValidJoinOrder does not handle non-Inner joins with swapped inputs correctly
-    if (*join_kind != JoinKind::Inner)
-        return;
+    /// `isValidJoinOrder` returns the kind relative to the (S1, S2) orientation we were
+    /// handed, so we can use it directly without swapping the inputs.
+    auto kind = *join_kind;
 
     auto applicable_edge = optimizer.getApplicableExpressions(lhs, rhs);
     std::vector<JoinActionRef *> edge;
@@ -107,6 +110,12 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
         }
     }
 
+    /// The enumerator only invokes the acceptor for connected pairs, so a `Cross`
+    /// kind here is a connected join that should be treated as `Inner` (mirrors the
+    /// normalization done by the greedy and DPsize solvers).
+    if (kind == JoinKind::Cross)
+        kind = JoinKind::Inner;
+
     auto selectivity = optimizer.computeSelectivity(edge, lhs, rhs);
     auto plan_cost = computeJoinCost(S1, S2, selectivity);
 
@@ -119,7 +128,8 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
         entry.right = S2;
         entry.cost = plan_cost;
         entry.sel = selectivity;
-        entry.estimated_rows = computeCardinality(S1, S2, selectivity);
+        entry.kind = kind;
+        entry.estimated_rows = optimizer.estimateCardinality(dptab[S1].estimated_rows, dptab[S2].estimated_rows, selectivity, kind);
         entry.edges = edge;
     }
 }

@@ -136,10 +136,7 @@ bool EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::isConnected(const TDpt
 template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
 void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::setTableNeighbor(TDptable & dp_table, const Tuint S1, const Tuint S2) const
 {
-    const auto full_mask = S1 | S2;
-    // Create/initialize the DP entry for the combined set through insert(),
-    // which will propagate neighbor information and set a safe initial cost.
-    dp_table.insert(full_mask, S1, S2);
+    dp_table.insert(S1 | S2, S1, S2);
 }
 
 template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>

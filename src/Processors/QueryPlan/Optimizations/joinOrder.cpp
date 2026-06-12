@@ -330,6 +330,8 @@ private:
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
+    std::optional<UInt64> estimateCardinality(
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
     size_t getColumnStats(BitSet rels, const String & column_name);
 
     /// Peridically called from potentially long running optimization to check time limits and send progress
@@ -462,17 +464,20 @@ double JoinOrderOptimizer::computeSelectivity(
 }
 
 
+/// Single source of truth for join cardinality estimation. For outer joins the result is
+/// floored by the number of rows from the preserved side(s), since those are always emitted
+/// (NULL-padded when there is no match): LEFT keeps all left rows, RIGHT all right rows, FULL both.
 static std::optional<UInt64> estimateJoinCardinality(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
     double selectivity,
-    JoinKind join_kind = JoinKind::Inner)
+    JoinKind join_kind)
 {
-    if (!left->estimated_rows || !right->estimated_rows)
+    if (!left_rows || !right_rows)
         return {};
 
-    double lhs = static_cast<double>(left->estimated_rows.value());
-    double rhs = static_cast<double>(right->estimated_rows.value());
+    double lhs = static_cast<double>(*left_rows);
+    double rhs = static_cast<double>(*right_rows);
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
@@ -491,6 +496,21 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (joined_rows < 1)
         return 1;
     return static_cast<UInt64>(joined_rows);
+}
+
+static std::optional<UInt64> estimateJoinCardinality(
+    const std::shared_ptr<DPJoinEntry> & left,
+    const std::shared_ptr<DPJoinEntry> & right,
+    double selectivity,
+    JoinKind join_kind = JoinKind::Inner)
+{
+    return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
+}
+
+std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
+{
+    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
 }
 
 static double computeJoinCost(
@@ -710,17 +730,14 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 {
     auto entry = dptable[S];
     if (!entry.left && !entry.right)
-    {
         return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
-    }
 
     JoinOperator join_operator(
-        JoinKind::Inner,
+        entry.kind,
         JoinStrictness::All,
         JoinLocality::Unspecified,
         std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
 
-    // This is a join node - create using the join constructor
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
@@ -736,7 +753,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         std::optional<UInt64> estimated_rows = {};
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
-        double sel{.0}; 
+        double sel{.0};
+        JoinKind kind{JoinKind::Inner};
         std::vector<JoinActionRef*> edges; // required for physical plan generation
     };
     using dptable_t = DpTable<DPEntry, bitvec_t>;
@@ -748,7 +766,24 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     enumerator_t enumerator(n, log);
     enumerator.enumerate(checker, &checker_t::accept, query_graph);
 
-    return buildPhysicalPlan(checker.dptable(), (static_cast<bitvec_t>(1) << n) - 1);
+    const bitvec_t full_set = (static_cast<bitvec_t>(1) << n) - 1;
+    const auto & dptable = checker.dptable();
+
+    /// The full set is assembled only if the join graph is connected. When it is not — e.g.
+    /// cross products, or predicates that reference a single relation or a constant and thus
+    /// create no binary edge (`... LEFT JOIN t ON t.x = 5`) — DPsub cannot stitch the
+    /// disconnected components, so the full-set entry is missing (or was never given a join).
+    /// Fall back to the greedy solver, which combines components via cross products and still
+    /// attaches the residual single-relation predicates correctly.
+    const bool full_built = dptable.map().contains(full_set)
+        && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
+    if (!full_built)
+    {
+        LOG_TRACE(log, "DPsub: join graph is disconnected, falling back to greedy for cross-product stitching");
+        return solveGreedy();
+    }
+
+    return buildPhysicalPlan(dptable, full_set);
 }
 
 
