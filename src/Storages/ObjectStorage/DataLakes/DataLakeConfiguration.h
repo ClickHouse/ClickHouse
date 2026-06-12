@@ -102,6 +102,16 @@ public:
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
+    /// Initialize the data lake metadata on first use without re-fetching it if
+    /// it is already loaded. update(..., if_not_updated_before=true) is a no-op
+    /// once current_metadata is set, so this is safe to call on every access.
+    void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context)
+    {
+        if (current_metadata != nullptr)
+            return;
+        update(object_storage, local_context, /* if_not_updated_before */ true);
+    }
+
     void create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
