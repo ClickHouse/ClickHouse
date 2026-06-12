@@ -38,13 +38,14 @@ public:
         auto check_not_dynamic_or_variant = [&](const IDataType & type)
         {
             if (isDynamic(type) || isVariant(type))
+                /// Hint from the rejected `type`, not result_type: for Array/Map the Variant is a child.
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
                     "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
                     this->result_type->getName(),
                     getName(),
-                    getNumericVariantSupertypeHint(this->result_type));
+                    getNumericVariantSupertypeHint(type.getPtr()));
         };
         check_not_dynamic_or_variant(*this->result_type);
         this->result_type->forEachChild(check_not_dynamic_or_variant);

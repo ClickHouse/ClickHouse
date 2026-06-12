@@ -1,0 +1,7 @@
+allow_lossy_numeric_supertype
+allow_lossy_numeric_supertype
+allow_lossy_numeric_supertype
+0
+0
+[1,0]	Array(Float64)
+{'a':1,'b':0}	Map(String, Float64)
