@@ -26,3 +26,6 @@ splitByNonAlpha tokenizer (exact read still used, results unchanged)
 splitByNonAlpha tokenizer with preprocessor (documented divergence still works, index kept)
 - preprocessed token, with index	1
 - preprocessed token, no index	1
+coarse tokenizer with preprocessor: documented divergence kept, granule pruning suppressed (was a false negative)
+- coarse + preprocessor, with index	1
+- coarse + preprocessor, no index	0

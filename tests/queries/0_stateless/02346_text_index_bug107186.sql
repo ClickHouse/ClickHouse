@@ -88,3 +88,15 @@ INSERT INTO tab VALUES ('Hello World');
 SELECT '- preprocessed token, with index', count() FROM tab WHERE hasToken(s, 'Hello');
 SELECT '- preprocessed token, no index', count() FROM tab WHERE hasToken(s, 'Hello') SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
+
+SELECT 'coarse tokenizer with preprocessor: documented divergence kept, granule pruning suppressed (was a false negative)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByString([', ']), preprocessor = lower(s))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('Hello World, Foo');
+-- splitByString(', ') over lower(s) stores ['hello world', 'foo'], so 'hello' is not an index token, but it is a
+-- splitByNonAlpha token of the preprocessed text. The index must not prune the granule (must be 1), while the
+-- documented preprocessor divergence is preserved (the no-index query is case-sensitive, so it returns 0).
+SELECT '- coarse + preprocessor, with index', count() FROM tab WHERE hasToken(s, 'hello');
+SELECT '- coarse + preprocessor, no index', count() FROM tab WHERE hasToken(s, 'hello') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;

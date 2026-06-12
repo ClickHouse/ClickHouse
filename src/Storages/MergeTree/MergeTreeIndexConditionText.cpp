@@ -226,8 +226,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 
 bool MergeTreeIndexConditionText::isConservativeHasTokenTokenizer() const
 {
-    /// A preprocessor is allowed: it transforms the needle the same way as the indexed text (the divergence
-    /// vs use_skip_indexes = 0 is documented hasToken behaviour), so the index tokens stay a necessary condition.
+    /// Preprocessor-independent: a preprocessor transforms the needle and the indexed text the same way,
+    /// so it does not change whether the index tokens are a necessary condition for a row-level match.
     const auto type = tokenizer->getType();
     return type == ITokenizer::Type::SplitByNonAlpha || type == ITokenizer::Type::Ngrams;
 }
@@ -241,10 +241,18 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     if (function_name == "hasToken")
     {
         /// hasToken has fixed splitByNonAlpha semantics. Exact direct read from the posting lists is sound
-        /// only when the index produces the same tokens: splitByNonAlpha without a preprocessor. Any other
-        /// tokenizer or a preprocessor can segment text differently, so use the index only as a hint and
-        /// re-evaluate hasToken on the rows.
-        return is_split_by_non_alpha_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        /// only when the index produces the same tokens: splitByNonAlpha without a preprocessor.
+        if (is_split_by_non_alpha_tokenizer && !has_preprocessor)
+            return TextIndexDirectReadMode::Exact;
+        /// A conservative tokenizer (splitByNonAlpha or ngrams) keeps the index tokens a necessary
+        /// condition for a match, so the index is a valid hint and re-evaluation runs on the rows.
+        if (isConservativeHasTokenTokenizer())
+            return getHintOrNoneMode();
+        /// A coarser tokenizer can omit a row-level token: a hint virtual column would answer "needle
+        /// present in the row's index tokens" (not a necessary condition) and drop a matching row. Use
+        /// None so no hint column is built; the condition still drives the preprocessor rewrite and the
+        /// preprocessed row-level predicate decides (granule pruning is suppressed, see traverseFunctionNode).
+        return TextIndexDirectReadMode::None;
     }
 
     if (function_name == "hasAnyTokens"
@@ -378,8 +386,11 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
+            /// A non-prunable atom (hasToken on a coarser tokenizer) must not drop a granule: its index
+            /// tokens are not a necessary condition for the row-level match, so treat it as may-be-true
+            /// and leave the decision to the (preprocessed) row-level predicate.
             const auto & text_search_query = element.text_search_queries.front();
-            bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
+            bool exists_in_granule = !element.prunable || granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -932,16 +943,28 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         auto tokens = stringToTokens(value_field);
-        /// Decline the index unless its tokens are a necessary condition for a row-level hasToken match:
-        ///  - empty tokens (separator-only needle, or shorter than the tokenizer can represent, e.g. "abc"
-        ///    with ngrams(4)) would prune every granule;
-        ///  - a coarser tokenizer (array/splitByString/asciiCJK/sparseGrams) can omit a row-level token, so a
-        ///    present needle may still be pruned.
-        /// In both cases the row-level hasToken decides (and it throws BAD_ARGUMENTS / returns NULL for an
-        /// invalid needle, as without the index).
-        if (tokens.empty() || !isConservativeHasTokenTokenizer())
-        {
+        /// An empty needle (separator-only, or shorter than the tokenizer can represent, e.g. "abc" with
+        /// ngrams(4)) maps to no index token, so the index offers nothing: decline and let the row-level
+        /// hasToken decide (it also throws BAD_ARGUMENTS / returns NULL for an invalid needle).
+        if (tokens.empty())
             return false;
+
+        if (!isConservativeHasTokenTokenizer())
+        {
+            /// A coarser tokenizer (array/splitByString/asciiCJK/sparseGrams) can omit a row-level token,
+            /// so the needle's index tokens are not a necessary condition for a match. Without a
+            /// preprocessor the index adds nothing over row-level evaluation: decline.
+            if (!preprocessor || !preprocessor->hasActions())
+                return false;
+
+            /// With a preprocessor the index path stays useful: it carries the documented hasToken
+            /// preprocessor rewrite (the needle and the indexed text are transformed the same way). Keep
+            /// the condition so that rewrite runs, but mark it non-prunable so granule pruning cannot drop
+            /// a row the preprocessed row-level predicate would match.
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.prunable = false;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            return true;
         }
 
         out.function = RPNElement::FUNCTION_EQUALS;

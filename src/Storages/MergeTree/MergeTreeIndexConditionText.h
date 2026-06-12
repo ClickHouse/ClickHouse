@@ -124,6 +124,12 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+
+        /// When false, this atom must not prune a granule (mayBeTrueOnGranule treats it as may-be-true).
+        /// Set for a hasToken condition whose index tokens are not a necessary condition for a row-level
+        /// match (a coarser tokenizer): the condition still drives the preprocessor rewrite, but the
+        /// preprocessed row-level predicate, not the posting lists, decides the result.
+        bool prunable = true;
     };
 
     using RPN = std::vector<RPNElement>;
