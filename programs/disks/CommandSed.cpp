@@ -66,10 +66,11 @@ public:
             path,
             disk.getDisk()->getName());
 
-        try
-        {
+            SCOPE_EXIT_SAFE(disk.getDisk()->removeFileIfExists(temp_path));
+
             auto in = disk.getDisk()->readFile(path, getReadSettings());
             auto out = disk.getDisk()->writeFile(temp_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            SCOPE_EXIT_SAFE(out->cancel());
 
             /// Start `sed` only after both disk buffers are open. If opening the source or temp file
             /// throws, the child is not yet running, so unwinding cannot leave a `sed` process with an
@@ -151,12 +152,7 @@ public:
             out->finalize();
 
             disk.getDisk()->replaceFile(temp_path, path);
-        }
-        catch (...)
-        {
-            disk.getDisk()->removeFileIfExists(temp_path);
-            throw;
-        }
+
     }
 };
 
