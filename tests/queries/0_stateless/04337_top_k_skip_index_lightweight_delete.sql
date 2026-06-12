@@ -109,6 +109,23 @@ SELECT 'otf-upd DESC LIMIT 1 no-opt', c0 FROM topk_lwu_otf ORDER BY c0 DESC LIMI
 SET apply_mutations_on_fly = 0;
 DROP TABLE topk_lwu_otf;
 
+-- Patch moves the indexed column UP, past a clean part's value (reviewer's data-read scenario,
+-- checked with use_skip_indexes_on_data_read = 1). The decoy part's base value is 0, so its stale
+-- minmax [0,0] UNDER-advertises the real patched value 1000000. A naive top-k ranking would prune
+-- the decoy in favour of the clean part (max 50000) and return 50000 instead of 1000000.
+DROP TABLE IF EXISTS topk_lwu_up;
+CREATE TABLE topk_lwu_up (c0 Int32, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS index_granularity = 1000, min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+             enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO topk_lwu_up VALUES (0);
+INSERT INTO topk_lwu_up SELECT toInt32(number) + 1 FROM numbers(50000) SETTINGS max_insert_threads = 1;
+UPDATE topk_lwu_up SET c0 = 1000000 WHERE c0 = 0;
+
+SELECT 'lwu-up DESC LIMIT 1', c0 FROM topk_lwu_up ORDER BY c0 DESC LIMIT 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1;
+SELECT 'lwu-up DESC LIMIT 1 no-opt', c0 FROM topk_lwu_up ORDER BY c0 DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
+DROP TABLE topk_lwu_up;
+
 -- A patch that updates a column OTHER than the indexed sort column must NOT disable the optimization.
 DROP TABLE IF EXISTS topk_lwu_other;
 CREATE TABLE topk_lwu_other (c0 Int32, x Int32, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY tuple()
