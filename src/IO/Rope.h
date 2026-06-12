@@ -7,8 +7,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
 
-class MemoryTracker;
-
 namespace DB
 {
 
@@ -27,7 +25,6 @@ public:
     virtual char * data() = 0;
     virtual const char * data() const = 0;
     virtual size_t size() const = 0;
-    virtual void transferTo(MemoryTracker * new_tracker) = 0;
 };
 
 /// Owns a block of memory.
@@ -43,7 +40,6 @@ public:
     char * data() override { return buf_data; }
     const char * data() const override { return buf_data; }
     size_t size() const override { return buf_size; }
-    void transferTo(MemoryTracker * new_tracker) override;
 
 private:
     char * buf_data;

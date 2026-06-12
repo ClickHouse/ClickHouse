@@ -50,11 +50,6 @@ OwnedRopeBuffer::~OwnedRopeBuffer()
     rope_allocator.free(buf_data, buf_size + PADDING_FOR_SIMD);
 }
 
-void OwnedRopeBuffer::transferTo(MemoryTracker * /* new_tracker */)
-{
-    /// Will be implemented when PageCacheProvider needs it.
-}
-
 ByteRange Rope::range() const
 {
     if (intervals.empty())
