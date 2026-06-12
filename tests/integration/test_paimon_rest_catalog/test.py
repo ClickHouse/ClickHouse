@@ -49,7 +49,7 @@ def start_bearer_token_server():
     )
 
     # start paimon rest catalog
-    start_cmd = f'''nohup java -jar paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///tmp/warehouse/" "bearer" "0.0.0.0" "{PORT}" &!'''
+    start_cmd = f'''nohup java -jar paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///var/lib/clickhouse/user_files/warehouse/" "bearer" "0.0.0.0" "{PORT}" &!'''
     run_and_check(
         ["docker exec {cont_id} bash -lc 'cd /root/paimon-rest-catalog && {start_cmd}'".format(
             cont_id=instance_id,
@@ -60,7 +60,7 @@ def start_bearer_token_server():
 def start_dlf_token_server():
     # start dlf paimon rest catalog
     instance_id = cluster.get_instance_docker_id("node")
-    start_cmd = f'''nohup java -jar paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///tmp/warehouse/" "dlf" "0.0.0.0" "{DLF_PORT}" &!'''
+    start_cmd = f'''nohup java -jar paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///var/lib/clickhouse/user_files/warehouse/" "dlf" "0.0.0.0" "{DLF_PORT}" &!'''
     run_and_check(
         ["docker exec {cont_id} bash -lc 'cd /root/paimon-rest-catalog && {start_cmd}'".format(
             cont_id=instance_id,
@@ -74,7 +74,7 @@ def test_paimon_rest_catalog(started_cluster):
     # clean warehouse data path
     instance_id = cluster.get_instance_docker_id("node")
     run_and_check(
-        ["docker exec {cont_id} bash -lc \"rm -fr /tmp/warehouse\"".format(
+        ["docker exec {cont_id} bash -lc \"rm -fr /var/lib/clickhouse/user_files/warehouse\"".format(
             cont_id=instance_id,
         )]
         , 
@@ -147,7 +147,7 @@ def test_paimon_rest_catalog(started_cluster):
     )
 
     # insert data
-    insert_cmd = '''java -jar paimon-server-starter-1.0-SNAPSHOT.jar "insert" "file:///tmp/warehouse/" "test" "test_table"'''
+    insert_cmd = '''java -jar paimon-server-starter-1.0-SNAPSHOT.jar "insert" "file:///var/lib/clickhouse/user_files/warehouse/" "test" "test_table"'''
     run_and_check(
         ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && {insert_cmd}\"".format(
             cont_id=instance_id,
