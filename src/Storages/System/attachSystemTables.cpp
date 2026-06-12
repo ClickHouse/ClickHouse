@@ -22,6 +22,7 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Storages/System/StorageSystemDataSkippingIndexTypes.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
+#include <Storages/System/StorageSystemDictionarySources.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDetachedTables.h>
 #include <Storages/System/StorageSystemDictionaries.h>
@@ -75,6 +76,7 @@
 #include <Storages/System/StorageSystemLicenses.h>
 #include <Storages/System/StorageSystemTimeZones.h>
 #include <Storages/System/StorageSystemDisks.h>
+#include <Storages/System/StorageSystemDiskTypes.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
 #include <Storages/System/StorageSystemUsers.h>
@@ -107,15 +109,23 @@
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
+#if USE_NURAFT
+#include <Storages/System/StorageSystemKeeperChangelogs.h>
+#include <Storages/System/StorageSystemKeeperSnapshots.h>
+#endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
+#if USE_NURAFT
+#include <Storages/System/StorageSystemKeeperCluster.h>
+#endif
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
+#include <Storages/System/StorageSystemIcebergFiles.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -146,7 +156,7 @@
 namespace DB
 {
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
@@ -175,6 +185,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
+    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
+    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
     attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
@@ -272,6 +284,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
     attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
+    attachNoDescription<StorageSystemIcebergFiles>(context, system_database, "iceberg_files", "Lists data and delete files of currently loaded Iceberg tables.");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
@@ -283,6 +296,15 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
         attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", "Shows all active watches across all [Zoo]Keeper connections.");
     }
+
+#if USE_NURAFT
+    if (has_keeper_server)
+    {
+        attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", "Contains information about Keeper snapshots stored on this Keeper node. The table includes finalized snapshots and at most one in-flight snapshot currently being received from the leader.");
+        attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", "Contains one row per Raft cluster member as seen by this Keeper.");
+        attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
+    }
+#endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
