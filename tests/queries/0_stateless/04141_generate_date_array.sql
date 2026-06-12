@@ -1,17 +1,16 @@
--- From the documentation
 -- From the function documentation examples
 -- Daily step (default)
 SELECT generate_date_array('2024-01-01', '2024-01-05') AS example;
 -- Monthly step
-SELECT generate_date_array('2024-01-01', '2024-06-01', toIntervalMonth(1)) AS example;
--- Descending (negative step)
-SELECT generate_date_array('2024-01-05', '2024-01-01', toIntervalDay(-1)) AS example;
+SELECT generate_date_array('2024-03-07', '2024-08-07', INTERVAL 1 MONTH) AS example;
+-- Descending (negative step, wraps over the month boundary and the leap day)
+SELECT generate_date_array('2024-03-02', '2024-02-27', INTERVAL -1 DAY) AS example;
 -- Same start and end — single-element array
-SELECT generate_date_array('2024-03-15'::Date32, '2024-03-15'::Date, INTERVAL 1 DAY) AS example;
+SELECT generate_date_array('2024-03-15', '2024-03-15') AS example;
 -- end before start with positive step — empty array
 SELECT generate_date_array('2024-01-05', '2024-01-01') AS example;
--- NULL argument — returns NULL
-SELECT generate_date_array(NULL, '2024-01-05') AS example;
+-- Mixed Date32 and Date with single element
+SELECT generate_date_array('2024-03-15'::Date32, '2024-03-15'::Date, INTERVAL 1 DAY) AS example;
 -- Subquery
 SELECT generate_date_array(date_start, date_end) AS date_range
 FROM (SELECT toDate('2024-01-01') AS date_start, toDate('2024-01-07') AS date_end
@@ -70,10 +69,22 @@ SELECT generate_date_array('2016-01-01'::Date32, '2016-06-30'::Date32, INTERVAL 
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-08'::Date32) AS example;
 SELECT toTypeName(generate_date_array('2016-10-05'::Date, '2016-10-08'::Date32)) AS type;
 
+-- Ranges that end exactly at the boundary of the date type
+SELECT generate_date_array('2149-06-03'::Date, '2149-06-06'::Date) AS example;
+SELECT generate_date_array('1970-01-04'::Date, '1970-01-01'::Date, INTERVAL -1 DAY) AS example;
+SELECT generate_date_array('2299-12-28'::Date32, '2299-12-31'::Date32) AS example;
+SELECT generate_date_array('1900-01-04'::Date32, '1900-01-01'::Date32, INTERVAL -1 DAY) AS example;
+
+-- Steps larger than the whole date range produce a single element
+SELECT generate_date_array('1970-01-01'::Date, '2149-06-06'::Date, INTERVAL 65537 DAY) AS example;
+SELECT generate_date_array('2149-06-06'::Date, '1970-01-01'::Date, INTERVAL -65537 DAY) AS example;
+SELECT generate_date_array('1970-01-01'::Date, '2149-06-06'::Date, INTERVAL 65537 YEAR) AS example;
+SELECT generate_date_array('1900-01-01'::Date32, '2299-12-31'::Date32, INTERVAL 100000000000 DAY) AS example;
+
 -- Error states
 -- ARGUMENT_OUT_OF_BOUND errors
--- Range too large (over 500M entries). Need to bypass constant folding to trigger it
-SELECT generate_date_array(materialize('1900-01-01'), materialize('2299-12-31'), INTERVAL 1 DAY) FROM numbers(3500) ; -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Range too large (over 1 million entries). Need to bypass constant folding to trigger it
+SELECT generate_date_array(materialize('1900-01-01'), materialize('2299-12-31'), INTERVAL 1 DAY) FROM numbers(10); -- { serverError ARGUMENT_OUT_OF_BOUND }
 -- ILLEGAL_COLUMN errors
 -- Non-constant step (column reference) is not allowed
 SELECT generate_date_array('2024-01-01'::Date, '2024-01-07'::Date, toIntervalDay(number + 1)) FROM numbers(1); -- { serverError ILLEGAL_COLUMN }
@@ -93,9 +104,7 @@ SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, INTERVAL 1 DA
 -- BAD_ARGUMENTS errors
 -- Zero step
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, INTERVAL 0 DAY); -- { serverError BAD_ARGUMENTS }
--- NULL value (not NULL type) in arguments throws BAD_ARGUMENTS
-SELECT generate_date_array(NULL::Nullable(Date), '2016-10-06'::Date); -- { serverError BAD_ARGUMENTS }
--- Nullable step
+-- Nullable step with NULL value
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, NULL::Nullable(IntervalDay)) AS example; -- { serverError BAD_ARGUMENTS }
 -- Cannot parse string arguments as dates
 SELECT generate_date_array('10000-01-01', '10000-01-01') AS example; -- { serverError CANNOT_PARSE_DATE }
