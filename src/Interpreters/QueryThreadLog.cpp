@@ -44,7 +44,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"master_thread_id", std::make_shared<DataTypeUInt64>(), "OS initial ID of initial thread."},
         {"current_database", low_cardinality_string, "Name of the current database."},
         {"query", std::make_shared<DataTypeString>(), "Query string."},
-        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "The hash of normalized query - with wiped constanstans, etc."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "The hash of normalized query - with wiped constants, etc."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution."},
         {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy."},
@@ -65,6 +65,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"os_user", low_cardinality_string, "OSs username who runs clickhouse-client."},
         {"client_hostname", low_cardinality_string, "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", low_cardinality_string, "The clickhouse-client or another TCP client name."},
+        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt32>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt32>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt32>(), "Minor version of the clickhouse-client or another TCP client."},

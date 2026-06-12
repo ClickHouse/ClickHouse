@@ -863,9 +863,24 @@ def test_encryption_functions():
 def test_create_dictionary():
     password = new_password()
 
+    # ClickHouse source.
     node.query(
         f"CREATE DICTIONARY dict1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         f"SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '{password}' DB 'default')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    # HTTP source with top-level USER/PASSWORD keys.
+    node.query(
+        f"CREATE DICTIONARY dict2 (n int DEFAULT 0) PRIMARY KEY n "
+        f"SOURCE(HTTP(url 'http://localhost:8123/dict.tsv' format 'TabSeparated' user 'huser' password '{password}')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    # HTTP source with nested CREDENTIALS(USER ... PASSWORD ...).
+    node.query(
+        f"CREATE DICTIONARY dict3 (n int DEFAULT 0) PRIMARY KEY n "
+        f"SOURCE(HTTP(url 'http://localhost:8123/dict.tsv' format 'TabSeparated' credentials(user 'huser' password '{password}'))) "
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
@@ -876,22 +891,46 @@ def test_create_dictionary():
         )
 
         assert (
+            node.query(f"SHOW CREATE TABLE dict2 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
+
+        assert (
+            node.query(f"SHOW CREATE TABLE dict3 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
+
+        assert (
             node.query(
-                f"SELECT create_table_query FROM system.tables WHERE name = 'dict1' {show_secrets}={toggle}"
+                f"SELECT create_table_query FROM system.tables WHERE name IN ['dict1', 'dict2', 'dict3'] ORDER BY name {show_secrets}={toggle}"
             )
-            == f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+            == (
+                f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+            )
         )
 
     check_logs(
         must_contain=[
             "CREATE DICTIONARY dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n "
             "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '[HIDDEN]' DB 'default')) "
-            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
+
+            "CREATE DICTIONARY dict2 (`n` int DEFAULT 0) PRIMARY KEY n "
+            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
+
+            "CREATE DICTIONARY dict3 (`n` int DEFAULT 0) PRIMARY KEY n "
+            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
         ],
         must_not_contain=[password],
     )
 
     node.query("DROP DICTIONARY dict1")
+    node.query("DROP DICTIONARY dict2")
+    node.query("DROP DICTIONARY dict3")
 
 
 def test_backup_to_s3():

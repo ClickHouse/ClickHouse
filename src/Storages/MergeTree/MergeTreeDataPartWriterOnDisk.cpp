@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/escapeForFileName.h>
@@ -348,10 +349,15 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
 {
     for (auto & stream : skip_indices_streams_holders)
-    {
         stream->finalize();
-        if (sync)
-            stream->sync();
+
+    if (sync)
+    {
+        std::vector<const MergeTreeWriterStream *> streams_to_sync;
+        streams_to_sync.reserve(skip_indices_streams_holders.size());
+        for (const auto & stream : skip_indices_streams_holders)
+            streams_to_sync.push_back(stream.get());
+        parallelSyncFiles(streams_to_sync);
     }
 
     if (!skip_indices.empty() && log->is(Poco::Message::PRIO_DEBUG))
