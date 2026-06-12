@@ -2355,7 +2355,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto it = scope.nullable_group_by_keys.find(node);
             if (it != scope.nullable_group_by_keys.end())
             {
-                node = it->second->clone();
+                /// See resolveExpressionNode: for a constant keep the matched node's own source
+                /// expression instead of the stored key, which may be a different colliding constant.
+                node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
                 node->convertToNullable();
             }
         }
@@ -3408,7 +3410,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    node = it->second->clone();
+                    /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
+                    /// matched node itself rather than the stored key `it->second`: two constants equal
+                    /// in value and type but with different source expressions share a single map entry,
+                    /// and the source expression determines the action node name (hence which aggregation
+                    /// key column the projection reads), so the matched node's own one must be preserved.
+                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
                     node->convertToNullable();
                     break;
                 }
