@@ -389,7 +389,9 @@ static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t
     if (begin + 1 < end && !CompareHelper<T>::equals(d[begin + 1], ref, nan_direction_hint))
         return begin + 1;
 
-    /// First scan a short window linearly, which resolves short runs cheaply.
+    /// First scan a window linearly, which resolves short runs cheaply. The scan compares whole blocks
+    /// without an early exit so it vectorizes, making the per-row cost so small that the window can be
+    /// much longer than the linear probes of the scalar overloads.
     static constexpr size_t window = 256;
     size_t window_end = std::min(begin + window, end);
 

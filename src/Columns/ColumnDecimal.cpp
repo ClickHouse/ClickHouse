@@ -135,7 +135,10 @@ size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, 
 
     const T * d = data.data();
     const auto ref = d[begin].value;
-    return findEqualRangeEndAssumeSorted(begin, end, 16, [&](size_t i) { return d[i].value == ref; });
+
+    /// A native integer comparison is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, [&](size_t i) { return d[i].value == ref; });
 }
 
 template <is_decimal T>

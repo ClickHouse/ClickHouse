@@ -272,6 +272,7 @@ Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_d
 
 size_t IColumn::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
 {
+    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
     static constexpr size_t linear_probe = 8;
     return findEqualRangeEndAssumeSorted(
         begin, end, linear_probe, [&](size_t r) { return compareAt(r, begin, *this, nan_direction_hint) == 0; });

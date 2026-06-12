@@ -783,7 +783,9 @@ size_t ColumnString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int 
     auto equals = [&](size_t i)
     { return sizeAt(i) == ref_size && 0 == memcmpSmallAllowOverflow15(chars.data() + offsetAt(i), ref_data, ref_size); };
 
-    return findEqualRangeEndAssumeSorted(begin, end, 8, equals);
+    /// A string comparison reads offsets and bytes, which is relatively expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
 }
 
 void ColumnString::protect()

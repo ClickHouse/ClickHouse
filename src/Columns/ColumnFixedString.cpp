@@ -244,7 +244,9 @@ size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end,
     const UInt8 * ref = chars.data() + begin * n;
     auto equals = [&](size_t i) { return 0 == memcmpSmallAllowOverflow15(chars.data() + i * n, ref, n); };
 
-    return findEqualRangeEndAssumeSorted(begin, end, /*linear_probe=*/16, equals);
+    /// A fixed-size memcmp is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
 }
 
 void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
