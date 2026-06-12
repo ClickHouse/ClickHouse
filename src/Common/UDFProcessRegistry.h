@@ -40,7 +40,7 @@ public:
         UInt64 process_count = 0;
     };
 
-    /// Walk the /proc subtree of every registered pid, deduplicate, read VmRSS
+    /// Walk the /proc subtree of every registered pid and read the VmRSS
     /// once per process. Returns 0 for non-Linux.
     Sample sample() const;
 

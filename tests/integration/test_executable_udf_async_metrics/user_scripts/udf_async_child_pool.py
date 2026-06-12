@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
-"""executable_pool UDF worker whose memory lives in a *descendant*: it forks a
-child at startup that allocates ~128 MiB, while the worker allocates nothing
-big. The child exits when the worker dies (it polls for re-parenting)."""
+"""executable_pool UDF worker whose memory lives two generations down: it
+forks a child, which forks a grandchild that allocates ~128 MiB. Each level
+exits when its parent dies."""
 
 import os
 import sys
 import time
 
-CHILD_ALLOC_BYTES = 128 * 1024 * 1024
+GRANDCHILD_ALLOC_BYTES = 128 * 1024 * 1024
 
-_parent_pid = os.getpid()
-_child_pid = os.fork()
-if _child_pid == 0:
-    # Drop the inherited stdio pipe ends of the worker's protocol.
-    os.close(0)
-    os.close(1)
-    ballast = bytearray(CHILD_ALLOC_BYTES)
-    for i in range(0, len(ballast), 4096):
-        ballast[i] = i & 0xFF
-    # Exit when the worker dies: re-parenting changes our ppid.
-    while os.getppid() == _parent_pid:
+
+def follow_parent(parent_pid):
+    while os.getppid() == parent_pid:
         time.sleep(0.5)
     os._exit(0)
+
+
+_worker_pid = os.getpid()
+if os.fork() == 0:
+    # Child: drop the inherited stdio pipe ends of the worker's protocol
+    # (only here; the grandchild inherits them already closed).
+    os.close(0)
+    os.close(1)
+    _child_pid = os.getpid()
+    if os.fork() == 0:
+        ballast = bytearray(GRANDCHILD_ALLOC_BYTES)
+        for i in range(0, len(ballast), 4096):
+            ballast[i] = i & 0xFF
+        follow_parent(_child_pid)
+    follow_parent(_worker_pid)
 
 for line in sys.stdin:
     line = line.strip()

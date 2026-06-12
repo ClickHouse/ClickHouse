@@ -229,8 +229,6 @@ private:
 /// file (`recordPidAcquired`, `recordReleased`, `sampleExecutablePeak`) run
 /// them inside a try/catch, so such an `exception` is logged and sampling is
 /// skipped, instead of hitting `std::terminate` at a `noexcept` boundary.
-/// `UDFProcessRegistry::sample` lets the `exception` propagate instead; the
-/// asynchronous metrics thread catches and logs it, skipping that update cycle.
 namespace UDFProcfs
 {
     /// Recursively enumerate the root pid plus every descendant by walking
@@ -257,8 +255,7 @@ namespace UDFProcfs
     /// Parse VmHWM from /proc/<pid>/status, converted to bytes.
     bool readPeakRss(pid_t pid, UInt64 & bytes);
 
-    /// Parse VmRSS from /proc/<pid>/status, converted to bytes. Returns false
-    /// for a zombie: its /proc status file exists but has no Vm* lines.
+    /// Parse VmRSS from /proc/<pid>/status, converted to bytes.
     bool readCurrentRss(pid_t pid, UInt64 & bytes);
 }
 

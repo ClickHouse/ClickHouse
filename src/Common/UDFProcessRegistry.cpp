@@ -42,21 +42,12 @@ UDFProcessRegistry::Sample UDFProcessRegistry::sample() const
 
     Sample result;
 
-    /// Dedup defends against pid reuse during the sweep; disjoint subtrees
-    /// cannot otherwise overlap. A truncated walk (> MAX_PIDS) under-counts.
-    std::unordered_set<pid_t> seen;
-
     for (pid_t root : roots)
     {
         bool truncated = false;
         for (pid_t pid : UDFProcfs::walkSubtree(root, truncated))
         {
-            if (!seen.insert(pid).second)
-                continue;
-
             UInt64 bytes = 0;
-            /// Skip vanished/zombie pids in both the sum and the count so the
-            /// two metrics describe the same set of processes.
             if (UDFProcfs::readCurrentRss(pid, bytes))
             {
                 result.memory_resident_bytes += bytes;

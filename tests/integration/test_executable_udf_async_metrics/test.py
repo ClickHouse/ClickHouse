@@ -19,6 +19,11 @@ node = cluster.add_instance(
 
 MiB = 1024 * 1024
 
+# Every script allocates this much; the resident size of its process is the
+# ballast plus interpreter overhead, so deltas are asserted as BALLAST +/- TOLERANCE.
+BALLAST = 128 * MiB
+TOLERANCE = 25 * MiB
+
 SCRIPTS = (
     "udf_async_mem_pool.py",
     "udf_async_child_pool.py",
@@ -91,9 +96,6 @@ def _wait_for(predicate, timeout=30, interval=0.5):
 
 def test_metrics_published_and_zero_before_first_call(started_cluster):
     _skip_msan()
-    # Restart kills pool workers left by other tests, so the zero baseline
-    # holds regardless of execution order. (Tests that spawn pool workers
-    # still assume a single pass per module, e.g. no pytest --count.)
     node.restart_clickhouse()
     assert _wait_for(lambda: _memory_resident() is not None)
     assert _memory_resident() == 0
@@ -102,33 +104,57 @@ def test_metrics_published_and_zero_before_first_call(started_cluster):
 
 def test_idle_pool_worker_memory_is_visible(started_cluster):
     _skip_msan()
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
     mem_before = _memory_resident()
     procs_before = _processes()
 
     node.query("SELECT test_udf_async_mem_pool(1)")
 
-    # The query is over; the idle pool worker keeps holding its ~128 MiB.
-    assert _wait_for(lambda: _memory_resident() - mem_before >= 100 * MiB), (
-        f"memory increase {_memory_resident() - mem_before} is below 100 MiB"
-    )
-    assert _processes() - procs_before >= 1
+    # The idle pool worker keeps holding its ~128 MiB.
+    assert _wait_for(
+        lambda: BALLAST - TOLERANCE <= _memory_resident() - mem_before <= BALLAST + TOLERANCE
+    ), f"memory increase {_memory_resident() - mem_before} outside one-worker band"
+    assert _processes() - procs_before == 1
+
+
+def test_two_udfs_memory_is_summed(started_cluster):
+    _skip_msan()
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
+    mem_before = _memory_resident()
+    procs_before = _processes()
+
+    node.query("SELECT test_udf_async_mem_pool(1)")
+    node.query("SELECT test_udf_async_mem_kill_pool(1)")
+
+    # Two idle workers of distinct functions, ~128 MiB each: the gauge must
+    # report their sum, not either one alone.
+    assert _wait_for(
+        lambda: 2 * (BALLAST - TOLERANCE) <= _memory_resident() - mem_before <= 2 * (BALLAST + TOLERANCE)
+    ), f"memory increase {_memory_resident() - mem_before} outside two-worker band"
+    assert _processes() - procs_before == 2
 
 
 def test_descendant_processes_are_counted(started_cluster):
     _skip_msan()
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
     mem_before = _memory_resident()
     procs_before = _processes()
 
     node.query("SELECT test_udf_async_child_pool(1)")
 
-    # The ~128 MiB lives in the worker's forked child, so the increase proves
-    # the sweep walks the process subtree.
-    assert _wait_for(lambda: _processes() - procs_before >= 2), (
-        f"process increase {_processes() - procs_before} is below 2"
+    # The ~128 MiB lives in the worker's grandchild, so the increase proves
+    # the sweep walks the process subtree recursively, not just direct children.
+    # The band is one BALLAST wide but three processes deep (worker, child,
+    # grandchild interpreters all contribute overhead).
+    assert _wait_for(lambda: _processes() - procs_before == 3), (
+        f"process increase {_processes() - procs_before} is not 3"
     )
-    assert _wait_for(lambda: _memory_resident() - mem_before >= 100 * MiB), (
-        f"memory increase {_memory_resident() - mem_before} is below 100 MiB"
-    )
+    assert _wait_for(
+        lambda: BALLAST - TOLERANCE <= _memory_resident() - mem_before <= BALLAST + 3 * TOLERANCE
+    ), f"memory increase {_memory_resident() - mem_before} outside subtree band"
 
 
 def test_inflight_executable_invocation_is_visible(started_cluster):
@@ -149,11 +175,11 @@ def test_inflight_executable_invocation_is_visible(started_cluster):
     try:
         # The script allocates ~128 MiB at startup, then sleeps ~30 s per row.
         assert _wait_for(
-            lambda: _memory_resident() - mem_before >= 100 * MiB,
+            lambda: BALLAST - TOLERANCE <= _memory_resident() - mem_before <= BALLAST + TOLERANCE,
             timeout=25,
             interval=0.5,
-        ), f"in-flight memory increase {_memory_resident() - mem_before} is below 100 MiB"
-        assert _processes() - procs_before >= 1
+        ), f"in-flight memory increase {_memory_resident() - mem_before} outside one-worker band"
+        assert _processes() - procs_before == 1
     finally:
         thread.join(timeout=120)
 
@@ -189,8 +215,8 @@ def test_timed_out_executable_is_killed_and_leaves_metrics(started_cluster):
         # Both deltas in one predicate: a separate count snapshot could land
         # after the timeout kill when the memory check passes late.
         assert _wait_for(
-            lambda: _memory_resident() - mem_before >= 100 * MiB
-            and _processes() - procs_before >= 1,
+            lambda: BALLAST - TOLERANCE <= _memory_resident() - mem_before <= BALLAST + TOLERANCE
+            and _processes() - procs_before == 1,
             timeout=25,
             interval=0.3,
         ), f"hanging UDF not observed, memory increase {_memory_resident() - mem_before}"
@@ -209,15 +235,18 @@ def test_timed_out_executable_is_killed_and_leaves_metrics(started_cluster):
 
 def test_killed_pool_worker_leaves_metrics(started_cluster):
     _skip_msan()
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
     mem_before = _memory_resident()
     procs_before = _processes()
 
     node.query("SELECT test_udf_async_mem_kill_pool(1)")
-    assert _wait_for(lambda: _memory_resident() - mem_before >= 100 * MiB)
+    assert _wait_for(
+        lambda: BALLAST - TOLERANCE <= _memory_resident() - mem_before <= BALLAST + TOLERANCE
+    )
 
-    # Kill the idle worker behind ClickHouse's back (like an OOM kill). The
-    # unreaped zombie has no VmRSS line, so it must leave both metrics on the
-    # next sweep, before ClickHouse even notices the death.
+    # Kill the idle worker behind ClickHouse's back, so it must leave both metrics
+    # on the next sweep.
     node.exec_in_container(["pkill", "-9", "-f", "udf_async_mem_kill_pool.py"])
     assert _wait_for(lambda: _memory_resident() - mem_before < 30 * MiB), (
         f"killed worker still counted, increase {_memory_resident() - mem_before}"
@@ -225,25 +254,21 @@ def test_killed_pool_worker_leaves_metrics(started_cluster):
     assert _wait_for(lambda: _processes() - procs_before == 0)
 
     # The next borrow hands out the dead worker: the query fails on a broken
-    # pipe and the wrapper is destroyed (the destructor-side registry
-    # removal). Tolerate it succeeding in case dead workers get detected at
-    # borrow time some day.
+    # pipe and the wrapper is destroyed. 
     try:
         node.query("SELECT test_udf_async_mem_kill_pool(2)")
     except Exception:
         pass
 
-    # The pool replaces the dead worker; the fresh one is registered again.
+    # The pool replaces the dead worker, and the fresh one is registered again.
     assert node.query("SELECT test_udf_async_mem_kill_pool(2)").strip() == "2"
-    assert _wait_for(lambda: _memory_resident() - mem_before >= 100 * MiB), (
-        f"respawned worker not counted, increase {_memory_resident() - mem_before}"
-    )
+    assert _wait_for(
+        lambda: BALLAST - TOLERANCE <= _memory_resident() - mem_before <= BALLAST + TOLERANCE
+    ), f"respawned worker not counted, increase {_memory_resident() - mem_before}"
 
 
 def test_non_udf_shell_commands_are_not_counted(started_cluster):
     _skip_msan()
-    # Processes of non-UDF shell command consumers (here the Executable table
-    # engine, which shares the coordinator machinery) must not be counted.
     mem_before = _memory_resident()
     procs_before = _processes()
 
@@ -266,8 +291,7 @@ def test_non_udf_shell_commands_are_not_counted(started_cluster):
     thread = threading.Thread(target=run_query)
     thread.start()
     try:
-        # The marker appears once the ~128 MiB ballast is resident; let a few
-        # sweeps pass and verify the metrics ignored the process.
+        # Let a few sweeps pass and verify the metrics ignored the process.
         assert _wait_for(
             lambda: node.exec_in_container(
                 ["bash", "-c", "test -f /tmp/nonudf_running && echo yes || echo no"]
