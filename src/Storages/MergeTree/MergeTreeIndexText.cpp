@@ -901,7 +901,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
 
     if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
-        std::array<UInt32, MAX_CARDINALITY_FOR_RAW_POSTINGS> values;
+        std::array<UInt32, MAX_CARDINALITY_FOR_RAW_POSTINGS> values{};
         postings.toUint32Array(values.data());
 
         if (trySerializeSmallPostings({values.data(), info.cardinality}, info, postings_stream))
