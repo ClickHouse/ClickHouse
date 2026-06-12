@@ -95,6 +95,12 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
+    /// Some codecs (e.g. `PCO`) can only compress when created with a concrete column type. An
+    /// instance created from an untyped context (`CompressionCodecFactory::get` by name or by
+    /// method byte) can still decompress, but attempting to compress with it throws. Untyped
+    /// compression settings (e.g. `marks_compression_codec`) must reject such codecs up front.
+    virtual bool requiresColumnTypeToCompress() const { return false; }
+
     // Returns a string with a high level codec description.
     virtual String getDescription() const = 0;
 

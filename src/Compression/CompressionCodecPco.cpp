@@ -49,6 +49,8 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isExperimental() const override { return true; }
+    /// An instance created without a column type (data_bytes_size == 0) can only decompress.
+    bool requiresColumnTypeToCompress() const override { return data_bytes_size == 0; }
     String getDescription() const override
     {
         return "Lossless compression of numeric sequences, ported from pcodec; excellent on numeric columns.";
