@@ -232,6 +232,7 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
 void KeeperDispatcher::snapshotThread()
 {
     DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
+
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     CreateSnapshotTask task;
     while (snapshots_queue.pop(task))

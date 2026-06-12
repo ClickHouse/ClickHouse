@@ -240,6 +240,7 @@ MySQLHandler::~MySQLHandler() = default;
 void MySQLHandler::run()
 {
     DB::setThreadName(ThreadName::MYSQL_HANDLER);
+
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
 

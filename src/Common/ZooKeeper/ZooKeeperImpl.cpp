@@ -829,6 +829,7 @@ void ZooKeeper::sendThread()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_SEND);
+
     scope_guard os_thread_nice_value_guard;
     if (send_receive_os_threads_nice_value != 0)
     {
@@ -929,6 +930,7 @@ void ZooKeeper::receiveThread()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_RECV);
+
     scope_guard os_thread_nice_value_guard;
     if (send_receive_os_threads_nice_value != 0)
     {

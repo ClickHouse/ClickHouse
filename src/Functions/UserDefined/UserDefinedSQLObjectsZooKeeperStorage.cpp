@@ -162,6 +162,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
     DB::setThreadName(ThreadName::USER_DEFINED_WATCH);
+
     auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue");
     while (watching_flag)
     {

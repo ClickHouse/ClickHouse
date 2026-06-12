@@ -237,6 +237,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 void IOUringReader::monitorRing()
 {
     DB::setThreadName(ThreadName::IO_URING_MONITOR);
+
     while (!cancelled.load(std::memory_order_relaxed))
     {
         // we can't use wait_cqe_* variants with timeouts as they can

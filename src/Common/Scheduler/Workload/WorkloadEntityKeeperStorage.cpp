@@ -128,6 +128,7 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
     DB::setThreadName(ThreadName::WORKLOAD_ENTRY_WATCH);
+
     auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::processWatchQueue");
     UInt64 handled = 0;
     while (watching_flag)

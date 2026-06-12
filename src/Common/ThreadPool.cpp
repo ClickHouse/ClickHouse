@@ -778,6 +778,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
+
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
 

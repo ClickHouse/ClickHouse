@@ -294,6 +294,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 void KeeperSnapshotManagerS3::snapshotS3Thread()
 {
     DB::setThreadName(ThreadName::KEEPER_SNAPSHOT_S3);
+
     while (!shutdown_called)
     {
         SnapshotFileInfoPtr snapshot_file_info;

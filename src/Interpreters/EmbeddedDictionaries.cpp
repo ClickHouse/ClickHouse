@@ -98,6 +98,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 void EmbeddedDictionaries::reloadPeriodically()
 {
     DB::setThreadName(ThreadName::DICT_RELOAD);
+
     while (true)
     {
         if (destroy.tryWait(cur_reload_period * 1000))

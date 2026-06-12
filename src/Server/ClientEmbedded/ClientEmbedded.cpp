@@ -133,6 +133,7 @@ int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_quer
 try
 {
     DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
+
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
 

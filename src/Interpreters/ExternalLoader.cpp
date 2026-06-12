@@ -1299,6 +1299,7 @@ private:
     void doPeriodicUpdates()
     {
         DB::setThreadName(ThreadName::EXTERNAL_LOADER);
+
         LOG_DEBUG(log, "Starting periodic updates");
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Stopped periodic updates (enabled: {})", enabled);

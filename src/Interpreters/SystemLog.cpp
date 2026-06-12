@@ -618,6 +618,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
 {
     DB::setThreadName(ThreadName::SYSTEM_LOG_FLUSH);
+
     while (true)
     {
         try

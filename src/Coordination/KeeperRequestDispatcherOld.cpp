@@ -283,6 +283,7 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
 void KeeperRequestDispatcherOld::requestThread()
 {
     DB::setThreadName(ThreadName::KEEPER_REQUEST);
+
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
     /// Requests from previous iteration. We store them to be able
@@ -645,6 +646,7 @@ void KeeperRequestDispatcherOld::requestThread()
 void KeeperRequestDispatcherOld::responseThread()
 {
     DB::setThreadName(ThreadName::KEEPER_RESPONSE);
+
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {

@@ -637,6 +637,7 @@ void BaseDaemon::setupWatchdog()
 
         /// Change short thread name and process name.
         DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
+
         if (argv0)
         {
             const char * new_process_name = "clickhouse-watchdog";

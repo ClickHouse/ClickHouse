@@ -360,6 +360,7 @@ void KeeperServer::KeeperRaftServer::forceReconfigure(const nuraft::ptr<nuraft::
 void KeeperServer::KeeperRaftServer::commit_in_bg()
 {
     DB::setThreadName(ThreadName::KEEPER_COMMIT);
+
     /// Set up query profiler for the commit thread if configured.
     /// We create a new Context, as if this were a clickhouse query, and set setting
     /// query_profiler_real_time_period_ns so that the profiler samples this thread and results

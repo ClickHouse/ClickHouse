@@ -405,6 +405,7 @@ void DatabaseMySQL::drop(ContextPtr)
 void DatabaseMySQL::cleanOutdatedTables()
 {
     DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
+
     std::unique_lock lock{mutex};
 
     while (!quit.load(std::memory_order_relaxed))

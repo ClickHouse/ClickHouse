@@ -441,6 +441,7 @@ void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<
 void BackgroundSchedulePool::threadFunction()
 {
     DB::setThreadName(thread_name);
+
     while (!shutdown)
     {
         UInt64 task_type_to_run = 0;
@@ -514,6 +515,7 @@ void BackgroundSchedulePool::threadFunction()
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     DB::setThreadName(ThreadName::POOL_DELAYED_EXECUTION);
+
     while (!shutdown)
     {
         TaskInfoPtr task;

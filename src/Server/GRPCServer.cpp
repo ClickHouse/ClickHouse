@@ -1924,6 +1924,7 @@ private:
     void run()
     {
         DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
+
         bool ok = false;
         void * tag = nullptr;
 

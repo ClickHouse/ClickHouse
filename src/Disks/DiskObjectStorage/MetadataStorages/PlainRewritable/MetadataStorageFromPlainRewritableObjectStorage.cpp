@@ -158,6 +158,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
+
                 StoredObject object{object_path};
                 String local_path;
                 /// Assuming that local and the object storage clocks are synchronized.

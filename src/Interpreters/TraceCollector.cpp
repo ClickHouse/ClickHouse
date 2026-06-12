@@ -132,6 +132,7 @@ void TraceCollector::run()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);
+
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 

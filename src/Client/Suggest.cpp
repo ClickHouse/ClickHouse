@@ -157,6 +157,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             query_scope = QueryScope::create(my_context);
 
         setThreadName(ThreadName::SUGGEST);
+
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try

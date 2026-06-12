@@ -429,6 +429,7 @@ void ZooKeeperReplicator::runWatchingThread()
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
     DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
+
     auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::runWatchingThread");
     while (watching)
     {

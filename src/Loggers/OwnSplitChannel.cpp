@@ -562,6 +562,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 void OwnAsyncSplitChannel::runTextLog()
 {
     DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
+
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
         if (const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(message.get()))
