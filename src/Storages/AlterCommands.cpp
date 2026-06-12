@@ -6,7 +6,9 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -1105,7 +1107,45 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
 
 /// If true, then in order to ALTER the type of the column from the type from to the type to
 /// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
-/// The function works for Arrays and Nullables of the same structure.
+/// The function recurses through Array, Nullable, Map, and named Tuple wrappers.
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context);
+
+/// Named Tuple subfields are stored as separate streams named by the field name path
+/// (e.g. `data.c2s.statistics.heros_statistics.damage.bin`), not by position. Therefore,
+/// adding new subfields to a named Tuple (in any position) only introduces new stream
+/// files; all preexisting subfield stream files remain valid as-is. Reading old parts
+/// that lack the new streams will fall back to the type's default value via the existing
+/// `fillMissingColumns` infrastructure. Removing or renaming subfields, or changing
+/// existing subfield types in a non-metadata-only way, still requires a full data mutation.
+bool isNamedTupleMetadataOnlyChange(const DataTypeTuple & from, const DataTypeTuple & to, const ContextPtr & context)
+{
+    if (!from.hasExplicitNames() || !to.hasExplicitNames())
+        return false;
+
+    const auto & from_names = from.getElementNames();
+    const auto & from_types = from.getElements();
+    const auto & to_names = to.getElementNames();
+    const auto & to_types = to.getElements();
+
+    std::unordered_map<std::string_view, const IDataType *> to_by_name;
+    to_by_name.reserve(to_names.size());
+    for (size_t i = 0; i < to_names.size(); ++i)
+        to_by_name.emplace(to_names[i], to_types[i].get());
+
+    /// Every old subfield must still exist (by name) with a metadata-only-compatible type change.
+    /// New subfields (present in `to` but not in `from`) are allowed in any position — the type's
+    /// default value will be filled on read.
+    for (size_t i = 0; i < from_names.size(); ++i)
+    {
+        auto it = to_by_name.find(from_names[i]);
+        if (it == to_by_name.end())
+            return false;
+        if (!isMetadataOnlyConversion(from_types[i].get(), it->second, context))
+            return false;
+    }
+    return true;
+}
+
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
@@ -1178,6 +1218,22 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, cons
             to = nullable_to->getNestedType().get();
             continue;
         }
+
+        const auto * map_from = typeid_cast<const DataTypeMap *>(from);
+        const auto * map_to = typeid_cast<const DataTypeMap *>(to);
+        if (map_from && map_to)
+        {
+            if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+                return false;
+            from = map_from->getValueType().get();
+            to = map_to->getValueType().get();
+            continue;
+        }
+
+        const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from);
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(to);
+        if (tuple_from && tuple_to)
+            return isNamedTupleMetadataOnlyChange(*tuple_from, *tuple_to, context);
 
         return false;
     }

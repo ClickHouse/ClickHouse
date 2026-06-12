@@ -1,0 +1,359 @@
+-- Tags: long, no-fasttest
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- ^ random settings can change part_type to Compact, but we want to exercise the Wide path.
+
+-- Metadata-only ALTER MODIFY COLUMN for named Tuple: appending subfields at any position
+-- should not trigger a mutation and should not rewrite any existing parts.
+--
+-- Customer schema (from a real game-analytics workload): a deep tree of named tuples,
+-- including `Array(Tuple(...))` nested inside another `Tuple(Tuple(...))`. The customer
+-- routinely adds new event fields and previously waited minutes for each ALTER on multi-TB
+-- tables.
+
+DROP TABLE IF EXISTS t_named_tuple_alter;
+
+-- ============================================================
+-- Case 1: flat named Tuple, append subfield at the end
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, toString(number)) FROM numbers(100);
+
+SELECT 'Case 1 (flat, append at end):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, b String, c Nullable(Int64));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c FROM t_named_tuple_alter WHERE id < 3 ORDER BY id;
+SELECT 't (whole):', t FROM t_named_tuple_alter WHERE id < 3 ORDER BY id;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 2: flat named Tuple, insert subfield in the middle
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, toString(number)) FROM numbers(100);
+
+SELECT 'Case 2 (flat, insert in middle):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, c Nullable(Int64), b String);
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c FROM t_named_tuple_alter WHERE id < 3 ORDER BY id;
+SELECT 't (whole):', t FROM t_named_tuple_alter WHERE id < 3 ORDER BY id;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 3: nested named Tuple, append at inner level
+-- ============================================================
+CREATE TABLE t_named_tuple_alter
+(id UInt64, t Tuple(a Int64, sub Tuple(x Int64, y Int64)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, (number * 10, number * 100)) FROM numbers(100);
+
+SELECT 'Case 3 (nested Tuple, inner append):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, sub Tuple(x Int64, y Int64, z Nullable(String)));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.sub.x, t.sub.y, t.sub.z FROM t_named_tuple_alter WHERE id < 3 ORDER BY id;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 4: Array of named Tuple
+-- ============================================================
+CREATE TABLE t_named_tuple_alter
+(id UInt64, t Array(Tuple(a Int64, b String)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter
+SELECT number, arrayMap(x -> (x, toString(x)), range(3)) FROM numbers(100);
+
+SELECT 'Case 4 (Array of Tuple):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Array(Tuple(a Int64, b String, c Nullable(Int64)));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c FROM t_named_tuple_alter WHERE id = 0;
+SELECT 't (whole):', t FROM t_named_tuple_alter WHERE id = 0;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 5: Nested syntax with flatten_nested = 0
+-- ============================================================
+SET flatten_nested = 0;
+CREATE TABLE t_named_tuple_alter
+(id UInt64, items Nested(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter
+SELECT number, arrayMap(x -> (x, toString(x)), range(3)) FROM numbers(100);
+
+SELECT 'Case 5 (Nested with flatten_nested=0):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN items Nested(a Int64, b String, c Nullable(Int64));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT items.a, items.b, items.c FROM t_named_tuple_alter WHERE id = 0;
+
+DROP TABLE t_named_tuple_alter;
+SET flatten_nested = 1;
+
+-- ============================================================
+-- Case 6: Map of named Tuple
+-- ============================================================
+CREATE TABLE t_named_tuple_alter
+(id UInt64, t Map(String, Tuple(a Int64, b String)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, {'k1': (10, 'x'), 'k2': (20, 'y')});
+
+SELECT 'Case 6 (Map of Tuple):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Map(String, Tuple(a Int64, b String, c Nullable(Int64)));
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 7: non-Nullable new subfield (default zero value, same as top-level ADD COLUMN)
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, toString(number)) FROM numbers(100);
+
+SELECT 'Case 7 (non-Nullable new subfield):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, b String, c Int64);
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c FROM t_named_tuple_alter WHERE id < 3 ORDER BY id;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 8: multiple sequential ALTERs adding fields at varying positions
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, toString(number)) FROM numbers(100);
+
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, b String, c Nullable(Int64));
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, d Nullable(Float64), b String, c Nullable(Int64));
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, d Nullable(Float64), b String, c Nullable(Int64), e Array(Nullable(String)));
+
+SELECT 'Case 8 (multiple sequential ALTERs):';
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t.a, t.b, t.c, t.d, t.e FROM t_named_tuple_alter WHERE id < 2 ORDER BY id;
+SELECT 't (whole):', t FROM t_named_tuple_alter WHERE id < 2 ORDER BY id;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 9 (REJECT): unnamed Tuple modification still requires mutation
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(Int64, String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 'x'));
+
+SELECT 'Case 9 (unnamed Tuple rejected):';
+-- Adding a third element to an unnamed Tuple requires a mutation (CAST fails today,
+-- but that is the existing behavior we are preserving — not a regression).
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(Int64, String, Int64); -- { serverError TYPE_MISMATCH }
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 10 (REJECT): subfield removal triggers a mutation
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 'x'));
+
+SELECT 'Case 10 (subfield removal triggers mutation):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64) SETTINGS alter_sync = 2;
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 11 (REJECT): subfield rename triggers a mutation (handled as drop + add today)
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, (10, 'x'));
+
+SELECT 'Case 11 (subfield rename triggers mutation):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, c String) SETTINGS alter_sync = 2;
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 12 (REJECT): incompatible subfield type change triggers a mutation
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, tuple(42));
+
+SELECT 'Case 12 (incompatible subfield type change triggers mutation):';
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a String) SETTINGS alter_sync = 2;
+SELECT 'mutations:', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+SELECT t FROM t_named_tuple_alter;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 13: merge materializes the new subfield stream files for old parts
+-- ============================================================
+CREATE TABLE t_named_tuple_alter (id UInt64, t Tuple(a Int64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, toString(number)) FROM numbers(100);
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN t Tuple(a Int64, b String, c Nullable(Int64));
+
+SELECT 'Case 13 before merge (parts count):';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_named_tuple_alter' AND active;
+
+INSERT INTO t_named_tuple_alter VALUES (200, (200, 'two-hundred', 42));
+OPTIMIZE TABLE t_named_tuple_alter FINAL;
+
+SELECT 'Case 13 after merge: old rows return NULL, new row returns the inserted value:';
+SELECT t.c FROM t_named_tuple_alter WHERE id IN (0, 1, 200) ORDER BY id;
+SELECT 'Case 13 part count after merge:';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_named_tuple_alter' AND active;
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
+-- Case 14 (REJECT): stream-name collision is still rejected
+-- ============================================================
+SET flatten_nested = 0;
+CREATE TABLE t_named_tuple_alter (id UInt64, items Nested(a Int64, b String), `items.c` Int64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter VALUES (1, [(1, 'a')], 99);
+
+SELECT 'Case 14 (stream collision rejected):';
+-- The new `c` subfield in `items` would generate stream "items.c" which collides
+-- with the existing top-level `items.c` column. The pre-existing validation must reject.
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN items Nested(a Int64, b String, c Nullable(Int64)); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE t_named_tuple_alter;
+SET flatten_nested = 1;
+
+-- ============================================================
+-- Case 15: customer schema — deeply nested Tuple/Array(Tuple)/Map combinations
+-- with subfield additions at every depth. Each ALTER must complete instantly
+-- with no mutation triggered.
+-- ============================================================
+CREATE TABLE t_named_tuple_alter
+(
+    `@timestamp` DateTime64(3),
+    `_id` String,
+    `data` Tuple(
+        name Nullable(String),
+        level Nullable(Int64),
+        server_id Nullable(Int64),
+        res_add Map(UInt32, Int64),
+        c2s Tuple(
+            int_value Nullable(Int64),
+            server_id Nullable(Int64),
+            statistics Tuple(
+                kill_monster_num Nullable(Int64),
+                gold Nullable(Int64),
+                heros_statistics Array(Tuple(
+                    hero_id Nullable(Int64),
+                    star Nullable(Int64),
+                    damage Nullable(Int64))))))
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT * FROM generateRandom() LIMIT 100;
+
+SELECT 'Case 15 customer schema before ALTERs:';
+SELECT count() FROM t_named_tuple_alter;
+
+-- Add a top-level subfield.
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN data Tuple(
+    name Nullable(String), level Nullable(Int64), server_id Nullable(Int64),
+    res_add Map(UInt32, Int64),
+    c2s Tuple(int_value Nullable(Int64), server_id Nullable(Int64),
+        statistics Tuple(kill_monster_num Nullable(Int64), gold Nullable(Int64),
+            heros_statistics Array(Tuple(hero_id Nullable(Int64), star Nullable(Int64), damage Nullable(Int64))))),
+    new_top Nullable(Int64));
+
+-- Add a subfield inside the nested c2s Tuple.
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN data Tuple(
+    name Nullable(String), level Nullable(Int64), server_id Nullable(Int64),
+    res_add Map(UInt32, Int64),
+    c2s Tuple(int_value Nullable(Int64), server_id Nullable(Int64),
+        statistics Tuple(kill_monster_num Nullable(Int64), gold Nullable(Int64),
+            heros_statistics Array(Tuple(hero_id Nullable(Int64), star Nullable(Int64), damage Nullable(Int64)))),
+        new_c2s Nullable(Float64)),
+    new_top Nullable(Int64));
+
+-- Add a subfield inside the doubly-nested statistics Tuple.
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN data Tuple(
+    name Nullable(String), level Nullable(Int64), server_id Nullable(Int64),
+    res_add Map(UInt32, Int64),
+    c2s Tuple(int_value Nullable(Int64), server_id Nullable(Int64),
+        statistics Tuple(kill_monster_num Nullable(Int64), gold Nullable(Int64),
+            heros_statistics Array(Tuple(hero_id Nullable(Int64), star Nullable(Int64), damage Nullable(Int64))),
+            new_stat Nullable(String)),
+        new_c2s Nullable(Float64)),
+    new_top Nullable(Int64));
+
+-- Add a subfield inside Array(Tuple(...)) — the deepest case.
+ALTER TABLE t_named_tuple_alter MODIFY COLUMN data Tuple(
+    name Nullable(String), level Nullable(Int64), server_id Nullable(Int64),
+    res_add Map(UInt32, Int64),
+    c2s Tuple(int_value Nullable(Int64), server_id Nullable(Int64),
+        statistics Tuple(kill_monster_num Nullable(Int64), gold Nullable(Int64),
+            heros_statistics Array(Tuple(hero_id Nullable(Int64), star Nullable(Int64), damage Nullable(Int64),
+                new_hero Nullable(UInt8))),
+            new_stat Nullable(String)),
+        new_c2s Nullable(Float64)),
+    new_top Nullable(Int64));
+
+-- Add a subfield to a Map's value Tuple? Customer schema uses Map(UInt32, Int64) which
+-- has a primitive value, so we cannot test Map<K, Tuple> additions on the customer
+-- schema directly. Case 6 already covers that.
+
+-- Verify every ALTER above is metadata-only.
+SELECT 'Case 15 mutations after 4 ALTERs:';
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+
+-- Verify all new subfields readable (and return defaults for the pre-ALTER part).
+SELECT 'Case 15 new subfields readable:';
+SELECT countIf(data.new_top IS NULL) AS top_null,
+       countIf(data.c2s.new_c2s IS NULL) AS c2s_null,
+       countIf(data.c2s.statistics.new_stat IS NULL) AS stat_null,
+       countIf(arraySum(arrayMap(x -> if(x IS NULL, 1, 0), data.c2s.statistics.heros_statistics.new_hero)) > 0
+               OR length(data.c2s.statistics.heros_statistics.new_hero) = 0) AS hero_default_count
+FROM t_named_tuple_alter;
+
+-- Verify whole-tuple read works (no LOGICAL_ERROR exception).
+SELECT 'Case 15 whole tuple read works:';
+SELECT count() FROM (SELECT data FROM t_named_tuple_alter);
+
+DROP TABLE t_named_tuple_alter;
