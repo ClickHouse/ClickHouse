@@ -1,4 +1,6 @@
-#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
+#include <Storages/MergeTree/MergeTreeIndexCuckooFilter.h>
+
+#include <cmath>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -9,13 +11,16 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/BloomFilter.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Interpreters/CuckooFilter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
+#include <Storages/IndicesDescription.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -35,96 +40,69 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(index_columns_)
+MergeTreeIndexGranuleCuckooFilter::MergeTreeIndexGranuleCuckooFilter(double /* false_positive_rate */, size_t f_bits_, size_t index_columns_)
+    : f_bits(f_bits_), cuckoo_filters(index_columns_)
 {
     total_rows = 0;
     for (size_t column = 0; column < index_columns_; ++column)
-        bloom_filters[column] = std::make_shared<BloomFilter>(bits_per_row, hash_functions, 0);
+        cuckoo_filters[column] = std::make_shared<CuckooFilter>(CuckooFilter::empty(f_bits));
 }
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, const std::vector<HashSet<UInt64>>& column_hashes_)
-        : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(column_hashes_.size())
+MergeTreeIndexGranuleCuckooFilter::MergeTreeIndexGranuleCuckooFilter(
+    double false_positive_rate_, size_t f_bits_, const std::vector<HashSet<UInt64>> & column_hashes_)
+    : f_bits(f_bits_), cuckoo_filters(column_hashes_.size())
 {
     if (column_hashes_.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule_index_blocks empty or total_rows is zero.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule index hash sets are empty.");
 
-    size_t bloom_filter_max_size = 0;
+    size_t max_distinct = 0;
     for (const auto & column_hash : column_hashes_)
-        bloom_filter_max_size = std::max(bloom_filter_max_size, column_hash.size());
+        max_distinct = std::max(max_distinct, column_hash.size());
 
-    static size_t atom_size = 8;
-
-    // If multiple columns are given, we will initialize all the bloom filters
-    // with the size of the highest-cardinality one. This is done for compatibility with
-    // existing binary serialization format
-    total_rows = bloom_filter_max_size;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
+    total_rows = max_distinct;
 
     for (size_t column = 0, columns = column_hashes_.size(); column < columns; ++column)
-    {
-        bloom_filters[column] = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        fillingBloomFilter(bloom_filters[column], column_hashes_[column]);
-    }
+        cuckoo_filters[column] = std::make_shared<CuckooFilter>(CuckooFilter::buildFromHashes(column_hashes_[column], false_positive_rate_));
 }
 
-bool MergeTreeIndexGranuleBloomFilter::empty() const
+bool MergeTreeIndexGranuleCuckooFilter::empty() const
 {
     return !total_rows;
 }
 
-size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+size_t MergeTreeIndexGranuleCuckooFilter::memoryUsageBytes() const
 {
     size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter->memoryUsageBytes();
+    for (const auto & filter : cuckoo_filters)
+        sum += filter->memoryUsageBytes();
     return sum;
 }
 
-void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleCuckooFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
-    readVarUInt(total_rows, istr);
+    UInt64 total_rows_u64 = 0;
+    readVarUInt(total_rows_u64, istr);
+    total_rows = static_cast<size_t>(total_rows_u64);
 
-    static size_t atom_size = 8;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    size_t read_size = bytes_size;
-    for (auto & filter : bloom_filters)
+    for (auto & filter : cuckoo_filters)
     {
-        filter->resize(bytes_size);
-        if constexpr (std::endian::native == std::endian::big)
-            read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+        filter = std::make_shared<CuckooFilter>(CuckooFilter::empty(f_bits));
+        filter->deserializeBinary(istr, version);
     }
 }
 
-void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleCuckooFilter::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty cuckoo filter index.");
 
-    writeVarUInt(total_rows, ostr);
+    writeVarUInt(static_cast<UInt64>(total_rows), ostr);
 
-    static size_t atom_size = 8;
-    size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    for (const auto & bloom_filter : bloom_filters)
-    {
-        if constexpr (std::endian::native == std::endian::big)
-            write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
-    }
-}
-
-void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> &hashes) const
-{
-    for (const auto & bf_base_hash : hashes)
-        for (size_t i = 0; i < hash_functions; ++i)
-            bf->addHashWithSeed(bf_base_hash.getKey(), BloomFilterHash::bf_hash_seed[i]);
+    for (const auto & filter : cuckoo_filters)
+        filter->serializeBinary(ostr);
 }
 
 namespace
@@ -143,18 +121,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
-bool hashMatchesFilter(const BloomFilterPtr& bloom_filter, UInt64 hash, size_t hash_functions)
-{
-    return std::all_of(BloomFilterHash::bf_hash_seed,
-                       BloomFilterHash::bf_hash_seed + hash_functions,
-                       [&](const auto &hash_seed)
-                       {
-                           return bloom_filter->findHashWithSeed(hash,
-                                                                 hash_seed);
-                       });
-}
-
-bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions, bool match_all)
+bool maybeTrueOnCuckooFilter(const IColumn * hash_column, const CuckooFilterPtr & cuckoo_filter, bool match_all)
 {
     const auto * const_column = typeid_cast<const ColumnConst *>(hash_column);
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
@@ -163,31 +130,19 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be Const or UInt64.");
 
     if (const_column)
-    {
-        return hashMatchesFilter(bloom_filter,
-                                 const_column->getValue<UInt64>(),
-                                 hash_functions);
-    }
+        return cuckoo_filter->contains(const_column->getValue<UInt64>());
 
     const ColumnUInt64::Container & hashes = non_const_column->getData();
 
     if (match_all)
     {
-        return std::all_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
+        return std::all_of(hashes.begin(), hashes.end(), [&](UInt64 hash_row) { return cuckoo_filter->contains(hash_row); });
     }
 
-    return std::any_of(
-        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
+    return std::any_of(hashes.begin(), hashes.end(), [&](UInt64 hash_row) { return cuckoo_filter->contains(hash_row); });
 }
 
-/// Information about a Map column's presence in the bloom filter index.
+/// Information about a Map column's presence in the cuckoo filter index.
 /// Used to unify handling of both `arrayElement(map, key)` function calls
 /// and `map.key_<serialized_key>` subcolumn references produced by `FunctionToSubcolumnsPass`.
 struct MapIndexInfo
@@ -199,7 +154,7 @@ struct MapIndexInfo
     Field key_field;
 };
 
-/// Try to resolve a Map column against the bloom filter index header by the map column name
+/// Try to resolve a Map column against the cuckoo filter index header by the map column name
 /// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
 /// is present in the index.
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
@@ -229,7 +184,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 }
 
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
-/// against the bloom filter index header. The subcolumn name format is produced by
+/// against the cuckoo filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, const Block & header)
 {
@@ -285,9 +240,9 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
 
 }
 
-MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), hash_functions(hash_functions_)
+MergeTreeIndexConditionCuckooFilter::MergeTreeIndexConditionCuckooFilter(
+    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_)
+    : WithContext(context_), header(header_)
 {
     if (!predicate)
     {
@@ -302,7 +257,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     rpn = std::move(builder).extractRPN();
 }
 
-bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionCuckooFilter::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
@@ -315,7 +270,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_IN});
 }
 
-bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const
+bool MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleCuckooFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
 {
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
@@ -345,10 +300,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                     const auto & filter = filters[query_index_hash.first];
                     const ColumnPtr & hash_column = query_index_hash.second;
 
-                    match_rows = maybeTrueOnBloomFilter(&*hash_column,
-                                                        filter,
-                                                        hash_functions,
-                                                        match_all);
+                    match_rows = maybeTrueOnCuckooFilter(&*hash_column, filter, match_all);
                 }
 
                 rpn_stack.emplace_back(match_rows, true);
@@ -384,20 +336,20 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             /// No `default:` to make the compiler warn if not all enum values are handled.
         }
 
-        if (update_partial_result_disjuntion_fn)
+        if (update_partial_result_disjunction_fn)
         {
-            update_partial_result_disjuntion_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            update_partial_result_disjunction_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
             ++element_idx;
         }
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeIndexConditionCuckooFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -431,11 +383,11 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
 namespace
 {
 
-/// Hash the JSON path string and append a predicate entry for bloom filter index.
-void fillJSONPathBloomPredicate(
+/// Hash the JSON path string and append a predicate entry for cuckoo filter index.
+void fillJSONPathCuckooPredicate(
     const JSONSubcolumnIndexInfo & json_info,
     const Block & header,
-    MergeTreeIndexConditionBloomFilter::RPNElement & out)
+    MergeTreeIndexConditionCuckooFilter::RPNElement & out)
 {
     const DataTypePtr & index_type = header.getByPosition(json_info.header_position).type;
     const auto actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -447,7 +399,7 @@ void fillJSONPathBloomPredicate(
 
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
+bool MergeTreeIndexConditionCuckooFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
     if (!node.isFunction())
         return false;
@@ -470,17 +422,18 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     /// Handle isNotNull for JSON subcolumns: isNotNull(json.some.path)
     /// When a JSON path is absent, the value is NULL (for Dynamic/Nullable types),
     /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
-    if (function_name == "isNotNull" && arguments_size == 1)
+    /// Only for a bare atom: nested forms like isNotNull(json.a) = 0 must not use this fast path.
+    if (parent == nullptr && function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
         if (auto json_info = tryMatchNodeToJSONIndex(arg, header, "JSONAllPaths"))
         {
             auto arg_type = arg.getDAGNode()->result_type;
-            /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
+            /// It doesn't make sense to use cuckoo filter for isNotNull on non-Nullable type, as isNotNull will be always true.
             if (!canContainNull(*arg_type))
                 return false;
 
-            fillJSONPathBloomPredicate(*json_info, header, out);
+            fillJSONPathCuckooPredicate(*json_info, header, out);
             out.function = RPNElement::FUNCTION_HAS;
             return true;
         }
@@ -545,7 +498,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
+bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const ConstSetPtr & prepared_set,
@@ -598,7 +551,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 return false;
         }
 
-        fillJSONPathBloomPredicate(*json_info, header, out);
+        fillJSONPathCuckooPredicate(*json_info, header, out);
         out.function = RPNElement::FUNCTION_IN;
 
         return true;
@@ -654,7 +607,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         if (map_info->has_keys_index)
         {
-            /// For mapKeys we serialize key argument with bloom filter
+            /// For mapKeys we serialize key argument with cuckoo filter
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -662,7 +615,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         }
         else if (map_info->has_values_index)
         {
-            /// For mapValues we serialize set with bloom filter
+            /// For mapValues we serialize set with cuckoo filter
             size_t row_size = column->size();
             size_t position = map_info->values_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
@@ -791,7 +744,7 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 }
 
 
-bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
+bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
@@ -883,7 +836,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        fillJSONPathBloomPredicate(*json_info, header, out);
+        fillJSONPathCuckooPredicate(*json_info, header, out);
 
         return true;
     }
@@ -986,29 +939,27 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     return false;
 }
 
-MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
+MergeTreeIndexAggregatorCuckooFilter::MergeTreeIndexAggregatorCuckooFilter(
+    double false_positive_rate_, size_t f_bits_, const Names & columns_name_)
+    : false_positive_rate(false_positive_rate_), f_bits(f_bits_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
 }
 
-bool MergeTreeIndexAggregatorBloomFilter::empty() const
+bool MergeTreeIndexAggregatorCuckooFilter::empty() const
 {
     return !total_rows;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilter::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorCuckooFilter::getGranuleAndReset()
 {
-    const auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, column_hashes);
+    const auto granule = std::make_shared<MergeTreeIndexGranuleCuckooFilter>(false_positive_rate, f_bits, column_hashes);
     total_rows = 0;
     for (auto & hashes : column_hashes)
         hashes.clear();
     return granule;
 }
 
-void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorCuckooFilter::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -1020,11 +971,7 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
         const auto & column_and_type = block.getByName(index_columns_name[column]);
-        /// A bloom filter only needs the set of distinct hashes, so for LowCardinality
-        /// columns this returns one hash per distinct dictionary value present in the
-        /// granule instead of one per row -- turning O(rows) hash-set inserts into
-        /// O(distinct). For other columns it is one hash per row, as before.
-        auto index_column = BloomFilterHash::hashWithColumnDistinct(column_and_type.type, column_and_type.column, *pos, max_read_rows);
+        auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
@@ -1036,31 +983,29 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     total_rows += max_read_rows;
 }
 
-MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
+MergeTreeIndexCuckooFilter::MergeTreeIndexCuckooFilter(
     const IndexDescription & index_,
-    size_t bits_per_row_,
-    size_t hash_functions_)
+    double false_positive_rate_,
+    size_t f_bits_)
     : IMergeTreeIndex(index_)
-    , bits_per_row(bits_per_row_)
-    , hash_functions(hash_functions_)
+    , false_positive_rate(false_positive_rate_)
+    , f_bits(f_bits_)
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexCuckooFilter::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
+    return std::make_shared<MergeTreeIndexGranuleCuckooFilter>(false_positive_rate, f_bits, index.column_names.size());
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexCuckooFilter::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
+    return std::make_shared<MergeTreeIndexAggregatorCuckooFilter>(false_positive_rate, f_bits, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexCuckooFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(predicate, context, index.sample_block, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionCuckooFilter>(predicate, context, index.sample_block);
 }
 
 static void assertIndexColumnsType(const Block & header)
@@ -1078,11 +1023,11 @@ static void assertIndexColumnsType(const Block & header)
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID() &&
             !which.isIPv4() && !which.isIPv6())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of cuckoo filter index.", type->getName());
     }
 }
 
-MergeTreeIndexPtr bloomFilterIndexCreator(
+MergeTreeIndexPtr cuckooFilterIndexCreator(
     const IndexDescription & index)
 {
     double false_positive_rate = 0.025;
@@ -1090,31 +1035,44 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     if (index.arguments && !index.arguments->children.empty())
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
-        false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
+        false_positive_rate = argument.safeGet<Float64>();
     }
 
-    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
+    /// Same open interval as `CuckooFilter::fingerprintBitsFromFalsePositiveRate`; clamp for attach / edge metadata.
+    false_positive_rate = std::max(false_positive_rate, 1e-15);
+    false_positive_rate = std::min(false_positive_rate, 1.0 - 1e-15);
+    const size_t f_bits = CuckooFilter::fingerprintBitsFromFalsePositiveRate(false_positive_rate);
 
-    return std::make_shared<MergeTreeIndexBloomFilter>(
-        index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+    return std::make_shared<MergeTreeIndexCuckooFilter>(index, false_positive_rate, f_bits);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
+void cuckooFilterIndexValidator(const IndexDescription & index, bool attach)
 {
     assertIndexColumnsType(index.sample_block);
 
     if (index.arguments && index.arguments->children.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Cuckoo filter index cannot have more than one parameter.");
     }
 
     if (index.arguments && !index.arguments->children.empty())
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
 
-        if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
+        if (!attach)
+        {
+            if (argument.getType() != Field::Types::Float64)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The cuckoo filter false positive rate must be a double strictly between 0 and 1 (exclusive).");
+
+            const Float64 fpr = argument.safeGet<Float64>();
+            if (!std::isfinite(fpr) || fpr <= 0 || fpr >= 1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The cuckoo filter false positive rate must be a double strictly between 0 and 1 (exclusive).");
+        }
     }
 }
 

@@ -239,6 +239,23 @@ public:
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
 
+    /// Check if metadata defines a cuckoo filter skip index
+    static bool hasCuckooFilterIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if new metadata adds a cuckoo filter index absent in old metadata.
+    static bool hasNewCuckooFilterIndex(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata);
+
+    /// Check if metadata defines a binary fuse filter skip index
+    static bool hasBinaryFuseFilterIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if new metadata adds a binary fuse filter index absent in old metadata.
+    static bool hasNewBinaryFuseFilterIndex(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata);
+
+    /// True when an experimental skip index in new metadata matches an existing definition in old metadata.
+    static bool isUnchangedExperimentalSkipIndex(
+        const IndexDescription & index,
+        const StorageInMemoryMetadata & old_metadata);
+
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };

@@ -360,6 +360,12 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
+MergeTreeIndexPtr cuckooFilterIndexCreator(const IndexDescription & index);
+void cuckooFilterIndexValidator(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr binaryFuseFilterIndexCreator(const IndexDescription & index);
+void binaryFuseFilterIndexValidator(const IndexDescription & index, bool attach);
+
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);

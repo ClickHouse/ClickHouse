@@ -41,9 +41,11 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -1340,6 +1342,103 @@ bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
     for (const auto & index : metadata.secondary_indices)
     {
         if (index.type == TEXT_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasCuckooFilterIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == "cuckoo_filter")
+            return true;
+    }
+    return false;
+}
+
+namespace
+{
+
+/// Hash of skip-index definition fields used for experimental-setting bypass:
+/// expression, TYPE arguments (e.g. FPR), and GRANULARITY. name/type are compared separately.
+UInt128 getIndexDefinitionHash(const IndexDescription & index)
+{
+    SipHash hash;
+    if (index.expression_list_ast)
+        index.expression_list_ast->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    if (index.arguments)
+        index.arguments->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    hash.update(index.granularity);
+    return hash.get128();
+}
+
+bool areSameExperimentalSkipIndexDefinition(const IndexDescription & old_index, const IndexDescription & new_index)
+{
+    if (old_index.name != new_index.name || old_index.type != new_index.type)
+        return false;
+
+    return getIndexDefinitionHash(old_index) == getIndexDefinitionHash(new_index);
+}
+
+bool hasNewExperimentalSkipIndexOfType(
+    const String & index_type,
+    const StorageInMemoryMetadata & old_metadata,
+    const StorageInMemoryMetadata & new_metadata)
+{
+    for (const auto & new_index : new_metadata.secondary_indices)
+    {
+        if (new_index.type != index_type)
+            continue;
+
+        bool unchanged_in_old = false;
+        for (const auto & old_index : old_metadata.secondary_indices)
+        {
+            if (areSameExperimentalSkipIndexDefinition(old_index, new_index))
+            {
+                unchanged_in_old = true;
+                break;
+            }
+        }
+
+        if (!unchanged_in_old)
+            return true;
+    }
+    return false;
+}
+
+}
+
+bool AlterCommands::hasNewCuckooFilterIndex(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata)
+{
+    return hasNewExperimentalSkipIndexOfType("cuckoo_filter", old_metadata, new_metadata);
+}
+
+bool AlterCommands::hasBinaryFuseFilterIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == "binary_fuse_filter")
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasNewBinaryFuseFilterIndex(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata)
+{
+    return hasNewExperimentalSkipIndexOfType("binary_fuse_filter", old_metadata, new_metadata);
+}
+
+bool AlterCommands::isUnchangedExperimentalSkipIndex(
+    const IndexDescription & index,
+    const StorageInMemoryMetadata & old_metadata)
+{
+    if (index.type != "cuckoo_filter" && index.type != "binary_fuse_filter")
+        return false;
+
+    for (const auto & old_index : old_metadata.secondary_indices)
+    {
+        if (areSameExperimentalSkipIndexDefinition(old_index, index))
             return true;
     }
     return false;

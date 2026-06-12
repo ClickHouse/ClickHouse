@@ -121,6 +121,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_cuckoo_filter_index;
+    extern const SettingsBool allow_experimental_binary_fuse_filter_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
@@ -777,6 +779,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+
+                if (mode <= LoadingStrictnessLevel::CREATE && !create.attach && !is_restore_from_backup
+                    && index_desc.type == "cuckoo_filter" && !settings[Setting::allow_experimental_cuckoo_filter_index])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index type 'cuckoo_filter' is experimental. Enable setting 'allow_experimental_cuckoo_filter_index' to use it");
+
+                if (mode <= LoadingStrictnessLevel::CREATE && !create.attach && !is_restore_from_backup
+                    && index_desc.type == "binary_fuse_filter" && !settings[Setting::allow_experimental_binary_fuse_filter_index])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index type 'binary_fuse_filter' is experimental. Enable setting 'allow_experimental_binary_fuse_filter_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
