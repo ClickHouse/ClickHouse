@@ -62,16 +62,19 @@ public:
             path,
             disk.getDisk()->getName());
 
-        /// Pass the expression as a separate argument so it is never interpreted by the
-        /// shell. `sed` reads its input from `stdin` and writes the result to `stdout`.
-        ShellCommand::Config config{R"(exec sed "$0")"};
-        config.arguments.push_back(expression);
-        auto command = ShellCommand::execute(config);
-
         try
         {
             auto in = disk.getDisk()->readFile(path, getReadSettings());
             auto out = disk.getDisk()->writeFile(temp_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+
+            /// Start `sed` only after both disk buffers are open. If opening the source or temp file
+            /// throws, the child is not yet running, so unwinding cannot leave a `sed` process with an
+            /// open `stdin` to be reaped by the blocking destructor -- which would otherwise hang.
+            /// Pass the expression as a separate argument so it is never interpreted by the
+            /// shell. `sed` reads its input from `stdin` and writes the result to `stdout`.
+            ShellCommand::Config config{R"(exec sed "$0")"};
+            config.arguments.push_back(expression);
+            auto command = ShellCommand::execute(config);
 
             /// Feed the file into `sed`'s `stdin` from a separate thread while we read its
             /// `stdout` here, to avoid a deadlock when the data exceeds the pipe buffer.
