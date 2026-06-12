@@ -131,20 +131,12 @@ void addFoundRowAll(
     }
     else
     {
-        /// Fast path mirroring the lazy branch above: when the list has a single row,
-        /// skip constructing a ForwardIterator and feed the inline RowRef directly.
-        if (mapped.rows == 1)
+        /// No single-row fast path needed here (unlike the pre-BuildRef code): a singleton lives
+        /// inline in the cell word and the iterator decodes it without touching the arena node.
+        for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(static_cast<const RowRef *>(&mapped), false);
+            added.appendFromBlock(*it, false);
             ++current_offset;
-        }
-        else
-        {
-            for (auto it = mapped.begin(); it.ok(); ++it)
-            {
-                added.appendFromBlock(*it, false);
-                ++current_offset;
-            }
         }
     }
 }
