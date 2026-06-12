@@ -584,18 +584,26 @@ private:
 
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
-        /// parts). The haystack becomes an Array(String); hasToken needs a String and is handled separately.
+        /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
         if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
         {
-            if (function_name != "hasToken")
+            auto haystack_name = getNameWithoutAliases(new_children[0]);
+            ActionsDAG::NodeRawConstPtrs merged_outputs;
+            actions_dag.mergeNodes(
+                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
+                &merged_outputs);
+            chassert(merged_outputs.size() == 1);
+            new_children[0] = merged_outputs.front();
+
+            /// hasToken takes a String haystack, so rejoin the postprocessed tokens with a separator;
+            /// its boundary scan re-splits them. hasAnyTokens/hasAllTokens accept the Array(String) directly.
+            if (function_name == "hasToken")
             {
-                auto haystack_name = getNameWithoutAliases(new_children[0]);
-                ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(
-                    postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
-                    &merged_outputs);
-                chassert(merged_outputs.size() == 1);
-                new_children[0] = merged_outputs.front();
+                DataTypePtr separator_type = std::make_shared<DataTypeString>();
+                MutableColumnConstPtr separator_column = separator_type->createColumnConst(0, Field(String(" ")));
+                const ActionsDAG::Node & separator = actions_dag.addColumn(std::move(separator_column), separator_type, "' '");
+                FunctionOverloadResolverPtr concat = FunctionFactory::instance().get("arrayStringConcat", context);
+                new_children[0] = &actions_dag.addFunction(concat, {new_children[0], &separator}, "");
             }
 
             if (needles_field.getType() == Field::Types::String)
