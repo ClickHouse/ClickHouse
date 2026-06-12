@@ -90,6 +90,7 @@ namespace ProfileEvents
     extern const Event DataLakeRestCatalogUpdateSchemaMicroseconds;
     extern const Event DataLakeRestCatalogDropTable;
     extern const Event DataLakeRestCatalogDropTableMicroseconds;
+    extern const Event DataLakeRestCatalogTokenExpired;
 }
 
 namespace DataLake
@@ -240,9 +241,8 @@ RestCatalog::Config RestCatalog::loadConfig()
     std::string json_str;
 
     {
-        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogLoadConfig);
         auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogLoadConfigMicroseconds);
-        auto buf = createReadBuffer(CONFIG_ENDPOINT, params);
+        auto buf = createReadBuffer(CONFIG_ENDPOINT, ProfileEvents::DataLakeRestCatalogLoadConfig, params);
         readJSONObjectPossiblyInvalid(json_str, *buf);
     }
 
@@ -607,6 +607,7 @@ std::optional<StorageType> RestCatalog::getStorageType() const
 
 DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     const std::string & endpoint,
+    const ProfileEvents::Event & event,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers) const
 {
@@ -637,6 +638,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     try
     {
+        ProfileEvents::increment(event);
         return create_buffer(false);
     }
     catch (const DB::HTTPException & e)
@@ -646,6 +648,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
             (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
              || status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
         {
+            ProfileEvents::increment(event);
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogTokenExpired);
             return create_buffer(true);
         }
         throw;
@@ -774,9 +778,8 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             String next_page_token;
             RestCatalog::Namespaces page_namespaces;
             {
-                ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetNamespaces);
                 auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetNamespacesMicroseconds);
-                auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
+                auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, ProfileEvents::DataLakeRestCatalogGetNamespaces, params);
                 page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
             }
 
@@ -933,9 +936,8 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
         String next_page_token;
         DB::Names page_tables;
         {
-            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTables);
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTablesMicroseconds);
-            auto buf = createReadBuffer(config.prefix / endpoint, params);
+            auto buf = createReadBuffer(config.prefix / endpoint, ProfileEvents::DataLakeRestCatalogGetTables, params);
             page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
         }
 
@@ -1070,9 +1072,8 @@ bool RestCatalog::getTableMetadataImpl(
     String json_str;
 
     {
-        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTableMetadata);
         auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTableMetadataMicroseconds);
-        auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
+        auto buf = createReadBuffer(config.prefix / endpoint, ProfileEvents::DataLakeRestCatalogGetTableMetadata, /* params */{}, headers);
 
         if (buf->eof())
         {
@@ -1494,9 +1495,8 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         String json_str;
 
         {
-            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetCredentials);
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetCredentialsMicroseconds);
-            auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
+            auto buf = createReadBuffer(config.prefix / endpoint, ProfileEvents::DataLakeRestCatalogGetCredentials, /* params */{}, headers);
 
             if (buf->eof())
             {

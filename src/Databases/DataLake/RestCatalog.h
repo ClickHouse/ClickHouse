@@ -134,6 +134,7 @@ protected:
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
+        const ProfileEvents::Event & event,
         const Poco::URI::QueryParameters & params = {},
         const DB::HTTPHeaderEntries & headers = {}) const;
 
