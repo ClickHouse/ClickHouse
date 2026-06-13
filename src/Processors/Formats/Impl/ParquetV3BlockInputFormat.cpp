@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_CHANGED_WHILE_READING;
 }
 
 static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
@@ -137,10 +138,24 @@ Chunk ParquetV3BlockInputFormat::read()
         {
             /// Only count rows in the assigned row groups. Otherwise multiple sources
             /// reading buckets of the same file would each report the file's total.
+            ///
+            /// The bucket (row-group) assignment is an invariant: every id in
+            /// `row_group_ids` was computed from a footer read at planning time and must
+            /// exist in the metadata read here. An out-of-range id means the underlying
+            /// file diverged from the one the split was computed on (e.g. an object was
+            /// overwritten between the footer read and this count on the object-storage
+            /// path, which - unlike the local `StorageFile` path - has no file-version
+            /// guard). Fail close rather than silently dropping a row group and returning
+            /// an undercount.
             for (size_t rg : buckets_to_read->row_group_ids)
             {
-                if (rg < file_metadata.row_groups.size())
-                    num_rows += size_t(file_metadata.row_groups[rg].num_rows);
+                if (rg >= file_metadata.row_groups.size())
+                    throw Exception(
+                        ErrorCodes::FILE_CHANGED_WHILE_READING,
+                        "Row group {} from the bucket assignment is out of range: the file has only {} row groups. "
+                        "The file was likely modified concurrently while a parallel single-file read was in progress",
+                        rg, file_metadata.row_groups.size());
+                num_rows += size_t(file_metadata.row_groups[rg].num_rows);
             }
         }
         else

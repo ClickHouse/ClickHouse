@@ -30,6 +30,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+    extern const int FILE_CHANGED_WHILE_READING;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -352,6 +353,24 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             if (output_info.is_primitive)
                 primitive_columns[output_info.primitive_start].used_by_key_condition = true;
         }
+    }
+
+    /// The bucket (row-group) assignment is an invariant: every id in `row_groups_to_read`
+    /// was computed from a footer read at planning time and must exist in the metadata read
+    /// here. An out-of-range id means the underlying file diverged from the one the split was
+    /// computed on (e.g. an object overwritten between the footer read and this read on the
+    /// object-storage path, which - unlike the local `StorageFile` path - has no file-version
+    /// guard). Fail close rather than silently never reading the row group and returning fewer
+    /// rows than the bucket was assigned.
+    if (row_groups_to_read.has_value())
+    {
+        for (UInt64 rg : *row_groups_to_read)
+            if (rg >= file_metadata.row_groups.size())
+                throw Exception(
+                    ErrorCodes::FILE_CHANGED_WHILE_READING,
+                    "Row group {} from the bucket assignment is out of range: the file has only {} row groups. "
+                    "The file was likely modified concurrently while a parallel single-file read was in progress",
+                    rg, file_metadata.row_groups.size());
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
