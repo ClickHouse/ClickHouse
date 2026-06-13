@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -687,7 +688,8 @@ IntervalKind::Kind timeUnitToIntervalKind(int unit)
 
 }
 
-DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const FormatSettings & settings, bool make_nullable)
+DataTypePtr fieldToCHType(
+    const ArrowField & field, [[maybe_unused]] const FormatSettings & settings, bool make_nullable, bool allow_null_type)
 {
     const ArrowType & type = field.type;
     DataTypePtr result;
@@ -744,7 +746,7 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
         case TypeKind::FixedSizeList:
         {
             const ArrowField & element = type.children.at(0);
-            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, element.nullable));
+            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, element.nullable, allow_null_type));
             break;
         }
         case TypeKind::Struct:
@@ -755,7 +757,7 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
             names.reserve(type.children.size());
             for (const ArrowField & child : type.children)
             {
-                elems.push_back(fieldToCHType(child, settings, child.nullable));
+                elems.push_back(fieldToCHType(child, settings, child.nullable, allow_null_type));
                 names.push_back(child.name);
             }
             result = std::make_shared<DataTypeTuple>(elems, names);
@@ -770,7 +772,7 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
             /// ClickHouse map keys are never nullable.
             result = std::make_shared<DataTypeMap>(
                 fieldToCHType(key, settings, /*make_nullable=*/false),
-                fieldToCHType(value, settings, value.nullable));
+                fieldToCHType(value, settings, value.nullable, allow_null_type));
             break;
         }
         case TypeKind::Union:
@@ -789,6 +791,18 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
             break;
         }
         case TypeKind::Null:
+            /// An Arrow `null`-typed field is an all-null column. For the data reader map it to
+            /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
+            /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
+            /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
+            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
+            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
+            if (allow_null_type)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "Native Arrow IPC reader does not support the `null` type in schema inference (field '{}')",
+                field.name);
         case TypeKind::Interval:
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

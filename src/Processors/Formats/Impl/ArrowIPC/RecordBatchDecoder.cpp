@@ -14,6 +14,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -23,6 +24,7 @@
 #include <Core/UUID.h>
 
 #include <algorithm>
+#include <limits>
 #include <unordered_map>
 
 namespace DB
@@ -146,7 +148,7 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
 ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
 {
     const ArrowType & type = field.type;
-    DataTypePtr inner_type = fieldToCHType(field, settings, /*make_nullable=*/false);
+    DataTypePtr inner_type = fieldToCHType(field, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
     auto column = inner_type->createColumn();
 
     switch (type.kind)
@@ -730,6 +732,13 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
     if (field.type.kind == TypeKind::Union)
         return decodeUnion(field, rows);
 
+    /// An Arrow `null`-typed field carries no buffers at all (not even validity); it is an all-null
+    /// column. Decode it as an all-null `Nullable(Nothing)` (matching `fieldToCHType` and how the library
+    /// reader wraps its `Nothing` column); `buildChunk` then casts it to the requested target as NULLs
+    /// (or column DEFAULTs with `null_as_default`).
+    if (field.type.kind == TypeKind::Null)
+        return ColumnNullable::create(ColumnNothing::create(rows), ColumnUInt8::create(rows, UInt8{1}));
+
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();
 
@@ -759,7 +768,13 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     variadic_counts.clear();
     if (const auto * counts = batch.variadicBufferCounts())
         for (int64_t c : *counts)
+        {
+            /// Untrusted IPC metadata: a negative count would become a huge `size_t` when reserving the
+            /// data-buffer vector for a `BinaryView`/`Utf8View` column. Reject it.
+            if (c < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);
             variadic_counts.push_back(c);
+        }
     prepareBuffers(batch, body);
 
     std::vector<DecodedColumn> result;
@@ -768,7 +783,7 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     {
         DecodedColumn decoded;
         decoded.name = field.name;
-        decoded.type = fieldToCHType(field, settings, field.nullable);
+        decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
         /// A top-level dictionary-encoded field decodes into a LowCardinality column of its value type.
         if (field.dictionary && decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
@@ -830,6 +845,11 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         validate(buffer->offset(), buffer->length());
         const int64_t length = buffer->length();
 
+        /// `pos` accumulates from untrusted `uncompressed_length` metadata; both the 8-byte alignment and
+        /// the running total must not wrap, otherwise `decompressed_body` would be under-allocated while a
+        /// later placement's offset+length writes past it. Use checked arithmetic and fail closed.
+        if (pos > std::numeric_limits<size_t>::max() - 7)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         pos = (pos + 7) & ~size_t(7);
         if (length == 0)
         {
@@ -846,6 +866,8 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         uncompressed_length = DB::fromLittleEndian(uncompressed_length);
 
         const size_t out_len = uncompressed_length < 0 ? static_cast<size_t>(length - 8) : static_cast<size_t>(uncompressed_length);
+        if (out_len > std::numeric_limits<size_t>::max() - pos)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         placements[i] = {pos, out_len, src + 8, static_cast<size_t>(length - 8), uncompressed_length < 0};
         pos += out_len;
     }

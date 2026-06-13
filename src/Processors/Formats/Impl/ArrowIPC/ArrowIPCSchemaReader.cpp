@@ -44,15 +44,17 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
     }
     else
     {
-        /// The file format keeps its schema in the footer, which needs random access.
-        SeekableReadBuffer * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
-        std::unique_ptr<ReadBuffer> memory_buffer;
+        /// The file format keeps its schema in the footer, which needs random access. Use the input
+        /// directly only when it is genuinely seekable, the size is known, and `input_format_allow_seeks`
+        /// is not disabled (mirroring `asArrowFile` in the library reader); otherwise load it into memory.
+        SeekableReadBuffer * seekable = format_settings.seekable_read ? dynamic_cast<SeekableReadBuffer *>(&in) : nullptr;
+        std::unique_ptr<ReadBufferFromMemory> memory_buffer;
         String file_data;
         size_t file_size = 0;
         std::optional<size_t> known_size;
         if (seekable)
             known_size = tryGetFileSizeFromReadBuffer(in);
-        if (seekable && known_size && *known_size > 0)
+        if (seekable && known_size && *known_size > 0 && seekable->checkIfActuallySeekable())
         {
             file_size = *known_size;
         }
@@ -61,7 +63,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             readStringUntilEOF(file_data, in);
             file_size = file_data.size();
             memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
-            seekable = assert_cast<SeekableReadBuffer *>(memory_buffer.get());
+            seekable = memory_buffer.get(); /// `ReadBufferFromMemory` is a `SeekableReadBuffer` (implicit upcast).
         }
         ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
         schema = std::move(footer.schema);

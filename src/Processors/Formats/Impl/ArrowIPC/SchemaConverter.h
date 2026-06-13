@@ -149,7 +149,11 @@ void buildFooter(
 
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).
-DataTypePtr fieldToCHType(const ArrowField & field, const FormatSettings & settings, bool make_nullable);
+/// `allow_null_type` maps an Arrow `null`-typed field to the all-null `Nullable(Nothing)` instead of
+/// throwing — the data reader enables it (matching the library's `allow_arrow_null_type`), schema
+/// inference leaves it off.
+DataTypePtr fieldToCHType(
+    const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type = false);
 
 /// Builds the IPC `Schema` message FlatBuffer for a ClickHouse header into `builder` (left Finished),
 /// mirroring the type choices of the native writer's record-batch encoder.

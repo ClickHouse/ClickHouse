@@ -1,0 +1,14 @@
+file, explicit structure
+\N	1
+\N	2
+\N	3
+stream, explicit structure
+\N	1
+\N	2
+\N	3
+schema inference skips the null column
+1
+2
+3
+schema inference fails without the skip setting
+1
