@@ -718,14 +718,32 @@ void ColumnVariant::deserializeBinaryIntoVariant(ColumnVariant::Discriminator gl
 void ColumnVariant::insertDefault()
 {
     getLocalDiscriminators().push_back(NULL_DISCRIMINATOR);
-    getOffsets().emplace_back();
+    /// Keep local_discriminators and offsets in sync even if appending to offsets throws
+    /// (e.g. on a memory limit), otherwise popBack would over-pop the shorter one.
+    try
+    {
+        getOffsets().emplace_back();
+    }
+    catch (...)
+    {
+        getLocalDiscriminators().pop_back();
+        throw;
+    }
 }
 
 void ColumnVariant::insertManyDefaults(size_t length)
 {
-    size_t size = local_discriminators->size();
-    getLocalDiscriminators().resize_fill(size + length, NULL_DISCRIMINATOR);
-    getOffsets().resize_fill(size + length);
+    size_t prev_size = local_discriminators->size();
+    getLocalDiscriminators().resize_fill(prev_size + length, NULL_DISCRIMINATOR);
+    try
+    {
+        getOffsets().resize_fill(prev_size + length);
+    }
+    catch (...)
+    {
+        getLocalDiscriminators().resize_assume_reserved(prev_size);
+        throw;
+    }
 }
 
 void ColumnVariant::popBack(size_t n)
@@ -1754,6 +1772,16 @@ void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & n
     applyNullMapImpl<true>(null_map);
 }
 
+ColumnPtr ColumnVariant::createNullMap() const
+{
+    const auto & discriminators = getLocalDiscriminators();
+    auto null_map = ColumnUInt8::create(discriminators.size(), UInt8(0));
+    auto & null_map_data = null_map->getData();
+    for (size_t i = 0; i < discriminators.size(); ++i)
+        null_map_data[i] = (discriminators[i] == NULL_DISCRIMINATOR);
+    return null_map;
+}
+
 template <bool inverted>
 void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map)
 {
@@ -1956,13 +1984,15 @@ bool ColumnVariant::hasStatistics() const
 
 void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    /// Iterate by global discriminator: source columns are addressed by global discriminator,
+    /// so the destination variant must be too (local order may differ from global order).
     for (size_t i = 0; i != variants.size(); ++i)
     {
         VectorWithMemoryTracking<ColumnPtr> variant_source_columns;
         variant_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             variant_source_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        variants[i]->takeOrCalculateStatisticsFrom(variant_source_columns);
+        getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variant_source_columns);
     }
 }
 

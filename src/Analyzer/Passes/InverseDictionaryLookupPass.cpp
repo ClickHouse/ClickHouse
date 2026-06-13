@@ -314,6 +314,15 @@ public:
             return;
         }
 
+        /// The rewrite produces `IN (SELECT ... FROM dictionary(...))`, and the `dictionary()`
+        /// table function requires the `CREATE TEMPORARY TABLE` grant; if it is missing, skip the
+        /// optimization to avoid `ACCESS_DENIED`. Checked only after a rewrite candidate is found:
+        /// getAccess touches the access storage, and query analysis must not depend on it for
+        /// queries without `dictGet` predicates (in particular internal queries, which otherwise
+        /// block whenever the replicated access storage is being refreshed).
+        if (!isCreateTemporaryTableGranted())
+            return;
+
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
         const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
@@ -562,6 +571,16 @@ public:
 
         node = std::move(replacement_node);
     }
+
+private:
+    bool isCreateTemporaryTableGranted()
+    {
+        if (!create_temporary_table_granted.has_value())
+            create_temporary_table_granted = getContext()->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE);
+        return *create_temporary_table_granted;
+    }
+
+    std::optional<bool> create_temporary_table_granted;
 };
 
 }
