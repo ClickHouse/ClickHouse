@@ -233,6 +233,11 @@ def run_fuzz_job(check_name: str):
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
+    # Raw sanitizer reports written via *SAN_OPTIONS=log_path (see run-fuzzer.sh).
+    # Their contents are also merged into stderr.log/server.log, but upload the
+    # originals too for debugging truncated reports.
+    paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
@@ -246,7 +251,14 @@ def run_fuzz_job(check_name: str):
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        # Runner may have aborted before writing status.tsv (e.g. early server
+        # abort); attach available artifacts (incl. sanitizer.log.*) so the report
+        # is not lost.
+        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                early_result.set_files(file)
+        early_result.complete_job()
 
     # parse runner script exit status
     status = Result.Status.FAIL
@@ -295,9 +307,24 @@ def run_fuzz_job(check_name: str):
             sanitizer_oom = Shell.get_output(
                 f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
             )
-            if sanitizer_oom:
+            # Sanitizer shadow memory is invisible to the server's memory tracker,
+            # so the kernel OOM killer may SIGKILL the server before any limit
+            # fires. It may also kill the watchdog, losing the "terminated by
+            # signal 9" message in the server log. A SIGKILLed server (exit 137)
+            # with no sanitizer report is an OOM, not a bug.
+            has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
+            kernel_oom_kill = (
+                server_died and server_exit_code == 137 and not has_sanitizer_report
+            )
+            if sanitizer_oom or kernel_oom_kill:
                 print("Sanitizer OOM")
-                info.append("WARNING: Sanitizer OOM - test considered passed")
+                if sanitizer_oom:
+                    info.append("WARNING: Sanitizer OOM - test considered passed")
+                else:
+                    info.append(
+                        "WARNING: Server was killed by the kernel OOM killer "
+                        "(sanitizer build) - test considered passed"
+                    )
                 status = Result.Status.OK
                 is_failed = False
         else:

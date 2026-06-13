@@ -12,6 +12,10 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReaderExecutor.h>
+#include <IO/PipelineReadBuffer.h>
+#include <IO/LocalSourceReader.h>
+#include <IO/ObjectStorageSourceReader.h>
 #include <IO/FileEncryptionCommon.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
@@ -108,10 +112,9 @@ void ReadPipeline::needFilesystemCache(
         .custom_origin = std::move(origin)});
 }
 
-void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
+void ReadPipeline::needMemoryCache(String cache_path_prefix, PageCacheSettings page_cache_settings)
 {
     memory_cache = MemoryCacheStage{
-        .cache = std::move(cache),
         .cache_path_prefix = std::move(cache_path_prefix),
         .page_cache_settings = std::move(page_cache_settings),
         .custom_cache_path = {},
@@ -119,13 +122,11 @@ void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cach
 }
 
 void ReadPipeline::needMemoryCache(
-    std::shared_ptr<PageCache> cache,
     String custom_cache_path,
     String custom_file_version,
     PageCacheSettings page_cache_settings)
 {
     memory_cache = MemoryCacheStage{
-        .cache = std::move(cache),
         .cache_path_prefix = {},
         .page_cache_settings = std::move(page_cache_settings),
         .custom_cache_path = std::move(custom_cache_path),
@@ -165,10 +166,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
+    /// The executor owns the whole read, so it returns before the `wrap*` stages.
+    if (auto pipeline_buf = tryBuildReaderExecutor())
+        return pipeline_buf;
+
     /// Capture the query id once here (on the calling thread, which has the
     /// query context). Subsequent cached-buffer creations happen lazily inside
     /// gather/impl creators that may run on threadpool workers without query
-    /// context, so calling `CurrentThread::getQueryId()` there would return "".
+    /// context, so calling `CurrentThread::getQueryId` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
 
     auto impl = gather
@@ -180,6 +185,67 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
 
     return impl;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() const
+{
+    const auto & settings = source->read_settings;
+    if (!settings.use_reader_executor)
+        return nullptr;
+
+    /// The executor does not implement caches, decryption, async prefetch, or the
+    /// distributed cache, so fall back rather than silently drop a configured stage.
+    if (distributed_cache || memory_cache || !filesystem_caches.empty()
+        || !decryption_stages.empty() || async_prefetch)
+    {
+        LOG_DEBUG(log,
+            "use_reader_executor: falling back to the legacy read path "
+            "(caches/decryption not yet supported by the executor)");
+        return nullptr;
+    }
+
+    /// Only local files and object storage are supported; other sources fall back.
+    std::shared_ptr<IFileBasedSourceReader> source_reader;
+    size_t block_size = 0;
+    if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
+    {
+        LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
+            source->objects.size(), local_src->path);
+        source_reader = std::make_shared<LocalSourceReader>(settings);
+        block_size = settings.local_fs_settings.buffer_size;
+    }
+    else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
+    {
+        /// An object of unknown size (HEAD without Content-Length) arrives with
+        /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
+        /// the executor cannot stream to EOF yet, so fall back rather than read it
+        /// as empty.
+        for (const auto & object : source->objects)
+        {
+            if (object.bytes_size == 0 || object.bytes_size == StoredObject::UnknownSize)
+            {
+                LOG_DEBUG(log,
+                    "use_reader_executor: falling back to the legacy read path (object size unknown)");
+                return nullptr;
+            }
+        }
+
+        LOG_DEBUG(log, "build: using ReaderExecutor for object storage, {} objects, gather={}",
+            source->objects.size(), gather);
+        source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
+        block_size = settings.remote_fs_settings.buffer_size;
+    }
+
+    if (!source_reader)
+    {
+        LOG_DEBUG(log,
+            "use_reader_executor: falling back to the legacy read path (source kind not supported by the executor)");
+        return nullptr;
+    }
+
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, source->objects, block_size);
+
+    return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
@@ -257,8 +323,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 origin,
                 std::move(impl_creator),
                 fs_cache_settings,
-                captured_settings.remote_fs_buffer_size,
-                captured_settings.local_fs_buffer_size,
+                captured_settings.remote_fs_settings.buffer_size,
+                captured_settings.local_fs_settings.buffer_size,
                 query_id,
                 object.bytes_size,
                 /* allow_seeks_after_first_read */ !restricted_seek,
@@ -276,7 +342,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
-    size_t effective_buffer_size = settings.remote_fs_buffer_size;
+    size_t effective_buffer_size = settings.remote_fs_settings.buffer_size;
     size_t buffer_size = use_external_buffer ? 0 : effective_buffer_size;
     if (!use_external_buffer && total_objects_size > 0)
         buffer_size = std::min(buffer_size, total_objects_size);
@@ -306,7 +372,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(creator_copy),
                 objects,
-                captured_settings.remote_read_min_bytes_for_seek,
+                captured_settings.remote_fs_settings.min_bytes_for_seek,
                 /* use_external_buffer */ true,
                 /* buffer_size */ 0);
         };
@@ -327,7 +393,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     return std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(gather_creator),
         source->objects,
-        settings.remote_read_min_bytes_for_seek,
+        settings.remote_fs_settings.min_bytes_for_seek,
         use_external_buffer,
         buffer_size);
 }
@@ -466,8 +532,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 path = object.remote_path,
                 cache_key, cache = dc.cache, origin,
                 fs_cache_settings,
-                remote_buf_size = settings.remote_fs_buffer_size,
-                local_buf_size = settings.local_fs_buffer_size,
+                remote_buf_size = settings.remote_fs_settings.buffer_size,
+                local_buf_size = settings.local_fs_settings.buffer_size,
                 object_size = object.bytes_size,
                 cache_log = dc.cache_log,
                 throttler = settings.local_throttler,
@@ -505,8 +571,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             origin,
             std::move(impl_creator),
             fs_cache_settings,
-            settings.remote_fs_buffer_size,
-            settings.local_fs_buffer_size,
+            settings.remote_fs_settings.buffer_size,
+            settings.local_fs_settings.buffer_size,
             query_id,
             object.bytes_size,
             /* allow_seeks_after_first_read */ true,
@@ -541,7 +607,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
     /// -- Stage 4: Memory cache --
-    if (!memory_cache || !memory_cache->cache)
+    if (!memory_cache || !memory_cache->page_cache_settings.cache)
         return impl;
 
     PageCacheFile cache_file;
@@ -557,17 +623,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::uniqu
         cache_file.path = memory_cache->cache_path_prefix + first_object.remote_path;
     }
 
-    /// Apply stage-level page cache settings over the source ReadSettings.
-    auto page_cache_read_settings = source->read_settings;
-    const auto & pcs = memory_cache->page_cache_settings;
-    page_cache_read_settings.read_from_page_cache_if_exists_otherwise_bypass_cache = pcs.read_from_page_cache_if_exists_otherwise_bypass_cache;
-    page_cache_read_settings.page_cache_inject_eviction = pcs.page_cache_inject_eviction;
-    page_cache_read_settings.page_cache_block_size = pcs.page_cache_block_size;
-    page_cache_read_settings.page_cache_lookahead_blocks = pcs.page_cache_lookahead_blocks;
-    page_cache_read_settings.page_cache_max_coalesced_bytes = pcs.page_cache_max_coalesced_bytes;
-
     return std::make_unique<CachedInMemoryReadBufferFromFile>(
-        cache_file, memory_cache->cache, std::move(impl), page_cache_read_settings);
+        cache_file, memory_cache->page_cache_settings.cache, std::move(impl), memory_cache->page_cache_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const
@@ -585,7 +642,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     const auto & settings = source->read_settings;
 
     size_t total_size = getTotalSize(source->objects);
-    size_t async_buffer_size = settings.remote_fs_buffer_size;
+    size_t async_buffer_size = settings.remote_fs_settings.buffer_size;
     if (total_size > 0)
         async_buffer_size = std::min(async_buffer_size, total_size);
 
@@ -593,7 +650,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     /// (typically larger, since seeks within the cache are cheaper).
     size_t min_bytes_for_seek = distributed_cache
         ? settings.distributed_cache_settings.min_bytes_for_seek
-        : settings.remote_read_min_bytes_for_seek;
+        : settings.remote_fs_settings.min_bytes_for_seek;
 
     /// When the memory-cache stage is enabled, `AsynchronousBoundedReadBuffer`
     /// detects its `CachedInMemoryReadBufferFromFile` inner buffer and uses
@@ -601,8 +658,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     /// match the block size the memory-cache stage was configured with,
     /// otherwise prefetches don't line up with cache blocks.
     size_t async_page_cache_block_size = memory_cache
-        ? memory_cache->page_cache_settings.page_cache_block_size
-        : settings.page_cache_block_size;
+        ? memory_cache->page_cache_settings.block_size
+        : settings.page_cache_settings.block_size;
 
     return std::make_unique<AsynchronousBoundedReadBuffer>(
         std::move(impl),
