@@ -1904,7 +1904,11 @@ void FileCache::loadMetadataImpl()
 
 void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info)
 {
-    if (fs::is_empty(key_directory))
+    /// Open the directory once and reuse the iterator for the scan below.
+    /// `fs::is_empty` would open the directory just to test for emptiness,
+    /// which costs a redundant opendir/readdir per key directory.
+    fs::directory_iterator offset_it{key_directory};
+    if (offset_it == fs::directory_iterator())
     {
         LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
         fs::remove(key_directory);
@@ -1929,7 +1933,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     };
     std::vector<SegmentToLoad> segments;
 
-    for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
+    for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed = false;
