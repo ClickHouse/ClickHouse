@@ -201,7 +201,7 @@ test_params_hackernews_10m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
-    QUANTIZATION: "turboquant",
+    QUANTIZATION: "e8",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -223,7 +223,7 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "turboquant",
+    QUANTIZATION: "e8",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -375,7 +375,7 @@ class RunTest:
         index_type = self._test_params[VECTOR_INDEX_TYPE]
 
         if index_type == "fastknn":
-            hnsw_M = 0
+            hnsw_M = 16
             hnsw_ef_C = 0
 
         add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('{index_type}','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
@@ -824,9 +824,9 @@ def install_and_start_clickhouse():
     info = Info()
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/17a7c5bc490023c0324025d22f99b789d9b1957c/build_arm_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/d0e72dfa7ba56bd9cd896d46753749f47a7b39ed/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/17a7c5bc490023c0324025d22f99b789d9b1957c/build_amd_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/d0e72dfa7ba56bd9cd896d46753749f47a7b39ed/build_amd_release/clickhouse"
     else:
         assert False, f"Unknown processor architecture"
 
