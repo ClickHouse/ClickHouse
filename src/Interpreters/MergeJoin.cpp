@@ -1098,14 +1098,18 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
-        /// Reuse semiLeftJoin() for anyInnerJoin() using first left value from range
+        size_t left_length = range.left_length;
+
+        /// Reuse semiLeftJoin() for anyInnerJoin(): emit only the first left row of the equal range
+        /// (one row per matched key), but still advance the left cursor past the whole range below,
+        /// so the same key is not emitted again when its right rows are split across several right blocks.
         if (is_any_join && is_inner)
             range.left_length = 1;
 
         joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
 
         right_cursor.nextN(range.right_length);
-        left_cursor.nextN(range.left_length);
+        left_cursor.nextN(left_length);
     }
 
     return true;

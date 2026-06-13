@@ -1,0 +1,12 @@
+-- hash (reference) --
+2
+3
+-- partial_merge --
+2
+3
+-- partial_merge, right blocks split = 1 --
+2
+3
+-- partial_merge, right blocks split = 2 --
+2
+3
