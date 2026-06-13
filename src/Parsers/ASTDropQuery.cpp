@@ -136,9 +136,15 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     if (r.getBool("is_temporary"))
         setIsTemporary(true);
 
-    auto child = r.readChild("database_and_tables");
+    /// `database_and_tables` is parser-owned as an `ASTExpressionList` of `ASTTableIdentifier`s.
+    /// `formatQueryImpl` downcasts it with `as<ASTExpressionList &>()` and casts each entry to
+    /// `ASTTableIdentifier`, so reject any other shape from malformed `clickhouse_json` here.
+    auto child = r.readChildOfType<ASTExpressionList>("database_and_tables");
     if (child)
     {
+        for (const auto & entry : child->children)
+            if (!entry || !entry->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'database_and_tables' must be a table identifier during AST JSON deserialization");
         database_and_tables = child;
         children.push_back(database_and_tables);
     }
@@ -147,6 +153,21 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     /// Require at least one valid target so we cannot construct an AST that crashes on formatting.
     if (!table && !database && !database_and_tables)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` must specify at least one of 'database', 'table', or 'database_and_tables' during AST JSON deserialization");
+
+    /// `has_all`/`has_tables` are produced by the parser only for `TRUNCATE [ALL] TABLES FROM <db>`,
+    /// whose shape is `kind == Truncate`, a single `database` target, and no `table`/`database_and_tables`.
+    /// Any other combination is parser-impossible and would make the formatted SQL disagree with the
+    /// executed operation (e.g. `kind == Drop` with `has_tables` formats as `DROP TABLES FROM db` while
+    /// `InterpreterDropQuery` runs `DROP DATABASE`). Reject it.
+    if (has_all || has_tables)
+    {
+        if (kind != Kind::Truncate)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'has_all'/'has_tables' are only valid for TRUNCATE during AST JSON deserialization");
+        if (!has_tables)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'has_all' requires 'has_tables' (TRUNCATE ALL TABLES FROM) during AST JSON deserialization");
+        if (!database || table || database_and_tables)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE TABLES FROM requires a single 'database' target during AST JSON deserialization");
+    }
 
     /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
     /// as `DROP DATABASE`, ignoring the `is_view`/`is_dictionary` flags. Such a combination
