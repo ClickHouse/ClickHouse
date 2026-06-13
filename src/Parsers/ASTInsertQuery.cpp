@@ -115,7 +115,10 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(columns);
     }
 
-    child = r.readChild("table_function");
+    /// `table_function` is parser-owned as an `ASTFunction` (`INSERT INTO FUNCTION ...`).
+    /// `ClientBase::setInsertionTable` and `formatImpl` downcast it with `as<ASTFunction>()`,
+    /// so a non-`ASTFunction` from malformed `clickhouse_json` must be rejected here.
+    child = r.readChildOfType<ASTFunction>("table_function");
     if (child)
     {
         table_function = child;
@@ -143,16 +146,27 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(select);
     }
 
-    child = r.readChild("infile");
+    /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
+    /// `COMPRESSION` is only valid when `INFILE` is present. `formatImpl`, `ClientBase`,
+    /// `AsynchronousInsertQueue` and `getReadBufferFromASTInsertQuery` later downcast these
+    /// with `as<ASTLiteral &>()` and read them as strings, so a wrong node type or a
+    /// non-string literal from malformed `clickhouse_json` must be rejected at the boundary.
+    child = r.readChildOfType<ASTLiteral>("infile");
     if (child)
     {
+        if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'infile' must be a string literal during AST JSON deserialization");
         infile = child;
         children.push_back(infile);
     }
 
-    child = r.readChild("compression");
+    child = r.readChildOfType<ASTLiteral>("compression");
     if (child)
     {
+        if (!infile)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' is only valid together with 'infile' during AST JSON deserialization");
+        if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
         compression = child;
         children.push_back(compression);
     }
