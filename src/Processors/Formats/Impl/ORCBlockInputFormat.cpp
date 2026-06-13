@@ -52,7 +52,7 @@ Chunk ORCBlockInputFormat::read()
 
     auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
+        throwFromArrowStatus(batch_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader");
 
     auto batch = batch_result.ValueOrDie();
     if (!batch)
@@ -65,8 +65,7 @@ Chunk ORCBlockInputFormat::read()
 
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
-        throw Exception(
-            ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
+        throwFromArrowStatus(table_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data");
 
     /// We should extract the number of rows directly from the stripe, because in case when
     /// record batch contains 0 columns (for example if we requested only columns that
@@ -87,7 +86,7 @@ Chunk ORCBlockInputFormat::read()
     if (auto status = file_reader->ReadMetadata(); status.ok())
         metadata = status.ValueOrDie();
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error while reading parquet metadata {}", status.status().message());
+        throwFromArrowStatus(status.status(), ErrorCodes::BAD_ARGUMENTS, "Unexpected error while reading ORC metadata");
 
     return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, metadata, block_missing_values_ptr);
 }
@@ -120,12 +119,12 @@ static void getFileReaderAndSchema(
 
     auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
     if (!result.ok())
-        throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+        throwFromArrowStatus(result.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open ORC file");
     file_reader = std::move(result).ValueOrDie();
 
     auto read_schema_result = file_reader->ReadSchema();
     if (!read_schema_result.ok())
-        throw Exception::createDeprecated(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+        throwFromArrowStatus(read_schema_result.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to read ORC schema");
     schema = std::move(read_schema_result).ValueOrDie();
 }
 
