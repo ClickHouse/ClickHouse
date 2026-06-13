@@ -10,7 +10,7 @@
   </substitutions>
 
   <create_query>create table alter_select_mt  (part_id String, col_0 String) engine=MergeTree()                                              partition by part_id order by tuple() settings max_parts_to_merge_at_once=1, optimize_row_order_if_no_order_by = 0</create_query>
-  <create_query>create table alter_select_rmt (part_id String, col_0 String) engine=ReplicatedMergeTree('/tables/{{database}}', '{{table}}') partition by part_id order by tuple() settings max_parts_to_merge_at_once=1</create_query>
+  <create_query>create table alter_select_rmt (part_id String, col_0 String) engine=ReplicatedMergeTree('/tables/{{database}}', '{{table}}') partition by part_id order by tuple() settings max_parts_to_merge_at_once=1, optimize_row_order_if_no_order_by = 0</create_query>
 
   <create_query>system stop merges alter_select_{engine}</create_query>
 
