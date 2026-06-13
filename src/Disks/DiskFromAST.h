@@ -47,10 +47,28 @@ namespace DiskFromAST
     ///     DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), false, &disk_scope);
     ///     // ... apply work ...
     ///     disk_scope.commit();   /// flip `committed`; keep the registration permanently
+    ///
+    /// CREATE / ATTACH path. These callers do not pass a scope pointer explicitly: the inline
+    /// `disk(...)` conversion happens deep inside `StorageFactory` / `DatabaseFactory` via
+    /// `MergeTreeSettings::loadFromQuery` / `DatabaseMetadataDiskSettings::loadFromQuery`, which
+    /// have no scope parameter. Instead, `InterpreterCreateQuery` installs an AMBIENT scope on the
+    /// current thread for the duration of `doCreateTable` / `createDatabase`:
+    ///
+    ///     CustomDiskRegistrationScope create_disk_scope(getContext(), /*install_as_ambient_create_scope=*/true);
+    ///     // ... StorageFactory::get -> loadFromQuery -> getOrCreateCustomDisk picks up the
+    ///     //     ambient scope and tracks any freshly-registered disk under it ...
+    ///     // ... validateStorage, replicated fault injection, database->createTable / writeMetadataFile ...
+    ///     create_disk_scope.commit();   /// only after the metadata transition is durable
+    ///
+    /// If any step before `commit()` throws, the destructor rolls the freshly-registered disk back,
+    /// mirroring the ALTER caller-owned scope. See issue #63019 and PR #103818.
     class CustomDiskRegistrationScope
     {
     public:
-        explicit CustomDiskRegistrationScope(ContextPtr context_);
+        /// `install_as_ambient_create_scope` makes this scope the current thread's ambient scope
+        /// for unscoped CREATE / ATTACH disk conversions (see class comment). The previous ambient
+        /// scope (if any, e.g. a nested CREATE OR REPLACE) is saved and restored on destruction.
+        explicit CustomDiskRegistrationScope(ContextPtr context_, bool install_as_ambient_create_scope = false);
         ~CustomDiskRegistrationScope() noexcept;
 
         CustomDiskRegistrationScope(const CustomDiskRegistrationScope &) = delete;
@@ -66,7 +84,15 @@ namespace DiskFromAST
         ContextPtr context;
         std::vector<std::string> registered_disk_names;
         bool committed = false;
+        bool installed_as_ambient = false;
+        CustomDiskRegistrationScope * previous_ambient_scope = nullptr;
     };
+
+    /// The current thread's ambient CREATE / ATTACH scope, or nullptr. Set by
+    /// `CustomDiskRegistrationScope` when constructed with `install_as_ambient_create_scope = true`.
+    /// Used by `getOrCreateCustomDisk` to track unscoped registrations so they can be rolled back
+    /// if the outer CREATE / ATTACH fails before its metadata transition is durable.
+    CustomDiskRegistrationScope * currentAmbientCreateScope();
 
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
     std::string createCustomDisk(const ASTPtr & disk_function, ContextPtr context, bool attach, CustomDiskRegistrationScope * scope = nullptr);

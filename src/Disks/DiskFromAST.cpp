@@ -36,6 +36,18 @@ namespace FailPoints
     extern const char disk_from_ast_unscoped_observer_pause_after_sentinel[];
 }
 
+/// Current thread's ambient CREATE / ATTACH scope. Installed by `CustomDiskRegistrationScope`
+/// when constructed with `install_as_ambient_create_scope = true` (from `InterpreterCreateQuery`),
+/// so that inline `disk(...)` conversions happening deep inside `StorageFactory` /
+/// `DatabaseFactory` (which have no scope parameter) are tracked under a caller-owned scope that
+/// commits only after the outer metadata transition is durable. See issue #63019.
+static thread_local DiskFromAST::CustomDiskRegistrationScope * t_ambient_create_scope = nullptr;
+
+DiskFromAST::CustomDiskRegistrationScope * DiskFromAST::currentAmbientCreateScope()
+{
+    return t_ambient_create_scope;
+}
+
 static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
@@ -43,6 +55,13 @@ static std::string getOrCreateCustomDisk(
     bool attach,
     DiskFromAST::CustomDiskRegistrationScope * scope)
 {
+    /// CREATE / ATTACH callers reach here without an explicit scope (the conversion happens deep
+    /// inside `StorageFactory` / `DatabaseFactory`). `InterpreterCreateQuery` installs an ambient
+    /// scope on this thread so those registrations are still owned by a caller-controlled scope
+    /// that commits only after the outer metadata transition is durable. A non-null explicit
+    /// `scope` (the ALTER path) always wins. See issue #63019, PR #103818.
+    DiskFromAST::CustomDiskRegistrationScope * const effective_scope
+        = scope ? scope : DiskFromAST::currentAmbientCreateScope();
     std::string default_path = "/etc/metrika.xml";
 
     const auto & server_config = context->getConfigRef();
@@ -134,36 +153,43 @@ static std::string getOrCreateCustomDisk(
                 FileCacheFactory::instance().removeByName(disk_name);
             throw;
         }
-    }, /* pending_rollback_owner */ scope);
+    }, /* pending_rollback_owner */ effective_scope);
 
     /// Always remember the name on the scope. The atomic ownership check at rollback / commit
     /// time decides whether this scope's destructor removes the disk (still uniquely owned)
     /// or merely releases its claim (someone else has observed the registration in the
     /// meantime and may have committed against it). Tracking even when the disk pre-existed
     /// is a no-op at rollback because the pending-rollback table will not be ours.
-    if (scope)
-        scope->track(disk_name);
+    /// For CREATE / ATTACH (`scope == nullptr`) `effective_scope` is the ambient scope installed
+    /// by `InterpreterCreateQuery`; tracking under it defers the rollback decision to the outer
+    /// metadata commit, mirroring the ALTER path.
+    if (effective_scope)
+        effective_scope->track(disk_name);
 
     /// Test-only barrier: pause here so that 04152 can deterministically inject a
     /// concurrent CREATE TABLE while the tentative registration is in flight.
     FailPointInjection::pauseFailPoint(FailPoints::disk_from_ast_pause_after_tentative_registration);
 
-    /// Test-only barrier: fires only on the unscoped observer path, AFTER `Context::getOrCreateDisk`
-    /// has inserted the sentinel slot but BEFORE validation runs. Used by 04154 to drive the
-    /// reverse-order release-cleanup race: the unscoped observer pauses here while the
-    /// scoped owner runs and its destructor fires. The unscoped observer then resumes,
-    /// fails validation, and `releaseUnscopedDiskObservation` becomes the last-owner-leaves
-    /// path that must perform the rollback.
+    /// Test-only barrier: fires only on the CREATE / ATTACH path (no EXPLICIT `scope` parameter),
+    /// AFTER `Context::getOrCreateDisk` has recorded this caller's reference but BEFORE validation
+    /// runs. Gated on the explicit `scope` parameter (not `effective_scope`) so it pauses a CREATE /
+    /// ATTACH observer but never the ALTER apply path. Used by 04154 / 04155 to drive the
+    /// reverse-order and co-observer races deterministically: the observer pauses here while the
+    /// scoped ALTER owner runs and its destructor fires, then resumes and exercises the
+    /// last-owner-leaves rollback / commit path.
     if (!scope)
         FailPointInjection::pauseFailPoint(FailPoints::disk_from_ast_unscoped_observer_pause_after_sentinel);
 
     /// Validate the (possibly observed) disk against this caller's settings BEFORE flipping
-    /// any tentative registration to committed. For unscoped callers (CREATE / ATTACH path
-    /// with `scope == nullptr`), `Context::getOrCreateDisk` has inserted a sentinel slot in
-    /// the tentative entry's active-owners list to keep the disk pinned across this
-    /// validation; we must drop that sentinel exactly once via either commit or release.
-    /// Wrapping the validation in try/catch handles every throw path (`isCustomDisk`,
-    /// settings-hash mismatch, custom-local-disks-base-dir, or future additions).
+    /// any tentative registration to committed. For unscoped callers with NO ambient scope
+    /// (`effective_scope == nullptr`, e.g. a server-startup ATTACH that does not run through
+    /// `InterpreterCreateQuery`), `Context::getOrCreateDisk` took an anonymous `unscoped_observers`
+    /// reference to keep the disk pinned across this validation; we must drop that reference
+    /// exactly once via either commit or release. When `effective_scope` is non-null (ALTER, or a
+    /// CREATE / ATTACH with the ambient scope installed) the scope owns the rollback / commit
+    /// lifecycle and no anonymous reference was taken. Wrapping the validation in try/catch handles
+    /// every throw path (`isCustomDisk`, settings-hash mismatch, custom-local-disks-base-dir, or
+    /// future additions).
     try
     {
         if (!disk->isCustomDisk())
@@ -198,17 +224,27 @@ static std::string getOrCreateCustomDisk(
     }
     catch (...)
     {
-        if (!scope)
+        /// Only the no-ambient-scope fallback took an anonymous `unscoped_observers` reference.
+        /// Scoped callers (ALTER and ambient CREATE / ATTACH) release through the scope destructor.
+        if (!effective_scope)
             context->releaseUnscopedDiskObservation(disk_name);
         throw;
     }
 
-    /// All validations passed. Flip the tentative entry (if any) to committed for the
-    /// unscoped path so a still-in-flight scope's destructor cannot roll the disk back
-    /// after this caller's metadata commits. Scoped callers keep the existing flow:
-    /// `CustomDiskRegistrationScope::commit` flips `committed` after the outer apply path
-    /// finishes its own metadata transition.
-    if (!scope)
+    /// All validations passed. For the no-ambient-scope fallback, drop the anonymous reference and
+    /// flip the tentative entry (if any) to committed so a still-in-flight scope's destructor cannot
+    /// roll the disk back after this caller's metadata commits.
+    ///
+    /// IMPORTANT (issue #63019 gap fix): when `effective_scope` is non-null we DO NOT commit here.
+    /// The disk's permanence is decided by the scope's `commit()`, which the caller invokes only
+    /// AFTER its outer metadata transition is durable:
+    ///   - ALTER: `MergeTreeData::changeSettings`'s caller-owned scope commits after `alterTable`.
+    ///   - CREATE / ATTACH: the ambient scope installed by `InterpreterCreateQuery` commits after
+    ///     `database->createTable` / `writeMetadataFile`. Committing here instead would re-introduce
+    ///     the leak where a later `doCreateTable` failure (validateStorage, replicated fault
+    ///     injection, metadata write) leaves the disk reserved in `DiskSelector` / `FileCacheFactory`
+    ///     until restart.
+    if (!effective_scope)
         context->commitUnscopedDiskObservation(disk_name);
 
     return disk_name;
@@ -295,13 +331,28 @@ void DiskFromAST::convertCustomDiskSettings(SettingsChanges & changes, ContextPt
     }
 }
 
-DiskFromAST::CustomDiskRegistrationScope::CustomDiskRegistrationScope(ContextPtr context_)
+DiskFromAST::CustomDiskRegistrationScope::CustomDiskRegistrationScope(ContextPtr context_, bool install_as_ambient_create_scope)
     : context(std::move(context_))
 {
+    if (install_as_ambient_create_scope)
+    {
+        /// Install this scope as the current thread's ambient CREATE / ATTACH scope, saving any
+        /// previous one (e.g. a nested CREATE OR REPLACE that recurses into another CREATE) so it
+        /// can be restored on destruction. The thread-local is purely a stack of scopes; the actual
+        /// registration bookkeeping lives in `Context::tentative_disk_registrations`.
+        installed_as_ambient = true;
+        previous_ambient_scope = t_ambient_create_scope;
+        t_ambient_create_scope = this;
+    }
 }
 
 DiskFromAST::CustomDiskRegistrationScope::~CustomDiskRegistrationScope() noexcept
 {
+    /// Restore the previous ambient scope first, so the rollback work below (which may itself
+    /// touch disk registration) never runs with a dangling `this` installed as the ambient scope.
+    if (installed_as_ambient)
+        t_ambient_create_scope = previous_ambient_scope;
+
     if (committed || registered_disk_names.empty())
         return;
     /// For each tracked name, ask `Context::removePendingCustomDiskIfOwned` to atomically
