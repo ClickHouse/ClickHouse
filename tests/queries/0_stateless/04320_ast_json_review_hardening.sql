@@ -60,6 +60,11 @@ SELECT formatQueryFromJSON('{"type":"ColumnsReplaceTransformer","children":[{"ty
 -- format with an operator separator while `getListOfSelects` silently drops the foreign child):
 SELECT formatQueryFromJSON('{"type":"SelectIntersectExceptQuery","final_operator":"INTERSECT ALL","children":[{"type":"Identifier","name":"a"},{"type":"Identifier","name":"b"}]}'); -- { serverError BAD_ARGUMENTS }
 
+-- `CREATE FUNCTION`'s `function_name` must be an identifier: a foreign node type would otherwise
+-- pass the presence check and reach `getFunctionName` as an internal error instead of a
+-- user-facing validation error:
+SELECT formatQueryFromJSON('{"type":"CreateSQLFunctionQuery","function_name":{"type":"Literal","value":{"field_type":"UInt64","value":1}},"function_core":{"type":"Literal","value":{"field_type":"UInt64","value":1}}}'); -- { serverError BAD_ARGUMENTS }
+
 -- Output options (compression / APPEND / TRUNCATE / AND STDOUT) are only formatted inside the
 -- `INTO OUTFILE` branch, so they must not be accepted without an `out_file` target:
 SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","compression":{"type":"Identifier","name":"gz"}}'); -- { serverError BAD_ARGUMENTS }

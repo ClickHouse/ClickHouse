@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -81,7 +82,7 @@ void ASTCreateSQLFunctionQuery::readJSON(const Poco::JSON::Object & json)
 
     children.clear();
 
-    function_name = r.readChild("function_name");
+    function_name = r.readChildOfType<ASTIdentifier>("function_name");
     if (!function_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateSQLFunctionQuery` during AST JSON deserialization");
     children.push_back(function_name);
