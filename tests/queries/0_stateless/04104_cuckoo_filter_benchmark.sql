@@ -1,4 +1,4 @@
--- Tags: no-flaky-check, no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-flaky-check, no-random-settings, no-random-merge-tree-settings
 -- Bloom vs cuckoo_filter bytes comparison in six cardinality regimes and three FPR values.
 
 SET allow_experimental_cuckoo_filter_index = 1;
