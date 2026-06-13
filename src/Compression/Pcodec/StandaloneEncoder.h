@@ -112,10 +112,14 @@ inline size_t encodeStandaloneMaxSize(size_t n)
 /// alignof(T)) as a standalone `.pco` stream, written directly into `out` (which must have at
 /// least `encodeStandaloneMaxSize<T>(n)` bytes). The buffer need NOT be zero-initialized. Returns
 /// the number of bytes written.
+///
+/// `out_trivial_fallback_chunks`, if not null, receives the number of chunks that did not fit the
+/// per-chunk no-expansion bound and were re-encoded with the trivial configuration. It is a
+/// diagnostic hook for tests that exercise the fallback path; production callers pass null.
 template <typename T>
 /// `out` is an output buffer written through BitWriter; const would break the BitWriter ctor.
 /// NOLINTNEXTLINE(readability-non-const-parameter)
-size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, size_t compression_level = DEFAULT_COMPRESSION_LEVEL)
+size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, size_t compression_level = DEFAULT_COMPRESSION_LEVEL, size_t * out_trivial_fallback_chunks = nullptr)
 {
     using L = typename NumberTraits<T>::Latent;
     constexpr Bitlen l_bits = latentBits<L>;
@@ -297,7 +301,11 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
         if (encoded_size <= trivialChunkMaxSize<T>(chunk_n))
             writer.writeAlignedBytes(scratch.get(), encoded_size);
         else
+        {
             encode_chunk(writer, chunk_src, chunk_n, /*force_trivial=*/true);
+            if (out_trivial_fallback_chunks)
+                ++*out_trivial_fallback_chunks;
+        }
     }
 
     // --- footer ---
