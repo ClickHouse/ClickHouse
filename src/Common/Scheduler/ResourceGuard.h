@@ -95,6 +95,10 @@ public:
             // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
             chassert(state == Finished);
             state = Enqueued;
+            // `Request` is reused (e.g. via `Request::local()` thread-local instance), so a stale `exception`
+            // left over from a previous failed request must be cleared. Otherwise `wait()` would observe it and
+            // spuriously throw even though this (new) request was granted via `execute()`.
+            exception = {};
             ResourceRequest::reset(cost_);
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }

@@ -1725,7 +1725,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
     bool apply_virtual_row = false;
 
-    if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
+    if (auto * union_step = typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
 
@@ -1799,6 +1799,9 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             }
         }
 
+        /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
+        /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
+        union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, false);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, *node.children.front(), optimization_settings))
