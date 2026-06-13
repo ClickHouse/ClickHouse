@@ -1,7 +1,0 @@
-SELECT
-    a,
-    b,
-    c,
-    d
-FROM t1
-WHERE (((a = 1) AND (b = 2)) AND ((c = 3) AND (d = 4) AND (a = 5))) OR ((a = c) AND (b = 10) AND (1000 = d)) OR (((a = c) AND (b = 10)) AND (1000 = d))

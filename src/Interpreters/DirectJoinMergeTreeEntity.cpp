@@ -269,9 +269,18 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     for (const auto & col : found_columns)
         col->insertDefault();
 
+    /// Remap `found_columns` (in `plan_header` order) into `sample_block` order so the result
+    /// matches the schema the caller expects. `sample_block` already encodes the empty-means-all
+    /// contract: when `required_columns` is empty it is the full plan header, otherwise it is the
+    /// requested subset in the requested order.
+    const auto & result_names = sample_block.getNames();
     MutableColumns result_columns;
-    for (auto && col : found_columns)
-        result_columns.push_back(IColumn::mutate(col->index(*selector, 0)));
+    result_columns.reserve(result_names.size());
+    for (const auto & column_name : result_names)
+    {
+        size_t plan_idx = plan_header->getPositionByName(column_name);
+        result_columns.push_back(IColumn::mutate(found_columns[plan_idx]->index(*selector, 0)));
+    }
 
     return Chunk(std::move(result_columns), out_offsets[out_offsets.size() - 1]);
 }
