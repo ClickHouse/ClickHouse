@@ -34,16 +34,16 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | :------------------------- | :-----------------------------------------------------------------------------------------------|
 | `CREATE TABLE dboverlay.*` | **Rejected** — throws `BAD_ARGUMENTS` with a message, suggesting to create in an underlying database. |
 | `ATTACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                 |
-| `ALTER TABLE dboverlay.*`  | **Rejected** — `TABLE_IS_READ_ONLY`.                                                            |
+| `ALTER TABLE dboverlay.*`  | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`.                                                            |
 | `RENAME TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                 |
 | `DROP TABLE dboverlay.*`   | **Rejected** — `BAD_ARGUMENTS`. Drop the table in the underlying database that owns it.         |
 | `DETACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`. Detach the table in the underlying database that owns it.       |
-| `TRUNCATE TABLE dboverlay.*` | **Rejected** — `TABLE_IS_READ_ONLY`. Truncate the table in the underlying database that owns it. |
+| `TRUNCATE TABLE dboverlay.*` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Truncate the table in the underlying database that owns it. |
 | `OPTIMIZE TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`. Optimize the table in the underlying database that owns it.     |
-| `DELETE FROM dboverlay.*`  | **Rejected** — `TABLE_IS_READ_ONLY`. Delete in the underlying database that owns the table.     |
-| `UPDATE dboverlay.*`       | **Rejected** — `TABLE_IS_READ_ONLY`. Update in the underlying database that owns the table.     |
-| `SYSTEM ... dboverlay.*`   | **Rejected** — `TABLE_IS_READ_ONLY`. Run the `SYSTEM` command (e.g. `STOP MERGES`, `RESTART REPLICA`) in the underlying database that owns the table. |
-| `TRUNCATE DATABASE dboverlay` / `TRUNCATE TABLES FROM dboverlay` | **Rejected** — `TABLE_IS_READ_ONLY`. Truncate in the underlying databases that own the tables. |
+| `DELETE FROM dboverlay.*`  | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Delete in the underlying database that owns the table.     |
+| `UPDATE dboverlay.*`       | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Update in the underlying database that owns the table.     |
+| `SYSTEM ... dboverlay.*`   | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Run the `SYSTEM` command (e.g. `STOP MERGES`, `RESTART REPLICA`) in the underlying database that owns the table. |
+| `TRUNCATE DATABASE dboverlay` / `TRUNCATE TABLES FROM dboverlay` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Truncate in the underlying databases that own the tables. |
 | `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying database.         |
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
@@ -55,7 +55,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Overlay `CREATE`/`ATTACH`/`RENAME`/`DROP`/`DETACH TABLE`/`OPTIMIZE` | `BAD_ARGUMENTS` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
-| Overlay `ALTER`/`TRUNCATE`/`DELETE FROM`/`UPDATE`/`SYSTEM`/`TRUNCATE DATABASE` | `TABLE_IS_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
+| Overlay `ALTER`/`TRUNCATE`/`DELETE FROM`/`UPDATE`/`SYSTEM`/`TRUNCATE DATABASE` | `TABLE_IS_PERMANENTLY_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on any lookup through an affected Overlay; `DROP DATABASE` still works to break the cycle |
 | Overlay references missing database        | `BAD_ARGUMENTS`                                                                                                                                    |

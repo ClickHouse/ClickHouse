@@ -180,7 +180,7 @@ namespace ErrorCodes
     extern const int DELTA_KERNEL_ERROR;
     extern const int FAULT_INJECTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 namespace FailPoints
@@ -392,7 +392,7 @@ BlockIO InterpreterSystemQuery::execute()
         if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
             database && database->isReadOnly() && typeid_cast<const DatabaseOverlay *>(database.get()))
             throw Exception(
-                ErrorCodes::TABLE_IS_READ_ONLY,
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
                 "Database {} is an Overlay facade (read-only). "
                 "Run SYSTEM commands in the underlying database that owns the table",
                 backQuote(table_id.database_name));

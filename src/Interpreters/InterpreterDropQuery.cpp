@@ -60,7 +60,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
 }
 
@@ -192,7 +192,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         {
             if (query.kind == ASTDropQuery::Kind::Truncate)
                 throw Exception(
-                    ErrorCodes::TABLE_IS_READ_ONLY,
+                    ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
                     "Database {} is an Overlay facade (read-only). "
                     "Run TRUNCATE TABLE in the underlying database that owns the table",
                     backQuote(table_id.database_name));
@@ -338,7 +338,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+                throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped(context_);
 
@@ -500,7 +500,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     {
         if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
             throw Exception(
-                ErrorCodes::TABLE_IS_READ_ONLY,
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
                 "Database {} is an Overlay facade (read-only). "
                 "Run TRUNCATE in the underlying database that owns the tables",
                 backQuote(database_name));

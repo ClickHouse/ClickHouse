@@ -115,7 +115,7 @@ public:
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash &) const override;
 
@@ -311,6 +311,10 @@ public:
             default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
         }
     }
+
+    /// The distinct dictionary positions used by rows [offset, offset + limit) of
+    /// getIndexes(), in unspecified order. Requires offset + limit <= getIndexes().size().
+    PaddedPODArray<UInt64> getDistinctIndexes(size_t offset, size_t limit) const;
 
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 

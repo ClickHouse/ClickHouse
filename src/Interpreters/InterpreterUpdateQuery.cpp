@@ -25,7 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -104,7 +104,7 @@ BlockIO InterpreterUpdateQuery::execute()
 
     if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
         throw Exception(
-            ErrorCodes::TABLE_IS_READ_ONLY,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run UPDATE in an underlying database",
             backQuote(table_id.database_name));
@@ -112,7 +112,7 @@ BlockIO InterpreterUpdateQuery::execute()
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);

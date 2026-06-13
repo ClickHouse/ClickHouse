@@ -1132,6 +1132,12 @@ try
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
 
+        /// Propagate the process list element to the pipeline so that the executor enables
+        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
+        /// system.processors_profile_log for async insert flushes). The normal query path does
+        /// this in executeQuery, but the flush builds and runs the pipeline directly.
+        pipeline.setProcessListElement(insert_context->getProcessListElement());
+
         query_log_elem = logQueryStart(
             query_start_time,
             insert_context,
