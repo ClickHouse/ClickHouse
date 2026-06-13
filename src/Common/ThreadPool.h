@@ -18,6 +18,7 @@
 #include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadWithStackSize.h>
 #include <Common/Priority.h>
 #include <base/scope_guard.h>
 
@@ -41,6 +42,10 @@ public:
     // on linux you can not have more threads even if the RAM is unlimited
     // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
     static constexpr int MAX_THEORETICAL_THREAD_COUNT = 0x3fffffff; // ~1 billion
+
+    // Upper bound on the number of jobs we pre-reserve memory for. The queue can still grow
+    // up to queue_size on demand; this only bounds the initial reservation.
+    static constexpr size_t MAX_JOBS_TO_RESERVE = 1'000'000;
 
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
@@ -208,8 +213,18 @@ private:
     void onDestroy();
 };
 
-/// ThreadPool with std::thread for threads.
-using FreeThreadPool = ThreadPoolImpl<std::thread>;
+/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
+/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
+/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
+/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
+#if defined(OS_DARWIN)
+using GlobalThreadType = DB::ThreadWithStackSize;
+#else
+using GlobalThreadType = std::thread;
+#endif
+
+/// ThreadPool with OS threads.
+using FreeThreadPool = ThreadPoolImpl<GlobalThreadType>;
 
 
 /** Global ThreadPool that can be used as a singleton.
