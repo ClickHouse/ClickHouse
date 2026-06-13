@@ -1,6 +1,7 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -22,7 +23,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -41,6 +41,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int BAD_TTL_EXPRESSION;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -87,28 +88,36 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "TTL expression cannot contain non-deterministic functions, but contains function {}",
                                     func.getName());
+            }
+        }
 
-                if (func.getName() == "finalizeAggregation")
-                    continue;
+        bool has_aggregate_function_columns = false;
+        for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
+        {
+            if (typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
+            {
+                has_aggregate_function_columns = true;
+                break;
+            }
+        }
 
-                for (const auto * child : action.node->children)
-                {
-                    if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
-                    {
-                        const auto & unwrapped = removeNullableOrLowCardinalityNullable(action.node->result_type);
-                        if (unwrapped
-                            && (typeid_cast<const DataTypeDateTime *>(unwrapped.get())
-                                || typeid_cast<const DataTypeDate *>(unwrapped.get())
-                                || typeid_cast<const DataTypeDateTime64 *>(unwrapped.get())
-                                || typeid_cast<const DataTypeDate32 *>(unwrapped.get())))
-                        {
-                            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                                "TTL expression cannot use AggregateFunction column directly in function {}. "
-                                "Use finalizeAggregation() to extract the value first",
-                                func.getName());
-                        }
-                    }
-                }
+        if (has_aggregate_function_columns)
+        {
+            Block check_block;
+            for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
+                check_block.insert(ColumnWithTypeAndName(
+                    col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
+
+            try
+            {
+                ttl_expression->execute(check_block, /*dry_run=*/ true);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                        "TTL expression uses AggregateFunction column in a function that cannot handle it. "
+                        "Use finalizeAggregation() to extract the value first: {}", e.message());
             }
         }
     }
@@ -381,31 +390,33 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
     {
-        for (const auto & action : where_expression->getActions())
+        bool has_aggregate_function_columns = false;
+        for (const auto & col : where_expression->getRequiredColumnsWithTypes())
         {
-            if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+            if (typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
             {
-                if (action.node->function_base->getName() == "finalizeAggregation")
-                    continue;
+                has_aggregate_function_columns = true;
+                break;
+            }
+        }
 
-                for (const auto * child : action.node->children)
-                {
-                    if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
-                    {
-                        const auto & unwrapped = removeNullableOrLowCardinalityNullable(action.node->result_type);
-                        if (unwrapped
-                            && (typeid_cast<const DataTypeDateTime *>(unwrapped.get())
-                                || typeid_cast<const DataTypeDate *>(unwrapped.get())
-                                || typeid_cast<const DataTypeDateTime64 *>(unwrapped.get())
-                                || typeid_cast<const DataTypeDate32 *>(unwrapped.get())))
-                        {
-                            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                                "TTL WHERE expression cannot use AggregateFunction column directly in function {}. "
-                                "Use finalizeAggregation() to extract the value first",
-                                action.node->function_base->getName());
-                        }
-                    }
-                }
+        if (has_aggregate_function_columns)
+        {
+            Block check_block;
+            for (const auto & col : where_expression->getRequiredColumnsWithTypes())
+                check_block.insert(ColumnWithTypeAndName(
+                    col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
+
+            try
+            {
+                where_expression->execute(check_block, /*dry_run=*/ true);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                        "TTL WHERE expression uses AggregateFunction column in a function that cannot handle it. "
+                        "Use finalizeAggregation() to extract the value first: {}", e.message());
             }
         }
     }

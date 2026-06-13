@@ -53,6 +53,15 @@ ENGINE = MergeTree()
 ORDER BY key1
 TTL assumeNotNull(CAST(ts, 'Nullable(DateTime)')) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
 
+-- Non-date intermediate conversion: toUInt32(aggfunc) fails at execution time too
+CREATE TABLE test_ttl_agg_touint
+(
+    ts AggregateFunction(max, UInt32)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(toUInt32(ts)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
 -- Valid usage: finalizeAggregation can operate on AggregateFunction states
 CREATE TABLE test_ttl_agg_finalize
 (
