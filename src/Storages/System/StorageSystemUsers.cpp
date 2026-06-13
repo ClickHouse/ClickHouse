@@ -45,6 +45,15 @@ namespace
         return enum_values;
     }
 
+    /// The fast path performs `number of requested names * number of access storages` lookups.
+    /// For a single user or a short `IN` list (the common case this optimization targets) this is
+    /// far cheaper than scanning every user. But a very large requested set — for example
+    /// `name IN (...)` with a huge literal list or subquery result — could perform more lookups
+    /// than a single full scan, making the "fast" path slower than the fallback. Cap it at a
+    /// deliberate limit so it can never become slower than the original behavior; above the limit
+    /// we fall back to the full scan (exactly what happened before this optimization).
+    constexpr size_t max_names_for_fast_path = 1000;
+
     bool isNameNode(const ActionsDAG::Node * node)
     {
         while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -109,12 +118,16 @@ namespace
             else if (isNameNode(node.children.at(1)))
                 value = node.children.at(0);
 
-            if (!value || !value->column || value->column->size() != 1)
+            if (!value || !value->column)
                 return {};
 
             if (!isString(removeNullable(removeLowCardinality(value->result_type))))
                 return {};
 
+            /// `ActionsDAG::addColumn` normalizes a constant node to a `ColumnConst` of size 0
+            /// (see `ActionsDAG::Node::column`), so a size guard here would reject every literal
+            /// and silently send `name = 'literal'` back to the full scan. The underlying data
+            /// column still holds the value, so read it directly, like `StorageSystemZooKeeper`.
             std::unordered_set<String> names;
             names.insert(String(value->column->getDataAt(0)));
             return names;
@@ -150,8 +163,17 @@ namespace
             if (!isString(removeNullable(removeLowCardinality(type))))
                 return {};
 
-            std::unordered_set<String> names;
             auto elements = set->getSetElements()[0];
+
+            /// Bail out before copying a large set. Above the fast-path limit the full scan is
+            /// cheaper, so fall back instead of materializing every element here (returning
+            /// `nullopt` leaves `name` unconstrained, which `fillData` turns into a full scan and
+            /// `and` treats as the universal set). The upstream filter still enforces the `IN`.
+            if (elements->size() > max_names_for_fast_path)
+                return {};
+
+            std::unordered_set<String> names;
+            names.reserve(elements->size());
             for (size_t i = 0; i < elements->size(); ++i)
                 names.insert(String(elements->getDataAt(i)));
             return names;
@@ -383,17 +405,8 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     };
 
     /// Fast path: if predicate contains `name = 'literal'` or `name IN (...)`,
-    /// do O(1) lookups instead of iterating all users.
-    ///
-    /// The fast path performs `number of requested names * number of access storages` lookups.
-    /// For a single user or a short `IN` list (the common case this optimization targets) this is
-    /// far cheaper than scanning every user. But a very large requested set — for example
-    /// `name IN (...)` with a huge literal list or subquery result — could perform more lookups
-    /// than a single full scan, making the "fast" path slower than the fallback. Cap it at a
-    /// deliberate limit so it can never become slower than the original behavior; above the limit
-    /// we fall back to the full scan (exactly what happened before this optimization).
-    static constexpr size_t max_names_for_fast_path = 1000;
-
+    /// do O(1) lookups instead of iterating all users. The extraction already caps the candidate
+    /// set at `max_names_for_fast_path`; the check below is a defensive guard kept in sync with it.
     auto names = extractNamesFromPredicate(predicate, context);
     if (names && names->size() <= max_names_for_fast_path)
     {

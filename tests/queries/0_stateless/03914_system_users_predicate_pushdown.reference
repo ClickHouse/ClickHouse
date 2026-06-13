@@ -1,10 +1,27 @@
-test_pushdown_alice
-test_pushdown_alice
-test_pushdown_bob
-test_pushdown_alice
-test_pushdown_alice
+-- equality fast path: returns the user and reads only the matched row
+alice
 1
-test_pushdown_alice
-test_pushdown_bob
+-- equality fast path: a non-existent user returns nothing and reads no rows
+0
+-- IN fast path: returns both users and reads only the matched rows
+alice
+bob
+2
+-- AND fast path: contradictory equalities intersect to the empty set
+0
+-- AND fast path: equality intersected with IN narrows the candidates
+alice
 1
-test_pushdown_alice
+-- AND fast path: equality combined with an unrelated condition still narrows by name
+alice
+1
+-- fallback: a constant alias named 'name' must not be mistaken for the column
+1
+-- fallback: LIKE predicate still returns the right users
+alice
+bob
+carol
+-- fallback: a large IN set (above the fast-path limit) falls back to the full scan but stays correct
+alice
+-- fallback: counting all users still works
+1
