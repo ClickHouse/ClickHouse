@@ -58,7 +58,8 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | Overlay `ALTER`/`TRUNCATE`/`DELETE FROM`/`UPDATE`/`SYSTEM`/`TRUNCATE DATABASE` | `TABLE_IS_PERMANENTLY_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on any lookup through an affected Overlay; `DROP DATABASE` still works to break the cycle |
-| Overlay references missing database        | `BAD_ARGUMENTS`                                                                                                                                    |
+| Overlay references missing database at `CREATE` | `BAD_ARGUMENTS` — a user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source exists right now |
+| Overlay references missing database after `ATTACH`/restore/startup | No error — sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created |
 | DROP DATABASE overlay while tables “exist” | Succeeds (iterator/empty() semantics ensure no `DATABASE_NOT_EMPTY`)                                                                               |
 
 ---
