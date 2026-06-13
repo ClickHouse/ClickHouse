@@ -221,11 +221,14 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+static ExpressionAndSets analyzeExpressionAndSets(const ASTPtr & ast_template, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
+    /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
+    /// not leave a half-rewritten AST behind for the fallback analysis to choke on.
+    auto ast = ast_template->clone();
     auto ttl_string = ast->formatWithSecretsOneLine();
-    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, widenTemporalColumns(columns));
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
     auto dag = analyzer.getActionsDAG(false);
 
@@ -240,6 +243,40 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     result.sets = analyzer.getPreparedSets();
 
     return result;
+}
+
+static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
+    /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
+    /// 64-bit domain and cannot silently 16/32-bit wrap on overflow (issue #101763).
+    ///
+    /// Some valid TTL expressions use functions that accept only the narrow temporal
+    /// types and reject the widened ones (e.g. `tumbleStart` / `tumbleEnd` require
+    /// `DateTime`, not `DateTime64`). The widened analysis would reject those and break
+    /// `ATTACH` of legacy tables after an upgrade, so we fall back to analyzing against
+    /// the original column types. Such expressions explicitly operate in the narrow
+    /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
+    auto widened_columns = widenTemporalColumns(columns);
+    bool widened_any = !std::equal(
+        columns.begin(), columns.end(), widened_columns.begin(), widened_columns.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.type->equals(*rhs.type); });
+
+    if (widened_any)
+    {
+        try
+        {
+            return analyzeExpressionAndSets(ast, widened_columns, context);
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch): intentional fallback to the narrow analysis below
+        {
+            /// A function in the expression rejected the widened temporal type
+            /// (e.g. `tumbleStart` requires `DateTime`, not `DateTime64`).
+            /// Retry the analysis against the original (narrow) column types.
+        }
+    }
+
+    return analyzeExpressionAndSets(ast, columns, context);
 }
 
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const

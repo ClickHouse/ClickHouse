@@ -177,3 +177,17 @@ ALTER TABLE t_ttl_normal MODIFY TTL day + INTERVAL 1 DAY;
 OPTIMIZE TABLE t_ttl_normal FINAL;
 SELECT count() FROM t_ttl_normal;
 DROP TABLE t_ttl_normal;
+
+-- Case 12: backward compatibility — a TTL using a function that accepts only the narrow
+-- `DateTime` type (e.g. `tumbleStart`) must keep working. Widening the source column to
+-- `DateTime64` makes `tumbleStart` reject it, so analysis falls back to the original
+-- column types for such expressions: they explicitly operate in the narrow domain and
+-- are out of scope for the overflow fix. Without the fallback this `ALTER` (and `ATTACH`
+-- of a legacy table with such a TTL) would fail with an illegal-argument-type exception.
+DROP TABLE IF EXISTS t_ttl_tumble;
+CREATE TABLE t_ttl_tumble (ts DateTime, value UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_ttl_tumble VALUES ('2099-01-01 00:00:00', 1), ('2099-06-15 12:00:00', 2);
+ALTER TABLE t_ttl_tumble MODIFY TTL tumbleStart(ts, INTERVAL 1 HOUR) + INTERVAL 1 DAY;
+OPTIMIZE TABLE t_ttl_tumble FINAL;
+SELECT count() FROM t_ttl_tumble;
+DROP TABLE t_ttl_tumble;
