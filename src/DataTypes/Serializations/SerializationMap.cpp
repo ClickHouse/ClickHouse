@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapLowCardinalityBuckets.h>
 
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1091,18 +1092,41 @@ void SerializationMap::collectMapFromBuckets(const VectorWithMemoryTracking<Colu
     map_offsets.reserve(map_offsets.size() + num_rows);
     map_keys_column.prepareForSquashing(map_keys_buckets, 1);
     map_values_column.prepareForSquashing(map_values_buckets, 1);
-    for (size_t i = 0; i != num_rows; ++i)
-    {
-        for (size_t bucket = 0; bucket != map_buckets.size(); ++bucket)
-        {
-            size_t offset_start = (*map_offsets_buckets[bucket])[ssize_t(i) - 1];
-            size_t offset_end = (*map_offsets_buckets[bucket])[ssize_t(i)];
-            map_keys_column.insertRangeFrom(*map_keys_buckets[bucket], offset_start, offset_end - offset_start);
-            map_values_column.insertRangeFrom(*map_values_buckets[bucket], offset_start, offset_end - offset_start);
-        }
 
-        map_offsets.push_back(map_keys_column.size());
-    }
+    bool keys_collected = BucketedMapLowCardinality::collectDataFromBuckets(
+        map_keys_buckets, map_offsets_buckets, num_rows, map_keys_column, &map_offsets);
+    bool values_collected = BucketedMapLowCardinality::collectDataFromBuckets(
+        map_values_buckets, map_offsets_buckets, num_rows, map_values_column, keys_collected ? nullptr : &map_offsets);
+
+    auto collect_from_buckets = [&]<bool insert_keys, bool insert_values, bool append_offsets>()
+    {
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            for (size_t bucket = 0; bucket != map_buckets.size(); ++bucket)
+            {
+                size_t offset_start = (*map_offsets_buckets[bucket])[ssize_t(i) - 1];
+                size_t offset_end = (*map_offsets_buckets[bucket])[ssize_t(i)];
+                size_t length = offset_end - offset_start;
+
+                if constexpr (insert_keys)
+                    map_keys_column.insertRangeFrom(*map_keys_buckets[bucket], offset_start, length);
+                if constexpr (insert_values)
+                    map_values_column.insertRangeFrom(*map_values_buckets[bucket], offset_start, length);
+            }
+
+            if constexpr (append_offsets)
+                map_offsets.push_back(map_keys_column.size());
+        }
+    };
+
+    if (keys_collected && values_collected)
+        return;
+    else if (keys_collected)
+        collect_from_buckets.template operator()<false, true, false>();
+    else if (values_collected)
+        collect_from_buckets.template operator()<true, false, false>();
+    else
+        collect_from_buckets.template operator()<true, true, true>();
 }
 
 void SerializationMap::serializeBinaryBulkWithMultipleStreams(
