@@ -618,7 +618,13 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
 
     if (!is_attach || !publication_exists)
     {
-        if (tables_list.empty())
+        /// For the MaterializedPostgreSQL database engine `tables_list` has already been
+        /// schema-qualified and quoted by fetchRequiredTables(). For the single-table
+        /// MaterializedPostgreSQL table engine, however, `tables_list` is just the bare
+        /// remote table name (set in the storage constructor) and has never been processed,
+        /// so the `materialized_postgresql_schema` setting would be ignored here. Build the
+        /// list from the storages in that case, which applies the schema via doubleQuoteWithSchema().
+        if (tables_list.empty() || !is_materialized_postgresql_database)
         {
             if (materialized_storages.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "No tables to replicate");

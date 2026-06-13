@@ -860,6 +860,62 @@ def test_quoting_publication(started_cluster):
     )
 
 
+def test_single_table_engine_with_non_default_schema(started_cluster):
+    # Reproduces https://github.com/ClickHouse/ClickHouse/issues/59950:
+    # the standalone MaterializedPostgreSQL table engine ignored the
+    # `materialized_postgresql_schema` setting and created the publication for the bare,
+    # unqualified table name, failing with `relation "..." does not exist`.
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "test_table_engine_schema"
+    table = "test_table_engine_schema_table"
+    clickhouse_postgres_db = "postgres_database_with_schema_for_table_engine"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_name}'
+        """
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    # Ongoing replication (the consumer path) must work too.
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(50, 50)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 100 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
