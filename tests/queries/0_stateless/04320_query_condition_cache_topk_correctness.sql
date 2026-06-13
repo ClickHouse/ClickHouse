@@ -37,6 +37,14 @@ SET parallel_replicas_local_plan = 1;
 -- the flush are deterministic; the salt / correctness assertions below are what
 -- this test is really about, and they need the cache to be reliably populated.
 SET max_threads = 1;
+-- A granule is recorded as skippable only when a chunk that physically covers it
+-- empties out. A randomized `max_block_size` larger than the part size makes one
+-- chunk span every granule, so a single surviving `w = 7` row keeps the whole
+-- chunk non-empty and nothing is recorded; pin a small block so chunks align to
+-- granules. Random mark-range splitting reshuffles which marks a chunk covers, so
+-- disable its injection too.
+SET max_block_size = 8192;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.;
 
 DROP TABLE IF EXISTS tab;
 
