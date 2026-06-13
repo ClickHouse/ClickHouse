@@ -117,7 +117,7 @@ static ColumnString::MutablePtr makeStringColumnWithOffsetsBeyondChars(size_t la
 /// where the innermost over-read is exactly this memcpy.
 ///
 /// Without the consistency guard this test triggers an ASan heap-buffer-overflow (it must abort on
-/// the unfixed code). With the guard it throws a LOGICAL_ERROR instead of reading out of bounds.
+/// the unfixed code). With the guard it throws INCORRECT_DATA instead of reading out of bounds.
 TEST(ColumnString, InsertRangeFromInconsistentOffsetsThrows)
 {
     auto source = makeStringColumnWithOffsetsBeyondChars(/*last_offset_overshoot=*/8);
@@ -143,4 +143,43 @@ TEST(ColumnString, InsertRangeFromInconsistentOffsetsLargeOvershoot)
     auto destination = ColumnString::create();
 
     EXPECT_THROW(destination->insertRangeFrom(*source, 0, source->size()), DB::Exception);
+}
+
+/// Build a ColumnString whose offsets are non-monotonic: a later offset is smaller than an earlier
+/// one. `chars` is left untouched (large enough that the naive wrapped-sum check would pass), so the
+/// only inconsistency is the decreasing offset itself.
+static ColumnString::MutablePtr makeStringColumnWithDecreasingOffsets()
+{
+    auto column = ColumnString::create();
+    column->insertData("aaaa", 4);
+    column->insertData("bbbb", 4);
+    column->insertData("cccc", 4);
+
+    /// offsets == [4, 8, 12], chars.size() == 12. Drop the last offset below the second string's start,
+    /// so offsetAt(3) == 2 < offsetAt(1) == 4. chars stays at 12 bytes, well above the wrapped sum (2).
+    auto & offsets = column->getOffsets();
+    offsets.back() = 2;
+
+    return column;
+}
+
+/// Decreasing (non-monotonic) source offsets make `nested_length` underflow inside insertRangeFrom.
+/// The naive guard `nested_offset + nested_length > chars.size()` wraps the sum back to the smaller end
+/// offset and silently passes, letting the huge wrapped length reach resize()/memcpy(). Validating the
+/// end offset before the subtraction catches it. Range [1, 3) has offsetAt(3) == 2 < offsetAt(1) == 4.
+TEST(ColumnString, InsertRangeFromDecreasingOffsetsThrows)
+{
+    auto source = makeStringColumnWithDecreasingOffsets();
+    auto destination = ColumnString::create();
+
+    try
+    {
+        destination->insertRangeFrom(*source, 1, 2);
+        FAIL() << "insertRangeFrom did not detect decreasing source offsets";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
 }
