@@ -4928,3 +4928,44 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
     EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
 }
+
+/// Case 3 of the embedded-hit rule: when an upper tier fully covers a lower
+/// tier's miss, the read needs ZERO remote and ZERO over-read (the cost the
+/// rule promises). The lower tier is NOT written down today - a fully-covered
+/// region has no gap, so no source fetch and no assemble-push reach the lower
+/// writer, and a write-down to a slower tier is a separate unimplemented
+/// policy. Fast 64K tier holds all of [0,256K); the slow 256K segment is a
+/// miss but wholly covered.
+TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
+{
+    const size_t file = 256 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto fast = std::make_shared<WideGranularityMockCache>(64 * 1024, "fast");
+    auto slow = std::make_shared<WideGranularityMockCache>(256 * 1024, "slow");
+    for (size_t b = 0; b < 4; ++b)
+        fast->seedBlock(b, 'F');  // fast resident over the whole slow segment [0,256K)
+
+    TestThreadGroup tg;
+    auto & pe = CurrentThread::getProfileEvents();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+
+    ReaderExecutor::Options opts;
+    opts.window_size = file * 2 + 1;
+    opts.block_size = file * 2 + 1;
+    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.min_bytes_for_seek = 64 * 1024;
+    ReaderExecutor executor(src, objects, {fast, slow}, opts);
+
+    while (!executor.readNextWindow().empty()) {}
+    executor.seek(0);  // reap deferred fills
+
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, 0u)
+        << "fully upper-resident request: no remote fetch";
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, 0u)
+        << "no over-read at all";
+    /// The slower tier is NOT written down from the fully-covering upper hit
+    /// today (no gap -> no fetch -> no assemble-push); a page->fs write-down is
+    /// a separate unimplemented policy. Pins the current behavior.
+    EXPECT_FALSE(slow->hasBlock(0)) << "lower tier not written down from a fully-covering upper hit";
+}
