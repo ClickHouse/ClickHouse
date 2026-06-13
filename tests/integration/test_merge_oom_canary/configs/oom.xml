@@ -2,29 +2,16 @@
     <!-- Enable the OOM canary so the server can survive a real kernel OOM kill: the kernel kills the
          canary process first (it carries the highest oom_score_adj), and the server, on detecting the
          canary's SIGKILL plus cgroup OOM evidence, runs its OOM response (cancel all merges, kill all
-         queries) and relaunches the canary instead of dying. -->
+         queries) and relaunches the canary instead of dying. This is the feature under test, not a knob
+         used to provoke the OOM. -->
     <oom_canary_enable>1</oom_canary_enable>
     <oom_canary_size>104857600</oom_canary_size>
     <oom_canary_relaunch>1</oom_canary_relaunch>
 
-    <!-- The server memory limits are kept ENABLED, exactly as in the AST fuzzer and in functional
-         tests: the hard limit is max_server_memory_usage_to_ram_ratio (0.9, the default) of the
-         container's cgroup memory. The point of the test is that this limit does NOT prevent a kernel
-         OOM: merges drive resident memory (heap + allocator-retained pages) above the cgroup before the
-         tracker - which sees only its own logical accounting - can shed enough, so the kernel OOM
-         killer fires anyway (as it did for the fuzzer: tracked 48.9 GiB, but anon-RSS 52 GiB).
-
-         We only disable the *dynamic* downward re-adjustment of the limit (memory_worker_dynamic_hard_
-         limit = 0, documented as the behavior of previous versions) so the limit is a fixed fraction of
-         the cgroup and the reproduction is deterministic; the static max_server_memory_usage cap is
-         still fully enforced. -->
-    <max_server_memory_usage>0</max_server_memory_usage>
-    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
-    <memory_worker_dynamic_hard_limit>0</memory_worker_dynamic_hard_limit>
-
-    <!-- Allow many merges to run at once. Beyond the concurrency, the large thread count is itself part
-         of the mechanism: each background/query thread carries allocator thread-cache, arena metadata
-         and a stack that are resident but NOT counted by the memory tracker, so they widen the gap
-         between tracked memory and RSS that lets resident memory cross the cgroup. -->
-    <background_pool_size>256</background_pool_size>
+    <!-- Everything else is left at ClickHouse defaults: max_server_memory_usage_to_ram_ratio (0.9), the
+         merge memory budget, the MemoryWorker dirty-page purge, jemalloc background threads, the
+         background pool size. The OOM is reached purely through a chaotic, diverse, high-rate allocation
+         workload that outruns the default purge - exactly as the AST fuzzer did - not by tuning any
+         memory setting. (Swap is disabled at the container level via memswap_limit so that, as on the
+         fuzzer's host, hitting the limit means a kernel OOM rather than swapping.) -->
 </clickhouse>
