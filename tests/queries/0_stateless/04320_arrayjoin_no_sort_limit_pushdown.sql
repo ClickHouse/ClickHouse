@@ -36,3 +36,28 @@ SELECT '-- MergeTree, no ORDER BY, LIMIT 3';
 SELECT count() FROM (SELECT id, arrayJoin(a) FROM t_arrayjoin_limit_no_sort LIMIT 3);
 
 DROP TABLE t_arrayjoin_limit_no_sort;
+
+-- A different hard-source-limit path: `maxBlockSizeByLimit` /
+-- `mainQueryNodeBlockSizeByLimit` set `query_info.trivial_limit`, which
+-- `ReadFromLoopStep::generate` (and system.zeros, generateRandom) consume as a
+-- HARD generation cap, before the outer `arrayJoin` expansion runs. This pass
+-- runs during planning, not as a query-plan optimization, so the bot's
+-- `loop()` repro reproduces even with `query_plan_enable_optimizations = 0`.
+SELECT '-- loop() source, LIMIT 3';
+SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
+SELECT '-- loop() source, old analyzer';
+SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
+SELECT '-- loop() source, optimizations disabled';
+SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS query_plan_enable_optimizations = 0;
+SELECT '-- loop() source, LIMIT 3 OFFSET 1';
+SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 OFFSET 1;
+SELECT '-- loop() source, ARRAY JOIN clause, old analyzer';
+SELECT x FROM loop(numbers(100)) ARRAY JOIN if(number < 3, [], [number]) AS x LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
+
+-- The trivial-LIMIT optimization must still fire when there is no `arrayJoin`:
+-- a plain `loop()` read is an infinite source, so `LIMIT 3` only terminates
+-- because the source is hard-capped at 3 rows.
+SELECT '-- loop() without arrayJoin still terminates (optimization fires)';
+SELECT number FROM loop(numbers(100)) LIMIT 3;
+SELECT '-- unreferenced WITH arrayJoin does not block pushdown';
+WITH arrayJoin([10, 20, 30]) AS unused SELECT number FROM loop(numbers(100)) LIMIT 3;
