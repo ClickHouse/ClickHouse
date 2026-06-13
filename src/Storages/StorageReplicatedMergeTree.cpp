@@ -157,6 +157,9 @@ namespace ProfileEvents
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
     extern const Event MergesRejectedByMemoryLimit;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
 }
 
 namespace CurrentMetrics
@@ -202,6 +205,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool detach_old_local_parts_when_cloning_replica;
     extern const MergeTreeSettingsBool disable_detach_partition_for_zero_copy_replication;
@@ -273,6 +277,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int REPLICA_IS_NOT_IN_QUORUM;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int NOT_FOUND_NODE;
     extern const int BAD_DATA_PART_NAME;
     extern const int NO_ACTIVE_REPLICAS;
@@ -447,6 +452,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
+    /// Reject user-initiated `CREATE`/`ATTACH` queries with `table_readonly = 1` for
+    /// `ReplicatedMergeTree`, while still allowing `FORCE_ATTACH`/`FORCE_RESTORE` (server startup,
+    /// restore from backup) to load tables whose metadata may carry the setting from before this check.
+    if (mode <= LoadingStrictnessLevel::ATTACH && (*getSettings())[MergeTreeSetting::table_readonly])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
+
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
     {
@@ -754,7 +765,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Mutation maybe killed or whole replica was deleted.
             /// Wait event will unblock at this moment.
             Coordination::Stat exists_stat;
-            if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id, &exists_stat, wait_event))
+            if (!getZooKeeper()->existsWatch(
+                    fs::path(zookeeper_path) / "mutations" / mutation_id,
+                    &exists_stat,
+                    Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
             }
@@ -777,7 +791,11 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             std::string mutation_pointer_value;
             /// Replica could be removed
-            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
+            if (!zookeeper->tryGetWatch(
+                    mutation_pointer,
+                    mutation_pointer_value,
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
                 LOG_WARNING(log, "Replica {} was removed during mutation. "
                     "Mutation will be done asynchronously when replica is restored.", replica);
@@ -5432,7 +5450,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool try_fetch_shared)
 {
     if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::fetchPart");
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
@@ -6087,6 +6105,12 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    /// Stop assignees before derived member destruction in case shutdown threw
+    /// before doing it. finish is idempotent.
+    background_operations_assignee.finish();
+    background_streaming_assignee.finish();
+    background_moves_assignee.finish();
 }
 
 
@@ -6334,15 +6358,18 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const S
 
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
+    /// Check static storage first: an `ATTACH` on a static disk (e.g. `s3_plain`) makes both
+    /// `is_readonly` and `isStaticStorage` true. Reporting the permanent state lets the caller
+    /// distinguish from a transient ZooKeeper disconnect, which is retriable in `DDLWorker`.
+    assertNotStaticStorage();
     if (is_readonly)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path);
-    assertNotStaticStorage();
 }
 
 void StorageReplicatedMergeTree::assertNotStaticStorage() const
 {
     if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
 }
 
 
@@ -6356,7 +6383,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
     if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
     /// If table is read-only because it doesn't have metadata in zk yet, then it's not possible to insert into it
     /// Without this check, we'll write data parts on disk, and afterwards will remove them since we'll fail to commit them into zk
     /// In case of remote storage like s3, it'll generate unnecessary PUT requests
@@ -6751,6 +6778,15 @@ void StorageReplicatedMergeTree::alter(
     auto old_settings = getSettings();
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
+
+    /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
+    /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
+    /// bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
+    }
 
     if (commands.isSettingsAlter())
     {
@@ -7618,7 +7654,10 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, watch_event);
+            String log_pointer = getZooKeeper()->getWatch(
+                fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
             {
                 pulled_to_queue = true;
@@ -7686,7 +7725,10 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             {
                 Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
-                log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
+                log_pointer = getZooKeeper()->getWatch(
+                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
                 if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 {
                     pulled_to_queue = true;
@@ -7754,7 +7796,8 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / queue_entry_to_wait_for;
 
-    return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
+    return getZooKeeper()->waitForDisappear(
+        path_to_wait_on, stop_waiting, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync);
 }
 
 
@@ -10986,6 +11029,7 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
                 *flag = false;
             };
         });
+        watch.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection);
         bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, watch);
 
         if (exists)
