@@ -26,18 +26,27 @@
 #include <IO/WriteHelpers.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -48,6 +57,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -58,10 +68,15 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowFunctionsQuery.h>
+#include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -971,7 +986,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                "add_minmax_index_for_string_columns",
                "add_minmax_index_for_temporal_columns",
                "allow_coalescing_columns_in_partition_or_order_key",
-               "allow_experimental_reverse_key",
                "allow_floating_point_partition_key",
                "allow_nullable_key",
                "allow_summing_columns_in_partition_or_order_key",
@@ -5206,6 +5220,210 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else
             fuzz(ast->children);
+    }
+    else if (auto * show_tables = typeid_cast<ASTShowTablesQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_tables->databases = !show_tables->databases;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->clusters = !show_tables->clusters;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->dictionaries = !show_tables->dictionaries;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->temporary = !show_tables->temporary;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->caches = !show_tables->caches;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->merges = !show_tables->merges;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->m_settings = !show_tables->m_settings;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->changed = !show_tables->changed;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->full = !show_tables->full;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->not_like = !show_tables->not_like;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->case_insensitive_like = !show_tables->case_insensitive_like;
+        if (fuzz_rand() % 20 == 0 && !show_tables->like.empty())
+            show_tables->like.clear();
+        fuzz(show_tables->children);
+    }
+    else if (auto * show_columns = typeid_cast<ASTShowColumnsQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_columns->extended = !show_columns->extended;
+        if (fuzz_rand() % 10 == 0)
+            show_columns->full = !show_columns->full;
+        if (fuzz_rand() % 10 == 0)
+            show_columns->not_like = !show_columns->not_like;
+        if (fuzz_rand() % 10 == 0)
+            show_columns->case_insensitive_like = !show_columns->case_insensitive_like;
+        if (fuzz_rand() % 20 == 0 && !show_columns->like.empty())
+            show_columns->like.clear();
+        fuzz(show_columns->children);
+    }
+    else if (auto * show_indexes = typeid_cast<ASTShowIndexesQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_indexes->extended = !show_indexes->extended;
+        fuzz(show_indexes->children);
+    }
+    else if (auto * show_functions = typeid_cast<ASTShowFunctionsQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_functions->case_insensitive_like = !show_functions->case_insensitive_like;
+        if (fuzz_rand() % 20 == 0 && !show_functions->like.empty())
+            show_functions->like.clear();
+    }
+    else if (auto * partition = typeid_cast<ASTPartition *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+        {
+            if (partition->all)
+            {
+                if (partition->value || partition->id)
+                    partition->all = false;
+            }
+            else
+            {
+                partition->all = true;
+            }
+        }
+        fuzz(partition->children);
+    }
+    else if (auto * dict = typeid_cast<ASTDictionary *>(ast.get()))
+    {
+        static const Strings simple_layout_types
+            = {"flat", "hashed", "sparse_hashed", "cache", "direct", "hashed_array", "complex_key_hashed",
+               "complex_key_sparse_hashed", "complex_key_cache", "complex_key_direct", "complex_key_hashed_array",
+               "ip_trie", "ssd_cache", "complex_key_ssd_cache"};
+
+        if (dict->layout && fuzz_rand() % 10 == 0)
+            dict->layout->layout_type = pickRandomly(fuzz_rand, simple_layout_types);
+
+        if (dict->lifetime)
+        {
+            if (fuzz_rand() % 10 == 0)
+                dict->lifetime->min_sec = fuzz_rand() % 3600;
+            if (fuzz_rand() % 10 == 0)
+                dict->lifetime->max_sec = dict->lifetime->min_sec + fuzz_rand() % 7200;
+        }
+
+        fuzz(dict->children);
+    }
+    else if (auto * dict_attr = typeid_cast<ASTDictionaryAttributeDeclaration *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            dict_attr->injective = !dict_attr->injective;
+        if (fuzz_rand() % 20 == 0)
+            dict_attr->hierarchical = !dict_attr->hierarchical;
+        if (dict_attr->hierarchical && fuzz_rand() % 10 == 0)
+            dict_attr->bidirectional = !dict_attr->bidirectional;
+        if (fuzz_rand() % 50 == 0)
+            dict_attr->is_object_id = !dict_attr->is_object_id;
+        if (dict_attr->default_value && fuzz_rand() % 5 == 0)
+            if (auto * lit = dict_attr->default_value->as<ASTLiteral>())
+                lit->value = fuzzField(lit->value);
+        if (dict_attr->expression)
+            fuzz(dict_attr->expression);
+        if (dict_attr->type)
+            fuzz(dict_attr->type);
+    }
+    else if (auto * create_nc = typeid_cast<ASTCreateNamedCollectionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            create_nc->if_not_exists = !create_nc->if_not_exists;
+        for (auto & change : create_nc->changes)
+            if (fuzz_rand() % 5 == 0)
+                change.value = fuzzField(change.value);
+    }
+    else if (auto * alter_nc = typeid_cast<ASTAlterNamedCollectionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            alter_nc->if_exists = !alter_nc->if_exists;
+        for (auto & change : alter_nc->changes)
+            if (fuzz_rand() % 5 == 0)
+                change.value = fuzzField(change.value);
+    }
+    else if (auto * drop_nc = typeid_cast<ASTDropNamedCollectionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_nc->if_exists = !drop_nc->if_exists;
+    }
+    else if (auto * txn = typeid_cast<ASTTransactionControl *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+        {
+            static const ASTTransactionControl::QueryType txn_types[]
+                = {ASTTransactionControl::BEGIN, ASTTransactionControl::COMMIT, ASTTransactionControl::ROLLBACK,
+                   ASTTransactionControl::SET_SNAPSHOT};
+            txn->action = txn_types[fuzz_rand() % std::size(txn_types)];
+        }
+        if (txn->action == ASTTransactionControl::SET_SNAPSHOT && fuzz_rand() % 5 == 0)
+            txn->snapshot = fuzz_rand();
+    }
+    else if (auto * grant = typeid_cast<ASTGrantQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            grant->is_revoke = !grant->is_revoke;
+        if (fuzz_rand() % 10 == 0)
+            grant->admin_option = !grant->admin_option;
+        if (fuzz_rand() % 20 == 0)
+            grant->replace_access = !grant->replace_access;
+        if (fuzz_rand() % 20 == 0)
+            grant->replace_granted_roles = !grant->replace_granted_roles;
+        if (fuzz_rand() % 10 == 0)
+            grant->current_grants = !grant->current_grants;
+        fuzz(grant->children);
+    }
+    else if (auto * create_role = typeid_cast<ASTCreateRoleQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            create_role->alter = !create_role->alter;
+        if (fuzz_rand() % 10 == 0)
+            create_role->if_exists = !create_role->if_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_role->if_not_exists = !create_role->if_not_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_role->or_replace = !create_role->or_replace;
+    }
+    else if (auto * create_policy = typeid_cast<ASTCreateRowPolicyQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            create_policy->alter = !create_policy->alter;
+        if (fuzz_rand() % 10 == 0)
+            create_policy->if_exists = !create_policy->if_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_policy->if_not_exists = !create_policy->if_not_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_policy->or_replace = !create_policy->or_replace;
+        if (create_policy->is_restrictive.has_value() && fuzz_rand() % 10 == 0)
+            create_policy->is_restrictive = !*create_policy->is_restrictive;
+        for (auto & [filter_type, filter_expr] : create_policy->filters)
+            if (filter_expr)
+                fuzz(filter_expr);
+    }
+    else if (auto * drop_access = typeid_cast<ASTDropAccessEntityQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_access->if_exists = !drop_access->if_exists;
+    }
+    else if (auto * backup = typeid_cast<ASTBackupQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            backup->kind = (backup->kind == ASTBackupQuery::BACKUP) ? ASTBackupQuery::RESTORE : ASTBackupQuery::BACKUP;
+        if (backup->settings)
+            fuzz(backup->settings);
+        fuzz(backup->children);
+    }
+    else if (auto * check_table = typeid_cast<ASTCheckTableQuery *>(ast.get()))
+    {
+        if (!check_table->part_name.empty() && fuzz_rand() % 10 == 0)
+            check_table->part_name.clear();
+        if (check_table->partition)
+            fuzz(check_table->partition);
+        fuzz(check_table->children);
     }
     else
     {
