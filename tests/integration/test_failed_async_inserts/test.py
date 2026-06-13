@@ -6,8 +6,15 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+# `max_server_memory_usage=1000` is the whole point of this test, so disable
+# the server-level `additional_memory_tracking_per_thread` speculative
+# reservation — otherwise the 4 MiB-per-thread charge instantly exceeds it.
 node = cluster.add_instance(
-    "node", main_configs=["configs/config.xml"],
+    "node",
+    main_configs=[
+        "configs/config.xml",
+        "configs/additional_memory_tracking_per_thread.xml",
+    ],
     with_zookeeper=True,
     # Server is very short on memory and may fail while initializing remote database disk
     with_remote_database_disk=False,
