@@ -481,8 +481,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        if (drop_table)
-            unsubscribeConsumers();
+        unsubscribeConsumers();
 
         if (consumers_connection)
         {
@@ -774,7 +773,6 @@ String StorageNATS::getConsumerName() const
     return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
 }
 
-void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

@@ -51,10 +51,6 @@ public:
         return Traits::getName();
     }
 
-    /// Timeseries parameters may carry DecimalField (from toDateTime64(...) casts), whose
-    /// default printed form collides with String literals — so we print parameters with ::Type.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     using Bucket = typename Traits::Bucket;
 
     struct State
@@ -63,11 +59,17 @@ public:
         UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
     };
 
-    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
+    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
         : Base(
             argument_types_,
-            parameters_,
+            {
+                /// Normalize all parameters to decimals with the same scale as the scale of timestamp argument
+                DecimalField<Decimal64>(start_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(end_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(step_, timestamp_scale_),
+                DecimalField<Decimal64>(window_, timestamp_scale_)
+            },
             createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
@@ -190,28 +192,6 @@ public:
         return static_cast<TimestampType>(static_cast<Int64>(result_bits));
     }
 
-    /// Returns whether a sample at `timestamp` cannot contribute to any grid point: too old or too new.
-    bool isSampleOutOfGrid(const TimestampType timestamp) const
-    {
-        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
-        const Int128 window_end =
-            static_cast<Int128>(static_cast<Int64>(timestamp)) +
-            static_cast<Int128>(static_cast<Int64>(window)) +
-            static_cast<Int128>(static_cast<Int64>(step));
-        return window_end < static_cast<Int128>(static_cast<Int64>(start_timestamp))
-            || timestamp > end_timestamp;
-    }
-
-    /// Returns whether a sample at `timestamp` is past the sliding-window cutoff for grid point `current_timestamp`.
-    bool isSampleOutOfWindow(const TimestampType timestamp, const TimestampType current_timestamp) const
-    {
-        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
-        const Int128 sum =
-            static_cast<Int128>(static_cast<Int64>(timestamp)) +
-            static_cast<Int128>(static_cast<Int64>(window));
-        return sum <= static_cast<Int128>(static_cast<Int64>(current_timestamp));
-    }
-
     static const State * data(ConstAggregateDataPtr __restrict place)
     {
         return reinterpret_cast<const State *>(place);
@@ -232,9 +212,9 @@ public:
         data(place)->~State();
     }
 
-    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
-        if (isSampleOutOfGrid(timestamp))
+        if (timestamp + window + step < start_timestamp || timestamp > end_timestamp)
             return;
 
         const size_t index = bucketIndexForTimestamp(timestamp);
@@ -448,19 +428,19 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version = 0;
+        UInt16 format_version;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
 
-        size_t size = 0;
+        size_t size;
         readBinaryLittleEndian(size, buf);
 
         if (size != bucket_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot deserialize data with different bucket count");
 
-        size_t buckets_size = 0;
+        size_t buckets_size;
         readBinaryLittleEndian(buckets_size, buf);
 
         if (buckets_size > bucket_count)
@@ -470,7 +450,7 @@ public:
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
-            size_t index = 0;
+            size_t index;
             readBinaryLittleEndian(index, buf);
 
             if (index >= bucket_count)

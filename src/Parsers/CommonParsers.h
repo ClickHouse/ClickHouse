@@ -2,6 +2,7 @@
 
 #include <Parsers/IParserBase.h>
 
+#include <cassert>
 #include <string_view>
 #include <unordered_set>
 
@@ -136,9 +137,9 @@ namespace DB
     MR_MACROS(CURRENT_ROW, "CURRENT ROW") \
     MR_MACROS(CURRENT_TRANSACTION, "CURRENT TRANSACTION") \
     MR_MACROS(CURRENTUSER, "CURRENTUSER") \
-    MR_MACROS(CURSOR, "CURSOR") \
     MR_MACROS(D, "D") \
     MR_MACROS(DATA, "DATA") \
+    MR_MACROS(DATA_INNER_UUID, "DATA INNER UUID") \
     MR_MACROS(DATABASE, "DATABASE") \
     MR_MACROS(DATABASES, "DATABASES") \
     MR_MACROS(DATE, "DATE") \
@@ -192,7 +193,6 @@ namespace DB
     MR_MACROS(ENGINE, "ENGINE") \
     MR_MACROS(EPOCH, "EPOCH") \
     MR_MACROS(EPHEMERAL, "EPHEMERAL") \
-    MR_MACROS(ESCAPE, "ESCAPE") \
     MR_MACROS(ESTIMATE, "ESTIMATE") \
     MR_MACROS(EVENT, "EVENT") \
     MR_MACROS(EVENTS, "EVENTS") \
@@ -273,8 +273,6 @@ namespace DB
     MR_MACROS(INHERIT, "INHERIT") \
     MR_MACROS(INJECTIVE, "INJECTIVE") \
     MR_MACROS(INNER, "INNER") \
-    MR_MACROS(INNER_UUID, "INNER UUID") \
-    MR_MACROS(INNER_COLUMNS, "INNER COLUMNS") \
     MR_MACROS(INSERT_INTO, "INSERT INTO") \
     MR_MACROS(INTERPOLATE, "INTERPOLATE") \
     MR_MACROS(INTERSECT, "INTERSECT") \
@@ -337,6 +335,7 @@ namespace DB
     MR_MACROS(MEMORY, "MEMORY") \
     MR_MACROS(MERGES, "MERGES") \
     MR_MACROS(METRICS, "METRICS") \
+    MR_MACROS(METRICS_INNER_UUID, "METRICS INNER UUID") \
     MR_MACROS(MI, "MI") \
     MR_MACROS(MICROSECOND, "MICROSECOND") \
     MR_MACROS(MICROSECONDS, "MICROSECONDS") \
@@ -486,7 +485,6 @@ namespace DB
     MR_MACROS(SALT, "SALT") \
     MR_MACROS(SAMPLE_BY, "SAMPLE BY") \
     MR_MACROS(SAMPLE, "SAMPLE") \
-    MR_MACROS(SAMPLES, "SAMPLES") \
     MR_MACROS(SAN, "SAN") \
     MR_MACROS(SCHEME, "SCHEME") \
     MR_MACROS(SECOND, "SECOND") \
@@ -527,7 +525,6 @@ namespace DB
     MR_MACROS(STATISTICS, "STATISTICS") \
     MR_MACROS(STEP, "STEP") \
     MR_MACROS(STORAGE, "STORAGE") \
-    MR_MACROS(STREAM, "STREAM") \
     MR_MACROS(STRICT, "STRICT") \
     MR_MACROS(SUBPARTITION_BY, "SUBPARTITION BY") \
     MR_MACROS(SUBPARTITION, "SUBPARTITION") \
@@ -541,6 +538,7 @@ namespace DB
     MR_MACROS(TABLES, "TABLES") \
     MR_MACROS(TAG, "TAG") \
     MR_MACROS(TAGS, "TAGS") \
+    MR_MACROS(TAGS_INNER_UUID, "TAGS INNER UUID") \
     MR_MACROS(TEMPORARY_TABLE, "TEMPORARY TABLE") \
     MR_MACROS(TEMPORARY, "TEMPORARY") \
     MR_MACROS(TEST, "TEST") \
@@ -678,7 +676,7 @@ class ParserKeyword : public IParserBase
 private:
     std::string_view s;
 
-    explicit ParserKeyword(std::string_view s_): s(s_) { chassert(!s.empty()); }
+    explicit ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
 
 public:
     static ParserKeyword createDeprecated(std::string_view s_)

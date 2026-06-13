@@ -241,13 +241,8 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    if (collection.has("partition_columns_in_data_file"))
-    {
-        partition_columns_in_data_file = collection.get<bool>("partition_columns_in_data_file");
-        partition_columns_in_data_file_was_set = true;
-    }
-    else
-        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
+    partition_columns_in_data_file = collection.getOrDefault<bool>(
+        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
 
@@ -671,7 +666,6 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         partition_columns_in_data_file_value.has_value())
     {
         partition_columns_in_data_file = partition_columns_in_data_file_value.value();
-        partition_columns_in_data_file_was_set = true;
     }
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
@@ -1031,7 +1025,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    chassert(s3_settings != nullptr);
+    assert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
