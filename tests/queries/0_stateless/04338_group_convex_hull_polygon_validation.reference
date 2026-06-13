@@ -3,3 +3,11 @@ convexhull_multipolygon_empty_outer_nonempty_inner
 convexhull_polygon_nan_in_hole
 convexhull_polygon_inf_in_hole
 convexhull_multipolygon_nan_in_hole
+convexhull_empty_polygon_typed
+POLYGON()
+convexhull_empty_polygon_geometry
+POLYGON()
+convexhull_empty_plus_polygon_typed
+POLYGON((0 0,0 10,10 10,10 0,0 0))
+convexhull_empty_plus_points_geometry
+POLYGON((0 0,0 10,10 10,10 0,0 0))

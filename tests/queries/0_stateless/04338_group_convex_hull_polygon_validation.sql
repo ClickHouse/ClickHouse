@@ -32,3 +32,27 @@ SELECT 'convexhull_multipolygon_nan_in_hole';
 SELECT groupConvexHull(p) FROM (
     SELECT [[[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(nan, 2.), (2., 3.), (3., 3.), (3., 2.), (nan, 2.)]]]::MultiPolygon AS p
 ); -- { serverError BAD_ARGUMENTS }
+
+-- A fully empty polygon contributes no points (neutral) and must be accepted, not rejected.
+-- All-empty input yields an empty hull; an empty polygon mixed with real geometries yields the
+-- hull of the real ones only. The same holds when the value arrives through Geometry.
+
+-- All-empty input, typed Polygon.
+SELECT 'convexhull_empty_polygon_typed';
+SELECT wkt(groupConvexHull(p)) FROM (SELECT readWKTPolygon('POLYGON EMPTY') AS p);
+
+-- All-empty input, through Geometry.
+SELECT 'convexhull_empty_polygon_geometry';
+SELECT wkt(groupConvexHull(g)) FROM (SELECT readWKT('POLYGON EMPTY') AS g);
+
+-- Empty polygon mixed with a real polygon, typed Polygon: hull comes from the real polygon only.
+SELECT 'convexhull_empty_plus_polygon_typed';
+SELECT wkt(groupConvexHull(p)) FROM (
+    SELECT arrayJoin([readWKTPolygon('POLYGON EMPTY'), readWKTPolygon('POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))')]) AS p
+);
+
+-- Empty polygon mixed with real points, through Geometry: hull comes from the points only.
+SELECT 'convexhull_empty_plus_points_geometry';
+SELECT wkt(groupConvexHull(g)) FROM (
+    SELECT arrayJoin([readWKT('POLYGON EMPTY'), readWKT('POINT (0 0)'), readWKT('POINT (10 0)'), readWKT('POINT (10 10)'), readWKT('POINT (0 10)')]) AS g
+);
