@@ -12,6 +12,8 @@ concurrency:
 env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
+  MINTLIFY_API_KEY: ${{ secrets.MINTLIFY_API_KEY }}
+  MINTLIFY_PROJECT_ID: ${{ secrets.MINTLIFY_PROJECT_ID }}
 
 
 jobs:

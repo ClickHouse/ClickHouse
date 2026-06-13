@@ -1396,9 +1396,6 @@ class JobConfigs:
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/docs/trigger_mintlify_preview.py",
-        ],
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
