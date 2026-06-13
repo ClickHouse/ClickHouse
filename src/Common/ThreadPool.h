@@ -43,6 +43,10 @@ public:
     // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
     static constexpr int MAX_THEORETICAL_THREAD_COUNT = 0x3fffffff; // ~1 billion
 
+    // Upper bound on the number of jobs we pre-reserve memory for. The queue can still grow
+    // up to queue_size on demand; this only bounds the initial reservation.
+    static constexpr size_t MAX_JOBS_TO_RESERVE = 1'000'000;
+
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
 
