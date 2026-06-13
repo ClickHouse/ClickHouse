@@ -110,7 +110,7 @@ Both `ADD SETTINGS` and `MODIFY SETTINGS` preserve the other settings in the pro
 In short, use `MODIFY SETTINGS` when you only want to tweak one aspect of a setting (e.g. just the value, while keeping an existing `MAX`); use `ADD SETTINGS` when you want to redefine a setting from scratch.
 :::
 
-## Examples {#examples}
+## Examples {#profile-examples}
 
 Create a profile to use in the examples below:
 
