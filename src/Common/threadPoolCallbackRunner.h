@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int CANNOT_SCHEDULE_TASK;
 }
 
 enum class ThreadName : uint8_t;
@@ -26,32 +27,103 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 /// A common mistake is capturing some local objects in lambda and passing it to the runner.
 /// In case of exception, these local objects will be destroyed before scheduled tasks are finished.
 
+namespace detail
+{
+
+/// Runnable wrapper around a callback and its std::promise, used by threadPoolCallbackRunnerUnsafe.
+///
+/// Unlike a bare std::packaged_task, this satisfies the promise from its own destructor when the
+/// task was never run. A queued task can be dropped without running when ThreadPool::finalize()
+/// drains the queue on shutdown (ThreadPool::worker destroys the pending job via job_data.reset()).
+/// A bare packaged_task left unrun would destruct its std::promise with no stored value, so
+/// ~promise() stores a broken-promise std::future_error -- which is a std::logic_error and is
+/// therefore reported by the server as a LOGICAL_ERROR (getCurrentExceptionMessageAndPattern ->
+/// abortOnFailedAssertion), aborting the process during shutdown. Storing a normal DB::Exception
+/// instead lets the waiter observe an ordinary, catchable error from future.get().
+template <typename Result, typename Callback>
+struct CallbackRunnerTask
+{
+    std::promise<Result> promise;
+    ThreadGroupPtr thread_group;
+    ThreadName thread_name;
+    Callback callback;
+    bool was_run = false;
+
+    CallbackRunnerTask(ThreadGroupPtr thread_group_, ThreadName thread_name_, Callback && callback_)
+        : thread_group(std::move(thread_group_)), thread_name(thread_name_), callback(std::move(callback_))
+    {
+    }
+
+    void run()
+    {
+        was_run = true;
+        try
+        {
+            if constexpr (std::is_void_v<Result>)
+            {
+                {
+                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
+                    callback();
+                }
+                /// The ThreadGroupSwitcher is destroyed (thread group detached) and the callback is
+                /// released before satisfying the promise, otherwise the waiter could race with the
+                /// detaching thread (see "Destroy ThreadGroupSwitcher before set value in std::future").
+                promise.set_value();
+            }
+            else
+            {
+                std::optional<Result> res;
+                {
+                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
+                    res.emplace(callback());
+                }
+                promise.set_value(std::move(*res));
+            }
+        }
+        catch (...)
+        {
+            promise.set_exception(std::current_exception());
+        }
+    }
+
+    ~CallbackRunnerTask()
+    {
+        if (was_run)
+            return;
+
+        /// The task was dropped without running (e.g. the thread pool was shut down while it was
+        /// still queued). Satisfy the promise with a normal exception so the waiter does not observe
+        /// a broken-promise std::future_error (a std::logic_error that aborts the server).
+        try
+        {
+            promise.set_exception(std::make_exception_ptr(
+                Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)")));
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// set_exception throws only if the promise was already satisfied, which cannot happen
+            /// here because run() (the only other place that touches it) sets was_run first.
+        }
+    }
+};
+
+}
+
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
     return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
-        auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
-        {
-            ThreadGroupSwitcher switcher(thread_group, thread_name);
+        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
 
-            SCOPE_EXIT_SAFE(
-            {
-                /// Release all captured resources before detaching thread group
-                /// Releasing has to use proper memory tracker which has been set here before callback
-
-                [[maybe_unused]] auto tmp = std::move(my_callback);
-            });
-
-            return my_callback();
-        });
-
-        auto future = task->get_future();
+        auto future = task->promise.get_future();
 
         /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
         /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ (*my_task)(); }, priority);
+        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ my_task->run(); }, priority);
 
         return future;
     };
