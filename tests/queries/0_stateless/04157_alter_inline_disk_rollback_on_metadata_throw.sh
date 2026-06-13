@@ -65,4 +65,4 @@ run_case() {
 }
 
 run_case "mt" "MergeTree()"
-run_case "rmt" "ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}/t_04157_rmt', 'r1')"
+run_case "rmt" "ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_04157_rmt', 'r1')"
