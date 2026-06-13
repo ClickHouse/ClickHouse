@@ -42,6 +42,8 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | `OPTIMIZE TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`. Optimize the table in the underlying database that owns it.     |
 | `DELETE FROM dboverlay.*`  | **Rejected** — `TABLE_IS_READ_ONLY`. Delete in the underlying database that owns the table.     |
 | `UPDATE dboverlay.*`       | **Rejected** — `TABLE_IS_READ_ONLY`. Update in the underlying database that owns the table.     |
+| `SYSTEM ... dboverlay.*`   | **Rejected** — `TABLE_IS_READ_ONLY`. Run the `SYSTEM` command (e.g. `STOP MERGES`, `RESTART REPLICA`) in the underlying database that owns the table. |
+| `TRUNCATE DATABASE dboverlay` / `TRUNCATE TABLES FROM dboverlay` | **Rejected** — `TABLE_IS_READ_ONLY`. Truncate in the underlying databases that own the tables. |
 | `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying database.         |
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
@@ -53,7 +55,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Overlay `CREATE`/`ATTACH`/`RENAME`/`DROP`/`DETACH TABLE`/`OPTIMIZE` | `BAD_ARGUMENTS` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
-| Overlay `ALTER`/`TRUNCATE`/`DELETE FROM`/`UPDATE` | `TABLE_IS_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
+| Overlay `ALTER`/`TRUNCATE`/`DELETE FROM`/`UPDATE`/`SYSTEM`/`TRUNCATE DATABASE` | `TABLE_IS_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on any lookup through an affected Overlay; `DROP DATABASE` still works to break the cycle |
 | Overlay references missing database        | `BAD_ARGUMENTS`                                                                                                                                    |
@@ -114,27 +116,29 @@ DROP DATABASE dboverlay SYNC;
 
 ## Access control {#access-control}
 
-Access for reads is checked against the database name written in the query. To read a
-table through an `Overlay` database, a user needs a `SELECT` grant on the `Overlay`
-database itself — grants on the underlying databases are neither required nor consulted
-for queries that go through the facade. Conversely, a `SELECT` grant on an underlying
-database allows reading that database directly but does not grant access to the same
-table through the `Overlay`.
+Accessing a table through an `Overlay` database requires a grant on **both** the `Overlay`
+database (the name written in the query) and the underlying source database that owns the
+table. This applies to both reads and `INSERT`s:
+
+* a `SELECT` grant on the `Overlay` alone is **not** enough to read through the facade — the
+  user must also be granted `SELECT` on the underlying source database;
+* a `SELECT` grant on an underlying database alone is **not** enough to read through the
+  facade either, though it does allow reading that database directly (independently of the
+  `Overlay`);
+* `INSERT` through the facade likewise requires the `INSERT` privilege on both the `Overlay`
+  and the underlying source database.
 
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a
 new `Overlay`. Creating an `Overlay` confers no privileges on the overlay database itself;
-as with any database engine, the creator must be granted `SELECT` on the `Overlay` before
-they can read through it.
+as with any database engine, the creator must additionally be granted the relevant
+privileges on the `Overlay` before they can use it.
 
 ```sql
-GRANT SELECT ON dboverlay.* TO some_user;  -- allows reading any table exposed by `dboverlay`
-GRANT SELECT ON db_a.* TO some_user;       -- allows reading db_a tables directly, not via `dboverlay`
+-- Both grants are required to read db_a tables through `dboverlay`:
+GRANT SELECT ON dboverlay.* TO some_user;
+GRANT SELECT ON db_a.* TO some_user;
 ```
-
-:::note
-A grant on the `Overlay` database effectively grants read access to every table it exposes, including tables added to the underlying databases later. Grant access to an `Overlay` database only to users who may read all of its sources.
-:::
 
 ## Compatibility notes {#compatibility}
 
