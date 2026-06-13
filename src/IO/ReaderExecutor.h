@@ -7,6 +7,7 @@
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LiveConnectionLimit.h>
 #include <IO/ReadPlanGeometry.h>
+#include <IO/PlanSchedule.h>
 #include <IO/FetchMachine.h>
 
 #include <Common/CurrentMetrics.h>
@@ -316,6 +317,13 @@ private:
 
         VectorWithMemoryTracking<BufEntry> bufs;
 
+        /// The explicit work of this plan (`describePlan`), computed once at
+        /// build. Its `retrieves[*].into` are the authoritative fill targets:
+        /// the deferred put borrows exactly the writers a retrieve designates,
+        /// so slack is filled only into its owning lower tier and never
+        /// promoted into a faster tier.
+        PlanSchedule schedule;
+
     private:
         friend class ReaderExecutor;  /// `planResidencyWindow` is the sole writer.
         std::shared_ptr<const ReadPlanGeometry> geometry_snapshot;
@@ -590,18 +598,30 @@ private:
 
     /// Push the assembled `result`'s miss bytes into the plan's held write
     /// buffers, fire-and-forget: a short/zero landing affects only the byte
-    /// counter, never `result`. Writes only into the plan's authoritative
-    /// `BufEntry::writers`. The SYNCHRONOUS write side; a machine collect
-    /// defers the same work to a put step.
+    /// counter, never `result`. Writes only the writers the plan SCHEDULE
+    /// designates as fill targets for this window, so a faster tier never
+    /// receives slack bytes (`isScheduledFillTarget`). The SYNCHRONOUS write
+    /// side; a machine collect defers the same work to a put step.
     void pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats);
 
-    /// The per-writer-list body shared by the sync push, the put step and the
-    /// deferred promote: write `rope ∩ writer-range ∩ window` into each
-    /// writer, counted into `bytes_counter`. `interrupt` (nullable) is polled
-    /// between writers - the put step's stop point; remaining writers are left
-    /// untouched for the caller's abandon path.
+    /// The per-writer-list body shared by the put step and the parked-inline
+    /// write: write `rope ∩ writer-range ∩ window` into each (already
+    /// schedule-filtered) writer, counted into `bytes_counter`. `interrupt`
+    /// (nullable) is polled between writers - the put step's stop point;
+    /// remaining writers are left untouched for the caller's abandon path.
     void pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
         const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats);
+
+    /// Write `rope ∩ writer-range ∩ window` into ONE writer (the body of the
+    /// loops above), counted into `bytes_counter`.
+    void writeSliceToWriter(MissEntry & w, ByteRange window, const Rope & rope,
+        Stats::Counter bytes_counter, Stats & out_stats);
+
+    /// Whether the plan schedule designates `(entry, cell)` a fill target for a
+    /// retrieve overlapping `window`. A cell holding the request is a target in
+    /// every missing tier (promotion); a slack-only cell is a target only in
+    /// its owning lower tier - never promoted into a faster tier.
+    bool isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const;
 
     /// Re-credit, BEFORE the source fetch, any committed prefix of a frozen
     /// miss that a writer has grown since plan-build: serve it from the write

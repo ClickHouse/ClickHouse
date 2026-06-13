@@ -63,11 +63,14 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const ReadPlanGeometry & g, ByteR
             continue;
         }
         const size_t gap_end = std::min(g.gapEnd(pos), end);
+        /// NOT clamped to the plan span: `fetchWindowAt` extends to whole cache
+        /// cells (object-bounded), which may straddle `plan_start`/`plan_end` -
+        /// a seek mid-segment, or a slow tier's block wider than the plan. The
+        /// executor fetches and fills that whole cell, so the schedule must
+        /// carry it as a fill target.
         const ByteRange fetch = g.fetchWindowAt(ByteRange{pos, gap_end - pos});
-        const size_t lo = std::max(fetch.offset, g.plan_start);
-        const size_t hi = std::min(fetch.end(), g.plan_end);
-        if (hi > lo)
-            parts.push_back(ByteRange{lo, hi - lo});
+        if (fetch.size)
+            parts.push_back(fetch);
         pos = gap_end;
     }
     return mergeSorted(std::move(parts));
@@ -178,6 +181,13 @@ PlanSchedule describePlan(
                 const auto res = geometry.residentAt(pos);
                 size_t seg_end = res.resident() ? res.run_end : geometry.gapEnd(pos);
                 seg_end = std::min(seg_end, piece.end());
+
+                /// Beyond the plan span the geometry has no info: `residentAt`
+                /// reports a gap and `gapEnd` returns `plan_end` (<= pos here),
+                /// which would stall the walk. The remainder of the piece (the
+                /// fill closure's after-slack) is one gap segment.
+                if (seg_end <= pos)
+                    seg_end = piece.end();
 
                 if (request.size)
                 {

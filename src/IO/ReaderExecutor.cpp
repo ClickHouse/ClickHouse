@@ -1637,9 +1637,47 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
     /// (`chassert(writer)`), never the view's null-writer misses (`[CF-mutate]`). `result`
     /// is disjoint, so each slice has at most one node per byte (it may be short at EOF).
     /// This is the SYNCHRONOUS write side (the no-pool/sync paths); a machine collect
-    /// defers the same work to a put step (`schedulePutStep`).
-    for (auto & buf : read_plan.bufs)
-        pushRopeToWriters(buf.writers, physical_window, result, Stats::BytesPushedToCacheSync, /*interrupt=*/nullptr, out_stats);
+    /// defers the same work to a put step (`schedulePutStep`). Both honour the plan
+    /// schedule's fill targets, so slack never reaches a faster tier.
+    for (size_t i = 0; i < read_plan.bufs.size(); ++i)
+        for (auto & w : read_plan.bufs[i].writers)
+            if (w.writer && isScheduledFillTarget(physical_window, i, w.range))
+                writeSliceToWriter(w, physical_window, result, Stats::BytesPushedToCacheSync, out_stats);
+}
+
+bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const
+{
+    for (const auto & r : read_plan.schedule.retrieves)
+    {
+        if (!(r.range.offset < window.end() && window.offset < r.range.end()))
+            continue;  /// retrieve does not cover this window
+        for (const auto & t : r.into)
+            if (t.entry == entry && t.cell.offset == cell.offset && t.cell.size == cell.size)
+                return true;
+    }
+    return false;
+}
+
+void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const Rope & rope,
+    Stats::Counter bytes_counter, Stats & out_stats)
+{
+    chassert(w.writer);
+    /// Clamp the write target to the window's served portion and the buffer's own
+    /// aligned range; the buffer further skips already-committed bytes internally
+    /// (committed-set idempotency), so an out-of-order/overlapping slice from an
+    /// interleaved promotion never double-counts.
+    const size_t lo = std::max(w.writer->range().offset, window.offset);
+    const size_t hi = std::min(w.writer->range().end(), window.end());
+    if (lo >= hi)
+        return;
+    auto slice = rope.slice(ByteRange{lo, hi - lo});
+    if (slice.empty())
+        return;
+    out_stats.add(Stats::CachePopulateRequests);
+    StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
+    out_stats.add(bytes_counter, w.writer->write(std::move(slice)));
+    HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+        static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
 }
 
 void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
@@ -1653,24 +1691,7 @@ void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & wri
         /// fetch-side flag before its put - see `schedulePutStep`.)
         if (interrupt && interrupt->load(std::memory_order_relaxed))
             break;
-
-        chassert(w.writer);
-        /// Clamp the write target to the window's served portion and the buffer's own
-        /// aligned range; the buffer further skips already-committed bytes internally
-        /// (committed-set idempotency), so an out-of-order/overlapping slice from an
-        /// interleaved promotion never double-counts.
-        const size_t lo = std::max(w.writer->range().offset, window.offset);
-        const size_t hi = std::min(w.writer->range().end(), window.end());
-        if (lo >= hi)
-            continue;
-        auto slice = rope.slice(ByteRange{lo, hi - lo});
-        if (slice.empty())
-            continue;
-        out_stats.add(Stats::CachePopulateRequests);
-        StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(bytes_counter, w.writer->write(std::move(slice)));
-        HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-            static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+        writeSliceToWriter(w, window, rope, bytes_counter, out_stats);
     }
 }
 
@@ -1960,19 +1981,25 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
     /// has exactly one owner.
     joinPutMachinesOverlapping(m->physical_window, /*writers_too=*/true);
 
-    /// BORROW this window's writers from the plan into the machine: the put step
-    /// owns them exclusively while it writes; the reap returns them home
-    /// (`writer_origins`) so the next window's fill - and the plan teardown's
-    /// finalize - find them where they have always lived. Runs AFTER
-    /// `finalizeAssembledWindow`, so the in-flight pin was taken first.
+    /// BORROW this window's writers from the plan into the machine, but only the
+    /// ones the plan SCHEDULE designates as fill targets for a retrieve
+    /// overlapping this window (`describePlan`'s `into`). A cell holding the
+    /// request is a target in every missing tier (promotion); a slack-only cell
+    /// is a target ONLY in its owning lower tier - so a faster tier never
+    /// receives un-requested slack bytes. The put step owns the borrowed writers
+    /// exclusively while it writes; the reap returns them home (`writer_origins`)
+    /// so the next window's fill - and the plan teardown's finalize - find them
+    /// where they have always lived. Runs AFTER `finalizeAssembledWindow`, so
+    /// the in-flight pin was taken first.
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
     {
         auto & buf = read_plan.bufs[i];
         auto kept = std::stable_partition(buf.writers.begin(), buf.writers.end(),
             [&](const MissEntry & w)
             {
-                return !(w.writer && w.range.offset < m->physical_window.end()
-                         && m->physical_window.offset < w.range.end());
+                const bool overlaps_window = w.writer && w.range.offset < m->physical_window.end()
+                    && m->physical_window.offset < w.range.end();
+                return !(overlaps_window && isScheduledFillTarget(m->physical_window, i, w.range));
             });
         for (auto it = kept; it != buf.writers.end(); ++it)
         {
@@ -2386,8 +2413,20 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     plan.geometry_snapshot = std::move(geom);
     read_plan = std::move(plan);
 
-    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} entries",
-        read_plan.geometry()->plan_start, read_plan.geometry()->plan_end, read_plan.geometry()->entries.size());
+    /// Describe the plan's work once, here. The request for fill purposes is the
+    /// whole plan span from the cursor: everything from `plan_start` forward is
+    /// read by the scan (User), so only the alignment slack around it is
+    /// FillOnly. `schedule.retrieves[*].into` then drives `schedulePutStep` so a
+    /// faster tier never receives slack bytes (see `ReadPlan::schedule`).
+    read_plan.schedule = describePlan(
+        *read_plan.geometry(),
+        ByteRange{plan_range.offset, plan_range.size},
+        read_plan.geometry()->pressure_level,
+        min_bytes_for_seek);
+
+    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} entries, {} retrieves",
+        read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
+        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
 }
 
 ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const

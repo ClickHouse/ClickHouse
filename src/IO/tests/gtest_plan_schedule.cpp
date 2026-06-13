@@ -264,3 +264,18 @@ TEST(PlanScheduleRetrieves, PromoteFromSlowerTier)
     ASSERT_EQ(s.steps.size(), 1u);
     EXPECT_FALSE(s.steps[0].require_retrieve.has_value());
 }
+
+/// A cache cell wider than the plan (a slow tier's block, or a seek mid-segment)
+/// straddles the plan bounds: the retrieve must carry the WHOLE cell as a fill
+/// target (the executor fetches it unclamped), not clamp it to the plan span.
+TEST(PlanScheduleRetrieves, StraddlingCellBeyondPlan)
+{
+    auto g = geometry(64, 100, {  // plan [64,100)
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 256}}, /*head*/256, /*tail*/256),
+    });
+    auto s = describe(g, {64, 36});  // request [64,100)
+    ASSERT_EQ(s.retrieves.size(), 1u);
+    EXPECT_EQ(s.retrieves[0].range.offset, 0u) << "extends below plan_start to the segment start";
+    EXPECT_EQ(s.retrieves[0].range.size, 256u) << "and past plan_end to the segment end";
+    EXPECT_TRUE(intoHas(s.retrieves[0], 0, {0, 256})) << "the whole straddling cell is a fill target";
+}

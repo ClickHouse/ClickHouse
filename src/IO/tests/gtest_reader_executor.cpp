@@ -4689,7 +4689,7 @@ TEST(PlanScheduleValidation, ColdAllMiss)
 {
     auto [src, objects] = srcOf(256 * 1024);
     auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
-    validateScheduleMatchesReality(src, objects, {fs}, 256 * 1024, /*mbs=*/0);
+    validateScheduleMatchesReality(src, objects, {fs}, 256 * 1024, /*min_bytes_for_seek=*/0);
 }
 
 TEST(PlanScheduleValidation, TwoTierDisjointHits)
@@ -4699,7 +4699,7 @@ TEST(PlanScheduleValidation, TwoTierDisjointHits)
     auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
     page->seedBlock(0, 'P');   // [0,64K)
     fs->seedBlock(2, 'D');     // [128K,192K)
-    validateScheduleMatchesReality(src, objects, {page, fs}, 256 * 1024, /*mbs=*/0);
+    validateScheduleMatchesReality(src, objects, {page, fs}, 256 * 1024, /*min_bytes_for_seek=*/0);
 }
 
 TEST(PlanScheduleValidation, ResidentIsland)
@@ -4708,7 +4708,7 @@ TEST(PlanScheduleValidation, ResidentIsland)
     auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
     page->seedBlock(1, 'P');   // resident island [64K,128K), gaps either side
     auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
-    validateScheduleMatchesReality(src, objects, {page, fs}, 256 * 1024, /*mbs=*/0);
+    validateScheduleMatchesReality(src, objects, {page, fs}, 256 * 1024, /*min_bytes_for_seek=*/0);
 }
 
 TEST(PlanScheduleValidation, MixedGranularitiesWithBridge)
@@ -4717,5 +4717,42 @@ TEST(PlanScheduleValidation, MixedGranularitiesWithBridge)
     auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
     auto fs = std::make_shared<WideGranularityMockCache>(256 * 1024, "fs");
     page->seedBlock(3, 'P');   // resident [192K,256K) inside the first fs segment
-    validateScheduleMatchesReality(src, objects, {page, fs}, 512 * 1024, /*mbs=*/64 * 1024);
+    validateScheduleMatchesReality(src, objects, {page, fs}, 512 * 1024, /*min_bytes_for_seek=*/64 * 1024);
+}
+
+/// Schedule-driven fill, seek mid-coarse-segment: seeking to 64K lands inside
+/// the slow tier's 256K segment [0,256K), whose head [0,64K) is before-slack.
+/// The schedule-driven borrow must still fill that whole segment (it owns its
+/// slack), pulling the [0,64K) head from the fetch. The fast 32K tier owns no
+/// slack here - its residency is probed only over the plan span (from 64K up),
+/// so it has no cell below 64K (the slack-not-promoted rule is a model
+/// invariant the executor geometry never exercises - the meaningful check is
+/// the hand-built `PlanScheduleRetrieves.SlackNotPromotedToFasterTier`).
+TEST(ReaderExecutor, SchedulesFillOfSeekStraddledLowerSegment)
+{
+    const size_t file = 256 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto fast = std::make_shared<WideGranularityMockCache>(32 * 1024, "FastMock");
+    auto slow = std::make_shared<WideGranularityMockCache>(256 * 1024, "SlowMock");
+
+    auto pool = std::make_shared<SyncPrefetchPool>();  // deferred fill runs inline, deterministic
+    ReaderExecutor::Options opts;
+    opts.window_size = file;
+    opts.block_size = file;
+    opts.plan_look_ahead_window = file;
+    opts.min_bytes_for_seek = 0;
+    opts.prefetch_pool = pool;
+    ReaderExecutor executor(src, objects, {fast, slow}, opts);
+    executor.seek(64 * 1024);  // request [64K,256K); slow segment head [0,64K) is before-slack
+
+    while (!executor.readNextWindow().empty()) {}
+    executor.seek(0);  // tear the plan down so all deferred fills reap
+
+    /// Slow tier owns the segment: it fills from 0 (incl. the [0,64K) slack head).
+    EXPECT_TRUE(slow->hasBlock(0)) << "slow segment fills whole, incl. the before-slack head";
+    /// Fast tier has no cell below the plan start (64K), so it never receives the
+    /// slack - automatic from the plan-bounded geometry, not the borrow filter.
+    for (const auto & [range, total] : fast->putLog())
+        EXPECT_GE(range.offset, 64u * 1024u) << "fast tier has no sub-plan-start cell";
+    EXPECT_TRUE(fast->hasBlock(2)) << "fast tier still fills the requested [64K,...) blocks";
 }
