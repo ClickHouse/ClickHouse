@@ -265,6 +265,40 @@ void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
     }
 }
 
+void AggregateFunctionTuple::addBatchSinglePlaceNotNull( /// NOLINT
+    size_t row_begin,
+    size_t row_end,
+    AggregateDataPtr __restrict place,
+    const IColumn ** columns,
+    const UInt8 * null_map,
+    Arena * arena,
+    ssize_t if_argument_pos) const
+{
+    /// Reached from AggregateFunctionNullUnary::addBatchSinglePlace for Nullable(Tuple(...)) inputs.
+    /// Materialize the outer tuple once per batch instead of letting the base implementation route
+    /// each surviving row back through add(), which would rerun recursiveRemoveSparse per row.
+    ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(*materialized);
+
+    if (if_argument_pos >= 0)
+    {
+        const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if (!null_map[i] && flags[i])
+                addRowFromMaterialized(place, tuple_column, i, arena);
+        }
+    }
+    else
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if (!null_map[i])
+                addRowFromMaterialized(place, tuple_column, i, arena);
+        }
+    }
+}
+
 void AggregateFunctionTuple::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
 {
     for (size_t i = 0; i < num_elements; ++i)

@@ -134,6 +134,23 @@ SELECT minTuple(x) FROM test_tuple_sparse;
 SELECT maxTuple(x) FROM test_tuple_sparse;
 DROP TABLE test_tuple_sparse;
 
+-- Outer `Nullable(Tuple(...))` argument: routes through the `Null` combinator
+-- (`AggregateFunctionNullUnary`), which calls `addBatchSinglePlaceNotNull` / `addBatchSinglePlace`
+-- on the nested `-Tuple` function with a null map. Whole-tuple NULLs are skipped; only non-null
+-- rows contribute. This exercises the `addBatchSinglePlaceNotNull` override that materializes the
+-- outer tuple once per batch instead of re-running `recursiveRemoveSparse` per surviving row.
+SELECT 'nullable tuple';
+SET allow_experimental_nullable_tuple_type = 1;
+-- Single place, no NULLs: numbers 0..3 -> first elements sum to 0+1+2+3 = 6, second to 6.0.
+SELECT sumTuple(t) FROM (SELECT CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))') AS t FROM numbers(4));
+-- Single place with NULLs: rows 0 and 3 are NULL and skipped, kept 1,2,4,5 -> sums 1+2+4+5 = 12.
+SELECT sumTuple(t) FROM (SELECT if(number % 3 = 0, CAST(NULL, 'Nullable(Tuple(Int64, Float64))'), CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))')) AS t FROM numbers(6));
+-- `-TupleIf` over `Nullable(Tuple)`: both the if-flag and the null map filter rows. cond = number % 2
+-- keeps odd numbers 1,3,5, of which 3 is NULL -> kept 1,5 -> sums 6.
+SELECT sumTupleIf(t, cond) FROM (SELECT number % 2 AS cond, if(number % 3 = 0, CAST(NULL, 'Nullable(Tuple(Int64, Float64))'), CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))')) AS t FROM numbers(6));
+-- GROUP BY drives the multi-place batch path: k=0 keeps 2,4 (0 is NULL); k=1 keeps 1,5 (3 is NULL).
+SELECT k, sumTuple(t) FROM (SELECT number % 2 AS k, if(number % 3 = 0, CAST(NULL, 'Nullable(Tuple(Int64, Float64))'), CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))')) AS t FROM numbers(6)) GROUP BY k ORDER BY k;
+
 -- Element of type `Nullable(Nothing)` mixed with a real type: must preserve real-type result and not collapse to all NULLs.
 SELECT 'null element with int';
 SELECT sumTuple(tuple(NULL, toInt64(1))) AS res, toTypeName(res);
