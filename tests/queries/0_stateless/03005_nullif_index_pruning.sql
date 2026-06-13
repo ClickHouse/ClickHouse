@@ -1,3 +1,4 @@
+-- Tags: no-distributed-interpreters
 DROP TABLE IF EXISTS t_nullif_pruning;
 
 CREATE TABLE t_nullif_pruning (team UInt64, k UInt8) 
