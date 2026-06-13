@@ -68,6 +68,7 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Access/EnabledRowPolicies.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -347,13 +348,24 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 /// table has no row policies for the current user or the combined filter is
 /// always-true. Mirrors the effective-filter check used by
 /// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const StorageID & as_written_id, const ContextPtr & query_context)
 {
     auto storage_id = storage->getStorageID();
     if (!storage_id.hasDatabase())
         return nullptr;
     auto row_policy_filter = query_context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    /// When the table is reached through a read-only `Overlay` facade, access requires a grant on
+    /// the facade as well as on the source, so the facade's row policies must apply too. Combine
+    /// the facade's SELECT policies with the source's (a row must pass both).
+    if (overlaySourceIdToAlsoCheck(as_written_id, storage))
+    {
+        auto facade_filter = query_context->getRowPolicyFilter(
+            as_written_id.getDatabaseName(), as_written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
+    }
+
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;
@@ -378,7 +390,7 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -627,13 +639,14 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 }
 
 std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
+    const StorageID & as_written_id,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
     std::set<std::string> & used_row_policies)
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, as_written_id, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -915,7 +928,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context);
+                || !!getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
@@ -1077,7 +1090,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
                 auto row_policy_filter_info
-                    = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
+                    = buildRowPolicyFilterIfNeeded(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), table_expression_query_info, planner_context, used_row_policies);
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());

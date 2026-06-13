@@ -21,6 +21,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -405,6 +406,19 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
+/// Returns true when a query referenced a table by `written_id` that resolved to a different
+/// table `resolved_id` through a read-only `Overlay` facade (the written name is the facade, the
+/// resolved name is the underlying source). Restricted to `Overlay` so other cases where the two
+/// ids can differ (temporary tables, a concurrent rename) are not affected.
+bool isReadonlyOverlayRead(const StorageID & written_id, const StorageID & resolved_id)
+{
+    if (!written_id.hasDatabase()
+        || (written_id.database_name == resolved_id.database_name && written_id.table_name == resolved_id.table_name))
+        return false;
+    const auto written_db = DatabaseCatalog::instance().tryGetDatabase(written_id.database_name);
+    return written_db && written_db->isReadOnly() && typeid_cast<const DatabaseOverlay *>(written_db.get());
+}
+
 /// Checks that the current user has the SELECT privilege.
 /// `table_id` is the resolved table (the underlying source table for a read-only `Overlay`
 /// facade), while `written_table_id` is the id exactly as written in the query (the facade name).
@@ -418,17 +432,8 @@ void checkAccessRightsForSelect(
     const TreeRewriterResult & syntax_analyzer_result)
 {
     std::vector<StorageID> ids_to_check{table_id};
-    if (written_table_id.hasDatabase()
-        && (written_table_id.database_name != table_id.database_name || written_table_id.table_name != table_id.table_name))
-    {
-        /// The written and resolved ids differ only when the table was reached through a read-only
-        /// `Overlay` facade (the written name is the facade, `table_id` is the underlying source).
-        /// Require access on the facade too. Restrict to Overlay so unrelated cases where the two
-        /// ids can differ (temporary tables, a concurrent rename) are not affected.
-        const auto written_db = DatabaseCatalog::instance().tryGetDatabase(written_table_id.database_name);
-        if (written_db && written_db->isReadOnly() && typeid_cast<const DatabaseOverlay *>(written_db.get()))
-            ids_to_check.push_back(written_table_id);
-    }
+    if (isReadonlyOverlayRead(written_table_id, table_id))
+        ids_to_check.push_back(written_table_id);
 
     if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
     {
@@ -771,6 +776,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
     {
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+        /// Reading through a read-only `Overlay` facade requires a grant on the facade as well as
+        /// on the source, so the facade's row policies must apply too. Combine them with the
+        /// source's (a row must pass both).
+        if (const auto & written_id = joined_tables.leftTableStorageID(); isReadonlyOverlayRead(written_id, table_id))
+        {
+            auto facade_filter = context->getRowPolicyFilter(written_id.getDatabaseName(), written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+            row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
+        }
+
         if (row_policy_filter && context->hasQueryContext())
         {
             for (const auto & row_policy : row_policy_filter->policies)

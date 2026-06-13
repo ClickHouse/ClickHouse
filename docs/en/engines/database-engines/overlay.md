@@ -129,6 +129,11 @@ table. This applies to both reads and `INSERT`s:
 * `INSERT` through the facade likewise requires the `INSERT` privilege on both the `Overlay`
   and the underlying source database.
 
+Row policies follow the same rule: reading a table through the facade applies the `SELECT` row
+policies of **both** the `Overlay` and the underlying source table (a row is returned only if it
+passes both). A row policy defined on the source table still applies to direct reads of that
+table, independently of the `Overlay`.
+
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a
 new `Overlay`. Creating an `Overlay` confers no privileges on the overlay database itself;
