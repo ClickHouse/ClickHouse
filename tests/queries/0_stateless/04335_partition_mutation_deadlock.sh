@@ -59,6 +59,10 @@ tx 2 "alter table mt2 update n=n+20 in partition 1 where 1" | grep -Eo "Deadlock
 tx 2 "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
 tx 2 "rollback"
 
-wait_for_mutation "mt2" "mutation_4.txt"
+# The transaction (and its deadlocked mutation) is rolled back, so its mutation
+# entries disappear; only the intermediate non-transactional partition-1 mutation
+# remains and finishes after the rollback. Wait for whatever mutation is left
+# instead of a specific (transaction-version-dependent) mutation number.
+wait_for_all_mutations "mt2"
 $CLICKHOUSE_CLIENT -q "select 'after deadlock', p, n from mt2 order by p, n"
 $CLICKHOUSE_CLIENT -q "drop table mt2"
