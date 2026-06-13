@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
@@ -93,7 +94,7 @@ private:
 class LimitBySortedStreamTransform final : public ISimpleTransform
 {
 public:
-    LimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names);
+    LimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -111,7 +112,8 @@ private:
 
     void processRun(UInt64 run_start_row, UInt64 run_row_count);
 
-    /// Positions of the non-constant grouping key columns in the chunk header.
+    /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
+    /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
     std::vector<size_t> grouping_key_positions;
 
     /// Kept per-group interval is `[group_offset, group_limit_end)`.

@@ -286,12 +286,17 @@ void LimitByTransform::transform(Chunk & chunk)
 
 
 LimitBySortedStreamTransform::LimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
+    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
     : ISimpleTransform(header, header, true)
-    , grouping_key_positions(filterNonConstKeys(header, column_names).positions)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
 {
+    Names key_names;
+    key_names.reserve(sorted_columns_descr.size());
+    for (const auto & column_description : sorted_columns_descr)
+        key_names.push_back(column_description.column_name);
+    grouping_key_positions = filterNonConstKeys(header, key_names).positions;
+
     previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)
         previous_chunk_last_grouping_key_columns.push_back(header->getByPosition(position).type->createColumn());

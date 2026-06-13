@@ -3,6 +3,7 @@
 #include <deque>
 #include <list>
 #include <Columns/IColumn.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IInflatingTransform.h>
@@ -109,7 +110,7 @@ private:
 class NegativeLimitBySortedStreamTransform final : public IInflatingTransform
 {
 public:
-    NegativeLimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names);
+    NegativeLimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
 
     String getName() const override { return "NegativeLimitBySortedStreamTransform"; }
 
@@ -131,6 +132,8 @@ private:
     void dropOffsetRows(GroupWindow & window) const;
     void finalizeWindow(GroupWindow & window);
 
+    /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
+    /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
     std::vector<size_t> key_positions;
     const UInt64 group_offset;
     const UInt64 group_window_size;

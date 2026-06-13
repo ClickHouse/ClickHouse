@@ -341,12 +341,17 @@ Chunk NegativeLimitByTransform::generate()
 
 
 NegativeLimitBySortedStreamTransform::NegativeLimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
+    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
     : IInflatingTransform(header, header)
-    , key_positions(filterNonConstKeys(header, column_names).positions)
     , group_offset(group_offset_)
     , group_window_size(computeWindowSize(group_length_, group_offset_))
 {
+    Names key_names;
+    key_names.reserve(sorted_columns_descr.size());
+    for (const auto & column_description : sorted_columns_descr)
+        key_names.push_back(column_description.column_name);
+    key_positions = filterNonConstKeys(header, key_names).positions;
+
     prev_key_columns.reserve(key_positions.size());
     for (size_t position : key_positions)
         prev_key_columns.push_back(header->getByPosition(position).type->createColumn());
@@ -466,7 +471,7 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     /// one group.
     while (run_start < num_rows)
     {
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(cols, key_positions, run_start, num_rows, 1);
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_keys, run_start, num_rows, 1);
 
         append_run(run_start, run_end - run_start);
 
