@@ -1664,6 +1664,7 @@ private:
 
         /// Pass 1: iterate over AND operands, classify each as comparison-with-constant or other.
         IndexedNodes all_operands;
+        bool found_conflict = false;
         size_t argument_index = 0;
         for (const auto & argument : function_node.getArguments())
         {
@@ -1727,15 +1728,32 @@ private:
             ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
             auto result = addComparisonFilter(filter_map, expression, std::move(new_filter), enable_pruning, getContext());
 
-            /// Contradiction detected — the entire AND is false.
+            /// Contradiction detected among the convertible comparisons — the AND is logically false.
+            /// Defer the decision instead of collapsing immediately: keep scanning so that a
+            /// non-convertible comparison appearing later in the chain (e.g. `i > 'str'`) is still
+            /// recorded in `filter_map`.  The collapse is handled after the loop.
             if (result == AddComparisonFilterResult::CONFLICT)
-            {
-                auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
-                node = std::move(false_node);
-                return;
-            }
+                found_conflict = true;
 
             ++argument_index;
+        }
+
+        /// The convertible comparisons are contradictory, so the AND evaluates to `false`.
+        /// However, if any comparison on some expression could not be losslessly converted to the
+        /// column type (e.g. `i > 'str'` for an `Int32` column), executing that comparison raises an
+        /// exception (here `TYPE_MISMATCH`).  Collapsing the whole AND to `false` would drop that
+        /// operand and suppress the exception, making the query result depend on
+        /// `optimize_redundant_comparisons`.  To keep behavior identical to the unoptimized query,
+        /// leave the AND untouched whenever a non-convertible comparison is present.
+        if (found_conflict)
+        {
+            for (const auto & entry : filter_map)
+                for (const auto & filter : entry.second)
+                    if (!filter.converted_value)
+                        return;
+
+            node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
+            return;
         }
 
         /// Pass 2: collect surviving filters, separating notEquals for NOT IN conversion.

@@ -600,22 +600,26 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 1e10 AN
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i < 1e10 AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 12: contradictory AND folds to `0`; sibling throwing operands get short-circuited away (consistent with `expr AND 0`).
+-- Section 12: a contradiction must not suppress an exception from a sibling operand.
+-- When the contradictory chain also contains a comparison whose constant cannot be losslessly
+-- converted to the column type (e.g. `i > 'str'`), that comparison raises `TYPE_MISMATCH` at
+-- runtime. The optimization must not fold the AND to `0` and silently drop it, so the query
+-- throws identically with the optimization on and off.
 -- =====================================================================
 
--- TYPE_MISMATCH on `i > 'str'`: thrown when un-optimized; suppressed by conflict folding.
+-- TYPE_MISMATCH on `i > 'str'`: must be thrown whether or not the optimization is enabled.
 SELECT 'conflict_folds_throwing_operand_type_mismatch_off';
 SELECT groupArray(i) FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 0; -- { serverError TYPE_MISMATCH }
 SELECT 'conflict_folds_throwing_operand_type_mismatch_on';
-SELECT groupArray(i) FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 1;
+SELECT groupArray(i) FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 1; -- { serverError TYPE_MISMATCH }
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > 'str' AND i < 0 AND i > 10 SETTINGS optimize_redundant_comparisons = 1;
 
--- Same shape with EQUALS: still throws when un-optimized; folded to 0 with optimization.
+-- Same shape with EQUALS: must throw whether or not the optimization is enabled.
 SELECT 'conflict_folds_throwing_operand_eq_off';
 SELECT groupArray(i) FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 0; -- { serverError TYPE_MISMATCH }
 SELECT 'conflict_folds_throwing_operand_eq_on';
-SELECT groupArray(i) FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 1;
+SELECT groupArray(i) FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 1; -- { serverError TYPE_MISMATCH }
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 'str' AND i = 3 AND i = 5 SETTINGS optimize_redundant_comparisons = 1;
 
