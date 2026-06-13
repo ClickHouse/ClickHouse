@@ -80,7 +80,10 @@ void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_name' during AST JSON deserialization");
     children.push_back(index_name);
 
-    index_decl = r.readChild("index_decl");
+    /// `index_decl` is the parser-owned `ASTIndexDeclaration`; `validateCreateIndexQuery` and
+    /// `convertToASTAlterCommand` downcast it with `as<ASTIndexDeclaration>()`, so reject any
+    /// other node type from malformed `clickhouse_json` here.
+    index_decl = r.readChildOfType<ASTIndexDeclaration>("index_decl");
     if (!index_decl)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_decl' during AST JSON deserialization");
     children.push_back(index_decl);
