@@ -945,7 +945,27 @@ std::optional<std::unordered_set<UInt64>> Reader::hashDictionaryValues(ColumnChu
     auto hashes = parquetTryHashColumn(values.get(), &desc);
     if (!hashes.has_value())
         return std::nullopt;
-    return std::unordered_set<UInt64>(hashes->begin(), hashes->end());
+    std::unordered_set<UInt64> value_hashes(hashes->begin(), hashes->end());
+
+    /// The dictionary holds only the non-null values. Under `input_format_null_as_default`, null
+    /// values in a non-nullable output column are decoded as the type's default value, which is not
+    /// in the dictionary; without accounting for it we'd wrongly skip a row group whose nulls match
+    /// the queried default (e.g. `WHERE x = 0` over an optional column read as non-nullable `UInt64`).
+    /// So when the chunk may contain nulls, add the default value's hash, mirroring the min/max path
+    /// in `adjustRangeFromIndexIfNeeded`.
+    bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
+    bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
+        || column.meta->meta_data.statistics.null_count != 0;
+    if (null_as_default && can_be_null)
+    {
+        auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
+        /// If the default value can't be hashed, we can't rule out a match.
+        if (!default_hash.has_value())
+            return std::nullopt;
+        value_hashes.insert(*default_hash);
+    }
+
+    return value_hashes;
 }
 
 bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
