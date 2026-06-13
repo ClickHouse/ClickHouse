@@ -1759,8 +1759,16 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
         return;
 
     auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings);
-    if (order_info.input_order)
-        limit_by->applyOrder();
+    if (!order_info.input_order)
+        return;
+
+    /// The sorted-stream transform needs every key in the sort prefix (and in that order); otherwise a
+    /// key not covered by the prefix would be dropped from grouping.
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(order_info.sort_description, limit_by->getColumns());
+    if (sort_prefix.size() != limit_by->getColumns().size())
+        return;
+
+    limit_by->applyOrder(sort_prefix);
 }
 
 /// This optimization is obsolete and will be removed.
