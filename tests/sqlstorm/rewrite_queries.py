@@ -468,48 +468,67 @@ def rewrite_arrayjoin_to_array_join(sql):
         rest = alias_match.group(3)
         col_name = col if col else alias
 
-        # Strip optional ON clause (ON TRUE, ON col IS NOT NULL, or arbitrary ON condition).
-        # Bound the match before the next SQL clause keyword so the predicate
-        # does not greedily consume the rest of the query (`WHERE`, `ORDER BY`, ...).
-        on_match = re.match(
-            r'\s+ON\s+(?:TRUE\b|(?:(?!\s+(?:WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|OFFSET|UNION|INTERSECT|EXCEPT|WINDOW|QUALIFY|SETTINGS|FORMAT|JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|INNER\s+JOIN)\b)[^\n,);])+)',
-            rest,
-            re.IGNORECASE,
-        )
-        if on_match:
-            rest = rest[on_match.end():]
-
-        # Determine join type from prefix
-        join_type = "ARRAY JOIN"
-        left_match = re.search(r'\bLEFT\s+JOIN\s*$', prefix_stripped, re.IGNORECASE)
-        cross_match = re.search(r'\bCROSS\s+JOIN\s*$', prefix_stripped, re.IGNORECASE)
-        plain_join_match = re.search(r'\bJOIN\s*$', prefix_stripped, re.IGNORECASE)
+        # Determine the join type from the preceding keyword. `ARRAY JOIN`
+        # carries no `ON` clause and has no RIGHT/FULL variant, so any shape
+        # that cannot be represented is left unchanged rather than rewritten
+        # into different (or invalid) SQL.
         from_match = re.search(r'\bFROM\s*$', prefix_stripped, re.IGNORECASE)
         comma_match = re.search(r',\s*$', prefix_stripped)
+        # Capture the optional join qualifier (`LEFT [OUTER]`, `INNER`, ...)
+        # together with the trailing `JOIN` so the whole clause is stripped,
+        # not just the bare `JOIN` token (which would leave a stray `INNER`).
+        join_kw_match = re.search(
+            r'\b(?:(LEFT(?:\s+OUTER)?|RIGHT(?:\s+OUTER)?|FULL(?:\s+OUTER)?|INNER|CROSS)\s+)?JOIN\s*$',
+            prefix_stripped, re.IGNORECASE,
+        )
 
-        if left_match:
-            join_type = "LEFT ARRAY JOIN"
-            prefix_stripped = prefix_stripped[:left_match.start()]
-        elif cross_match:
-            join_type = "ARRAY JOIN"
-            prefix_stripped = prefix_stripped[:cross_match.start()]
-        elif plain_join_match:
-            join_type = "ARRAY JOIN"
-            prefix_stripped = prefix_stripped[:plain_join_match.start()]
-        elif from_match:
-            # FROM arrayJoin(expr) AS alias -> FROM (SELECT arrayJoin(expr) AS alias)
-            # Wrap in a subquery since arrayJoin is not a table function
-            result.append(sql[i:len(prefix_stripped)])
-            result.append(f" (SELECT arrayJoin({expr}) AS {col_name}) AS _aj")
-            sql = rest
-            i = 0
-            continue
+        wrap_in_subquery = False
+        if from_match:
+            join_type = None
+            wrap_in_subquery = True
+            new_prefix = prefix_stripped[:from_match.start()]
         elif comma_match:
             join_type = "ARRAY JOIN"
-            prefix_stripped = prefix_stripped[:comma_match.start()]
+            new_prefix = prefix_stripped[:comma_match.start()]
+        elif join_kw_match:
+            qualifier = (join_kw_match.group(1) or "").strip().upper()
+            if qualifier.startswith("LEFT"):
+                join_type = "LEFT ARRAY JOIN"
+            elif qualifier.startswith("RIGHT") or qualifier.startswith("FULL"):
+                # RIGHT/FULL ARRAY JOIN has no ClickHouse equivalent; leave the
+                # construct unchanged.
+                result.append(sql[i:paren_end + 1])
+                i = paren_end + 1
+                continue
+            else:
+                # Plain JOIN, INNER JOIN and CROSS JOIN all map to ARRAY JOIN.
+                join_type = "ARRAY JOIN"
+            new_prefix = prefix_stripped[:join_kw_match.start()]
+        else:
+            # Unrecognised context; leave unchanged.
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
 
-        result.append(sql[i:len(prefix_stripped)])
-        result.append(f"\n{join_type} {expr} AS {col_name}")
+        # Only a no-op `ON TRUE` predicate can be dropped. A real predicate
+        # cannot be expressed as an `ARRAY JOIN` condition, so the whole
+        # construct is left unchanged instead of silently dropping the filter
+        # (which would turn a filtered join into an unfiltered cross product).
+        on_true_match = re.match(r'\s+ON\s+TRUE\b(?!\s+(?:AND|OR)\b)', rest, re.IGNORECASE)
+        if on_true_match:
+            rest = rest[on_true_match.end():]
+        elif re.match(r'\s+ON\b', rest, re.IGNORECASE):
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
+
+        result.append(sql[i:len(new_prefix)])
+        if wrap_in_subquery:
+            # FROM arrayJoin(expr) AS alias -> FROM (SELECT arrayJoin(expr) AS alias)
+            # Wrap in a subquery since arrayJoin is not a table function.
+            result.append(f" (SELECT arrayJoin({expr}) AS {col_name}) AS _aj")
+        else:
+            result.append(f"\n{join_type} {expr} AS {col_name}")
         sql = rest
         i = 0
 

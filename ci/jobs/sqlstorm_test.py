@@ -241,6 +241,16 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
 
+    # Step 0: Run the query-rewriter unit tests so they gate this PR and any
+    # future edits to the rewriter (the benchmark below would otherwise pass
+    # without ever exercising the focused regression tests).
+    results.append(
+        Result.from_commands_run(
+            name="Rewriter unit tests",
+            command=f"python3 {sqlstorm_dir}/test_rewrite_queries.py",
+        )
+    )
+
     # Step 1: Start ClickHouse
     print("Start ClickHouse")
 

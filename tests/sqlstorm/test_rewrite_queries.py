@@ -39,16 +39,18 @@ class TestFetchOffsetRewrite(unittest.TestCase):
 
 
 class TestArrayJoinOnClause(unittest.TestCase):
-    def test_on_predicate_does_not_consume_trailing_clauses(self):
-        # The `ON` regex must stop before clause keywords; otherwise it
-        # greedily swallows `WHERE`/`ORDER BY` etc. and drops them from the
-        # rewritten query.
-        self.assertEqual(
-            rewrite_query(
-                "SELECT * FROM t JOIN arrayJoin(arr) AS a ON a > 0 WHERE id = 1 ORDER BY id"
-            ),
-            "SELECT * FROM t \nARRAY JOIN arr AS a WHERE id = 1 ORDER BY id",
-        )
+    def test_real_on_predicate_left_unchanged(self):
+        # A real `ON` predicate cannot be expressed as an `ARRAY JOIN`
+        # condition. Dropping it would turn a filtered join into an unfiltered
+        # cross product, so the construct must be left unchanged instead.
+        sql = "SELECT * FROM t JOIN arrayJoin(arr) AS a ON a > 0 WHERE id = 1 ORDER BY id"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_real_on_equality_predicate_left_unchanged(self):
+        # Mirrors corpus queries such as `stackoverflow/335.sql` and
+        # `1279.sql`, where the equality join predicate must be preserved.
+        sql = "SELECT * FROM t LEFT JOIN arrayJoin(arr) AS tag ON t.TagName = tag"
+        self.assertEqual(rewrite_query(sql), sql)
 
     def test_on_true_followed_by_where(self):
         self.assertEqual(
@@ -68,6 +70,37 @@ class TestArrayJoinOnClause(unittest.TestCase):
             ),
             "SELECT * FROM t \nLEFT ARRAY JOIN arr AS TagName WHERE id = 1",
         )
+
+
+class TestArrayJoinKeyword(unittest.TestCase):
+    def test_inner_join_strips_inner_keyword(self):
+        # `INNER JOIN` must be rewritten as `ARRAY JOIN`; the bare-`JOIN`
+        # handling alone would leave a stray `INNER` before `ARRAY JOIN`.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t INNER JOIN arrayJoin(arr) AS a ON TRUE"),
+            "SELECT * FROM t \nARRAY JOIN arr AS a",
+        )
+
+    def test_left_outer_join_becomes_left_array_join(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t LEFT OUTER JOIN arrayJoin(arr) AS a ON TRUE"),
+            "SELECT * FROM t \nLEFT ARRAY JOIN arr AS a",
+        )
+
+    def test_cross_join_becomes_array_join(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN arrayJoin(arr) AS a"),
+            "SELECT * FROM t \nARRAY JOIN arr AS a",
+        )
+
+    def test_right_join_left_unchanged(self):
+        # RIGHT/FULL ARRAY JOIN has no ClickHouse equivalent.
+        sql = "SELECT * FROM t RIGHT JOIN arrayJoin(arr) AS a ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_full_outer_join_left_unchanged(self):
+        sql = "SELECT * FROM t FULL OUTER JOIN arrayJoin(arr) AS a ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
 
 
 class TestAnyArrayRewrite(unittest.TestCase):
