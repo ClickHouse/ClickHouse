@@ -8,6 +8,21 @@ namespace DB
 namespace
 {
 
+bool overlaps(ByteRange a, ByteRange b)
+{
+    return a.offset < b.end() && b.offset < a.end();
+}
+
+bool contains(ByteRange outer, ByteRange inner)
+{
+    return inner.offset >= outer.offset && inner.end() <= outer.end();
+}
+
+size_t alignOf(const GeometryEntry & e)
+{
+    return std::max(e.head_align, e.tail_align);
+}
+
 VectorWithMemoryTracking<ByteRange> mergeSorted(VectorWithMemoryTracking<ByteRange> parts)
 {
     std::sort(parts.begin(), parts.end(),
@@ -58,13 +73,80 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const ReadPlanGeometry & g, ByteR
     return mergeSorted(std::move(parts));
 }
 
+/// Connections = fill-closure pieces, merged across a resident hole no larger
+/// than `min_bytes_for_seek` (bridged: the hole is over-read on the open GET
+/// rather than reopening). A wider hole splits the connections.
+VectorWithMemoryTracking<ByteRange> connections(
+    const VectorWithMemoryTracking<ByteRange> & fill, size_t min_bytes_for_seek)
+{
+    VectorWithMemoryTracking<ByteRange> conns;
+    for (const auto & piece : fill)
+    {
+        if (!conns.empty() && piece.offset - conns.back().end() <= min_bytes_for_seek)
+            conns.back().size = piece.end() - conns.back().offset;  /// bridge the hole
+        else
+            conns.push_back(piece);
+    }
+    return conns;
+}
+
+/// The cells connection `conn` populates. A cell holding USER bytes is filled in
+/// every tier that misses it (promotion of the request up the chain); a slack-
+/// only cell is filled ONLY in the tier that owns it - the coarsest-alignment
+/// tier missing it, the one whose segment alignment created the slack - never
+/// promoted into a faster tier.
+VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
+    const ReadPlanGeometry & g, ByteRange conn, ByteRange request)
+{
+    VectorWithMemoryTracking<PlanSchedule::WriteTarget> targets;
+    for (size_t ei = 0; ei < g.entries.size(); ++ei)
+    {
+        const auto & e = g.entries[ei];
+        /// A whole-block tier (page, `tail_align > 1`, first-writer-wins) is
+        /// fillable only if the connection covers the whole cell; an incremental
+        /// tier (fs) appends whatever prefix the connection covers.
+        const bool whole_block = e.tail_align > 1;
+        for (const auto & m : e.aligned_miss)
+        {
+            if (whole_block ? !contains(conn, m) : !overlaps(conn, m))
+                continue;
+
+            const bool holds_user = request.size && overlaps(m, request);
+            if (holds_user)
+            {
+                targets.push_back({ei, m});
+                continue;
+            }
+
+            /// Slack-only cell: own it iff no tier missing the same bytes has a
+            /// strictly coarser alignment.
+            const size_t align_e = alignOf(e);
+            bool owns = true;
+            for (size_t ej = 0; owns && ej < g.entries.size(); ++ej)
+            {
+                if (ej == ei)
+                    continue;
+                for (const auto & m2 : g.entries[ej].aligned_miss)
+                    if (overlaps(m2, m) && alignOf(g.entries[ej]) > align_e)
+                    {
+                        owns = false;
+                        break;
+                    }
+            }
+            if (owns)
+                targets.push_back({ei, m});
+        }
+    }
+    return targets;
+}
+
 }
 
 PlanSchedule describePlan(
     const ReadPlanGeometry & geometry,
     ByteRange request_extent,
     MemoryPressureLevel /*pressure*/,
-    size_t /*min_bytes_for_seek*/)
+    size_t min_bytes_for_seek)
 {
     PlanSchedule sched;
     if (geometry.plan_end <= geometry.plan_start)
@@ -75,50 +157,96 @@ PlanSchedule describePlan(
     const size_t req_hi = std::min(request_extent.end(), geometry.plan_end);
     const ByteRange request = (req_hi > req_lo) ? ByteRange{req_lo, req_hi - req_lo} : ByteRange{req_lo, 0};
 
+    const auto fill = fillRegion(geometry, request);
+
     /// --- ranges: typed decomposition of request ∪ fill closure ---
-    /// The walk region is the request (served, possibly resident) plus the
-    /// gap-driven fill closure (fetched + filled, incl. slack). Decompose it,
-    /// breaking at every residency boundary (mirroring `serveCacheBlock` /
-    /// `coverWindow` granularity) and at the request boundaries (where purpose
-    /// flips between FillOnly and User).
-    VectorWithMemoryTracking<ByteRange> walk_parts;
-    if (request.size)
-        walk_parts.push_back(request);
-    for (const auto & f : fillRegion(geometry, request))
-        walk_parts.push_back(f);
-
-    for (const auto & piece : mergeSorted(std::move(walk_parts)))
+    /// Decompose request ∪ fill, breaking at every residency boundary (mirroring
+    /// `serveCacheBlock`/`coverWindow` granularity) and at the request boundaries
+    /// (where purpose flips between FillOnly and User).
     {
-        size_t pos = piece.offset;
-        while (pos < piece.end())
+        VectorWithMemoryTracking<ByteRange> walk_parts;
+        if (request.size)
+            walk_parts.push_back(request);
+        for (const auto & f : fill)
+            walk_parts.push_back(f);
+
+        for (const auto & piece : mergeSorted(std::move(walk_parts)))
         {
-            const auto res = geometry.residentAt(pos);
-            size_t seg_end = res.resident() ? res.run_end : geometry.gapEnd(pos);
-            seg_end = std::min(seg_end, piece.end());
-
-            if (request.size)
+            size_t pos = piece.offset;
+            while (pos < piece.end())
             {
-                if (pos < request.offset)
-                    seg_end = std::min(seg_end, request.offset);
-                else if (pos < request.end())
-                    seg_end = std::min(seg_end, request.end());
-            }
+                const auto res = geometry.residentAt(pos);
+                size_t seg_end = res.resident() ? res.run_end : geometry.gapEnd(pos);
+                seg_end = std::min(seg_end, piece.end());
 
-            const bool is_user = request.size && pos >= request.offset && pos < request.end();
-            sched.ranges.push_back(PlanSchedule::TypedRange{
-                .range = ByteRange{pos, seg_end - pos},
-                .purpose = is_user ? PlanSchedule::Purpose::User : PlanSchedule::Purpose::FillOnly,
-                .resident = res.resident(),
-                .tier_entry = res.entry,
-                .tier = res.tier,
-            });
-            pos = seg_end;
+                if (request.size)
+                {
+                    if (pos < request.offset)
+                        seg_end = std::min(seg_end, request.offset);
+                    else if (pos < request.end())
+                        seg_end = std::min(seg_end, request.end());
+                }
+
+                const bool is_user = request.size && pos >= request.offset && pos < request.end();
+                sched.ranges.push_back(PlanSchedule::TypedRange{
+                    .range = ByteRange{pos, seg_end - pos},
+                    .purpose = is_user ? PlanSchedule::Purpose::User : PlanSchedule::Purpose::FillOnly,
+                    .resident = res.resident(),
+                    .tier_entry = res.entry,
+                    .tier = res.tier,
+                });
+                pos = seg_end;
+            }
         }
     }
 
-    /// --- steps: what each readNextWindow returns (request only) ---
-    /// One step per maximal resident run / gap, matching the executor's
-    /// per-window dispatch. `require_retrieve` is wired in a later stage.
+    /// --- retrieves: one Remote per connection, plus HandedRope promotes ---
+    for (const auto & conn : connections(fill, min_bytes_for_seek))
+    {
+        PlanSchedule::Retrieve r;
+        r.range = conn;
+        r.source = PlanSchedule::Source::Remote;
+        r.into = writeTargetsFor(geometry, conn, request);
+        r.retain_for_serve = request.size && overlaps(conn, request);
+        sched.retrieves.push_back(std::move(r));
+    }
+
+    /// A User range served from a slower resident tier is promoted UP into the
+    /// faster tiers that miss it (HandedRope: the foreground hands the served
+    /// rope, no re-read, no remote).
+    for (const auto & tr : sched.ranges)
+    {
+        if (tr.purpose != PlanSchedule::Purpose::User || !tr.resident)
+            continue;
+        PlanSchedule::Retrieve promote;
+        promote.range = tr.range;
+        promote.source = PlanSchedule::Source::HandedRope;
+        promote.upper_source_tier = tr.tier;
+        for (size_t ei = 0; ei < tr.tier_entry && ei < geometry.entries.size(); ++ei)  /// faster tiers only
+            for (const auto & m : geometry.entries[ei].aligned_miss)
+                if (overlaps(m, tr.range))
+                    promote.into.push_back({ei, m});
+        if (!promote.into.empty())
+            sched.retrieves.push_back(std::move(promote));
+    }
+
+    /// --- deps: natural-order among retrieves writing the same cell ---
+    /// A segment appends at its write frontier, so two retrieves filling the
+    /// same (entry, cell) must run in offset order (the spanning-writer case
+    /// across split connections).
+    for (size_t j = 0; j < sched.retrieves.size(); ++j)
+        for (size_t i = 0; i < j; ++i)
+        {
+            bool shares_cell = false;
+            for (const auto & tj : sched.retrieves[j].into)
+                for (const auto & ti : sched.retrieves[i].into)
+                    if (ti.entry == tj.entry && overlaps(ti.cell, tj.cell))
+                        shares_cell = true;
+            if (shares_cell && sched.retrieves[i].range.offset <= sched.retrieves[j].range.offset)
+                sched.retrieves[j].deps.push_back(i);
+        }
+
+    /// --- steps: what each readNextWindow returns, wired to its retrieve ---
     size_t cursor = request.offset;
     const size_t request_end = request.offset + request.size;
     while (cursor < request_end)
@@ -126,10 +254,19 @@ PlanSchedule describePlan(
         const auto res = geometry.residentAt(cursor);
         size_t out_end = res.resident() ? res.run_end : geometry.gapEnd(cursor);
         out_end = std::min(out_end, request_end);
-        sched.steps.push_back(PlanSchedule::Step{
-            .output = ByteRange{cursor, out_end - cursor},
-            .require_retrieve = std::nullopt,
-        });
+        const ByteRange out{cursor, out_end - cursor};
+
+        std::optional<size_t> require;
+        if (!res.resident())  /// a gap is served by the Remote retrieve covering it
+            for (size_t ri = 0; ri < sched.retrieves.size(); ++ri)
+                if (sched.retrieves[ri].source == PlanSchedule::Source::Remote
+                    && contains(sched.retrieves[ri].range, out))
+                {
+                    require = ri;
+                    break;
+                }
+
+        sched.steps.push_back(PlanSchedule::Step{.output = out, .require_retrieve = require});
         cursor = out_end;
     }
 
