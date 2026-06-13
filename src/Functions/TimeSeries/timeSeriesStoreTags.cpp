@@ -49,16 +49,19 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature — returns the `id` argument as-is, so the
-    /// result type follows the first argument's type. The trailing
-    /// `..., T1, V1, ...` form uses the paired-variadic ellipsis pattern:
-    /// the walk-back groups `(T1, V1)` as a repeating unit, so callers must
-    /// pass an even total argument count.
+    /// result type follows the first argument's type. The mandatory prefix is
+    /// `(id, tags_array)`; the loose `(tag_name, tag_value)` pairs are an
+    /// optional group repeated by the ellipsis. Writing the pair as a bracketed
+    /// `[T1, V1]` group keeps the preceding `tags_array` argument out of the
+    /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
+    /// `Array(...) | Nothing` argument into it), so the accepted arities are
+    /// `2 + 2 * N` and calls like `timeSeriesStoreTags(id, [])` are valid.
     String getSignatureString() const override
     {
         return "(I : Any,"
                " Array(Tuple(String, String)) | Nothing,"
-               " T1 : MaybeNullable(StringOrFixedString | IsNothing),"
-               " V1 : MaybeNullable(StringOrFixedString | IsNothing), ...) -> I";
+               " [T1 : MaybeNullable(StringOrFixedString | IsNothing),"
+               " V1 : MaybeNullable(StringOrFixedString | IsNothing)], ...) -> I";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

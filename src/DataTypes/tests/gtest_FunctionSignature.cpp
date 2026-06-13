@@ -234,3 +234,48 @@ GTEST_TEST(FunctionSignature, DateTime64SubsecondMinScale)
     EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime64(2)")}), "DateTime64(6)");
     EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime64(9)")}), "DateTime64(9)");
 }
+
+GTEST_TEST(FunctionSignature, OptionalPairEllipsis)
+{
+    /// A mandatory prefix followed by zero or more repetitions of a loose
+    /// (name, value) pair, written as a bracketed optional group repeated by the
+    /// ellipsis. The bracket keeps the preceding argument out of the repeated unit
+    /// (a bare `..., T1, V1, ...` would fold the adjacent argument into it). This is
+    /// the shape used by `timeSeriesStoreTags`: `(id, tags_array, [name, value]...)`,
+    /// accepted arities `2 + 2 * N`.
+    String store = "f(I : Any, Array(Tuple(String, String)) | Nothing, "
+                   "[T1 : String, V1 : String], ...) -> I";
+
+    /// id + tags_array, no loose pairs.
+    EXPECT_EQ(checkSignature(store, {makeColumn("UInt64"), makeColumn("Array(Tuple(String, String))")}), "UInt64");
+    /// id + tags_array + one pair.
+    EXPECT_EQ(
+        checkSignature(store, {makeColumn("UInt128"), makeColumn("Array(Tuple(String, String))"),
+            makeColumn("String"), makeColumn("String")}),
+        "UInt128");
+    /// id + tags_array + two pairs.
+    EXPECT_EQ(
+        checkSignature(store, {makeColumn("UInt64"), makeColumn("Array(Tuple(String, String))"),
+            makeColumn("String"), makeColumn("String"), makeColumn("String"), makeColumn("String")}),
+        "UInt64");
+    /// A dangling tag name without a value (odd trailing count) is rejected.
+    EXPECT_THAT(
+        checkSignature(store, {makeColumn("UInt64"), makeColumn("Array(Tuple(String, String))"),
+            makeColumn("String")}),
+        ::testing::StartsWith("FAIL:"));
+
+    /// The `timeSeriesTagsToGroup` shape: `(tags_array, [name, value]...)`,
+    /// accepted arities `1 + 2 * N`.
+    String group = "f(Array(Tuple(String, String)) | Nothing, [T1 : String, V1 : String], ...) -> UInt64";
+
+    /// tags_array alone.
+    EXPECT_EQ(checkSignature(group, {makeColumn("Array(Tuple(String, String))")}), "UInt64");
+    /// tags_array + one pair.
+    EXPECT_EQ(
+        checkSignature(group, {makeColumn("Array(Tuple(String, String))"), makeColumn("String"), makeColumn("String")}),
+        "UInt64");
+    /// tags_array + a dangling name (even total) is rejected.
+    EXPECT_THAT(
+        checkSignature(group, {makeColumn("Array(Tuple(String, String))"), makeColumn("String")}),
+        ::testing::StartsWith("FAIL:"));
+}
