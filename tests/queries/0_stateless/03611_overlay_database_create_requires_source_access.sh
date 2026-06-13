@@ -61,7 +61,10 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     GRANT CREATE DATABASE ON *.* TO ${USER_PART};
     GRANT CREATE DATABASE ON *.* TO ${USER_NONE};
 
-    GRANT TABLE ENGINE ON Overlay TO ${USER_BOTH};
+    -- 'overlay' (lower case, the spelling the SQL parser produces because it collides with the
+    -- OVERLAY() string function) must be canonicalized to the 'Overlay' database engine, so that
+    -- this grant actually satisfies the TABLE ENGINE ON Overlay check done at CREATE DATABASE time.
+    GRANT TABLE ENGINE ON overlay TO ${USER_BOTH};
     GRANT TABLE ENGINE ON Overlay TO ${USER_PART};
     GRANT TABLE ENGINE ON Overlay TO ${USER_NONE};
 
