@@ -1043,10 +1043,12 @@ BlockIO InterpreterInsertQuery::execute()
             overlay && overlay->isReadOnly())
         {
             /// INSERT through an Overlay facade resolves to a table owned by an underlying
-            /// database. Check INSERT access against that owning database, not the facade name,
-            /// so a grant on the Overlay cannot be used to write into a source database the user
-            /// has no INSERT privilege on.
+            /// database. Writing through the facade requires a grant on *both* the facade database
+            /// and the underlying source database: a grant on the Overlay cannot be used to write
+            /// into a source the user has no INSERT privilege on, and a grant on the source alone
+            /// cannot be used to write through a facade the user was not granted.
             const auto source_table_id = table->getStorageID();
+            context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
             context->checkAccess(AccessType::INSERT, source_table_id, query_sample_block.getNames());
         }
         else

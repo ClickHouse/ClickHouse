@@ -243,6 +243,11 @@ StoragePtr JoinedTables::getLeftTableStorage()
         table_id = StorageID("system", "one");
     }
 
+    /// Remember the id exactly as written in the query (the `Overlay` facade name for tables
+    /// reached through a facade), so the access check can verify the grant on the facade as well
+    /// as on the underlying source database.
+    left_table_id = table_id;
+
     if (auto view_source = context->getViewSource())
     {
         const auto & storage_values = static_cast<const StorageValues &>(*view_source);

@@ -67,6 +67,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -153,6 +154,25 @@ namespace ErrorCodes
 namespace
 {
 
+/// A table written as `overlay_db.t` is resolved to the underlying source table `source_db.t`.
+/// When `written_id` names a read-only `Overlay` facade and the storage actually belongs to a
+/// different table, return that underlying source id so access can be required on it as well as on
+/// the facade. Restricting this to `Overlay` keeps unrelated cases where the written and resolved
+/// ids can differ (temporary tables, a concurrent rename) unaffected.
+std::optional<StorageID> overlaySourceIdToAlsoCheck(const StorageID & written_id, const StoragePtr & storage)
+{
+    if (!storage)
+        return {};
+    auto source_id = storage->getStorageID();
+    if (!source_id.hasDatabase()
+        || (source_id.database_name == written_id.database_name && source_id.table_name == written_id.table_name))
+        return {};
+    const auto written_db = DatabaseCatalog::instance().tryGetDatabase(written_id.database_name);
+    if (written_db && written_db->isReadOnly() && typeid_cast<const DatabaseOverlay *>(written_db.get()))
+        return source_id;
+    return {};
+}
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -165,6 +185,15 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
     const auto & storage_id = table_node.getStorageID();
     const auto & storage_snapshot = table_node.getStorageSnapshot();
 
+    /// `storage_id` is the table as written in the query. When a table is reached through a
+    /// read-only `Overlay` facade, that is the facade name, while the storage itself belongs to
+    /// the underlying source database. Reading through the facade requires a grant on *both* the
+    /// facade database and the underlying source database, so collect both ids and check each.
+    /// For a plain table the two ids coincide and only one check is performed.
+    std::vector<StorageID> ids_to_check{storage_id};
+    if (auto source_id = overlaySourceIdToAlsoCheck(storage_id, table_node.getStorage()))
+        ids_to_check.push_back(*source_id);
+
     if (column_names.empty())
     {
         NameSet accessible_columns;
@@ -174,7 +203,17 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
         auto access = query_context->getAccess();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            /// The column is accessible only if it is granted through every id (facade + source).
+            bool granted_everywhere = true;
+            for (const auto & id : ids_to_check)
+            {
+                if (!access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    granted_everywhere = false;
+                    break;
+                }
+            }
+            if (granted_everywhere)
                 accessible_columns.insert(column.name);
         }
 
@@ -191,8 +230,11 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
     // In case of cross-replication we don't know what database is used for the table.
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    for (const auto & id : ids_to_check)
+    {
+        if (id.hasDatabase())
+            query_context->checkAccess(AccessType::SELECT, id, column_names);
+    }
 
     return {};
 }
@@ -210,6 +252,10 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         const auto & storage_id = table_node.getStorageID();
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
+
+        /// A read-only `Overlay` facade also requires access to the underlying source table.
+        if (auto source_id = overlaySourceIdToAlsoCheck(storage_id, table_node.getStorage()))
+            query_context->checkAccess(AccessType::SELECT, *source_id);
     }
 }
 

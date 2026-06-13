@@ -25,6 +25,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -405,12 +406,30 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
 }
 
 /// Checks that the current user has the SELECT privilege.
+/// `table_id` is the resolved table (the underlying source table for a read-only `Overlay`
+/// facade), while `written_table_id` is the id exactly as written in the query (the facade name).
+/// When they refer to different tables (a facade), access must be granted on *both* — reading
+/// through an `Overlay` requires a grant on the facade database and on the underlying source.
 void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
+    const StorageID & written_table_id,
     const StorageMetadataPtr & table_metadata,
     const TreeRewriterResult & syntax_analyzer_result)
 {
+    std::vector<StorageID> ids_to_check{table_id};
+    if (written_table_id.hasDatabase()
+        && (written_table_id.database_name != table_id.database_name || written_table_id.table_name != table_id.table_name))
+    {
+        /// The written and resolved ids differ only when the table was reached through a read-only
+        /// `Overlay` facade (the written name is the facade, `table_id` is the underlying source).
+        /// Require access on the facade too. Restrict to Overlay so unrelated cases where the two
+        /// ids can differ (temporary tables, a concurrent rename) are not affected.
+        const auto written_db = DatabaseCatalog::instance().tryGetDatabase(written_table_id.database_name);
+        if (written_db && written_db->isReadOnly() && typeid_cast<const DatabaseOverlay *>(written_db.get()))
+            ids_to_check.push_back(written_table_id);
+    }
+
     if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
     {
         /// For a trivial query like "SELECT count() FROM table" access is granted if at least
@@ -421,7 +440,17 @@ void checkAccessRightsForSelect(
         auto access = context->getAccess();
         for (const auto & column : table_metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+            /// The column is usable only if it is accessible through every id (facade + source).
+            bool granted_everywhere = true;
+            for (const auto & id : ids_to_check)
+            {
+                if (!access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    granted_everywhere = false;
+                    break;
+                }
+            }
+            if (granted_everywhere)
                 return;
         }
         throw Exception(
@@ -432,7 +461,8 @@ void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    for (const auto & id : ids_to_check)
+        context->checkAccess(AccessType::SELECT, id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
@@ -1076,7 +1106,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
         /// checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
+        checkAccessRightsForSelect(context, table_id, joined_tables.leftTableStorageID(), metadata_snapshot, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
