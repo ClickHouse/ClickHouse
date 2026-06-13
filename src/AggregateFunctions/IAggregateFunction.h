@@ -412,17 +412,6 @@ public:
         return nullptr;
     }
 
-    /// Some aggregate functions preserve `NULL` payload values instead of skipping
-    /// them. `If` combinator should only filter rows for such functions and must not
-    /// merge payload nullability into the skip mask it passes downstream.
-    /// Combinator wrappers must not inherit this property implicitly: a wrapper may
-    /// claim it only if it also forwards `getOwnNullAdapter` to the nested function
-    /// (see `If`, `State`, `Distinct`, `OrFill`). Otherwise the `If` combinator would
-    /// take the payload-preserving branch, get no adapter from the wrapper, and
-    /// silently fall back to the `NULL`-skipping `AggregateFunctionIfNull*` while
-    /// this method still claims that the stack preserves `NULL` payload.
-    virtual bool preservesNullablePayloadForIf() const { return false; }
-
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.

@@ -12,8 +12,7 @@ set output_format_json_quote_64bit_integers=1;
 select groupFormat('JSONEachRow')(number) from numbers(2);
 set output_format_json_quote_64bit_integers=0;
 
-select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
-
+-- Input order is preserved.
 select groupFormat('JSONEachRow')(number) from (select number from numbers(3) order by number desc);
 
 select key, groupFormat('JSONEachRow')(number)
@@ -21,48 +20,25 @@ from (select number, number % 2 as key from numbers(4) order by number)
 group by key
 order by key;
 
+-- An empty group formats to an empty string.
 select groupFormat('JSONEachRow')(number) from numbers(0);
 
-select groupFormatIf('JSONEachRow')(
-    if(number = 0, NULL, number),
-    if(number = 1, CAST(NULL, 'Nullable(UInt8)'), toUInt8(number != 2)))
-from numbers(4);
-
--- Verify that nullable payload is preserved when the optimizer could try to rewrite f(if(..., NULL, x)) to fIf(x, cond).
-set optimize_rewrite_aggregate_function_with_if = 1;
-select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
-set optimize_rewrite_aggregate_function_with_if = 0;
-
--- A combinator that does not forward `getOwnNullAdapter` (e.g. `ArgMin`) must not
--- inherit the payload-preserving property: the `If` adapter falls back to the usual
--- `NULL`-skipping behavior, and the result must be consistent with and without the
--- f(if(cond, NULL, x)) -> fIf(x, not(cond)) rewrite.
-select groupFormatArgMinIf('JSONEachRow')(if(number = 0, NULL, number), number, toUInt8(1)) from numbers(3);
-set optimize_rewrite_aggregate_function_with_if = 1;
-select groupFormatArgMin('JSONEachRow')(if(number = 0, NULL, number), number) from numbers(3);
-set optimize_rewrite_aggregate_function_with_if = 0;
-select groupFormatArgMin('JSONEachRow')(if(number = 0, NULL, number), number) from numbers(3);
-
--- Multi-arg nullable: both nullable and non-nullable columns mixed.
+-- NULL handling: like `groupArray` and `groupConcat`, a row is skipped when any argument is NULL.
+select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(3);
+-- Multi-argument: the whole row is skipped if any of its columns is NULL.
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number), toString(number)) from numbers(3);
+-- When an argument is nullable, the result type is `Nullable(String)`; a group whose
+-- every row is skipped returns NULL (the generic `Null` combinator returns NULL when
+-- nothing was aggregated), not an empty string.
+select groupFormat('JSONEachRow')(CAST(NULL, 'Nullable(UInt8)')) from numbers(2);
+-- A literal untyped NULL argument (`Nullable(Nothing)`) makes the whole aggregate return NULL
+-- via the generic `Null` combinator, like other aggregate functions.
+select groupFormat('JSONEachRow')(NULL) from numbers(3);
 
--- `OrNull` / `OrDefault` wrappers must also preserve nullable payload (e.g. `{"c1":null}`),
--- not strip it via the `Null` combinator fallback.
-select groupFormatOrNull('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
-select groupFormatOrDefault('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
--- `OrNull` returns NULL and `OrDefault` returns the default value for an empty group.
-select groupFormatOrNull('JSONEachRow')(number) from numbers(0);
-select groupFormatOrDefault('JSONEachRow')(number) from numbers(0);
-
--- `State` + `If` combinator stack must also preserve nullable payload: finalizing
--- `groupFormatStateIf` must match the direct `groupFormatIf` instead of dropping the
--- `NULL`-payload row through the `AggregateFunctionIfNull*` fallback.
-select finalizeAggregation(groupFormatStateIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1))) from numbers(3);
-select
-    groupFormatIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1)) as direct,
-    finalizeAggregation(groupFormatStateIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1))) as via_state,
-    direct = via_state as equal
-from numbers(3);
+-- The rewrite f(if(cond, NULL, x)) -> fIf(x, !cond) does not change the result here,
+-- because rows with a NULL argument are skipped either way.
+select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(3) settings optimize_rewrite_aggregate_function_with_if = 1;
+select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(3) settings optimize_rewrite_aggregate_function_with_if = 0;
 
 -- State round-trip: serialize then deserialize via finalizeAggregation.
 select finalizeAggregation(groupFormatState('JSONEachRow')(number, toString(number))) from numbers(3);
@@ -83,34 +59,12 @@ from
     )
 );
 
--- Nullable state round-trip.
-select finalizeAggregation(groupFormatState('JSONEachRow')(if(number = 0, NULL, number))) from numbers(3);
-
 -- Equivalence: direct aggregation vs state round-trip must produce the same result.
 select
     groupFormat('JSONEachRow')(number) as direct,
     finalizeAggregation(groupFormatState('JSONEachRow')(number)) as via_state,
     direct = via_state as equal
 from numbers(3);
-
--- NULL handling contract: a typed `Nullable(T)` payload is preserved as `null`
--- in the formatted output, while a literal untyped `NULL` (`Nullable(Nothing)`)
--- is replaced by the `Null` combinator with a `NULL`-returning placeholder
--- before `groupFormat` can rebuild itself with the nullable argument types,
--- so the whole aggregate returns `NULL`. See `docs/.../groupFormat.md`.
-select groupFormat('JSONEachRow')(CAST(NULL, 'Nullable(UInt8)')) from numbers(1);
-select groupFormat('JSONEachRow')(if(number = 1, CAST(NULL, 'Nullable(UInt8)'), toNullable(toUInt8(number)))) from numbers(3);
-select groupFormat('JSONEachRow')(NULL) from numbers(1);
-select groupFormat('JSONEachRow')(NULL) from numbers(3);
-
--- `Distinct` combinator stacks must also preserve nullable payload: `Distinct` forwards
--- `getOwnNullAdapter`, so `groupFormatDistinctIf` reaches `AggregateFunctionIfRespectNulls`
--- and keeps the payload `NULL` row instead of skipping it.
-select groupFormatDistinctIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1)) from numbers(3);
--- Duplicates (including duplicate `NULL` payload values) are collapsed by `Distinct`.
-select groupFormatDistinctIf('JSONEachRow')(if(number % 2 = 0, NULL, number % 2), toUInt8(1)) from numbers(5);
--- The state path through `Distinct` preserves nullable payload as well.
-select finalizeAggregation(groupFormatDistinctStateIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1))) from numbers(3);
 
 -- Stored `groupFormatState` values must be finalized with the format settings of the
 -- finalizing query, not with settings captured when the column's data type was created

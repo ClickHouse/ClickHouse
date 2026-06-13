@@ -52,15 +52,6 @@ public:
         if (!if_node || if_node->getFunctionName() != "if")
             return;
 
-        /// Do not rewrite functions that preserve NULL payload values (e.g. `groupFormat`).
-        /// For such functions, `f(if(cond, NULL, x))` is NOT equivalent to `fIf(x, !cond)`
-        /// because the NULL row must appear in the output rather than being skipped.
-        if (auto agg_func = function_node->getAggregateFunction())
-        {
-            if (agg_func->preservesNullablePayloadForIf())
-                return;
-        }
-
         FunctionNodePtr replaced_node;
 
         auto if_arguments_nodes = if_node->getArguments().getNodes();

@@ -41,7 +41,7 @@ public:
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires at least one argument", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require at least one argument", getName());
 
         only_null_condition = types.back()->onlyNull();
 
@@ -255,11 +255,6 @@ public:
         const Array & params, const AggregateFunctionProperties & properties) const override;
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
-
-    /// `If` handles payload-preserving nested functions in its own `getOwnNullAdapter`
-    /// (it wraps the nested adapter into `AggregateFunctionIfRespectNulls`), so it may
-    /// claim the payload-preserving property of the nested function.
-    bool preservesNullablePayloadForIf() const override { return nested_func->preservesNullablePayloadForIf(); }
 
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {

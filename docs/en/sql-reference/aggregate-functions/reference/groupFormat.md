@@ -41,19 +41,14 @@ Query-level format settings (for example `format_csv_delimiter`, `output_format_
 
 ## NULL handling {#null-handling}
 
-`groupFormat` treats `NULL` as data and emits it in the output (for example as `null` in `JSONEachRow`) when the argument has a concrete nullable type such as `Nullable(UInt8)`. The one exception is a literal untyped `NULL` argument (type `Nullable(Nothing)`): the generic `Null` aggregate combinator replaces the whole aggregate with a `NULL`-returning placeholder before `groupFormat` can format the row, so the result of the entire aggregate is `NULL` instead of a formatted row containing `null`.
+Like `groupArray` and `groupConcat`, `groupFormat` skips a row when any of its arguments is `NULL`; such rows do not appear in the formatted output. When an argument is nullable, the result type is `Nullable(String)`, and a group whose every row is skipped — as well as a literal untyped `NULL` argument of type `Nullable(Nothing)` — returns `NULL` through the generic `Null` combinator. A genuinely empty group with non-nullable arguments formats to an empty string.
 
 ```sql
-SELECT groupFormat('JSONEachRow')(NULL)
-FROM numbers(1);
--- \N
-
-SELECT groupFormat('JSONEachRow')(CAST(NULL, 'Nullable(UInt8)'))
-FROM numbers(1);
--- {"c1":null}
+SELECT groupFormat('JSONEachRow')(if(number = 0, NULL, number))
+FROM numbers(3);
+-- {"c1":1}
+-- {"c1":2}
 ```
-
-If you want the per-row `{"c1":null}` shape, cast the argument to a concrete nullable type.
 
 ## Examples {#examples}
 

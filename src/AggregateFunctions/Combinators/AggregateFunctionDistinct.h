@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <IO/ReadHelpersArena.h>
@@ -373,31 +372,12 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    /// `Distinct` forwards `getOwnNullAdapter` to the nested function (see below),
-    /// so it may claim the payload-preserving property of the nested function.
-    bool preservesNullablePayloadForIf() const override { return nested_func->preservesNullablePayloadForIf(); }
-
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,
-        const AggregateFunctionProperties & properties) const override
+        const AggregateFunctionProperties & /*properties*/) const override
     {
-        /// If the inner aggregate function provides its own null adapter and preserves
-        /// nullable payload (e.g. `groupFormat`), forward through `Distinct` so that
-        /// combinator stacks like `groupFormatDistinctIf` reach `AggregateFunctionIfRespectNulls`
-        /// instead of falling back to `AggregateFunctionIfNull*`, which would drop payload `NULL` rows.
-        /// The inner adapter is rebuilt with the original nullable argument types, and we
-        /// re-wrap it through the `Distinct` combinator so the `Data` variant matches those types.
-        if (nested_func->preservesNullablePayloadForIf())
-        {
-            if (auto inner_adapter = nested_func->getOwnNullAdapter(nested_func, arguments, params, properties))
-            {
-                if (auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Distinct"))
-                    return combinator->transformAggregateFunction(inner_adapter, properties, arguments, params);
-            }
-        }
-
         /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
         /// which changed the default null adapter for Tuple-returning functions:
         ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).

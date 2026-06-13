@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/assert_cast.h>
 
@@ -162,36 +161,6 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
-
-    /// `State` forwards `getOwnNullAdapter` to the nested function (see below),
-    /// so it may claim the payload-preserving property of the nested function.
-    bool preservesNullablePayloadForIf() const override { return nested_func->preservesNullablePayloadForIf(); }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/,
-        const DataTypes & arguments,
-        const Array & params,
-        const AggregateFunctionProperties & properties) const override
-    {
-        /// If the inner aggregate function provides its own null adapter and preserves
-        /// nullable payload (e.g. `groupFormat`), forward through `State` so that combinator
-        /// stacks like `groupFormatStateIf` reach `AggregateFunctionIfRespectNulls` instead of
-        /// falling back to `AggregateFunctionIfNull*`, which would drop payload `NULL` rows.
-        /// The inner adapter is rebuilt with the original nullable argument types, and we
-        /// re-wrap it through the `State` combinator so the serialized state matches those types.
-        if (nested_func->preservesNullablePayloadForIf())
-        {
-            if (auto inner_adapter = nested_func->getOwnNullAdapter(nested_func, arguments, params, properties))
-            {
-                if (auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("State"))
-                    return combinator->transformAggregateFunction(inner_adapter, properties, arguments, params);
-            }
-        }
-
-        /// Otherwise keep the default behaviour: the `Null` combinator handles `State`
-        /// functions by applying itself to the nested function instead (see `tryTransformStateFunction`).
-        return nullptr;
-    }
 };
 
 }

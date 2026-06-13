@@ -142,20 +142,6 @@ public:
             state.columns[col]->insertRangeFrom(*columns[col], row_begin, length);
     }
 
-    void addBatchSinglePlaceNotNull(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        const UInt8 * /* null_map */,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        /// null_map is ignored: this function preserves nullable payload,
-        /// so nulls should be included in the output rather than skipped.
-        addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
-    }
-
     void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -266,27 +252,6 @@ public:
         output->finalize();
         buffer.finalize();
         offsets.push_back(old_size + buffer.count());
-    }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/,
-        const DataTypes & arguments,
-        const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
-    {
-        /// Create a new instance with the nullable argument types.
-        /// The null combinator always strips Nullable before creating the nested function,
-        /// so our own `argument_types` are non-nullable. We must create a fresh function
-        /// with the original nullable types so that the state columns and header match
-        /// the actual nullable columns the executor will pass at runtime.
-        /// `addBatchSinglePlaceNotNull` on the returned function ignores the null_map,
-        /// preserving NULL payload values instead of skipping them.
-        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, serialization_protocol_version);
-    }
-
-    bool preservesNullablePayloadForIf() const override
-    {
-        return true;
     }
 
 private:
