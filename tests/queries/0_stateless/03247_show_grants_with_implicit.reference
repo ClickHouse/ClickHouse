@@ -8,6 +8,7 @@ GRANT SELECT ON system.current_roles
 GRANT SELECT ON system.data_type_families
 GRANT SELECT ON system.database_engines
 GRANT SELECT ON system.databases
+GRANT SELECT ON system.disk_types
 GRANT SELECT ON system.enabled_roles
 GRANT SELECT ON system.formats
 GRANT SELECT ON system.functions
