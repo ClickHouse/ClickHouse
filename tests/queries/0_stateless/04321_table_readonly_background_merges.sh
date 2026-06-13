@@ -73,11 +73,17 @@ ENGINE = MergeTree ORDER BY x
 TTL d + INTERVAL 1 MONTH
 SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
 
+-- Stop merges before inserting the expired part, so it cannot be dropped by a
+-- regular TTL merge before the table is marked read-only. The drop observed below
+-- can then only happen through the read-only scheduling path.
+SYSTEM STOP MERGES t_readonly_ttl;
+
 -- One fully expired part and one fresh part.
 INSERT INTO t_readonly_ttl VALUES (today() - 100, 1);
 INSERT INTO t_readonly_ttl VALUES (today(), 2);
 
 ALTER TABLE t_readonly_ttl MODIFY SETTING table_readonly = 1;
+SYSTEM START MERGES t_readonly_ttl;
 "
 
 # Wait until the expired part is dropped by a background TTL merge.
