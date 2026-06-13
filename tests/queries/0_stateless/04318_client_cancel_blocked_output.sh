@@ -10,50 +10,78 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 FIFO="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_blocked_output.fifo"
+PAGER_FIFO="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_blocked_output.pager.fifo"
 CLIENT_ERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_blocked_output.err"
 OUTFILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_blocked_output.outfile"
 
 CLIENT=""
 HOLDER=""
-cleanup()
+
+# Release the per-case processes: the client, the optional FIFO reader, and a stuck pager.
+reap_case()
 {
     [ -n "$CLIENT" ] && kill -9 "$CLIENT" 2>/dev/null
     [ -n "$HOLDER" ] && kill "$HOLDER" 2>/dev/null
+    # A stuck pager blocks on opening this FIFO and so never reads EOF on its stdin even after the
+    # client is gone. Opening the FIFO read-write (which never blocks) gives it a writer to read
+    # past, so it exits promptly instead of lingering in the stateless worker.
+    [ -p "$PAGER_FIFO" ] && : <> "$PAGER_FIFO" 2>/dev/null
     wait 2>/dev/null
-    rm -f "$FIFO" "$CLIENT_ERR" "$OUTFILE"
+    CLIENT=""
+    HOLDER=""
+}
+
+cleanup()
+{
+    reap_case
+    rm -f "$FIFO" "$PAGER_FIFO" "$CLIENT_ERR" "$OUTFILE"
 }
 trap cleanup EXIT
 
-# Run the client with a query whose result is effectively unbounded (so the server keeps the
-# query running, blocked on the stuck sink) while its stdout is redirected to a stuck FIFO, then
-# send a single Ctrl+C and verify the client terminates. The infrastructure is shared between two
+# Run the client with a query whose result is effectively unbounded (so the server keeps the query
+# running, blocked on the stuck sink) while the result is written to a sink that never drains, then
+# send a single Ctrl+C and verify the client terminates. The infrastructure is shared between three
 # code paths that write the result set to a different descriptor:
 #   * a plain SELECT, which writes through the persistent `std_out`;
-#   * SELECT ... INTO OUTFILE ... AND STDOUT, which writes through a separate `stdout_buf`.
+#   * SELECT ... INTO OUTFILE ... AND STDOUT, which writes through a separate `stdout_buf`;
+#   * a SELECT with `--pager`, which writes through the pager's stdin pipe.
 run_case()
 {
     local label="$1"
     local query="$2"
+    local use_pager="${3:-0}"
 
     local query_id="${CLICKHOUSE_DATABASE}_cancel_blocked_output_${label}"
 
-    rm -f "$FIFO" "$OUTFILE"
-    mkfifo "$FIFO"
+    rm -f "$FIFO" "$PAGER_FIFO" "$OUTFILE"
 
-    # A reader that opens the pipe but never consumes data: the client quickly fills the pipe
-    # buffer and then blocks inside write(). Without an interruptible write, a single Ctrl+C
-    # would only set the cancellation flag while the restarted write() keeps the client stuck.
-    sleep 1000 < "$FIFO" &
-    HOLDER=$!
+    local -a pager_args=()
+    local redirect="$FIFO"
+    if [ "$use_pager" = "1" ]
+    then
+        # A pager that blocks on opening a FIFO with no writer never reads its stdin, so the client
+        # fills the pager's stdin pipe and then blocks inside write(). The client's own stdout is
+        # irrelevant here (the pager would have written there), so send it to /dev/null.
+        mkfifo "$PAGER_FIFO"
+        pager_args=(--pager "cat '$PAGER_FIFO' > /dev/null")
+        redirect="/dev/null"
+    else
+        # A reader that opens the pipe but never consumes data: the client quickly fills the pipe
+        # buffer and then blocks inside write(). Without an interruptible write, a single Ctrl+C
+        # would only set the cancellation flag while the restarted write() keeps the client stuck.
+        mkfifo "$FIFO"
+        sleep 1000 < "$FIFO" &
+        HOLDER=$!
+    fi
 
     # Small blocks and disabled limits keep the test cheap and immune to the randomized settings
     # used by the flaky check, which could otherwise make the client error out early (e.g. a low
     # max_memory_usage) instead of reaching the blocked state we want to exercise.
-    $CLICKHOUSE_CLIENT --query_id="$query_id" \
+    $CLICKHOUSE_CLIENT --query_id="$query_id" "${pager_args[@]}" \
         --query "$query
                  SETTINGS max_block_size = 8192, max_threads = 1, max_memory_usage = 0,
                           max_rows_to_read = 0, max_result_rows = 0, max_result_bytes = 0" \
-        > "$FIFO" 2> "$CLIENT_ERR" &
+        > "$redirect" 2> "$CLIENT_ERR" &
     CLIENT=$!
 
     # Wait until the query is actually running (and thus blocked writing the result).
@@ -76,6 +104,7 @@ run_case()
         echo "FAIL ($label): the query did not reach the running state"
         echo "--- client stderr ---"
         cat "$CLIENT_ERR"
+        reap_case
         return
     fi
 
@@ -96,11 +125,7 @@ run_case()
         echo "OK ($label): client terminated after Ctrl+C"
     fi
 
-    kill -9 "$CLIENT" 2>/dev/null
-    kill "$HOLDER" 2>/dev/null
-    wait 2>/dev/null
-    CLIENT=""
-    HOLDER=""
+    reap_case
 }
 
 # The persistent `std_out` path.
@@ -111,3 +136,8 @@ run_case "select" \
 # FIFO is the STDOUT sink here; the regular file part of the result simply goes to OUTFILE.
 run_case "outfile_and_stdout" \
     "SELECT number, repeat('x', 100) FROM numbers(1000000000) INTO OUTFILE '$OUTFILE' AND STDOUT FORMAT TabSeparated"
+
+# The pager's stdin pipe: a stuck pager that never reads its stdin must not defeat Ctrl+C either.
+run_case "pager" \
+    "SELECT number, repeat('x', 100) FROM numbers(1000000000)" \
+    1

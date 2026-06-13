@@ -1,2 +1,3 @@
 OK (select): client terminated after Ctrl+C
 OK (outfile_and_stdout): client terminated after Ctrl+C
+OK (pager): client terminated after Ctrl+C
