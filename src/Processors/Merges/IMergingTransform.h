@@ -131,10 +131,19 @@ public:
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
         }
-        else if (state.no_data && empty_chunk_on_finish)
+        else if (state.no_data)
         {
-            IMergingAlgorithm::Input current_input;
-            algorithm.consume(current_input, state.next_input_to_read);
+            if (empty_chunk_on_finish)
+            {
+                IMergingAlgorithm::Input current_input;
+                algorithm.consume(current_input, state.next_input_to_read);
+            }
+            else
+            {
+                /// The required source finished without data. Let the algorithm release any
+                /// per-source bookkeeping (e.g. a read-ahead slot held for a deferred source).
+                algorithm.onSourceExhausted(state.next_input_to_read);
+            }
             state.no_data = false;
         }
 

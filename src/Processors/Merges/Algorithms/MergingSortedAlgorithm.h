@@ -35,6 +35,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
+    void onSourceExhausted(size_t source_num) override;
 
     MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
@@ -100,6 +101,9 @@ private:
 
     bool hasFilter() const { return filter_column_position != -1; }
     void topUpPrefetch();
+    /// Mark a deferred source as no longer reading ahead (its real data arrived or it
+    /// finished without any), freeing a read-ahead slot and refilling the window.
+    void releaseDeferredSource(size_t source_num);
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);

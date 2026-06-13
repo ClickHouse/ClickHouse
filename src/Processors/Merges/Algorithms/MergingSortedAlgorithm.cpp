@@ -226,6 +226,29 @@ void MergingSortedAlgorithm::topUpPrefetch()
     }
 }
 
+void MergingSortedAlgorithm::releaseDeferredSource(size_t source_num)
+{
+    if (source_deferral_state.empty())
+        return;
+
+    auto prev_state = source_deferral_state[source_num];
+    source_deferral_state[source_num] = SourceDeferralState::NotDeferred;
+
+    if (prev_state == SourceDeferralState::PrefetchIssued)
+        --prefetches_in_flight;
+
+    topUpPrefetch();
+}
+
+void MergingSortedAlgorithm::onSourceExhausted(size_t source_num)
+{
+    /// The merge reached this source but it finished without delivering data (e.g. all its
+    /// rows were filtered out), so `consume` is never called for it. Release its read-ahead
+    /// slot here, otherwise `prefetches_in_flight` would never drop and the window would
+    /// eventually stop refilling, degrading the merge back to reading one source at a time.
+    releaseDeferredSource(source_num);
+}
+
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     bool is_virtual_row = isVirtualRow(input.chunk);
@@ -240,16 +263,8 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 
-    if (!is_virtual_row && !source_deferral_state.empty())
-    {
-        auto prev_state = source_deferral_state[source_num];
-        source_deferral_state[source_num] = SourceDeferralState::NotDeferred;
-
-        if (prev_state == SourceDeferralState::PrefetchIssued)
-            --prefetches_in_flight;
-
-        topUpPrefetch();
-    }
+    if (!is_virtual_row)
+        releaseDeferredSource(source_num);
 
 #ifndef NDEBUG
     /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
