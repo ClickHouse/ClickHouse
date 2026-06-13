@@ -22,7 +22,9 @@ SELECT x FROM dist_sus_skip SETTINGS prefer_localhost_replica = 0;
 CREATE TABLE dist_sus_strict (x UInt8) ENGINE = Distributed('test_cluster_two_shards_different_databases', '', v_sus)
 SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
 
-SELECT x FROM dist_sus_strict SETTINGS prefer_localhost_replica = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+-- `FORMAT Null` so that the row that shard_0 streams before shard_1's exception aborts the query
+-- does not leak into the output (the read from both shards runs in parallel).
+SELECT x FROM dist_sus_strict SETTINGS prefer_localhost_replica = 0 FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- An explicitly changed query-level mode takes precedence over the engine-level one.
 SELECT x FROM dist_sus_strict SETTINGS prefer_localhost_replica = 0, skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing';
