@@ -1738,10 +1738,26 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
     if (options.contains("listen_host"))
         cli_listen_host = options["listen_host"].as<std::string>();
+
+    /// `--tcp_port` / `--http_port` define the port that `SYSTEM START LISTEN` will bind, and the
+    /// listener path stores them as `UInt16` (`createServer` does `static_cast<UInt16>(...)`). Reject
+    /// out-of-range values up front: without this an `int` such as `-1` or `70000` would silently wrap
+    /// (to `65535` and `4464`) and the listener would come up on an unexpected port instead of failing.
+    /// `0` is allowed and means an OS-assigned port.
+    auto get_port_option = [&](const char * option_name)
+    {
+        int port = options[option_name].as<int>();
+        if (port < 0 || port > 65535)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} for --{}: a port number must be in the range 0..65535 (use 0 for an OS-assigned port)",
+                port, option_name);
+        return port;
+    };
     if (options.contains("tcp_port"))
-        getClientConfiguration().setInt("tcp_port", options["tcp_port"].as<int>());
+        getClientConfiguration().setInt("tcp_port", get_port_option("tcp_port"));
     if (options.contains("http_port"))
-        getClientConfiguration().setInt("http_port", options["http_port"].as<int>());
+        getClientConfiguration().setInt("http_port", get_port_option("http_port"));
 
     if (options.contains("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
