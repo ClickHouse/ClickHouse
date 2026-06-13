@@ -403,6 +403,8 @@ For `Polygon`, only the outer ring points are used.
 For `MultiPolygon`, only the outer ring points of each polygon are used.
 `Geometry` arguments are also supported according to the active value type.
 
+Polygonal inputs are still validated in full: every coordinate, including those of inner rings (holes), must be finite, and a polygon with an empty outer ring but non-empty inner rings is rejected. Inner-ring points are validated even though only outer-ring points contribute to the hull.
+
 The result is a `Ring` representing the convex hull.
     )";
     FunctionDocumentation::Syntax syntax = "groupConvexHull(geometry)";
