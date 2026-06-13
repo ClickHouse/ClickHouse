@@ -17,6 +17,22 @@ CREATE TABLE t_pco_settings (x UInt64) ENGINE = MergeTree ORDER BY tuple()
 CREATE TABLE t_pco_settings (x UInt64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS default_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
 
+-- Inside a codec chain `PCO` resolves to `CompressionCodecMultiple`, which must still surface the
+-- inner codec's experimental / column-type-requiring properties so the chain is rejected too.
+CREATE TABLE t_pco_settings (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS marks_compression_codec = 'PCO, ZSTD(1)'; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_pco_settings (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS primary_key_compression_codec = 'PCO, ZSTD(1)'; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_pco_settings (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS default_compression_codec = 'ZSTD(1), PCO'; -- { serverError BAD_ARGUMENTS }
+
+-- A chain of ordinary codecs that neither is experimental nor requires a column type is accepted.
+CREATE TABLE t_pco_settings (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS marks_compression_codec = 'LZ4, ZSTD(1)';
+DROP TABLE t_pco_settings;
+
 -- A typed column-level `PCO` on the same table is fine.
 CREATE TABLE t_pco_settings (x UInt64 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_pco_settings SELECT number FROM numbers(1000);
@@ -35,4 +51,6 @@ CREATE TABLE t_pco_ttl (d Date, x UInt64) ENGINE = MergeTree ORDER BY tuple()
 
 CREATE TABLE t_pco_ttl (d Date, x UInt64) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_pco_ttl MODIFY TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
+-- `PCO` wrapped in a chain must be rejected in TTL recompression as well.
+ALTER TABLE t_pco_ttl MODIFY TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(PCO, ZSTD(1)); -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_pco_ttl;
