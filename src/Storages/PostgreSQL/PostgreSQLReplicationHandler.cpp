@@ -97,9 +97,17 @@ namespace
 
     String getPublicationName(const String & postgres_database, const String & postgres_table)
     {
-        return fmt::format(
+        auto name = fmt::format(
             "{}_ch_publication",
             postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
+
+        /// The publication name is created via `CREATE PUBLICATION "<name>"` (case-preserving),
+        /// but it is also passed to the `pgoutput` plugin as the value of the `publication_names`
+        /// option, where PostgreSQL parses it with `SplitIdentifierString`, which folds unquoted
+        /// identifiers to lower case. To make both sides agree (otherwise replication fails with
+        /// `publication "..." does not exist` for databases/tables with upper-case letters), store
+        /// the publication name in lower case. The replication slot name is normalized the same way.
+        return Poco::toLower(name);
     }
 
     void checkReplicationSlot(String name)

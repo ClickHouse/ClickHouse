@@ -860,6 +860,63 @@ def test_quoting_publication(started_cluster):
     )
 
 
+def test_uppercase_database_name(started_cluster):
+    # Reproduces https://github.com/ClickHouse/ClickHouse/issues/64891 (and #64615):
+    # a PostgreSQL database name with upper-case letters produced a publication name
+    # with upper-case letters, but the `pgoutput` plugin folds the `publication_names`
+    # option to lower case, so the consumer failed with
+    # `publication "..._ch_publication" does not exist` and ongoing changes were not replicated.
+    id = str(uuid.uuid4()).replace("-", "_")
+    postgres_db = f"Test_Uppercase_{id}"
+    materialized_db = f"materialized_{id}"
+    table = "test_uppercase_table"
+
+    pg_manager3 = PostgresManager()
+    pg_manager3.init(
+        instance,
+        cluster.postgres_ip,
+        cluster.postgres_port,
+        default_database=postgres_db,
+    )
+
+    pg_manager3.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO `{postgres_db}`.`{table}` SELECT number, number from numbers(0, 50)"
+    )
+
+    pg_manager3.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=materialized_db,
+        postgres_database=postgres_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        materialized_database=materialized_db,
+        postgres_database=postgres_db,
+    )
+
+    # The failure only manifested for ongoing replication (the consumer path), so insert
+    # more rows after the initial snapshot and verify they are replicated as well.
+    instance.query(
+        f"INSERT INTO `{postgres_db}`.`{table}` SELECT number, number from numbers(50, 50)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        materialized_database=materialized_db,
+        postgres_database=postgres_db,
+    )
+
+    pg_manager3.drop_materialized_db(materialized_db)
+    pg_manager3.clear()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
