@@ -66,6 +66,7 @@
 #include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -4512,6 +4513,19 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
+
+    /// A TopK granule-skip decision recorded for one part is computed against the running
+    /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
+    /// The query condition cache key is `(table_uuid, part_name, condition_hash)`, so an entry
+    /// written for a part stays matchable as long as that part keeps its name - even after a
+    /// *different* part is dropped or mutated and the threshold that made the granule skippable
+    /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
+    /// change to the set of parts read (`DROP PARTITION`, mutation, merge, new `INSERT`) yields a
+    /// fresh key and the now-stale decisions of the unchanged parts are never reused.
+    SipHash parts_hash;
+    for (const auto & part_with_ranges : getParts())
+        parts_hash.update(part_with_ranges.data_part->name);
+    boost::hash_combine(top_k_filter_info->condition_hash, parts_hash.get64());
 }
 
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const
