@@ -178,6 +178,18 @@ void extractPointsFromField(
         }
         case GeometryColumnType::Polygon: {
             auto poly = getPolygonFromField<CartesianPoint>(field);
+            /// Only outer-ring points contribute to the hull, but the whole polygon must satisfy
+            /// the same input invariant as the polygonal aggregates: an empty outer ring with
+            /// non-empty inner rings is malformed, and inner-ring (hole) coordinates must be finite
+            /// even though they are not used for the hull.
+            if (poly.outer().empty() && !poly.inners().empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Argument of aggregate function groupConvexHull has a polygon with an empty outer ring but "
+                    "non-empty inner rings");
+            for (const auto & inner : poly.inners())
+                for (const auto & pt : inner)
+                    validate(pt);
             for (const auto & pt : poly.outer())
             {
                 validate(pt);
@@ -188,11 +200,21 @@ void extractPointsFromField(
         case GeometryColumnType::MultiPolygon: {
             auto mpoly = getMultiPolygonFromField<CartesianPoint>(field);
             for (const auto & poly : mpoly)
+            {
+                if (poly.outer().empty() && !poly.inners().empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Argument of aggregate function groupConvexHull has a polygon with an empty outer ring but "
+                        "non-empty inner rings");
+                for (const auto & inner : poly.inners())
+                    for (const auto & pt : inner)
+                        validate(pt);
                 for (const auto & pt : poly.outer())
                 {
                     validate(pt);
                     out.push_back(pt);
                 }
+            }
             break;
         }
         case GeometryColumnType::Null:
