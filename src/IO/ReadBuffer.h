@@ -172,7 +172,7 @@ public:
         return bytes_copied;
     }
 
-    /** Reads n bytes, if there are less - throws an exception. */
+    /** Reads n bytes with read, if there are less - throws an exception. */
     void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
@@ -182,6 +182,9 @@ public:
       * Don't use for small reads.
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
+
+    /** Reads n bytes with readBig, if there are less - throws an exception. */
+    void readBigStrict(char * to, size_t n);
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
