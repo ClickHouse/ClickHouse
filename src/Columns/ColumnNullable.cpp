@@ -1,8 +1,8 @@
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
@@ -64,21 +64,32 @@ void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash 
     hash.update(reinterpret_cast<const char *>(&arr[begin]), (end - begin) * sizeof(arr[0]));
 }
 
-WeakHash32 ColumnNullable::getWeakHash32() const
+void ColumnNullable::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = size();
+    /// A NULL row must hash to a fixed value, independent of the bytes that happen to sit in the
+    /// nested column for that row, so two SQL-equal NULL keys route identically. The nested hash of
+    /// null rows is replaced with `WEAK_HASH32_INITIAL_VALUE`. See IColumn::computeHashInto.
+    const UInt8 * null_map_data = getNullMapData().data() + row_begin;
+    const size_t n = row_end - row_begin;
 
-    WeakHash32 hash = nested_column->getWeakHash32();
+    if (initial)
+    {
+        nested_column->computeHashInto(row_begin, row_end, hash_out, /*initial=*/true);
+        for (size_t i = 0; i < n; ++i)
+            if (null_map_data[i])
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        return;
+    }
 
-    const auto & null_map_data = getNullMapData();
-    auto & hash_data = hash.getData();
-
-    /// Use default for nulls.
-    for (size_t row = 0; row < s; ++row)
-        if (null_map_data[row])
-            hash_data[row] = WeakHash32::kDefaultInitialValue;
-
-    return hash;
+    /// Non-initial: `hash_out` holds the prior key columns' hash, so the nested hash is produced
+    /// into a transient scratch buffer, null-selected, then combined into `hash_out`.
+    PaddedPODArray<UInt32> nested_hash(n);
+    nested_column->computeHashInto(row_begin, row_end, nested_hash.data(), /*initial=*/true);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const UInt32 base = null_map_data[i] ? WEAK_HASH32_INITIAL_VALUE : nested_hash[i];
+        hash_out[i] = combineWeakHash32(base, hash_out[i]);
+    }
 }
 
 void ColumnNullable::updateHashFast(SipHash & hash) const
