@@ -1306,9 +1306,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             /// `getResultType` may be null for unresolved nodes (e.g. a lambda used as the left side of IN).
             /// Such cases are rejected later with a more informative error, so skip the column-count check here.
+            /// Count tuple elements only for a top-level `DataTypeTuple`, matching how `FunctionIn`
+            /// unpacks the left operand at runtime: it inspects the raw left column/type and unpacks
+            /// only a top-level `ColumnTuple`/`DataTypeTuple`. A `Nullable(Tuple(...))` (or a
+            /// `LowCardinality(...)` wrapper) is kept as a single key column, so we must count it as one
+            /// here as well - otherwise a real mismatch like
+            /// `CAST((1, 1), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT 1, 1)` would slip through.
             size_t left_columns_count = 1;
-            auto left_type = removeLowCardinalityAndNullable(in_first_argument_result_type);
-            if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type.get()))
+            if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(in_first_argument_result_type.get()))
                 left_columns_count = left_tuple_type->getElements().size();
 
             NamesAndTypes right_projection_columns;

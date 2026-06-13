@@ -16,6 +16,12 @@ SELECT (1, 2) IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
 SET allow_experimental_nullable_tuple_type = 1;
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
 
+-- A `Nullable(Tuple(...))` left operand is compared as a single key column by `FunctionIn` (it unpacks
+-- only a top-level non-nullable `Tuple`), so it must count as one column on the left. Otherwise this
+-- real mismatch (1 left column vs 2 right columns) would slip through analysis and be hidden by folding.
+SELECT CAST((1, 1), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT 1, 1); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT 1 FROM (SELECT 2 AS c1 WHERE CAST((1, 1), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT 1, 1)) AS t WHERE t.c1 = 1; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+
 -- `Tuple` is not allowed inside `LowCardinality` (only types for which `canBeInsideLowCardinality`
 -- returns true are accepted), so we can't construct `LowCardinality(Tuple(...))` directly.
 -- Instead, exercise the `removeLowCardinalityAndNullable` unwrap on both sides with scalar
