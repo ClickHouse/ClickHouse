@@ -4887,3 +4887,44 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
         k.served_from_cache) << "served from cache";
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, k.over_read) << "over-read";
 }
+
+/// An embedded upper-tier hit inside a lower-tier segment is sourced from the
+/// UPPER serve and written down via assemble-and-push - NOT over-read from
+/// remote - when the window covers the segment (the production case, window >=
+/// segment). The fast 64K tier holds [192K,256K) inside the slow 256K segment
+/// [0,256K); reading [0,512K) in one window fetches only the true gaps
+/// ([0,192K)+[256K,512K) = 448K) with no over-read of the embedded hit, and the
+/// slow segment completes. (This is the win the UpperCacheRead stage targeted,
+/// already delivered by assemble-and-push.)
+TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
+{
+    const size_t file = 512 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto fast = std::make_shared<WideGranularityMockCache>(64 * 1024, "fast");
+    auto slow = std::make_shared<WideGranularityMockCache>(256 * 1024, "slow");
+    fast->seedBlock(3, 'F');  // resident [192K,256K), embedded in the slow segment [0,256K)
+
+    TestThreadGroup tg;
+    auto & pe = CurrentThread::getProfileEvents();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+
+    ReaderExecutor::Options opts;
+    opts.window_size = file * 2 + 1;       // window >= segment: the production case
+    opts.block_size = file * 2 + 1;
+    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.min_bytes_for_seek = 64 * 1024;
+    ReaderExecutor executor(src, objects, {fast, slow}, opts);
+
+    while (!executor.readNextWindow().empty()) {}
+    executor.seek(0);  // reap any deferred fills
+
+    /// Only the true gaps reach the source; the embedded hit is NOT over-read.
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, 448u * 1024u)
+        << "only the gaps [0,192K)+[256K,512K) are fetched";
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, 0u)
+        << "the embedded hit is sourced from the upper serve, not over-read";
+    /// The slow segment still completes (filled across the embedded hit).
+    EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
+    EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
+}
