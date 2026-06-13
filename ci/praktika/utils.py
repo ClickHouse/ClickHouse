@@ -631,6 +631,13 @@ class Utils:
         return base64_string
 
     @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        base64_bytes = value.encode("utf-8")
+        string_bytes = base64.b64decode(base64_bytes)
+        return string_bytes.decode("utf-8")
+
+    @staticmethod
     def is_hex(s):
         try:
             int(s, 16)

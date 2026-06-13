@@ -74,14 +74,21 @@ if __name__ == "__main__":
                 "WARNING: Could not find master parent commit (HEAD^1), skipping perf test commit storage"
             )
 
-        file_diff = {}
-        for file in changed_files:
-            if file.startswith("tests/integration/test") and file.endswith(".py"):
-                file_diff[file] = Shell.get_output(
-                    f"git diff $(git merge-base master HEAD)..HEAD -- {file}",
-                    verbose=True,
-                )
-        info.store_kv_data("file_diff", file_diff)
+        # Record which integration test files changed so a downstream job can
+        # find the changed test cases (TODO). Store only the file paths, never
+        # the raw `git diff` output: that diff is user-authored free text and
+        # ends up serialized into the initial `Config Workflow` job's `data`
+        # output (see Runner.run). The GitHub Actions runner scans job outputs
+        # with built-in secret patterns and silently drops the whole output on
+        # a match (e.g. a test fixture containing `Authorization: Bearer ...`),
+        # which makes every downstream job skip. A consumer can recompute the
+        # diff for these paths on demand.
+        changed_integration_tests = [
+            file
+            for file in changed_files
+            if file.startswith("tests/integration/test") and file.endswith(".py")
+        ]
+        info.store_kv_data("changed_integration_tests", changed_integration_tests)
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later

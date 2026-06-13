@@ -185,6 +185,8 @@ private:
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
+        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
+
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -203,7 +205,9 @@ private:
                 std::move(role_session_name),
                 std::move(external_id),
                 /*sts_endpoint_override=*/""
-            });
+            },
+            /*session_token=*/"",
+            shared_cache);
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)

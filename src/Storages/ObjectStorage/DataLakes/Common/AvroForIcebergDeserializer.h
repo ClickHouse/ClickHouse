@@ -56,10 +56,15 @@ private:
 
     mutable std::vector<ParsedManifestFileEntryPtr> parsed_manifest_file_entries TSA_GUARDED_BY(cache_mutex);
 
-    Int64 getFormatVersionFromManifestFileMetadata() const;
-
     ParsedManifestFileEntryPtr createParsedManifestFileEntry(size_t row_index) const;
 public:
+    /// Returns the Iceberg format version of this manifest list / manifest file. Reads it
+    /// from the file's own Avro metadata (the "format-version" key) when present. Older
+    /// ClickHouse versions wrote both manifest lists and manifest files without that key,
+    /// so we fall back to inspecting the schema: the `sequence_number` field appears in v2
+    /// manifest lists and v2 manifest entries but not in their v1 counterparts.
+    Int64 getFormatVersionFromManifestFileMetadata() const;
+
     AvroForIcebergDeserializer(
         std::unique_ptr<DB::ReadBufferFromFileBase> buffer_,
         const Iceberg::IcebergPathFromMetadata & manifest_file_path_,

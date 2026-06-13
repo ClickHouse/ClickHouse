@@ -26,6 +26,10 @@
 /// - `-max_parser_depth=N` sets the maximum parser depth (default: 150 for debug/sanitizer, 300 otherwise)
 /// - `-max_parser_backtracks=N` sets the maximum parser backtracks (default: DBMS_DEFAULT_MAX_PARSER_BACKTRACKS)
 /// - `-max_query_size=N` sets the maximum query size (default: DBMS_DEFAULT_MAX_QUERY_SIZE)
+/// - `-max_binary_array_size=N` sets the maximum array size in binary deserialization (default: 100)
+/// - `-max_binary_string_size=N` sets the maximum string size in binary deserialization (default: 100)
+/// - `-max_object_size=N` sets the maximum number of paths in Object/JSON binary deserialization (default: 100000)
+/// - `-memory_limit=N` sets the MemoryTracker hard limit in bytes per input (default: 1 GiB)
 /// These arguments must be passed after `-ignore_remaining_args=1` to avoid interference with libFuzzer options.
 
 using namespace DB;
@@ -42,6 +46,10 @@ ContextMutablePtr context;
 #endif
 size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
+size_t max_binary_array_size = 100;
+size_t max_binary_string_size = 100;
+size_t max_object_size = 100000;
+size_t memory_limit = 1_GiB;
 
 // Helper function to check if this is a merge run
 static bool isMerge(int argc, char ** argv)
@@ -133,6 +141,10 @@ extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv)
     parse_setting("max_parser_depth", max_parser_depth);
     parse_setting("max_parser_backtracks", max_parser_backtracks);
     parse_setting("max_query_size", max_query_size);
+    parse_setting("max_binary_array_size", max_binary_array_size);
+    parse_setting("max_binary_string_size", max_binary_string_size);
+    parse_setting("max_object_size", max_object_size);
+    parse_setting("memory_limit", memory_limit);
 
     static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
@@ -149,9 +161,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     try
     {
         total_memory_tracker.resetCounters();
-        total_memory_tracker.setHardLimit(1_GiB);
+        total_memory_tracker.setHardLimit(memory_limit);
         CurrentThread::get().memory_tracker.resetCounters();
-        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+        CurrentThread::get().memory_tracker.setHardLimit(memory_limit);
 
         /// The input format is as follows:
         /// - data type name on the first line,
@@ -205,8 +217,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         }
 
         FormatSettings settings;
-        settings.binary.max_binary_array_size = 100;
-        settings.binary.max_binary_string_size = 100;
+        settings.binary.max_binary_array_size = max_binary_array_size;
+        settings.binary.max_binary_string_size = max_binary_string_size;
+        settings.binary.max_object_size = max_object_size;
 
         Field field;
         type->getDefaultSerialization()->deserializeBinary(field, in, settings);

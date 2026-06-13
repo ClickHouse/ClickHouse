@@ -513,7 +513,11 @@ def test_dotnet_client(started_cluster):
             f"cd /pg_testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
-    assert res == reference
+    # `dotnet run` builds first, so the .NET SDK can prepend build diagnostics to
+    # stdout. That noise only appears before the client output, so tolerate it
+    # with a directional suffix check while still catching any trailing or
+    # inserted protocol divergence.
+    assert res.endswith(reference)
 
 
 def test_restricted_user_cannot_bypass_grants(started_cluster):
