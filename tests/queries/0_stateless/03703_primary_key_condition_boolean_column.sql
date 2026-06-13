@@ -102,3 +102,24 @@ INSERT INTO test_prewhere SELECT number, toString(number) FROM numbers(1000);
 SELECT count() FROM test_prewhere PREWHERE id SETTINGS force_primary_key = 1, optimize_use_projections = 0;
 
 DROP TABLE test_prewhere;
+
+SELECT '--- Test 8: indexHint with bare column';
+
+DROP TABLE IF EXISTS test_indexhint;
+
+CREATE TABLE test_indexhint (id Int32)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8;
+
+-- 16 leading zeros (two full granules whose marks are both 0) followed by 8 non-zero ids.
+-- `RPNBuilder` descends into `indexHint`, so `indexHint(id)` is recognized exactly like
+-- `indexHint(id != 0)`: the first all-zero granule is pruned. `indexHint` does not filter
+-- rows itself, so the count equals the rows in the non-pruned granules (16 of 24). Both
+-- forms must produce the same count, proving the bare column is handled as `id != 0`.
+INSERT INTO test_indexhint SELECT if(number < 16, 0, number) FROM numbers(24);
+
+SELECT count() FROM test_indexhint WHERE indexHint(id) SETTINGS optimize_use_projections = 0;
+SELECT count() FROM test_indexhint WHERE indexHint(id != 0) SETTINGS optimize_use_projections = 0;
+
+DROP TABLE test_indexhint;

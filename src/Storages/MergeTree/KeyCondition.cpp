@@ -3677,6 +3677,36 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return true;
         }
     }
+
+    /// A bare numeric key column used directly as a boolean condition, for example `WHERE id` or
+    /// `WHERE flag`. We only reach this point for a non-function, non-constant node (functions and
+    /// constants are handled above), so this matches exactly the boolean-predicate positions that
+    /// `RPNBuilder::traverseTree` descends to through `and` / `or` / `not` / `indexHint`. Treat the
+    /// column as `key != 0`, so that primary-key and skip-index analysis can prune on it. The negated
+    /// form `WHERE NOT key` is covered for free: the surrounding `not` inverts this atom into
+    /// `key == 0`. `Nullable` / `LowCardinality` keys are handled through the nested type. See #89222.
+    {
+        size_t key_column_num = size_t(-1);
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        DataTypePtr key_column_type;
+        MonotonicFunctionsChain chain;
+
+        if (isKeyPossiblyWrappedByMonotonicFunctions(
+                node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, chain))
+        {
+            auto key_type_not_null = removeNullable(removeLowCardinality(key_column_type));
+            if (isInteger(key_type_not_null) || isFloat(key_type_not_null))
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(Field(UInt64(0)));
+                out.key_columns.push_back(key_column_num);
+                out.monotonic_functions_chain = std::move(chain);
+                out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 

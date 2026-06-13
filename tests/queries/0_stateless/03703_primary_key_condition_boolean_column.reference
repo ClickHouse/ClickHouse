@@ -15,3 +15,6 @@ yes
 2	two
 --- Test 7: PREWHERE with bare column
 999
+--- Test 8: indexHint with bare column
+16
+16
