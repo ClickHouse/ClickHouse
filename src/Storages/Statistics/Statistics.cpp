@@ -282,7 +282,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
 {
-    UInt16 version_raw{};
+    UInt16 version_raw;
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
