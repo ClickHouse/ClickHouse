@@ -1,4 +1,5 @@
 #include <IO/ReaderExecutor.h>
+#include <IO/PlanSchedule.h>
 #include <IO/BufferSourceReader.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
@@ -4627,4 +4628,94 @@ TEST(ReaderExecutor, WarmServeDefersPromoteToPutStep)
         EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutScheduled), 0u)
             << "promotes must go through put-only machines, not the serve loop";
     }
+}
+
+namespace
+{
+
+/// Stage 3 spine: drive a REAL executor over a seeded residency and assert its
+/// readNextWindow outputs equal describePlan's predicted steps. Window/block/
+/// look-ahead are set >= the file so runs are never chunked and the plan never
+/// rebuilds - the schedule's maximal-run steps then map 1:1 to the live calls.
+void validateScheduleMatchesReality(
+    std::shared_ptr<IFileBasedSourceReader> src,
+    const StoredObjects & objects,
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches,
+    size_t file_size,
+    size_t min_bytes_for_seek)
+{
+    ReaderExecutor::Options opts;
+    opts.window_size = file_size * 2 + 1;
+    opts.block_size = file_size * 2 + 1;
+    opts.plan_look_ahead_window = file_size * 2 + 1;
+    opts.min_bytes_for_seek = min_bytes_for_seek;
+    ReaderExecutor executor(src, objects, std::move(caches), opts);
+
+    std::vector<ByteRange> outputs;
+    std::shared_ptr<const ReadPlanGeometry> geom;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (!geom)
+            geom = executor.planGeometryForTest();  /// the initial (and only) plan
+        if (rope.empty())
+            break;
+        outputs.push_back(rope.range());
+    }
+
+    ASSERT_NE(geom, nullptr);
+    auto sched = describePlan(*geom, ByteRange{0, file_size}, MemoryPressureLevel{}, min_bytes_for_seek);
+
+    ASSERT_EQ(outputs.size(), sched.steps.size()) << "step count vs live windows";
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        EXPECT_EQ(outputs[i].offset, sched.steps[i].output.offset) << "window " << i << " offset";
+        EXPECT_EQ(outputs[i].size, sched.steps[i].output.size) << "window " << i << " size";
+    }
+}
+
+std::pair<std::shared_ptr<MemorySourceReader>, StoredObjects> srcOf(size_t file_size)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(file_size, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+    return {src, objects};
+}
+
+}
+
+TEST(PlanScheduleValidation, ColdAllMiss)
+{
+    auto [src, objects] = srcOf(256 * 1024);
+    auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
+    validateScheduleMatchesReality(src, objects, {fs}, 256 * 1024, /*mbs=*/0);
+}
+
+TEST(PlanScheduleValidation, TwoTierDisjointHits)
+{
+    auto [src, objects] = srcOf(256 * 1024);
+    auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
+    auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
+    page->seedBlock(0, 'P');   // [0,64K)
+    fs->seedBlock(2, 'D');     // [128K,192K)
+    validateScheduleMatchesReality(src, objects, {page, fs}, 256 * 1024, /*mbs=*/0);
+}
+
+TEST(PlanScheduleValidation, ResidentIsland)
+{
+    auto [src, objects] = srcOf(256 * 1024);
+    auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
+    page->seedBlock(1, 'P');   // resident island [64K,128K), gaps either side
+    auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
+    validateScheduleMatchesReality(src, objects, {page, fs}, 256 * 1024, /*mbs=*/0);
+}
+
+TEST(PlanScheduleValidation, MixedGranularitiesWithBridge)
+{
+    auto [src, objects] = srcOf(512 * 1024);
+    auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
+    auto fs = std::make_shared<WideGranularityMockCache>(256 * 1024, "fs");
+    page->seedBlock(3, 'P');   // resident [192K,256K) inside the first fs segment
+    validateScheduleMatchesReality(src, objects, {page, fs}, 512 * 1024, /*mbs=*/64 * 1024);
 }

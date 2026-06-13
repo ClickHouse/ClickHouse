@@ -172,6 +172,10 @@ public:
     size_t inflightPrefetchSize() const { return machine ? machine->requested_range.size : 0; }
     size_t abandonedPrefetchCount() const { return abandoned_machines.size(); }
 
+    /// Test-only: the current look-ahead plan geometry (null until the first
+    /// plan is built), for validating `describePlan` against the live walk.
+    std::shared_ptr<const ReadPlanGeometry> planGeometryForTest() const { return read_plan.geometry(); }
+
     /// Merge ranges separated by less than `min_gap`, to reduce request count.
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
