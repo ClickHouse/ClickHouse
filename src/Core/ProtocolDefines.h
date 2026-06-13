@@ -145,6 +145,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION = 544
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 54484;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -153,5 +155,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54484;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54485;
 }

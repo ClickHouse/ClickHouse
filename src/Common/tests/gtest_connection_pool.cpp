@@ -149,7 +149,7 @@ protected:
         options->set(RequestOptions());
 
         DB::HTTPConnectionPools::instance().dropCache();
-        DB::CurrentThread::getProfileEvents().reset();
+        DB::CurrentThread::getProfileEvents().resetCounters();
         // Code here will be called immediately after the constructor (right
         // before each test).
     }
