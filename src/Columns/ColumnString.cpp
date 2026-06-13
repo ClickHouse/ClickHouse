@@ -834,4 +834,14 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     return column_sizes;
 }
 
+bool ColumnString::hasOnlyTypeDefaults() const
+{
+    /// `String`'s type-default is the empty string. `insertData` writes `length` bytes into
+    /// `chars` without any trailing zero terminator, so a column whose every row is the
+    /// empty string ends up with `chars` empty (and offsets that are all the same value —
+    /// equal to whatever the last non-empty insertion left, or zero if there were none).
+    /// Therefore the entire column is the type-default iff no characters were ever stored.
+    return chars.empty();
+}
+
 }

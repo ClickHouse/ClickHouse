@@ -248,4 +248,105 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     return true;
 }
 
+namespace
+{
+
+/// Recursive helper: walks `full_type` and produces a narrowed type by dropping any
+/// leaf subfield whose dotted name (path so far) is in `expired_substreams`.
+/// Returns nullptr if the type is fully expired (every leaf is in `expired_substreams`).
+///
+/// `path` accumulates the dotted prefix (e.g. "data", "data.c2s", "data.c2s.gold").
+DataTypePtr narrowDataTypeImpl(const DataTypePtr & full_type, const String & path, const NameSet & expired_substreams)
+{
+    /// Leaf hit: the whole path is expired.
+    if (expired_substreams.contains(path))
+        return nullptr;
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(full_type.get()))
+    {
+        if (!tuple->hasExplicitNames())
+            return full_type;
+
+        const auto & elements = tuple->getElements();
+        const auto & names = tuple->getElementNames();
+        DataTypes new_elements;
+        Strings new_names;
+        new_elements.reserve(elements.size());
+        new_names.reserve(names.size());
+
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            auto element_path = path + "." + names[i];
+            auto narrowed = narrowDataTypeImpl(elements[i], element_path, expired_substreams);
+            if (narrowed)
+            {
+                new_elements.push_back(std::move(narrowed));
+                new_names.push_back(names[i]);
+            }
+        }
+
+        if (new_elements.empty())
+            return nullptr;
+        if (new_elements.size() == elements.size())
+        {
+            /// Quick path: nothing was narrowed. Reuse the original Tuple to keep type identity stable.
+            bool all_same = true;
+            for (size_t i = 0; i < new_elements.size(); ++i)
+            {
+                if (new_elements[i].get() != elements[i].get())
+                {
+                    all_same = false;
+                    break;
+                }
+            }
+            if (all_same)
+                return full_type;
+        }
+        return std::make_shared<DataTypeTuple>(std::move(new_elements), std::move(new_names));
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(full_type.get()))
+    {
+        auto narrowed_nested = narrowDataTypeImpl(array->getNestedType(), path, expired_substreams);
+        if (!narrowed_nested)
+            return nullptr;
+        if (narrowed_nested.get() == array->getNestedType().get())
+            return full_type;
+        return std::make_shared<DataTypeArray>(std::move(narrowed_nested));
+    }
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(full_type.get()))
+    {
+        auto narrowed_nested = narrowDataTypeImpl(nullable->getNestedType(), path, expired_substreams);
+        if (!narrowed_nested)
+            return nullptr;
+        if (narrowed_nested.get() == nullable->getNestedType().get())
+            return full_type;
+        return std::make_shared<DataTypeNullable>(std::move(narrowed_nested));
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(full_type.get()))
+    {
+        auto narrowed_value = narrowDataTypeImpl(map->getValueType(), path, expired_substreams);
+        if (!narrowed_value)
+            return nullptr;
+        if (narrowed_value.get() == map->getValueType().get())
+            return full_type;
+        return std::make_shared<DataTypeMap>(map->getKeyType(), std::move(narrowed_value));
+    }
+
+    /// Scalar leaf type that is not in the expired set: keep as-is.
+    return full_type;
+}
+
+}
+
+DataTypePtr narrowDataTypeByExpiredSubstreams(
+    const DataTypePtr & full_type,
+    const String & column_name,
+    const NameSet & expired_substreams)
+{
+    return narrowDataTypeImpl(full_type, column_name, expired_substreams);
+}
+
 }

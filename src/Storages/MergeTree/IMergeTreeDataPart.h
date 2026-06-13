@@ -404,6 +404,13 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
+    /// Per-column dotted subfield paths that are entirely type-default and should be
+    /// pruned at finalize time, narrowing the column's named-`Tuple` type. Keyed by the
+    /// owning top-level column name so we never have to re-derive ownership from a
+    /// flat dotted-name set (which is ambiguous when two columns share a dotted prefix —
+    /// e.g. column `data` Tuple(deeper Tuple(y)) vs column `data.deeper` Tuple(y)).
+    std::map<String, NameSet> expired_subfields_by_column;
+
     CompressionCodecPtr default_codec;
 
     mutable std::unique_ptr<VersionMetadata> version;

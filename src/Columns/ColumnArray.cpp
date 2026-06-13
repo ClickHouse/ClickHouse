@@ -197,6 +197,14 @@ bool ColumnArray::isDefaultAt(size_t n) const
     return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
+bool ColumnArray::hasOnlyTypeDefaults() const
+{
+    const auto & offsets_data = getOffsets();
+    if (offsets_data.empty())
+        return true;
+    return memoryIsZero(offsets_data.data(), 0, offsets_data.size() * sizeof(offsets_data[0]));
+}
+
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {

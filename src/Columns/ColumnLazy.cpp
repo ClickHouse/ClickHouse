@@ -419,6 +419,11 @@ UInt64 ColumnLazy::getNumberOfDefaultRows() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
 }
 
+bool ColumnLazy::hasOnlyTypeDefaults() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasOnlyTypeDefaults is not supported for {}", getName());
+}
+
 void ColumnLazy::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());

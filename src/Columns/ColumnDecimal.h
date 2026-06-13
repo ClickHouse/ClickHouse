@@ -129,6 +129,8 @@ public:
     UInt64 get64(size_t n) const final;
     bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
+    bool hasOnlyTypeDefaults() const override;
+
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;
     void expand(const IColumn::Filter & mask, bool inverted) final;

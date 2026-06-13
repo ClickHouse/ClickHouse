@@ -275,6 +275,22 @@ namespace ErrorCodes
     semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
     (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
     )", 0) \
+    DECLARE(Bool, enable_tuple_subfield_pruning, true, R"(
+    When enabled (default), at INSERT and merge time the writer omits stream files for nested
+    named-`Tuple` subfields whose values in the part are entirely type-defaults. `Array` and
+    `Nullable` wrappers around a named `Tuple` are pruned only as whole-wrapper defaults
+    (all-empty arrays, all-`NULL` values) — individual inner subfields are not pruned through
+    these wrappers because per-row sizes / null map are shared. `Map` subtrees are kept opaque
+    entirely (the bucketed serialization hides its payload streams behind state that the
+    cleanup pass cannot enumerate from the type alone). The part's `columns.txt` records a
+    narrowed `Tuple` type without the pruned subfields; reads see the narrowed type and use
+    `CAST(narrowed_tuple, full_tuple)` to materialize defaults, matching the metadata-only
+    ALTER behavior in #107305.
+
+    This optimization is most useful for `PARTITION BY` schemes where different partitions populate
+    different subsets of a wide schema's subfields. Only applies to Wide parts; Compact parts always
+    keep the full schema.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.

@@ -160,6 +160,46 @@ ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const
     return merged;
 }
 
+void ColumnsSubstreams::removeSubstreams(const NameSet & substreams_to_remove)
+{
+    if (substreams_to_remove.empty())
+        return;
+
+    /// Rebuild from scratch to keep the position book-keeping correct.
+    std::vector<std::pair<String, std::vector<String>>> new_columns_substreams;
+    new_columns_substreams.reserve(columns_substreams.size());
+    std::vector<std::unordered_map<String, size_t>> new_positions;
+    new_positions.reserve(columns_substreams.size());
+    size_t new_total = 0;
+
+    for (const auto & [column, substreams] : columns_substreams)
+    {
+        std::vector<String> kept;
+        kept.reserve(substreams.size());
+        std::unordered_map<String, size_t> kept_positions;
+        for (const auto & substream : substreams)
+        {
+            if (substreams_to_remove.contains(substream))
+                continue;
+            kept_positions.emplace(substream, new_total);
+            kept.push_back(substream);
+            ++new_total;
+        }
+
+        /// Always keep the column entry even if it has no substreams left — the column metadata
+        /// is required for the file format invariant ("N columns:"), and `checkDataPart`'s loop
+        /// over `cols_substreams` simply skips empty inner lists. (In practice subfield pruning
+        /// always leaves at least one substream because `removeEmptyColumnsFromPart` promotes
+        /// fully-pruned columns to whole-column removals before we get here.)
+        new_columns_substreams.emplace_back(column, std::move(kept));
+        new_positions.emplace_back(std::move(kept_positions));
+    }
+
+    columns_substreams = std::move(new_columns_substreams);
+    column_position_to_substream_positions = std::move(new_positions);
+    total_substreams = new_total;
+}
+
 void ColumnsSubstreams::writeText(WriteBuffer & buf) const
 {
     writeString("columns substreams version: 1\n", buf);

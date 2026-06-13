@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -56,6 +57,11 @@ public:
     /// Merge 2 sets of columns substreams with specified columns order.
     /// If some column exists in both left and right we keep only substreams from the left.
     static ColumnsSubstreams merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order);
+
+    /// Drop the substream entries whose names are in @substreams_to_remove. Used by the
+    /// subfield-pruning flow to keep `columns_substreams.txt` consistent with the set of
+    /// actually written stream files after `removeEmptyColumnsFromPart` pruned some leaves.
+    void removeSubstreams(const NameSet & substreams_to_remove);
 
 private:
     std::vector<std::pair<String, std::vector<String>>> columns_substreams;

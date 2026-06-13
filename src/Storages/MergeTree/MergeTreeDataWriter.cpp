@@ -1,12 +1,19 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -88,6 +95,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsBool enable_tuple_subfield_pruning;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
@@ -407,6 +415,190 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
     return indices;
 }
 
+bool typeContainsEnumOrMap(const DataTypePtr & type);
+
+/// Recurse into the column at `path` (matching the layout of `full_type`) and add the
+/// dotted leaf-subfield names of every all-default subtree into `expired`.
+/// `path` is the dotted name reached so far ("data", "data.c2s", "data.c2s.gold").
+///
+/// The collected names are dotted subfield paths rooted at the top-level column,
+/// suitable for `IMergedBlockOutputStream::removeEmptyColumnsFromPart` to prune
+/// the corresponding substream files and narrow the column's Tuple type.
+void collectExpiredLeavesRecursive(
+    const String & path,
+    const DataTypePtr & type,
+    const IColumn & column,
+    NameSet & expired)
+{
+    /// Skip types whose "all-zero memory" doesn't coincide with the type-default
+    /// produced by `insertDefaultInto` on read. `Enum8`/`Enum16` are stored as `Int8`/
+    /// `Int16` so `ColumnVector::hasOnlyTypeDefaults` reports true for an all-`0` column
+    /// even when the enum's declared default is not value `0` (e.g. `Enum8('a' = 1)`
+    /// has type-default `'a'`). In practice the column type system also forbids storing
+    /// values not declared in the enum, so the data-loss case is mostly defensive — but
+    /// since we cannot tell from the column alone whether `0` is a valid enum member,
+    /// just refuse to prune any subtree rooted at an Enum.
+    /// (Use `dynamic_cast` here because `typeid_cast` requires an exact type-id match
+    /// and would miss the templated `DataTypeEnum<Int8>` / `DataTypeEnum<Int16>`.)
+    if (dynamic_cast<const IDataTypeEnum *>(type.get()))
+        return;
+
+    /// Skip `Map`: in `with_buckets` serialization the bucketed value streams
+    /// (`t.m.<bucket>.values.*`) are only discoverable from a written column +
+    /// state. The narrowing cleanup path in
+    /// `IMergedBlockOutputStream::removeEmptyColumnsFromPart` uses type-only
+    /// `enumerateStreams`, so pruning a `Map` wrapper would leave its bucket payload
+    /// streams (and corresponding `columns_substreams.txt` entries) on disk while
+    /// `columns.txt` no longer mentions them. Conservatively never prune anything
+    /// rooted at a `Map`.
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        return;
+
+    if (column.hasOnlyTypeDefaults())
+    {
+        /// The entire subtree at `path` is all defaults: record `path` as expired.
+        /// For named-Tuple subtrees this drops the whole subtree. For a `Nullable` leaf
+        /// `hasOnlyTypeDefaults` is true only when every row is NULL (the Nullable
+        /// type-default), so the value-loss case described below cannot trigger here.
+        ///
+        /// Refuse to drop the whole subtree if it contains an `Enum` or a `Map` — neither
+        /// can be safely materialized from defaults at read time (see the discussion at
+        /// `typeContainsEnumOrMap` above). Recurse into the Tuple instead so we still get
+        /// a chance to prune safe leaves inside.
+        if (typeContainsEnumOrMap(type))
+        {
+            /// Fall through to the Tuple recursion below; do not record this path.
+        }
+        else
+        {
+            expired.insert(path);
+            return;
+        }
+    }
+
+    /// Intentionally NOT recursing into `Nullable`. `Nullable(X)`'s type-default is NULL —
+    /// `Nullable::isDefaultAt(i)` is just `isNullAt(i)`. Unwrapping the Nullable here and
+    /// asking the inner column "are you all default?" would conflate "all NULL" with "all
+    /// non-NULL zeros / empty strings" and prune the subfield in both cases, after which
+    /// reads would materialize NULL where the original value was `toNullable(0)` or
+    /// `toNullable('')`. The all-NULL case is already covered by the
+    /// `hasOnlyTypeDefaults` short-circuit above.
+    if (typeid_cast<const DataTypeNullable *>(type.get()))
+        return;
+
+    /// For Array(Tuple) / Map(K, Tuple): per-row sizes are shared across all element subfields,
+    /// so we cannot prune individual subfields without losing size information. The "all rows
+    /// are empty containers" case is already covered by `hasOnlyTypeDefaults` above.
+    if (typeid_cast<const DataTypeArray *>(type.get()) || typeid_cast<const DataTypeMap *>(type.get()))
+        return;
+
+    /// Tuple: recurse into every element with the extended dotted path. Element names
+    /// that contain `.` themselves would alias nested subtree paths (e.g. element name
+    /// `a.b` is indistinguishable from the path `t.a.b` of nested element `b` under
+    /// element `a`). In that case we cannot safely use the dotted path scheme; bail out
+    /// for the whole tuple.
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (!tuple_type->hasExplicitNames())
+            return;
+
+        const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column);
+        if (!tuple_column)
+            return;
+
+        const auto & names = tuple_type->getElementNames();
+        const auto & elements = tuple_type->getElements();
+        for (const auto & name : names)
+        {
+            if (name.find('.') != String::npos)
+                return;
+        }
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            String element_path = path + "." + names[i];
+            collectExpiredLeavesRecursive(element_path, elements[i], tuple_column->getColumn(i), expired);
+        }
+    }
+
+    /// Scalar leaf type that is not all-default — keep.
+}
+
+bool typeContainsNamedTuple(const DataTypePtr & type)
+{
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        return tuple->hasExplicitNames();
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsNamedTuple(array->getNestedType());
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeContainsNamedTuple(nullable->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return typeContainsNamedTuple(map->getValueType());
+    return false;
+}
+
+/// Returns true if @type contains any subtree we refuse to prune wholesale even when
+/// `hasOnlyTypeDefaults` reports true at a higher level. These are:
+///
+/// - `Enum8` / `Enum16`: the column's raw zero bytes may correspond to a declared enum
+///   value, while `insertDefaultInto` on read would synthesize a *different* enum value
+///   (the smallest declared) — a data-loss read mismatch when an outer wrapper is dropped.
+///
+/// - `Map`: bucketed map serialization (`with_buckets`) hides its payload streams behind
+///   write state that `enumerateStreams` cannot recover from the type alone, so dropping
+///   a `Map`-containing subtree would leave bucket payload streams orphaned on disk.
+bool typeContainsEnumOrMap(const DataTypePtr & type)
+{
+    if (dynamic_cast<const IDataTypeEnum *>(type.get()))
+        return true;
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        return true;
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & elem : tuple->getElements())
+            if (typeContainsEnumOrMap(elem))
+                return true;
+        return false;
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsEnumOrMap(array->getNestedType());
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeContainsEnumOrMap(nullable->getNestedType());
+    return false;
+}
+
+std::map<String, NameSet> collectExpiredTupleSubstreams(const NamesAndTypesList & columns, const Block & block)
+{
+    std::map<String, NameSet> expired_by_column;
+    for (const auto & [name, type] : columns)
+    {
+        if (!typeContainsNamedTuple(type))
+            continue;
+        if (!block.has(name))
+            continue;
+        const auto & column = block.getByName(name).column;
+
+        /// Do not prune at all if the top-level column is entirely default. Erasing a top-level
+        /// column would semantically turn the part into "column is missing" — and a subsequent
+        /// `ALTER MODIFY COLUMN ... DEFAULT <new_expr>` would re-materialize the column with the
+        /// NEW default on read (the quirk tracked by #92475). By keeping the column physically
+        /// present we pin the historical values to the language type-default (0 / '' / NULL)
+        /// regardless of later DEFAULT changes. Named-Tuple subfields have no per-subfield
+        /// DEFAULT syntax, so pruning a subfield can only ever fall back to the type-default,
+        /// which keeps this optimization composable with the per-column DEFAULT RFC in #92475.
+        if (column->hasOnlyTypeDefaults())
+            continue;
+
+        NameSet expired_for_this_column;
+        collectExpiredLeavesRecursive(name, type, *column, expired_for_this_column);
+        /// `collectExpiredLeavesRecursive` never inserts the top-level path here (the
+        /// `hasOnlyTypeDefaults` short-circuit above guards that), but defend against future
+        /// callers by erasing any top-level entry that might sneak in.
+        expired_for_this_column.erase(name);
+        if (!expired_for_this_column.empty())
+            expired_by_column.emplace(name, std::move(expired_for_this_column));
+    }
+    return expired_by_column;
+}
 
 }
 
@@ -865,6 +1057,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         auto & column = block.getByName(column_name);
         if (!ISerialization::hasKind(infos.getKindStack(column_name), ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
+    }
+
+    /// Detect named-Tuple subfields whose values in this block are entirely type-defaults
+    /// and record them keyed by the owning top-level column. The finalize-phase
+    /// `IMergedBlockOutputStream::removeEmptyColumnsFromPart` will prune the corresponding
+    /// substream files and narrow the column's Tuple type accordingly.
+    /// Wide parts only (matches the existing whole-column expiry path).
+    /// Skipped for patch parts (mirrors `skip_empty_columns_on_insert`'s treatment).
+    if ((*data_settings)[MergeTreeSetting::enable_tuple_subfield_pruning] && !new_part_info.isPatch())
+    {
+        auto expired_subfields = collectExpiredTupleSubstreams(columns, block);
+        for (auto & [col_name, paths] : expired_subfields)
+        {
+            auto & dest = new_data_part->expired_subfields_by_column[col_name];
+            dest.merge(std::move(paths));
+        }
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
