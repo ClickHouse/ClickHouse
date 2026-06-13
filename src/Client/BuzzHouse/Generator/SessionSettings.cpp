@@ -195,9 +195,7 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
                 pool.insert(pool.end(), {"Gorilla", "FPC", "ALP"});
             }
             break;
-        case SQLTypeClass::DATE:
-            pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64"});
-            break;
+        case SQLTypeClass::DATE: pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64"}); break;
         case SQLTypeClass::DATETIME:
             pool.emplace_back("Delta");
             if (!static_cast<const DateTimeType *>(leaf)->extended)
@@ -431,6 +429,11 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_merge_expressions", trueOrFalseSetting},
        {"query_plan_merge_filter_into_join_condition", trueOrFalseSetting},
        {"query_plan_merge_filters", trueOrFalseSetting},
+       {"query_plan_max_set_size_for_projection_match",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10000)); },
+            {"0", "1", "100", "1000", "10000"},
+            false)},
        {"query_plan_optimize_join_order_algorithm",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize"}); },
@@ -1403,11 +1406,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_convert_join_to_in", trueOrFalseSettingNoOracle},
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
-    {"query_plan_max_limit_for_join_lazy_indexing",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); },
-         {"0", "1", "100", "1000"},
-         false)},
     {"query_plan_max_limit_for_top_k_optimization",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); },
@@ -1416,11 +1414,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_max_step_description_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
-    {"query_plan_min_columns_for_join_lazy_indexing",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); },
-         {"0", "1", "3", "5", "10"},
-         false)},
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"query_plan_read_in_order_through_join", trueOrFalseSetting},
     /// ClickHouse cloud setting
@@ -1611,6 +1604,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"type_json_skip_invalid_typed_paths", trueOrFalseSettingNoOracle},
     {"type_json_use_partial_match_to_skip_paths_by_regexp", trueOrFalseSettingNoOracle},
     {"union_default_mode", setSetting},
+    {"unique_key_max_encoded_size",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 16384)); },
+         {"1", "8", "64", "256", "1024", "8192", "16384"},
+         false)},
     {"update_insert_deduplication_token_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     {"url_base",
      CHSetting(
@@ -2316,6 +2314,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               false)},
          {"output_format_binary_encode_types_in_binary_format", trueOrFalseSettingNoOracle},
          {"output_format_csv_crlf_end_of_line", trueOrFalseSettingNoOracle},
+         {"output_format_float_precision",
+          CHSetting(
+              [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); },
+              {},
+              false)},
          {"output_format_json_map_as_array_of_tuples", trueOrFalseSettingNoOracle},
          {"output_format_msgpack_uuid_representation",
           CHSetting(
