@@ -860,6 +860,50 @@ def test_quoting_publication(started_cluster):
     )
 
 
+def test_aggregating_materialized_view(started_cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/39805:
+    # creating an aggregating materialized view on top of a MaterializedPostgreSQL table
+    # used to break replication (`DB::Exception: Too large size passed to allocator`).
+    # Replication must keep working and the materialized view must keep receiving updates.
+    pg_manager.execute("DROP TABLE IF EXISTS test_mv_agg")
+    pg_manager.execute(
+        "CREATE TABLE test_mv_agg (key integer PRIMARY KEY, name text, num integer)"
+    )
+    pg_manager.execute(
+        "INSERT INTO test_mv_agg VALUES (1, 'a', 1), (2, 'b', 2), (3, 'a', 3)"
+    )
+
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) "
+        "SETTINGS materialized_postgresql_tables_list='test_mv_agg'"
+    )
+    check_tables_are_synchronized(instance, "test_mv_agg")
+
+    instance.query("DROP TABLE IF EXISTS mv_agg")
+    instance.query(
+        "CREATE MATERIALIZED VIEW mv_agg ENGINE = MergeTree ORDER BY name POPULATE AS "
+        "SELECT name, sum(num) AS total FROM test_database.test_mv_agg GROUP BY name"
+    )
+    assert "a\t4\nb\t2" == instance.query(
+        "SELECT name, sum(total) FROM mv_agg GROUP BY name ORDER BY name"
+    ).strip()
+
+    # Inserting after the view exists must not break replication of the underlying table.
+    pg_manager.execute("INSERT INTO test_mv_agg VALUES (4, 'a', 10), (5, 'c', 5)")
+    check_tables_are_synchronized(instance, "test_mv_agg")
+    assert 5 == int(instance.query("SELECT count() FROM test_database.test_mv_agg"))
+
+    # ... and the materialized view must reflect the newly replicated rows.
+    assert "a\t14\nb\t2\nc\t5" == instance.query(
+        "SELECT name, sum(total) FROM mv_agg GROUP BY name ORDER BY name"
+    ).strip()
+
+    instance.query("DROP VIEW mv_agg")
+    pg_manager.drop_materialized_db()
+    pg_manager.execute("DROP TABLE IF EXISTS test_mv_agg")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
