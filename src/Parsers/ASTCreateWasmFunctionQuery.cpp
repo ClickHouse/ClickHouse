@@ -192,11 +192,28 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
     abi_ast = nullptr;
     function_settings.clear();
 
-    if (auto ast = r.readChild("function_name"))
+    /// All of these are parser-owned child shapes and are downcast to concrete types during
+    /// `validateAndGetDefinition`/formatting: `function_name`/`abi` via `getIdentifierName`
+    /// (must be `ASTIdentifier`), `arguments` is iterated as an `ASTExpressionList` of argument
+    /// types, and the module fields are read with `getAstAsStringLiteral` (must be string
+    /// `ASTLiteral`s). Restore them with concrete type checks so malformed `clickhouse_json`
+    /// cannot build a parser-impossible AST that silently changes semantics (e.g. an `arguments`
+    /// `Identifier` formatting as `ARGUMENTS (x)` but contributing zero argument types) or reaches
+    /// an `UNEXPECTED_AST_STRUCTURE`/`Field`-cast path later. `result_type` is validated by
+    /// `DataTypeFactory::get`, which already rejects non-type ASTs.
+    auto read_string_literal = [&](const char * key) -> ASTPtr
+    {
+        ASTPtr ast = r.readChildOfType<ASTLiteral>(key);
+        if (ast && ast->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be a string literal for `CreateWasmFunctionQuery` during AST JSON deserialization", key);
+        return ast;
+    };
+
+    if (auto ast = r.readChildOfType<ASTIdentifier>("function_name"))
         setName(std::move(ast));
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
-    if (auto ast = r.readChild("arguments"))
+    if (auto ast = r.readChildOfType<ASTExpressionList>("arguments"))
         setArguments(std::move(ast));
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'arguments' for `CreateWasmFunctionQuery` during AST JSON deserialization");
@@ -204,15 +221,15 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
         setReturnType(std::move(ast));
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'result_type' for `CreateWasmFunctionQuery` during AST JSON deserialization");
-    if (auto ast = r.readChild("module_name"))
+    if (auto ast = read_string_literal("module_name"))
         setModuleName(std::move(ast));
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'module_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
-    if (auto ast = r.readChild("source_function_name"))
+    if (auto ast = read_string_literal("source_function_name"))
         setSourceFunctionName(std::move(ast));
-    if (auto ast = r.readChild("module_hash"))
+    if (auto ast = read_string_literal("module_hash"))
         setModuleHash(std::move(ast));
-    if (auto ast = r.readChild("abi"))
+    if (auto ast = r.readChildOfType<ASTIdentifier>("abi"))
         setAbi(std::move(ast));
 
     if (r.has("function_settings"))
