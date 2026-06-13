@@ -87,17 +87,26 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
                                     "TTL expression cannot contain non-deterministic functions, but contains function {}",
                                     func.getName());
 
-                const auto & func_name = func.getName();
-                if (func_name == "finalizeAggregation")
+                if (func.getName() == "finalizeAggregation")
                     continue;
 
                 for (const auto * child : action.node->children)
                 {
                     if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
-                        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                            "TTL expression cannot use AggregateFunction column directly in function {}. "
-                            "Use finalizeAggregation() to extract the value first",
-                            func_name);
+                    {
+                        const auto & result_type = action.node->result_type;
+                        if (result_type
+                            && (typeid_cast<const DataTypeDateTime *>(result_type.get())
+                                || typeid_cast<const DataTypeDate *>(result_type.get())
+                                || typeid_cast<const DataTypeDateTime64 *>(result_type.get())
+                                || typeid_cast<const DataTypeDate32 *>(result_type.get())))
+                        {
+                            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                                "TTL expression cannot use AggregateFunction column directly in function {}. "
+                                "Use finalizeAggregation() to extract the value first",
+                                func.getName());
+                        }
+                    }
                 }
             }
         }
@@ -375,17 +384,26 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             if (action.node->type == ActionsDAG::ActionType::FUNCTION)
             {
-                const auto & func_name = action.node->function_base->getName();
-                if (func_name == "finalizeAggregation")
+                if (action.node->function_base->getName() == "finalizeAggregation")
                     continue;
 
                 for (const auto * child : action.node->children)
                 {
                     if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
-                        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                            "TTL WHERE expression cannot use AggregateFunction column directly in function {}. "
-                            "Use finalizeAggregation() to extract the value first",
-                            func_name);
+                    {
+                        const auto & result_type = action.node->result_type;
+                        if (result_type
+                            && (typeid_cast<const DataTypeDateTime *>(result_type.get())
+                                || typeid_cast<const DataTypeDate *>(result_type.get())
+                                || typeid_cast<const DataTypeDateTime64 *>(result_type.get())
+                                || typeid_cast<const DataTypeDate32 *>(result_type.get())))
+                        {
+                            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                                "TTL WHERE expression cannot use AggregateFunction column directly in function {}. "
+                                "Use finalizeAggregation() to extract the value first",
+                                action.node->function_base->getName());
+                        }
+                    }
                 }
             }
         }

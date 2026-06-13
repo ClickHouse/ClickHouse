@@ -56,6 +56,18 @@ TTL toDateTime(finalizeAggregation(ts)) + INTERVAL 1 DAY;
 
 DROP TABLE test_ttl_agg_finalize;
 
+-- Valid: state-aware functions like bitmapCardinality properly accept AggregateFunction
+CREATE TABLE test_ttl_agg_bitmap
+(
+    k UInt64,
+    bm AggregateFunction(groupBitmap, UInt64)
+)
+ENGINE = MergeTree()
+ORDER BY k
+TTL toDateTime(bitmapCardinality(bm)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_bitmap;
+
 -- Valid: expressions with potential division by zero should NOT be rejected at DDL time
 CREATE TABLE test_ttl_intdiv
 (
