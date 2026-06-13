@@ -2658,15 +2658,36 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
+    DataPartsVector src_patch_parts;
 
-    if (is_all)
-        src_parts = src_data.getVisibleDataPartsVector(local_context);
-    else
-        src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    /// Read the base parts to clone and the patch parts under a single source-side parts lock, so a
+    /// concurrent APPLY PATCHES on the source cannot drop a patch between selecting the base parts
+    /// and checking for patches. Only base parts are cloned below; pending patches are not carried,
+    /// so reject when the source has unapplied patches (same as StorageReplicatedMergeTree).
+    {
+        auto src_parts_lock = src_data.lockParts();
+        if (is_all)
+        {
+            src_parts = src_data.getVisibleDataPartsVectorUnlocked(local_context, src_parts_lock);
+            NameSet src_partition_ids;
+            for (const auto & src_part : src_parts)
+                src_partition_ids.insert(src_part->info.getPartitionId());
+            for (const auto & src_partition_id : src_partition_ids)
+            {
+                auto partition_patches = src_data.getPatchPartsVectorForPartition(src_partition_id, src_parts_lock);
+                src_patch_parts.insert(src_patch_parts.end(), partition_patches.begin(), partition_patches.end());
+            }
+        }
+        else
+        {
+            src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id, src_parts_lock);
+            src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, src_parts_lock);
+        }
+    }
 
-    /// Only base parts are cloned below; pending patch parts are not, so reject when the
-    /// source partition has unapplied patches (same guard as the Replicated engine).
-    if (is_all)
+    /// Reject when the source partition has unapplied patches (assertNoPatchesForParts is a no-op
+    /// when there are none, so this is free for tables without lightweight updates). The check is
+    /// per partition because patches and parts are matched by partition id.
     {
         NameSet src_partition_ids;
         for (const auto & src_part : src_parts)
@@ -2679,16 +2700,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 if (src_part->info.getPartitionId() == src_partition_id)
                     partition_parts.push_back(src_part);
 
-            auto src_patch_parts = src_data.getPatchPartsVectorForPartition(src_partition_id);
-            src_data.assertNoPatchesForParts(partition_parts, src_patch_parts,
+            DataPartsVector partition_patches;
+            for (const auto & patch_part : src_patch_parts)
+                if (isPatchForPartition(patch_part->info, src_partition_id))
+                    partition_patches.push_back(patch_part);
+
+            src_data.assertNoPatchesForParts(partition_parts, partition_patches,
                 fmt::format("{} PARTITION {} FROM", replace ? "REPLACE" : "ATTACH", src_partition_id));
         }
-    }
-    else
-    {
-        auto src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id);
-        src_data.assertNoPatchesForParts(src_parts, src_patch_parts,
-            fmt::format("{} PARTITION {} FROM", replace ? "REPLACE" : "ATTACH", partition_id));
     }
 
     MutableDataPartsVector dst_parts;
@@ -2849,14 +2868,20 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    DataPartsVector src_parts;
+    DataPartsVector src_patch_parts;
 
-    /// Patch parts are not moved with the base parts; reject when the source partition has
-    /// unapplied patches (same guard as the Replicated engine, see replacePartitionFrom).
+    /// Read the parts to move and the patch parts under a single source-side lock, so a concurrent
+    /// APPLY PATCHES on the source cannot drop a patch between the two reads. Patch parts are not
+    /// moved with the base parts; reject when the source partition has unapplied patches (same guard
+    /// as the Replicated engine, see replacePartitionFrom).
     {
-        auto src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id);
-        src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+        auto src_parts_lock = src_data.readLockParts();
+        src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id, src_parts_lock);
+        src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, src_parts_lock);
     }
+
+    src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
 
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {
