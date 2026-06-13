@@ -43,6 +43,16 @@ ENGINE = MergeTree()
 ORDER BY key1
 TTL ts + INTERVAL 1 DAY; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Nullable-wrapped conversion: CAST to Nullable(DateTime) should still be caught
+CREATE TABLE test_ttl_agg_nullable
+(
+    key1 String,
+    ts AggregateFunction(max, DateTime64(3))
+)
+ENGINE = MergeTree()
+ORDER BY key1
+TTL assumeNotNull(CAST(ts, 'Nullable(DateTime)')) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
 -- Valid usage: finalizeAggregation can operate on AggregateFunction states
 CREATE TABLE test_ttl_agg_finalize
 (

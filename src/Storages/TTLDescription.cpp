@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -94,12 +95,12 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
                 {
                     if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
                     {
-                        const auto & result_type = action.node->result_type;
-                        if (result_type
-                            && (typeid_cast<const DataTypeDateTime *>(result_type.get())
-                                || typeid_cast<const DataTypeDate *>(result_type.get())
-                                || typeid_cast<const DataTypeDateTime64 *>(result_type.get())
-                                || typeid_cast<const DataTypeDate32 *>(result_type.get())))
+                        const auto & unwrapped = removeNullableOrLowCardinalityNullable(action.node->result_type);
+                        if (unwrapped
+                            && (typeid_cast<const DataTypeDateTime *>(unwrapped.get())
+                                || typeid_cast<const DataTypeDate *>(unwrapped.get())
+                                || typeid_cast<const DataTypeDateTime64 *>(unwrapped.get())
+                                || typeid_cast<const DataTypeDate32 *>(unwrapped.get())))
                         {
                             throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                                 "TTL expression cannot use AggregateFunction column directly in function {}. "
@@ -391,12 +392,12 @@ TTLDescription TTLDescription::getTTLFromAST(
                 {
                     if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
                     {
-                        const auto & result_type = action.node->result_type;
-                        if (result_type
-                            && (typeid_cast<const DataTypeDateTime *>(result_type.get())
-                                || typeid_cast<const DataTypeDate *>(result_type.get())
-                                || typeid_cast<const DataTypeDateTime64 *>(result_type.get())
-                                || typeid_cast<const DataTypeDate32 *>(result_type.get())))
+                        const auto & unwrapped = removeNullableOrLowCardinalityNullable(action.node->result_type);
+                        if (unwrapped
+                            && (typeid_cast<const DataTypeDateTime *>(unwrapped.get())
+                                || typeid_cast<const DataTypeDate *>(unwrapped.get())
+                                || typeid_cast<const DataTypeDateTime64 *>(unwrapped.get())
+                                || typeid_cast<const DataTypeDate32 *>(unwrapped.get())))
                         {
                             throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                                 "TTL WHERE expression cannot use AggregateFunction column directly in function {}. "
