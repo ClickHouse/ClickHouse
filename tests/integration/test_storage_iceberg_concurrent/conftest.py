@@ -83,6 +83,7 @@ def started_cluster_iceberg():
             "node1",
             main_configs=[
                 "configs/config.d/named_collections.xml",
+                "configs/config.d/log_level_override.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,

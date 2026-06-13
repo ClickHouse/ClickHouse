@@ -4,7 +4,6 @@
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -94,7 +93,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

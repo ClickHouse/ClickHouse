@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
--- Assetions on reading do not hold with parallel replicas
+-- Assertions on reading do not hold with parallel replicas
+
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
 
 DROP TABLE IF EXISTS events;
 CREATE TABLE events ( Time DateTime, Id String ) ENGINE = MergeTree ORDER BY Time

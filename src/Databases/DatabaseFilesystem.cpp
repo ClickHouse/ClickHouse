@@ -241,6 +241,7 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -263,6 +264,10 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Filesystem", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::FILE,
+    });
 }
 }

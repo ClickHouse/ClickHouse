@@ -3,12 +3,18 @@
 #include <memory>
 #include <vector>
 
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/HashTable/FixedHashMap.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
@@ -16,7 +22,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/castTypeToEither.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -35,6 +43,8 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+
 namespace DB
 {
 
@@ -49,6 +59,22 @@ extern const int SET_SIZE_LIMIT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int INVALID_JOIN_ON_EXPRESSION;
+}
+
+size_t getMinBytesForPrefetchInJoin()
+{
+    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
+    static const size_t result = []
+    {
+        size_t l2_size = 0;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
+#endif
+        return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    }();
+    return result;
 }
 
 namespace
@@ -153,6 +179,7 @@ HashJoin::HashJoin(
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
+    , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -223,7 +250,7 @@ HashJoin::HashJoin(
 
         if (strictness == JoinStrictness::Asof)
         {
-            assert(disjuncts_num == 1);
+            chassert(disjuncts_num == 1);
 
             /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
             /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
@@ -233,7 +260,7 @@ HashJoin::HashJoin(
             if (key_columns.size() <= 1)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join with hash algorithm needs at least one equi-join column");
 
-            size_t asof_size;
+            size_t asof_size = 0;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 
@@ -534,7 +561,9 @@ size_t HashJoin::getTotalByteCount() const
 
 bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 {
-    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
+        || table_join.maxBytesBeforeExternalJoin() > 0;
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
@@ -675,9 +704,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();
 
-                for (size_t i = 0; i < asof_column_nullable.size(); ++i)
-                    if (!asof_column_nullable[i])
-                        new_selector_data.push_back(i);
+                /// Intersect with the original selector to keep only rows that
+                /// both belong to this partition and have a non-NULL ASOF key
+                for (size_t r : selector)
+                    if (!asof_column_nullable[r])
+                        new_selector_data.push_back(r);
 
                 selector = ScatteredBlock::Selector(std::move(new_selector));
             }
@@ -744,6 +775,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
+
+        /// NullMapHolder stores a raw pointer to stored_columns. If any clause stores a nullmap
+        /// referencing this block we must not pop the block later
+        bool nullmap_stored_for_block = false;
+
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
             ColumnRawPtrs key_columns;
@@ -758,9 +794,15 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             UInt8 save_nullmap = 0;
             if (isRightOrFull(kind) && null_map)
             {
-                /// Save rows with NULL keys
-                for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
-                    save_nullmap |= (*null_map)[i];
+                /// Only check rows belonging to this partition's selector
+                for (size_t r : stored_columns->selector)
+                {
+                    if ((*null_map)[r])
+                    {
+                        save_nullmap = 1;
+                        break;
+                    }
+                }
             }
 
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
@@ -821,19 +863,22 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, null_map_holder);
                 data->nullmaps_allocated_size += h.allocatedBytes();
+                nullmap_stored_for_block = true;
             }
 
             if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += h.allocatedBytes();
+                nullmap_stored_for_block = true;
             }
 
-            if (!flag_per_row && !is_inserted)
+            if (!flag_per_row && !is_inserted && !nullmap_stored_for_block)
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->allocated_size -= data_allocated_bytes;
+                data->rows_to_join -= rows;
                 data->columns.pop_back();
                 doDebugAsserts();
             }
@@ -893,12 +938,18 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         {
             for (auto & column : stored_columns.columns_info.columns)
                 column = column->cloneResized(column->size());
+
+            /// `cloneResized` replaces each column with a new object.
+            /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
+            stored_columns.columns_info.rebuildReplicatedColumns();
         }
         catch (...)
         {
             /// If cloneResized throws (e.g., due to memory allocation failure or fault injection),
             /// some columns may have already been replaced with shrunk copies while
             /// data->allocated_size still reflects the old sizes. Recalculate to stay consistent.
+            /// Also rebuild replicated_columns for columns that were already replaced, to avoid dangling pointers.
+            stored_columns.columns_info.rebuildReplicatedColumns();
             size_t partial_new_size = stored_columns.allocatedBytes();
             if (old_size >= partial_new_size)
                 data->allocated_size -= old_size - partial_new_size;
@@ -1364,9 +1415,9 @@ void HashJoin::updateNonJoinedRowsStatus()
 }
 
 template <typename Mapped>
-struct AdderNonJoined
+struct CollectorNonJoined
 {
-    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
+    static void collect(const Mapped & mapped, VectorWithMemoryTracking<const ColumnsInfo *> & columns_infos, VectorWithMemoryTracking<UInt32> & row_numbers)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
@@ -1377,29 +1428,15 @@ struct AdderNonJoined
         }
         else if constexpr (mapped_one)
         {
-            for (size_t j = 0; j < columns_right.size(); ++j)
-            {
-                if (const auto * replicated_column = mapped.columns_info->replicated_columns[j])
-                    columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
-                else
-                    columns_right[j]->insertFrom(*mapped.columns_info->columns[j], mapped.row_num);
-            }
-
-            ++rows_added;
+            columns_infos.push_back(mapped.columns_info);
+            row_numbers.push_back(mapped.row_num);
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                {
-                    if (const auto * replicated_column = it->columns_info->replicated_columns[j])
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(it->row_num));
-                    else
-                        columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
-                }
-
-                ++rows_added;
+                columns_infos.push_back(it->columns_info);
+                row_numbers.push_back(it->row_num);
             }
         }
     }
@@ -1541,7 +1578,11 @@ private:
     template <typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
     {
-        size_t rows_added = 0;
+        ColumnsWithRowNumbers columns_with_row_numbers;
+        auto & many_columns = columns_with_row_numbers.columns;
+        auto & row_nums = columns_with_row_numbers.row_numbers;
+        many_columns.reserve(max_block_size);
+        row_nums.reserve(max_block_size);
 
         if (flag_per_row)
         {
@@ -1549,14 +1590,14 @@ private:
             /// the data in parent.data->columns is not partitioned by hash buckets, so we can't
             /// distribute it across streams without additional per-row bucket lookups
             if (bucket_idx != 0)
-                return rows_added;
+                return row_nums.size();
 
             if (!used_position.has_value())
                 used_position = parent.data->columns.begin();
 
             auto end = parent.data->columns.end();
 
-            for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
+            for (auto & it = *used_position; it != end && row_nums.size() < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
                 size_t rows = mapped_block.columns_info.columns.at(0)->size();
@@ -1565,14 +1606,8 @@ private:
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
-                        for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
-                        {
-                            if (const auto * replicated_column = mapped_block.columns_info.replicated_columns[column])
-                                columns_keys_and_right[column]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                            else
-                                columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
-                        }
-                        ++rows_added;
+                        many_columns.push_back(&mapped_block.columns_info);
+                        row_nums.push_back(static_cast<UInt32>(row));
                     }
                 }
             }
@@ -1608,15 +1643,15 @@ private:
 
                 /// position at the first bucket owned by this stream
                 if (!skipToNextOwnedBucket())
-                    return rows_added;
+                    return row_nums.size();
 
-                while (it != end && rows_added < max_block_size)
+                while (it != end && row_nums.size() < max_block_size)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                        CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
                     }
 
                     ++it;
@@ -1636,9 +1671,9 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                    CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
 
-                    if (rows_added >= max_block_size)
+                    if (row_nums.size() >= max_block_size)
                     {
                         ++it;
                         break;
@@ -1647,7 +1682,10 @@ private:
             }
         }
 
-        return rows_added;
+        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
+            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+
+        return row_nums.size();
     }
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
@@ -1661,29 +1699,33 @@ private:
 
         auto end = parent.data->nullmaps.end();
 
-        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        ColumnsWithRowNumbers columns_with_row_numbers;
+        auto & many_columns = columns_with_row_numbers.columns;
+        auto & row_nums = columns_with_row_numbers.row_numbers;
+        many_columns.reserve(max_block_size);
+        row_nums.reserve(max_block_size);
+
+        for (auto & it = *nulls_position; it != end && rows_added + row_nums.size() < max_block_size; ++it)
         {
             const auto * columns = it->columns;
             ConstNullMapPtr nullmap = nullptr;
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns_info.columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            /// Iterate only the selector's rows to avoid emitting rows outside this partition.
+            for (size_t row : columns->selector)
             {
                 if (nullmap && (*nullmap)[row])
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                    {
-                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
-                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                        else
-                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
-                    }
-                    ++rows_added;
+                    many_columns.push_back(&columns->columns_info);
+                    row_nums.push_back(static_cast<UInt32>(row));
                 }
             }
         }
+
+        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
+            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+        rows_added += row_nums.size();
     }
 };
 
@@ -1766,7 +1808,15 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     {
         BlocksList result;
         for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(columns.columns_info.columns));
+        {
+            Block block = sample_block.cloneWithColumns(columns.columns_info.columns);
+            /// When used with ConcurrentHashJoin, each slot stores full original block columns
+            /// with a selector indicating which rows belong to that slot. Apply the selector
+            /// to materialize only the selected rows, avoiding duplication across slots.
+            ScatteredBlock scattered(std::move(block), std::move(columns.selector));
+            scattered.filterBySelector();
+            result.emplace_back(std::move(scattered.getSourceBlock()));
+        }
         return result;
     };
 
@@ -1962,12 +2012,21 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     }
 }
 
+/// We should not rerange the right table on such conditions:
+/// 1. The right table is already reranged by key, or it is empty.
+/// 2. The join clauses size is greater than 1, for example:
+///    `...join on a.key1=b.key1 or a.key2=b.key2`.
+///    We cannot rerange the right table on different sets of keys.
+/// 3. The number of right table rows exceeds the threshold, which may
+///    results in a significant cost for reranging and performance degradation.
+/// 4. The keys of the right table are very sparse, which may result in
+///    insignificant performance improvement after reranging by key.
 bool HashJoin::rightTableCanBeReranged() const
 {
-    return table_join->allowJoinSorting()
-            && !table_join->getMixedJoinExpression()
-            && isInnerOrLeft(kind)
-            && strictness == JoinStrictness::All;
+    return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
+        && strictness == JoinStrictness::All && data && !data->sorted && !data->columns.empty() && data->maps.size() == 1
+        && data->rows_to_join <= table_join->sortRightMaximumTableRows()
+        && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }
 
 size_t HashJoin::getAndSetRightTableKeys() const
@@ -1982,25 +2041,6 @@ void HashJoin::tryRerangeRightTableData()
 {
     if (!rightTableCanBeReranged())
         return;
-
-    /// We should not rerange the right table on such conditions:
-    /// 1. The right table is already reranged by key, or it is empty.
-    /// 2. The join clauses size is greater than 1, for example:
-    ///    `...join on a.key1=b.key1 or a.key2=b.key2`.
-    ///    We cannot rerange the right table on different sets of keys.
-    /// 3. The number of right table rows exceeds the threshold, which may
-    ///    results in a significant cost for reranging and performance degradation.
-    /// 4. The keys of the right table are very sparse, which may result in
-    ///    insignificant performance improvement after reranging by key.
-    if (!data
-        || data->sorted
-        || data->columns.empty()
-        || data->maps.size() != 1
-        || data->rows_to_join > table_join->sortRightMaximumTableRows()
-        || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
-    {
-        return;
-    }
 
     if (data->keys_to_join == 0)
         data->keys_to_join = getTotalRowCount();
@@ -2022,25 +2062,516 @@ void HashJoin::tryRerangeRightTableData()
     data->sorted = true;
 }
 
+template <bool is_signed, typename Key, typename MapsTemplate>
+void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
+{
+    using SignedKey = std::make_signed_t<Key>;
+
+    static constexpr size_t MAX_RANGE = (1ULL << 18);
+    /// Limits conversion to cases where FixedHashMaps larger than 2^16 have at least 25% fill factor,
+    /// ensuring they use at most around twice the memory of the source HashMap.
+    static constexpr size_t MAX_RANGE_SPARSITY_FACTOR = 4;
+
+    auto & source_map = [&]() -> auto &
+    {
+        if constexpr (std::is_same_v<Key, UInt32>)
+            return *maps.key32;
+        else
+            return *maps.key64;
+    }();
+
+    if (source_map.empty() || source_map.size() > MAX_RANGE)
+        return;
+
+    size_t key_count = source_map.size();
+    auto it = source_map.begin();
+    Key min_key = it->getKey();
+    Key max_key = it->getKey();
+    ++it;
+
+    /// Keys are stored as unsigned (UInt32/UInt64) in the hash map, but the original column
+    /// may be signed (Int32/Int64). We must compare using signed arithmetic to find the true
+    /// min/max
+    for (; it != source_map.end(); ++it)
+    {
+        Key k = it->getKey();
+        if constexpr (is_signed)
+        {
+            SignedKey signed_key = static_cast<SignedKey>(k);
+            if (signed_key < static_cast<SignedKey>(min_key))
+                min_key = k;
+            if (signed_key > static_cast<SignedKey>(max_key))
+                max_key = k;
+        }
+        else
+        {
+            if (k < min_key)
+                min_key = k;
+            if (k > max_key)
+                max_key = k;
+        }
+
+        if (static_cast<size_t>(max_key - min_key) >= MAX_RANGE)
+            return;
+    }
+
+    size_t range = static_cast<size_t>(max_key - min_key) + 1;
+
+    using Mapped = typename std::decay_t<decltype(source_map)>::mapped_type;
+    auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type)
+    {
+        using RangeMap = FixedHashMapWithSizeBits<Key, Mapped, size_bits>;
+        auto range_map = std::make_shared<RangeMap>();
+        for (auto source_map_it = source_map.begin(); source_map_it != source_map.end(); ++source_map_it)
+        {
+            typename RangeMap::LookupResult res;
+            bool inserted = false;
+            range_map->emplace(source_map_it->getKey() - min_key, res, inserted);
+            if (inserted)
+                res->getMapped() = source_map_it->getMapped();
+        }
+        dst_map = std::move(range_map);
+        data->key_range = {min_key, range};
+        data->type = type;
+    };
+
+    auto dispatch_conversion =
+        [&](auto & range8, Type type8, auto & range16, Type type16, auto & range17, Type type17, auto & range18, Type type18, auto & source)
+    {
+        if (range <= (1ULL << 8))
+            convert_to_fixed_hash_map.template operator()<8>(range8, type8);
+        else if (range <= (1ULL << 16))
+            convert_to_fixed_hash_map.template operator()<16>(range16, type16);
+        else if (range <= (1ULL << 17))
+        {
+            if ((1ULL << 17) > key_count * MAX_RANGE_SPARSITY_FACTOR)
+                return false;
+            convert_to_fixed_hash_map.template operator()<17>(range17, type17);
+        }
+        else
+        {
+            if ((1ULL << 18) > key_count * MAX_RANGE_SPARSITY_FACTOR)
+                return false;
+            convert_to_fixed_hash_map.template operator()<18>(range18, type18);
+        }
+        source.reset();
+        return true;
+    };
+
+    bool result = false;
+    if constexpr (std::is_same_v<Key, UInt32>)
+        result = dispatch_conversion(
+            maps.range8_key32,
+            Type::range8_key32,
+            maps.range16_key32,
+            Type::range16_key32,
+            maps.range17_key32,
+            Type::range17_key32,
+            maps.range18_key32,
+            Type::range18_key32,
+            maps.key32);
+    else
+        result = dispatch_conversion(
+            maps.range8_key64,
+            Type::range8_key64,
+            maps.range16_key64,
+            Type::range16_key64,
+            maps.range17_key64,
+            Type::range17_key64,
+            maps.range18_key64,
+            Type::range18_key64,
+            maps.key64);
+
+    if (result)
+        LOG_DEBUG(log, "{}Converted join hash map to fixed hash map (range: {}, keys: {})", instance_log_id, range, key_count);
+}
+
+bool HashJoin::canConvertToFixedHashMap() const
+{
+    return !conversion_to_fixed_hash_map_attempted && data && data->rows_to_join && table_join->enableJoinFixedHashTableConversion()
+        && (data->type == Type::key32 || data->type == Type::key64) && data->maps.size() == 1 && strictness != JoinStrictness::Asof;
+}
+
+void HashJoin::reinitUsedFlags()
+{
+    if (needUsedFlagsForPerRightTableRow(table_join))
+        return;
+
+    const bool prefer_use_maps_all = preferUseMapsAll();
+    for (auto & map : data->maps)
+    {
+        joinDispatch(
+            kind,
+            strictness,
+            map,
+            prefer_use_maps_all,
+            [this](auto kind_, auto strictness_, auto & map_)
+            {
+                used_flags->reinitAllowShrinking<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
+                    map_.getBufferSizeInCells(data->type) + 1);
+            });
+    }
+}
+
+namespace
+{
+
+/// Defensive check that T (= common_type) can hold every value of BuildKey.
+/// `getLeastSupertype` guarantees this in normal flow; this catches contract violations
+/// from future code changes and falls through to pass-all instead of misfiring bounds checks.
+template <typename BuildKey, typename T>
+constexpr bool canLosslesslyHold()
+{
+    if constexpr (std::is_unsigned_v<T> && std::is_signed_v<BuildKey>)
+        return false;
+    else if constexpr (std::is_signed_v<T> == std::is_signed_v<BuildKey>)
+        return sizeof(T) >= sizeof(BuildKey);
+    else /* T signed, BuildKey unsigned */
+        return sizeof(T) > sizeof(BuildKey);
+}
+
+/// Inner loop: for each probe value v of type T, check it falls within BuildKey's value range,
+/// then narrow to BuildKey and reinterpret to the FixedHashMap's unsigned key. The null-mask
+/// merge is split out of the loop body into two specialized paths so each loop stays branchless
+/// and vectorizable.
+template <typename BuildKey, typename HashMapT, typename T>
+void probeFixedHashMapLoop(
+    const HashMapT & ht,
+    std::make_unsigned_t<BuildKey> min_key,
+    size_t range_size,
+    const T * src,
+    const UInt8 * null_map,
+    UInt8 * result,
+    size_t n)
+{
+    using UnsignedBK = std::make_unsigned_t<BuildKey>;
+    static_assert(canLosslesslyHold<BuildKey, T>(),
+                  "probeFixedHashMapLoop instantiated with a probe type that cannot hold BuildKey's full range");
+
+    constexpr T t_lo = static_cast<T>(std::numeric_limits<BuildKey>::min());
+    constexpr T t_hi = static_cast<T>(std::numeric_limits<BuildKey>::max());
+
+    auto probe_one = [&](size_t i) -> UInt8
+    {
+        const T v = src[i];
+        if (v < t_lo || v > t_hi)
+            return 0;
+        const UnsignedBK slot = static_cast<UnsignedBK>(static_cast<BuildKey>(v));
+        const UnsignedBK idx = slot - min_key;
+        return (idx < range_size && ht.has(idx)) ? 1 : 0;
+    };
+
+    if (null_map)
+    {
+        for (size_t i = 0; i < n; ++i)
+            result[i] = probe_one(i) & static_cast<UInt8>(!null_map[i]);
+    }
+    else
+    {
+        for (size_t i = 0; i < n; ++i)
+            result[i] = probe_one(i);
+    }
+}
+
+/// Dispatch over the probe column's element type to call probeFixedHashMapLoop.
+/// Probe types whose value range can't hold BuildKey are filtered out at compile time;
+/// at runtime a non-ColumnVector or excluded type is conservatively passed through (all 1).
+template <typename BuildKey, typename HashMapT>
+ColumnPtr probeFixedHashMap(
+    const HashMapT & ht,
+    std::make_unsigned_t<BuildKey> min_key,
+    size_t range_size,
+    const ColumnWithTypeAndName & values)
+{
+    const IColumn * col = values.column.get();
+    const ColumnUInt8 * nm_col = nullptr;
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(col))
+    {
+        col = &nullable->getNestedColumn();
+        nm_col = &nullable->getNullMapColumn();
+    }
+
+    const size_t n = col->size();
+    auto result_col = ColumnUInt8::create(n);
+    UInt8 * result = result_col->getData().data();
+    const UInt8 * null_map = nm_col ? nm_col->getData().data() : nullptr;
+
+    const bool dispatched = castTypeToEither<
+        ColumnVector<UInt8>, ColumnVector<UInt16>, ColumnVector<UInt32>, ColumnVector<UInt64>,
+        ColumnVector<Int8>, ColumnVector<Int16>, ColumnVector<Int32>, ColumnVector<Int64>>(
+        col,
+        [&](const auto & typed_col) -> bool
+        {
+            using T = typename std::decay_t<decltype(typed_col)>::ValueType;
+            if constexpr (canLosslesslyHold<BuildKey, T>())
+            {
+                probeFixedHashMapLoop<BuildKey, HashMapT, T>(
+                    ht, min_key, range_size,
+                    typed_col.getData().data(), null_map, result, n);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        });
+
+    if (!dispatched)
+        std::fill_n(result, n, UInt8(1));
+
+    return result_col;
+}
+
+/// Wrap a FixedHashMap as a ProbeFn for the runtime filter to invoke on the probe side.
+template <typename BuildKey, typename HashMapT>
+SharedFixedHashTableRuntimeFilter::ProbeFn buildSharedFilterProbeFn(
+    std::shared_ptr<HashMapT> range_map_arg,
+    std::make_unsigned_t<BuildKey> min_key,
+    size_t range_size)
+{
+    return [range_map = std::move(range_map_arg), min_key, range_size]
+        (const ColumnWithTypeAndName & values) -> ColumnPtr
+    {
+        return probeFixedHashMap<BuildKey, HashMapT>(*range_map, min_key, range_size, values);
+    };
+}
+
+} // anonymous namespace
+
+void HashJoin::publishSharedRuntimeFilters()
+{
+    if (shared_runtime_filters_publish_attempted)
+        return;
+    shared_runtime_filters_publish_attempted = true;
+
+    if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
+        return;
+
+    const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
+    if (descriptors.empty())
+        return;
+
+    if (data->maps.size() != 1)
+        return;
+
+    const bool is_fixed_hash_table =
+        data->type == Type::key8 || data->type == Type::key16 ||
+        data->type == Type::range8_key32 || data->type == Type::range16_key32 ||
+        data->type == Type::range17_key32 || data->type == Type::range18_key32 ||
+        data->type == Type::range8_key64 || data->type == Type::range16_key64 ||
+        data->type == Type::range17_key64 || data->type == Type::range18_key64;
+    if (!is_fixed_hash_table)
+        return;
+
+    /// For a single distinct build key, the existing `== const` runtime filter specialization
+    /// is faster than any hash table probe; leave it active.
+    if (data->keys_to_join <= 1)
+        return;
+
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (!query_context)
+        return;
+    auto lookup = query_context->getRuntimeFilterLookup();
+    if (!lookup)
+        return;
+
+    if (right_table_keys.columns() != 1)
+        return;
+    const String build_key_name = right_table_keys.getByPosition(0).name;
+    const auto & filter_column_type = right_table_keys.getByPosition(0).type;
+
+    /// Only integer-backed build types have meaningful min/max for the bounds check.
+    /// Float, Decimal and DateTime64 (scale) drop out via isValueRepresentedByInteger.
+    const auto build_type = removeNullable(filter_column_type);
+    if (!build_type->isValueRepresentedByInteger())
+        return;
+    const bool build_signed = !build_type->isValueRepresentedByUnsignedInteger();
+
+    auto build_probe_fn = [&]() -> SharedFixedHashTableRuntimeFilter::ProbeFn
+    {
+        SharedFixedHashTableRuntimeFilter::ProbeFn probe_fn;
+        std::visit(
+            [&](auto & map)
+            {
+                using MapType = std::decay_t<decltype(map)>;
+                if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll>)
+                {
+                    auto dispatch = [&]<typename BuildKey>(
+                        auto & range_ptr,
+                        std::make_unsigned_t<BuildKey> min_key,
+                        size_t range_size)
+                    {
+                        if (!range_ptr)
+                            return;
+                        probe_fn = buildSharedFilterProbeFn<BuildKey>(range_ptr, min_key, range_size);
+                    };
+
+                    /// For range_*_key_* the min/range come from `tryConvertToFixedHashMap`'s
+                    /// computed key_range; for key8/key16 the whole key space is the table so
+                    /// min=0 and range = 2^(Key bits).
+                    switch (data->type)
+                    {
+                        case Type::key8:
+                            if (build_signed)
+                                dispatch.template operator()<Int8>(map.key8, UInt8(0), 1ULL << 8);
+                            else
+                                dispatch.template operator()<UInt8>(map.key8, UInt8(0), 1ULL << 8);
+                            break;
+                        case Type::key16:
+                            if (build_signed)
+                                dispatch.template operator()<Int16>(map.key16, UInt16(0), 1ULL << 16);
+                            else
+                                dispatch.template operator()<UInt16>(map.key16, UInt16(0), 1ULL << 16);
+                            break;
+                        case Type::range8_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range8_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range8_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range16_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range16_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range16_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range17_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range17_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range17_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range18_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range18_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range18_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range8_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range8_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range8_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        case Type::range16_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range16_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range16_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        case Type::range17_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range17_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range17_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        case Type::range18_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range18_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range18_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        default: break;
+                    }
+                }
+            },
+            data->maps.front());
+        return probe_fn;
+    };
+
+    auto probe_fn = build_probe_fn();
+    if (!probe_fn)
+        return;
+
+    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier. The descriptor's
+    /// first element is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
+    /// filter under and the probe-side `__applyFilter` looks it up by), not the stable display name.
+    for (const auto & [filter_key, descr_build_key] : descriptors)
+    {
+        if (descr_build_key != build_key_name)
+            continue;
+
+        auto existing = lookup->find(filter_key);
+        if (!existing)
+            continue;
+
+        /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
+        /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
+        const auto target_type = removeNullable(existing->getFilterColumnTargetType());
+        WhichDataType target_which(target_type);
+        if (!target_type->isValueRepresentedByInteger()
+            || target_which.isInt128() || target_which.isUInt128()
+            || target_which.isInt256() || target_which.isUInt256()
+            || target_which.isIPv4()
+            || target_which.isLowCardinality())
+            continue;
+
+        auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
+            existing->getFilterColumnTargetType(),
+            existing->getPassRatioThresholdForDisabling(),
+            existing->getBlocksToSkipBeforeReenabling(),
+            probe_fn);
+        /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
+        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
+        lookup->replace(filter_key, std::move(filter));
+    }
+}
+
+void HashJoin::tryConvertToFixedHashMap()
+{
+    if (!canConvertToFixedHashMap())
+        return;
+
+    conversion_to_fixed_hash_map_attempted = true;
+    const Type old_type = data->type;
+    std::visit(
+        [&](auto & map)
+        {
+            using MapType = std::decay_t<decltype(map)>;
+            if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll>)
+            {
+                bool is_signed = !right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
+                if (data->type == Type::key32)
+                {
+                    if (is_signed)
+                        tryConvertToFixedHashMapImpl<true, UInt32>(map);
+                    else
+                        tryConvertToFixedHashMapImpl<false, UInt32>(map);
+                }
+                else
+                {
+                    if (is_signed)
+                        tryConvertToFixedHashMapImpl<true, UInt64>(map);
+                    else
+                        tryConvertToFixedHashMapImpl<false, UInt64>(map);
+                }
+            }
+        },
+        data->maps.front());
+
+    if (data->type != old_type)
+        reinitUsedFlags();
+}
+
 void HashJoin::onBuildPhaseFinish()
 {
-    if (!needUsedFlagsForPerRightTableRow(table_join))
-    {
-        const bool prefer_use_maps_all = preferUseMapsAll();
-        for (auto & map : data->maps)
-        {
-            joinDispatch(
-                kind,
-                strictness,
-                map,
-                prefer_use_maps_all,
-                [this](auto kind_, auto strictness_, auto & map_)
-                {
-                    used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
-                        map_.getBufferSizeInCells(data->type) + 1);
-                });
-        }
-    }
+    reinitUsedFlags();
 
     if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
     {
@@ -2051,5 +2582,25 @@ void HashJoin::onBuildPhaseFinish()
     updateNonJoinedRowsStatus();
 
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
+}
+
+bool HashJoin::hasPostBuildPhase() const
+{
+    /// key8/key16 are already FixedHashMap, so they don't go through tryConvertToFixedHashMap,
+    /// but publishSharedRuntimeFilters still needs to run for them when the feature is on.
+    const bool needs_shared_filter_publish =
+        data && data->rows_to_join && data->maps.size() == 1
+        && (data->type == Type::key8 || data->type == Type::key16)
+        && table_join->enableJoinRuntimeFilterSharedFixedHashTable()
+        && !table_join->getSharedRuntimeFilterDescriptors().empty();
+
+    return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;
+}
+
+void HashJoin::runPostBuildPhase()
+{
+    tryRerangeRightTableData();
+    tryConvertToFixedHashMap();
+    publishSharedRuntimeFilters();
 }
 }

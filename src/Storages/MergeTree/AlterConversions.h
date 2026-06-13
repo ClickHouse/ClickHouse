@@ -43,7 +43,7 @@ public:
     std::string getColumnOldName(const std::string & new_name) const;
 
     /// Column was dropped by a pending mutation (data in part is stale)
-    bool isColumnDropped(const std::string & name) const;
+    bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);

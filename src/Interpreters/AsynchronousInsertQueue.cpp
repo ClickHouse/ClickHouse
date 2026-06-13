@@ -240,22 +240,23 @@ void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
     chunk = {};
 }
 
+void AsynchronousInsertQueue::InsertData::Entry::finish(ResultProgress result)
+{
+    if (finished.exchange(true))
+        return;
+
+    resetChunk();
+    promise.set_value(result);
+}
+
 void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr exception_)
 {
     if (finished.exchange(true))
         return;
 
     resetChunk();
-
-    if (exception_)
-    {
-        promise.set_exception(exception_);
-        ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
-    }
-    else
-    {
-        promise.set_value();
-    }
+    promise.set_exception(exception_);
+    ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
 }
 
 AsynchronousInsertQueue::QueueShardFlushTimeHistory::TimePoints
@@ -399,7 +400,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(),
+        table->getInMemoryMetadataPtr(query_context, false),
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
@@ -477,7 +478,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            std::vector<std::unique_ptr<ReadBuffer>> buffers;
+            ConcatReadBuffer::Buffers buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
@@ -533,7 +534,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
     InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
-    std::future<void> insert_future;
+    std::future<ResultProgress> progress_future;
 
     size_t shard_num = static_cast<size_t>(key.hash % pool_size);
     auto & shard = queue_shards[shard_num];
@@ -567,7 +568,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
         data->entries.emplace_back(entry);
-        insert_future = entry->getFuture();
+        progress_future = entry->getFuture();
 
         LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
             data->entries.size(), size_t(shard_num), data->size_in_bytes, fmt::join(getInsertQueryIds(*data), ", "));
@@ -630,7 +631,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     return PushResult
     {
         .status = PushResult::OK,
-        .future = std::move(insert_future),
+        .future = std::move(progress_future),
         .insert_data_buffer = nullptr,
     };
 }
@@ -1043,12 +1044,20 @@ try
     if (async_insert_log)
         log_elements.reserve(data->entries.size());
 
+    /// Per-entry write stats, populated during parsing/preprocessing,
+    /// used later to communicate results back to waiting clients.
+    std::unordered_map<InsertData::Entry *, ResultProgress> per_entry_progress_results;
+
     auto add_entry_to_asynchronous_insert_log = [&, query_by_format = NameToNameMap{}](
         const InsertData::EntryPtr & entry,
         const String & parsing_exception,
         size_t num_rows,
         size_t num_bytes) mutable
     {
+        /// Track per-entry stats for reporting back to clients on success.
+        if (parsing_exception.empty())
+            per_entry_progress_results[entry.get()] = ResultProgress{num_rows, num_bytes};
+
         if (!async_insert_log)
             return;
 
@@ -1111,6 +1120,12 @@ try
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
 
+        /// Propagate the process list element to the pipeline so that the executor enables
+        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
+        /// system.processors_profile_log for async insert flushes). The normal query path does
+        /// this in executeQuery, but the flush builds and runs the pipeline directly.
+        pipeline.setProcessListElement(insert_context->getProcessListElement());
+
         query_log_elem = logQueryStart(
             query_start_time,
             insert_context,
@@ -1160,7 +1175,11 @@ try
         for (const auto & entry : data->entries)
         {
             if (!entry->isFinished())
-                entry->finish();
+            {
+                auto it = per_entry_progress_results.find(entry.get());
+                chassert(it != per_entry_progress_results.end());
+                entry->finish(it != per_entry_progress_results.end() ? it->second : ResultProgress{});
+            }
         }
     };
 

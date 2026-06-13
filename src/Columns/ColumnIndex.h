@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -45,7 +47,11 @@ public:
 
     bool containsDefault() const;
 
-    WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
+    /// Per-row hash of indexed data: gathers the precomputed per-dictionary-row hashes
+    /// `dict_hash` by index and writes (or combines, when initial == false) into `hash_out`.
+    /// `hash_out[i]` corresponds to row `row_begin + i`.
+    void computeHashInto(
+        const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
@@ -57,6 +63,14 @@ public:
     ColumnPtr removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data);
 
     void removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data);
+
+    struct CompactIndexedColumnsResult
+    {
+        ColumnPtr compact_indexes;
+        Columns compact_indexed_columns;
+    };
+
+    CompactIndexedColumnsResult buildCompactIndexedColumns(const Columns & indexed_columns) const;
 
     /// Collect rows where mask[index] is 1.
     void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
@@ -82,6 +96,9 @@ private:
 
     template <typename IndexType>
     void convertIndexes();
+
+    std::optional<IColumn::Filter> buildUsedRowsFilter(size_t indexed_data_size) const;
+    size_t compactIndexes(const IColumn::Filter & filter, size_t indexed_data_size);
 
     IColumn::WrappedPtr indexes;
     size_t size_of_type = 0;

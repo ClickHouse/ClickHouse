@@ -56,7 +56,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     /// use the aggregate function from itself instead of 'function' above.
     bool is_agg_func_type = false;
     bool is_simple_agg_func_type = false;
-    bool remove_default_values;
+    bool remove_default_values{};
     bool aggregate_all_columns = false;
 
     String sum_function_map_name;
@@ -123,6 +123,19 @@ static bool isInNames(const std::string & column_name, const Names & names)
     return is_in_partition_key != names.end();
 }
 
+/// Like isInNames, but also matches a flattened tuple sub-column when one of its true tuple
+/// ancestors is in `names`. `flatten_ancestors[flattened_index]` holds the ancestor paths of
+/// the flattened column, as produced by `Nested::flattenTupleRecursive`.
+static bool isColumnOrAncestorInNames(
+    size_t flattened_index, const Block & header_flatten, const std::vector<Strings> & flatten_ancestors, const Names & names)
+{
+    if (isInNames(header_flatten.safeGetByPosition(flattened_index).name, names))
+        return true;
+    for (const auto & ancestor : flatten_ancestors[flattened_index])
+        if (isInNames(ancestor, names))
+            return true;
+    return false;
+}
 
 using Row = std::vector<Field>;
 
@@ -244,11 +257,29 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
-    bool aggregate_all_columns)
+    bool aggregate_all_columns,
+    bool allow_tuple_element_aggregation)
 {
-    size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
-    def.column_names = header.getNames();
+    def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
+
+    /// `flatten_ancestors[i]` holds, for flattened column `i`, the list of its true tuple
+    /// ancestor paths (empty for columns that are not the result of tuple flattening).
+    std::vector<Strings> flatten_ancestors;
+    Block header_flatten;
+    if (allow_tuple_element_aggregation)
+        header_flatten = Nested::flattenTupleRecursive(header, &flatten_ancestors);
+    else
+    {
+        header_flatten = header;
+        flatten_ancestors.resize(header.columns());
+    }
+
+    def.column_names = header_flatten.getNames();
+    size_t num_columns = header_flatten.columns();
+    chassert(flatten_ancestors.size() == num_columns);
+
+    NameSet original_column_names = header.getNameSet();
 
     /// name of nested structure -> the column numbers that refer to it.
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
@@ -260,15 +291,31 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         */
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
+        const ColumnWithTypeAndName & column = header_flatten.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
         if (aggregate_all_columns && (is_non_empty_tuple || typeid_cast<const DataTypeArray *>(column.type.get())) && !simple)
         {
-            const auto map_name = Nested::extractTableName(column.name);
-            /// if nested table name ends with `Map` it is a possible candidate for special handling
-            if (map_name == column.name || !endsWith(map_name, "Map"))
+            /// A column that is in the sorting key, or required by the sorting/partition key, must
+            /// not be aggregated.
+            if (isInSortingKey(description, column.name)
+                || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, partition_and_sorting_required_columns))
+            {
+                def.column_numbers_not_to_aggregate.push_back(i);
+                continue;
+            }
+
+            /// In aggregate_all_columns (Coalescing) mode every column is aggregated as a whole,
+            /// tuples and arrays included. The `xxxMap` name convention is a SummingMergeTree feature
+            /// (sumMap merges values by key, see the Array branch below); Coalescing has no by-key
+            /// merge, so a `…Map` column is coalesced like any other column (its last value wins).
+            if (!column_names_to_sum.empty()
+                && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
+            {
+                def.column_numbers_not_to_aggregate.push_back(i);
+            }
+            else
             {
                 bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
@@ -311,12 +358,48 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// Discover nested Maps and find columns for summation
         if (typeid_cast<const DataTypeArray *>(column.type.get()) && !simple)
         {
-            const auto map_name = Nested::extractTableName(column.name);
+            /// Under flattening, use splitName(reverse=true) to keep the full parent path.
+            const auto map_name = allow_tuple_element_aggregation
+                ? Nested::splitName(column.name, /*reverse=*/true).first
+                : Nested::extractTableName(column.name);
             /// if nested table name ends with `Map` it is a possible candidate for special handling
             if (map_name == column.name || !endsWith(map_name, "Map"))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
+            }
+
+            /// The following map checks apply only to synthetic flattened leaves: the
+            /// `!original_column_names.contains(...)` guard restricts them to flattened names,
+            /// leaving real top-level Nested `xxxMap` columns aggregated as before.
+            if (allow_tuple_element_aggregation && !original_column_names.contains(column.name))
+            {
+                /// `map_name` is only a real Nested `xxxMap` when it is one of the leaf's true tuple
+                /// ancestors. A dotted element name such as `ratesMap.ID` inside tuple `metrics`
+                /// flattens to `metrics.ratesMap.ID` and synthesizes the parent `metrics.ratesMap`,
+                /// which is not a real tuple node (the only ancestor is `metrics`), so those arrays
+                /// must be copied rather than map-merged.
+                const bool is_real_map
+                    = std::find(flatten_ancestors[i].begin(), flatten_ancestors[i].end(), map_name) != flatten_ancestors[i].end();
+
+                /// Even a real map is summed only when an explicit `columns` list permits it. Suppose
+                /// `SummingMergeTree(other)` over a tuple `ratesMap Tuple(ID Array, Value Array)` with
+                /// allow_tuple_element_aggregation = 1. Only `other` is listed, so the expected result
+                /// is that `ratesMap` is left untouched (copied), not aggregated.
+                ///
+                /// Without this check it would be aggregated anyway: flattening turns `ratesMap` into the
+                /// sub-columns `ratesMap.ID` / `ratesMap.Value`, whose synthesized parent name ends in `Map`,
+                /// so the discovery above would treat them as a summable map and ignore the `columns` list.
+                /// So when a list is given, a flattened map sub-column is summed only if it (or a tuple
+                /// ancestor) is in the list.
+                const bool excluded_by_columns_list
+                    = !column_names_to_sum.empty() && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum);
+
+                if (!is_real_map || excluded_by_columns_list)
+                {
+                    def.column_numbers_not_to_aggregate.push_back(i);
+                    continue;
+                }
             }
 
             discovered_maps[map_name].emplace_back(i);
@@ -348,13 +431,15 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             }
 
             /// Are they inside the sorting key or partition key? Check both to ignore columns with order expression.
-            if (isInSortingKey(description, column.name) || isInNames(column.name, partition_and_sorting_required_columns))
+            if (isInSortingKey(description, column.name)
+                || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, partition_and_sorting_required_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
 
-            if (column_names_to_sum.empty() || isInNames(column.name, column_names_to_sum))
+            if (column_names_to_sum.empty()
+                || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
             {
                 // Create aggregator to sum this column
                 SummingSortedAlgorithm::AggregateDescription desc;
@@ -405,8 +490,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// no elements of map could be in primary key
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
-            if (isInSortingKey(description, header.safeGetByPosition(*column_num_it).name)
-                || isInNames(header.safeGetByPosition(*column_num_it).name, partition_and_sorting_required_columns))
+            if (isInSortingKey(description, header_flatten.safeGetByPosition(*column_num_it).name)
+                || isColumnOrAncestorInNames(*column_num_it, header_flatten, flatten_ancestors, partition_and_sorting_required_columns))
                 break;
         if (column_num_it != map.second.end())
         {
@@ -423,7 +508,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
         {
-            const ColumnWithTypeAndName & key_col = header.safeGetByPosition(*column_num_it);
+            const ColumnWithTypeAndName & key_col = header_flatten.safeGetByPosition(*column_num_it);
             const String & name = key_col.name;
             const IDataType & nested_type = *recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*key_col.type).getNestedType());
 
@@ -475,6 +560,37 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         }
     }
 
+    /// Mark columns whose type contains `Float32` or `Float64` (at any nesting level)
+    /// for bit-exact copy in `setRow`.
+    ///
+    /// The `Field` roundtrip for a `Float32` value goes through `Float64` storage. On x86 this
+    /// silently converts a signaling NaN (SNaN) to a quiet NaN (QNaN), changing the bit pattern.
+    /// When the sort key is a hash expression over such a column (e.g. `ORDER BY gccMurmurHash(c1)`),
+    /// this changes the hash value and causes sort order violations during `SummingMergeTree` merges.
+    ///
+    /// Wrappers such as `Nullable(Float32)`, `LowCardinality(Nullable(Float32))`, `Array(Float32)`,
+    /// `Tuple(..., Float32, ...)`, and `Map(K, Float32)` all route through the same `Field` layer,
+    /// so they are affected too. We use `IDataType::forEachChild` to walk the whole type tree.
+    def.columns_need_exact_copy.resize(num_columns, false);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const auto & col = header_flatten.safeGetByPosition(i);
+        if (!col.type)
+            continue;
+
+        bool contains_float = WhichDataType(*col.type).isFloat();
+        if (!contains_float)
+        {
+            col.type->forEachChild([&contains_float](const IDataType & child)
+            {
+                if (!contains_float && WhichDataType(child).isFloat())
+                    contains_float = true;
+            });
+        }
+        if (contains_float)
+            def.columns_need_exact_copy[i] = true;
+    }
+
     return def;
 }
 
@@ -482,6 +598,8 @@ static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::Columns
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+    if (def.allow_tuple_element_aggregation)
+        columns = Nested::flattenTupleColumnsRecursive(*def.origin_header, columns);
 
     for (const auto & desc : def.columns_to_aggregate)
     {
@@ -534,11 +652,13 @@ static void postprocessChunk(
 
         res_columns[column_number] = std::move(column);
     }
-
+    if (def.allow_tuple_element_aggregation)
+        res_columns = Nested::reconstructTupleColumnsRecursive(*def.origin_header, res_columns);
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
+static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
+                   const Names & column_names, const std::vector<bool> & columns_need_exact_copy)
 {
     size_t num_columns = row.size();
     const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)
@@ -557,18 +677,29 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
     {
         try
         {
-            /// For some types like Dynamic/JSON doesn't work with Field well.
-            /// For them we store values inside the IColumn.
-            if (raw_columns[i]->hasDynamicStructure())
+            if (raw_columns[i]->hasDynamicStructure() || columns_need_exact_copy[i])
             {
+                /// Store a column-level copy to preserve exact bit patterns.
+                /// - For `Dynamic`/`JSON` types: `Field` roundtrip doesn't work correctly.
+                /// - For any type that contains `Float32`/`Float64` (direct, or wrapped in
+                ///   `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`): the `Field` roundtrip
+                ///   routes `Float32` values through `Float64` storage, which on x86 converts
+                ///   a signaling NaN (SNaN) to a quiet NaN (QNaN), changing the bit pattern.
+                ///   When the sort key is a hash of such a column (e.g. `ORDER BY gccMurmurHash(c1)`),
+                ///   this silently changes the hash value and breaks sort order during merges.
                 auto column = raw_columns[i]->cloneEmpty();
                 column->reserve(1);
                 column->insertFrom(*raw_columns[i], row_num);
                 row_columns[i] = std::move(column);
+
+                /// Also store the Field representation for mergeMap() backward compatibility.
+                if (!raw_columns[i]->hasDynamicStructure())
+                    raw_columns[i]->get(row_num, row[i]);
             }
             else
             {
                 raw_columns[i]->get(row_num, row[i]);
+                row_columns[i] = nullptr;
             }
         }
         catch (const Exception & e)
@@ -646,7 +777,7 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
 {
     is_group_started = true;
 
-    setRow(current_row, current_row_columns, raw_columns, row, def.column_names);
+    setRow(current_row, current_row_columns, raw_columns, row, def.column_names, def.columns_need_exact_copy);
 
     /// Reset aggregation states for next row
     for (auto & desc : def.columns_to_aggregate)
@@ -830,30 +961,40 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
-    bool aggregate_all_columns)
+    bool aggregate_all_columns,
+    bool allow_tuple_element_aggregation_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns))
+          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns, allow_tuple_element_aggregation_))
     , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
+    columns_definition.origin_header = header_;
 }
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeReplicatedFromSortingColumns(header, inputs, description);
+    /// Always use origin_header (the un-flattened header) for removeReplicatedFromSortingColumns,
+    /// because `header` may be flattened below when allow_tuple_element_aggregation is enabled.
+    removeReplicatedFromSortingColumns(columns_definition.origin_header, inputs, description);
     removeConstAndSparse(inputs);
-    merged_data.initialize(*header, inputs);
+    if (columns_definition.allow_tuple_element_aggregation)
+        header = std::make_shared<Block>(Nested::flattenTupleRecursive(*header));
 
+    /// Preprocess chunks before initializing merged data to ensure
+    /// that the flattened header and input columns have matching structure.
     for (auto & input : inputs)
         if (input.chunk)
             preprocessChunk(input.chunk, columns_definition);
 
+    merged_data.initialize(*header, inputs);
     initializeQueue(std::move(inputs));
 }
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeReplicatedFromSortingColumns(header, input, description);
+    /// Always use origin_header (the un-flattened header) for column position lookup,
+    /// since `header` may have been flattened in initialize() and column positions would differ.
+    removeReplicatedFromSortingColumns(columns_definition.origin_header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
@@ -864,7 +1005,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (queue.isValid())
     {
-        bool key_differs;
+        bool key_differs = false;
 
         SortCursor current = queue.current();
 

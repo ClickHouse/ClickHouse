@@ -157,7 +157,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
@@ -184,9 +184,11 @@ public:
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
+    bool hasStatistics() const override { return nested_column->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }
