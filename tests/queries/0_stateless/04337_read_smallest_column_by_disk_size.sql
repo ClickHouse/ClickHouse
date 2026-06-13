@@ -69,6 +69,34 @@ LIMIT 1;
 
 DROP TABLE t_smallest_column_multipart;
 
+-- Compact parts keep every column in one file and report a per-column on-disk size of 0, so the
+-- planner cannot rank them by on-disk size. It must then fall back to the in-memory heuristic
+-- rather than blindly taking the first column: here 'big' (a dense String) is first but 'tiny'
+-- (a UInt8) is cheap to read. The regression picked 'big' and read the whole String stream.
+DROP TABLE IF EXISTS t_smallest_column_compact;
+
+CREATE TABLE t_smallest_column_compact (big String, tiny UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+
+INSERT INTO t_smallest_column_compact SELECT repeat('x', 100), 0 FROM numbers(50000);
+
+SELECT isNullable(tiny) FROM t_smallest_column_compact FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- 'tiny' reads a few hundred bytes; 'big' reads ~20 KB. The carrier must be 'tiny'.
+SELECT ProfileEvents['ReadCompressedBytes'] < 5000
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND query = 'SELECT isNullable(tiny) FROM t_smallest_column_compact FORMAT Null;'
+  AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+ORDER BY event_time DESC
+LIMIT 1;
+
+DROP TABLE t_smallest_column_compact;
+
 -- The carrier-column lookup must not throw LOGICAL_ERROR on a selected part that has files
 -- for none of the current physical columns (it predates the current schema). Such a part is
 -- built by detaching it, evolving the schema so all of its columns are dropped, then

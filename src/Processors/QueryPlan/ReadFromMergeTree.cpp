@@ -2460,42 +2460,56 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
 
-        /// Pick the column that is cheapest to read from disk. getSmallestColumn() ranks by the
-        /// in-memory value size, which mis-ranks compactly stored columns: a LowCardinality(String)
-        /// reads far fewer bytes than a UInt64 yet looks "larger" in memory. Use the on-disk
-        /// compressed size instead, matching the carrier chosen later in injectRequiredColumns().
-        ///
-        /// The carrier is global to the read, so sum each column's compressed size over all selected
-        /// parts rather than sampling one part: a column that is tiny in one part but dense elsewhere
-        /// must not be chosen. Only columns physically present in a part contribute its size, so a
-        /// part that predates the current schema (it has files for none of the current columns) simply
-        /// does not vote. If no current column has files in any part, fall back to getSmallestColumn;
-        /// the carrier stays a current metadata column either way so it resolves against the
-        /// StorageSnapshot, and the per-part read setup substitutes missing columns as before.
-        std::unordered_map<String, size_t> compressed_size_by_column;
-        for (const auto & part : parts)
-            for (const auto & column : available_real_columns)
-                if (part.data_part->hasColumnFiles(column))
-                    compressed_size_by_column[column.name] += part.data_part->getColumnSize(column.name).data_compressed;
-
-        /// Iterate available_real_columns (a stable order) rather than the map so ties resolve
-        /// deterministically.
-        String smallest_column_name;
-        size_t smallest_size = std::numeric_limits<size_t>::max();
+        /// Carrier candidates: columns physically present in every selected part. Reading such a
+        /// column never forces the reader to materialise a DEFAULT, which could otherwise pull a
+        /// large dependency column on a part where the carrier is missing. The carrier is global to
+        /// the read, so a column present in only some parts (e.g. one just added by ALTER and stored
+        /// only in a new part) is unsafe and excluded.
+        NamesAndTypesList carrier_candidates;
         for (const auto & column : available_real_columns)
         {
-            auto it = compressed_size_by_column.find(column.name);
-            if (it != compressed_size_by_column.end() && it->second < smallest_size)
+            bool present_in_all = !parts.empty();
+            for (const auto & part : parts)
+                if (!part.data_part->hasColumnFiles(column))
+                {
+                    present_in_all = false;
+                    break;
+                }
+            if (present_in_all)
+                carrier_candidates.push_back(column);
+        }
+
+        /// Among the candidates, pick the one cheapest to read from disk. getSmallestColumn() ranks
+        /// by the in-memory value size, which mis-ranks compactly stored columns (a
+        /// LowCardinality(String) reads far fewer bytes than a UInt64 yet looks "larger" in memory),
+        /// so prefer the aggregate on-disk size summed over all parts. The size is only meaningful
+        /// when positive: compact parts keep every column in one file and report a per-column size of
+        /// 0, leaving nothing to rank by. Iterate candidates (a stable order) so ties are
+        /// deterministic.
+        String carrier;
+        size_t smallest_size = std::numeric_limits<size_t>::max();
+        for (const auto & column : carrier_candidates)
+        {
+            size_t size = 0;
+            for (const auto & part : parts)
+                size += part.data_part->getColumnSize(column.name).data_compressed;
+            if (size > 0 && size < smallest_size)
             {
-                smallest_size = it->second;
-                smallest_column_name = column.name;
+                smallest_size = size;
+                carrier = column.name;
             }
         }
 
-        if (smallest_column_name.empty())
-            smallest_column_name = ExpressionActions::getSmallestColumn(available_real_columns).name;
+        /// No meaningful on-disk size (e.g. every part is compact) or no column present in every part
+        /// (heavily schema-evolved): fall back to the in-memory heuristic over the safe candidates,
+        /// or over all physical columns when there is none. The carrier stays a current metadata
+        /// column so it resolves against the StorageSnapshot; the per-part read setup substitutes
+        /// columns missing from a given part as before.
+        if (carrier.empty())
+            carrier = ExpressionActions::getSmallestColumn(
+                carrier_candidates.empty() ? available_real_columns : carrier_candidates).name;
 
-        result.column_names_to_read.push_back(std::move(smallest_column_name));
+        result.column_names_to_read.push_back(std::move(carrier));
     }
 
     /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
