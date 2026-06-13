@@ -162,6 +162,9 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        /// The query reads no columns (e.g. SELECT count()); one cheap "carrier" column must be
+        /// chosen at read time, once projection optimizations have finalised parts_with_ranges.
+        bool needs_no_columns_carrier = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -183,6 +186,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , needs_no_columns_carrier(other.needs_no_columns_carrier)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -203,6 +207,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , needs_no_columns_carrier(other.needs_no_columns_carrier)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 

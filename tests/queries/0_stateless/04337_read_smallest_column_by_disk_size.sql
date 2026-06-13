@@ -140,6 +140,50 @@ LIMIT 1;
 
 DROP TABLE t_smallest_column_mixed;
 
+-- The carrier must be ranked over the parts that actually survive to the read. An aggregate
+-- projection that covers only some parts serves count() from the projection for the covered parts
+-- and leaves the uncovered parent parts to a no-columns carrier read, after filterPartsByProjection
+-- has dropped the covered parts. Ranking the carrier before that (over all parts) lets a column
+-- that is cheap only in a covered, pruned part win, so the surviving part is read through an
+-- expensive column. Here the surviving part stores 'a' as random strings (~15 MB) and 'b' as a
+-- constant (cheap), while the projection-covered part stores 'b' as random strings (~100 MB) and
+-- 'a' as a constant. The global aggregate makes 'a' look cheapest and reads ~15 MB off the survivor;
+-- ranking over the surviving part picks 'b' and keeps the read tiny.
+DROP TABLE IF EXISTS t_smallest_column_projection;
+
+CREATE TABLE t_smallest_column_projection (a String, b String)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+-- Surviving parent part (inserted before the projection exists): 'a' expensive, 'b' cheap.
+INSERT INTO t_smallest_column_projection SELECT randomString(50), 'c' FROM numbers(300000);
+ALTER TABLE t_smallest_column_projection ADD PROJECTION pc (SELECT count());
+-- Projection-covered part (dropped by filterPartsByProjection): 'a' cheap, 'b' dominant/expensive.
+INSERT INTO t_smallest_column_projection SELECT 'c', randomString(200) FROM numbers(500000);
+
+-- count() is served by the projection for the covered part and by a carrier read for the survivor.
+-- optimize_trivial_count_query/implicit_projections off so it takes the real no-columns read path.
+-- FORMAT Null: only the byte count below is asserted; the row count itself is not the subject here.
+SELECT count() FROM t_smallest_column_projection
+SETTINGS optimize_use_projections = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Carrier must be 'b' (cheap in the survivor): reads a few KB. The regression ranked over all parts,
+-- picked 'a' and read ~15 MB off the surviving part.
+SELECT ProfileEvents['ReadCompressedBytes'] < 1000000
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND query LIKE '%count() FROM t_smallest_column_projection%'
+  AND query NOT LIKE '%query_log%'
+  AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+ORDER BY event_time DESC
+LIMIT 1;
+
+DROP TABLE t_smallest_column_projection;
+
 -- The carrier-column lookup must not throw LOGICAL_ERROR on a selected part that has files
 -- for none of the current physical columns (it predates the current schema). Such a part is
 -- built by detaching it, evolving the schema so all of its columns are dropped, then

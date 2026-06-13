@@ -2901,14 +2901,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
 
     /// If there are only virtual columns in the query, you must request at least one non-virtual
-    /// one. Choose it now that pruning has populated result.parts_with_ranges, so the carrier is
-    /// ranked over the parts that will actually be read: parts dropped by partition/PK/skip-index
-    /// pruning, the query-condition cache or projection filtering neither contribute to the size
-    /// aggregate nor make a column "present in every part". When no part survives, the read becomes
-    /// a NullSource that reads nothing, so no carrier is needed.
-    if (needs_no_columns_carrier && !result.parts_with_ranges.empty())
-        result.column_names_to_read.push_back(
-            chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, metadata_snapshot));
+    /// one. Defer that choice to read time (initializePipeline): pruning here populates
+    /// result.parts_with_ranges, but the projection optimizations run later still mutate it via
+    /// filterPartsByProjection, so the carrier must be ranked over the parts that ultimately
+    /// survive. Just record that a carrier is needed.
+    result.needs_no_columns_carrier = needs_no_columns_carrier;
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -3594,6 +3591,16 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto & result = getAnalysisResult();
+
+    /// A no-columns query (e.g. SELECT count()) must read one cheap "carrier" column just to learn
+    /// the row count. Choose it here, the last point before the read: the projection optimizations
+    /// (optimizeUseNormalProjection / optimizeUseAggregateProjection) run after analysis and shrink
+    /// result.parts_with_ranges via filterPartsByProjection, so a carrier chosen earlier could be
+    /// ranked over parts that are no longer read. When no part survives, the read becomes a
+    /// NullSource (handled below) that reads nothing, so no carrier is needed.
+    if (result.needs_no_columns_carrier && result.column_names_to_read.empty() && !result.parts_with_ranges.empty())
+        result.column_names_to_read.push_back(
+            chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, storage_snapshot->metadata));
 
     logPredicateStatistics(result);
 
