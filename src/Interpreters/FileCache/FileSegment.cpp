@@ -65,12 +65,14 @@ FileSegment::FileSegment(
         bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        Priority::IteratorPtr queue_iterator_)
+        Priority::IteratorPtr queue_iterator_,
+        bool size_in_filename_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
     , background_download_enabled(background_download_enabled_)
+    , size_in_filename(size_in_filename_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
@@ -624,7 +626,7 @@ bool FileSegment::reserve(
     return reserved;
 }
 
-void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
+void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
 {
     if (download_state == State::DOWNLOADED)
         return;
@@ -640,8 +642,34 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
 
     remote_file_reader.reset();
 
+    /// The file is now fully written and closed; encode its size into the file name so that
+    /// startup metadata loading can avoid a `stat` per file.
+    renameToIncludeSizeInNameUnlocked(lock);
+
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
+}
+
+void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &)
+{
+    /// Only regular segments encode their size in the name; ephemeral (temporary) segments
+    /// keep the "_temporary" marker and are removed on startup anyway.
+    if (segment_kind != FileSegmentKind::Regular || size_in_filename)
+        return;
+
+    chassert(!cache_writer);
+
+    auto key_metadata_ptr = getKeyMetadata();
+    /// Current (on-disk) name has no size suffix yet; the new name encodes the final size.
+    const auto old_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, /* size */std::nullopt);
+    const auto new_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, range().size());
+
+    /// `rename` is atomic, so a crash leaves either the old (`<offset>`) or the new
+    /// (`<offset>_<size>`) name, both of which the loader handles correctly.
+    if (old_path != new_path)
+        fs::rename(old_path, new_path);
+
+    size_in_filename = true;
 }
 
 void FileSegment::setDownloadFailed()
@@ -745,6 +773,11 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         queue_iterator->decrementSize(reserved_size - result_size);
         reserved_size = result_size;
     }
+
+    /// If shrinking finished the download (downloaded size == final segment size), the file
+    /// reached its final size, so encode it into the name (see `setDownloadedUnlocked`).
+    if (download_state == State::DOWNLOADED)
+        renameToIncludeSizeInNameUnlocked(lock);
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const

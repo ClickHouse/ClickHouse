@@ -190,6 +190,108 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_size_in_name(cluster, node_name):
+    """
+    A fully downloaded regular cache file is named `<offset>_<size>`, which lets startup
+    metadata loading read the size from the file name instead of `stat`-ing every file.
+    This test verifies the on-disk naming, and that legacy `<offset>` files (without the
+    size suffix) are still loaded correctly by falling back to a `stat`.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_size_in_name SYNC;
+
+        CREATE TABLE test_size_in_name (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'size_in_name_test',
+            path = 'size_in_name_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "size_in_name_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_size_in_name SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_size_in_name FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'size_in_name_test'"
+    ).strip()
+
+    def list_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            name, _, size = line.partition(" ")
+            if name == "status" or name.endswith("_temporary"):
+                continue
+            files.append((name, int(size)))
+        return files
+
+    files = list_segment_files()
+    assert len(files) > 0
+    # Every regular segment file encodes its size in the name as `<offset>_<size>`,
+    # and that size matches the file's actual size on disk.
+    for name, size in files:
+        assert "_" in name, f"segment file {name} has no size suffix"
+        name_size = int(name.split("_", 1)[1])
+        assert name_size == size, f"{name}: size in name {name_size} != actual {size}"
+
+    def cache_segments():
+        return set(
+            node.query(
+                "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0"
+            )
+            .strip()
+            .splitlines()
+        )
+
+    # Every segment cached before the restart must survive it (startup may add more, hence subset).
+    cache_state = cache_segments()
+    assert len(cache_state) > 0
+
+    # Restart: metadata is loaded by reading sizes from the file names (no stat).
+    node.restart_clickhouse()
+    wait_for_cache_initialized(node, "size_in_name_test")
+    assert cache_state <= cache_segments()
+
+    # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix),
+    # restart, and make sure they are still loaded (the size is obtained with a stat).
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"find {cache_path} -type f -name '*_*' ! -name '*_temporary' "
+            "-exec bash -c 'mv \"$1\" \"$(dirname \"$1\")/$(basename \"$1\" | cut -d_ -f1)\"' _ {} ';'",
+        ]
+    )
+    # No file should carry a size suffix anymore.
+    assert all("_" not in name for name, _ in list_segment_files())
+
+    node.restart_clickhouse()
+    wait_for_cache_initialized(node, "size_in_name_test")
+    assert cache_state <= cache_segments()
+    node.query("SELECT * FROM test_size_in_name FORMAT Null")
+    node.query("DROP TABLE test_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
 def test_bypass_cache_does_not_overread_non_last_segment(cluster, node_name):
     """
     Regression test for an over-read on the `REMOTE_FS_READ_BYPASS_CACHE` path.

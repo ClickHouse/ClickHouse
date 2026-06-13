@@ -366,9 +366,9 @@ bool FileCache::skipCacheOnDiskFailure() const
     return skip_cache_on_disk_failure;
 }
 
-String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const
+String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size) const
 {
-    return metadata.getFileSegmentPath(key, offset, segment_kind, origin);
+    return metadata.getFileSegmentPath(key, offset, segment_kind, origin, size);
 }
 
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -1926,6 +1926,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         FileSegmentKind kind;
         fs::path path;
         IFileCachePriority::IteratorPtr cache_it; /// filled in phase 2
+        bool size_in_filename; /// whether the size was read from the file name (no `stat` needed)
     };
     std::vector<SegmentToLoad> segments;
 
@@ -1934,6 +1935,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed = false;
         UInt64 offset = 0;
+        std::optional<UInt64> size_from_name;
 
         auto delim_pos = offset_with_suffix.find('_');
         if (delim_pos == std::string::npos)
@@ -1944,17 +1946,26 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         {
             parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
 
-            if (offset_with_suffix.substr(delim_pos + 1) == "persistent")
+            const auto suffix = offset_with_suffix.substr(delim_pos + 1);
+            if (suffix == "persistent")
             {
                 /// For compatibility. Persistent files are no longer supported.
                 fs::remove(offset_it->path());
                 continue;
             }
-            if (offset_with_suffix.substr(delim_pos + 1) == "temporary")
+            if (suffix == "temporary")
             {
                 fs::remove(offset_it->path());
                 continue;
             }
+
+            /// New format `<offset>_<size>`: the size is encoded in the name, so we can
+            /// load this segment without a `stat` syscall.
+            UInt64 size_value = 0;
+            if (parsed && tryParse<UInt64>(size_value, suffix))
+                size_from_name = size_value;
+            else
+                parsed = false;
         }
 
         if (!parsed)
@@ -1963,14 +1974,16 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             continue;
         }
 
-        auto size = offset_it->file_size();
+        /// Legacy `<offset>` files (and files left by a download that was interrupted before
+        /// the size was encoded into the name) require a `stat` to obtain the size.
+        UInt64 size = size_from_name.has_value() ? *size_from_name : offset_it->file_size();
         if (!size)
         {
             fs::remove(offset_it->path());
             continue;
         }
 
-        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr});
+        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, size_from_name.has_value()});
     }
 
     /// Phase 2: add all segments for the key under a single write lock acquisition.
@@ -2024,7 +2037,8 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     /* background_download_enabled */false,
                     this,
                     key_metadata,
-                    segment.cache_it);
+                    segment.cache_it,
+                    /* size_in_filename */segment.size_in_filename);
 
                 inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
             }

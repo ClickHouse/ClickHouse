@@ -840,12 +840,13 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         download(cache.getOrSet(key, 0, 10, file_size, {}, 0, user));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
-        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
+        /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`).
+        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
 
         cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
+        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
     }
 
     std::cerr << "Step 14\n";
