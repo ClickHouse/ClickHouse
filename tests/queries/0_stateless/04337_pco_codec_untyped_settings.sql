@@ -27,3 +27,12 @@ ALTER TABLE t_pco_settings MODIFY SETTING marks_compression_codec = 'PCO'; -- { 
 ALTER TABLE t_pco_settings MODIFY SETTING default_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_pco_settings;
+
+-- TTL recompression is another untyped codec path (the codec is validated without a column type), so
+-- it must reject `PCO` as well, instead of accepting it and failing later during a merge.
+CREATE TABLE t_pco_ttl (d Date, x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_pco_ttl (d Date, x UInt64) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_pco_ttl MODIFY TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_pco_ttl;
