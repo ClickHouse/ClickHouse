@@ -1339,6 +1339,7 @@ class SettingsRandomizer:
         "use_hedged_requests": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
+        "optimize_if_transform_const_strings_to_lowcardinality": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_substitute_columns": lambda: random.randint(0, 1),
