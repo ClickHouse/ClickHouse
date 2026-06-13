@@ -129,8 +129,9 @@ def wait_dst_count_at_least(table, expected):
     )
 
 
-def assert_dst_count_stable(table, expected, seconds=10):
-    """The consumer is expected to be stopped, so the row count must not grow."""
+def assert_dst_count_stable(table, expected, seconds=5):
+    """The consumer is expected to be stopped, so the row count must not grow.
+    Still-running consumer polls every kafka_flush_interval_ms (500ms here)."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == expected
@@ -220,6 +221,7 @@ def test_refresh_runs_once_while_start_keeps_consuming(nats_cluster):
                      nats_subjects = '{subject}',
                      nats_format = 'JSONEachRow',
                      nats_flush_interval_ms = 6000,
+                     nats_wait_for_flush_interval = 1,
                      nats_secure = 1,
                      nats_username = '{nats_user}',
                      nats_password = '{nats_pass}';
@@ -295,15 +297,15 @@ def test_jetstream_acks_after_insert(nats_cluster):
     jetstream_publish(nats_cluster, subject, 0, 10)
     wait_dst_count_at_least(table, 10)
 
-    # The messages were acked after insertion: past the ack-wait they are not redelivered, so the
+    # The messages were acked after insertion: past the 3s ack-wait they are not redelivered, so the
     # count stays at 10 and the consumer reports nothing still pending acknowledgement.
-    assert_dst_count_stable(table, 10, seconds=8)
+    assert_dst_count_stable(table, 10)
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
 
     # STOP halts consumption; messages published meanwhile are retained by the stream, not lost.
     instance.query(f"SYSTEM STOP test.{table}")
     jetstream_publish(nats_cluster, subject, 10, 10)
-    assert_dst_count_stable(table, 10, seconds=8)
+    assert_dst_count_stable(table, 10)
 
     # START resumes: the retained messages are delivered and consumed (at-least-once, no loss).
     instance.query(f"SYSTEM START test.{table}")
@@ -327,6 +329,7 @@ def test_stop_aborts_inflight_block_pause_commits_it(nats_cluster):
                          nats_subjects = '{subject}',
                          nats_format = 'JSONEachRow',
                          nats_flush_interval_ms = 10000,
+                         nats_wait_for_flush_interval = 1,
                          nats_secure = 1,
                          nats_username = '{nats_user}',
                          nats_password = '{nats_pass}';
@@ -355,7 +358,7 @@ def test_stop_aborts_inflight_block_pause_commits_it(nats_cluster):
             assert_dst_count_stable(table, 0, seconds=12)
             instance.query(f"SYSTEM START test.{table}")
             instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
-            assert_dst_count_stable(table, 0, seconds=5)
+            assert_dst_count_stable(table, 0)
 
 
 def test_system_stop_all_background(nats_cluster):

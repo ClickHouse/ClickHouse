@@ -99,7 +99,7 @@ private:
     RefreshTaskList getRefreshTasks();
     RefreshTaskList getAccessibleRefreshTasks();
     std::vector<StoragePtr> getAccessibleStreamingStorages();
-    void controlBackgroundActivity(ASTSystemQuery & query);
+    void controlBackgroundActivity(const ASTSystemQuery & query);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

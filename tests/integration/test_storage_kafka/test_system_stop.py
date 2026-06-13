@@ -98,8 +98,9 @@ def wait_dst_count(table, expected):
     )
 
 
-def assert_dst_count_stable(table, expected, seconds=10):
-    """The consumer is expected to be stopped, so the row count must not grow."""
+def assert_dst_count_stable(table, expected, seconds=5):
+    """The consumer is expected to be stopped, so the row count must not grow.
+    Still-running consumer polls every kafka_flush_interval_ms (500ms here)."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == expected
@@ -138,11 +139,14 @@ def read_direct(table, expected, timeout=60):
     return total
 
 
-def test_system_stop_start_consuming(kafka_cluster):
+# The per-table verbs are parametrized over `keeper`: keeper=False exercises `StorageKafka`, keeper=True
+# exercises `StorageKafka2`. May parts of code are shared, so one parametrized body covers both engines.
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_system_stop_start_consuming(kafka_cluster, keeper):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_stop_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):
-        setup_consuming_table(table, table)
+        setup_consuming_table(table, table, keeper=keeper)
 
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
@@ -157,32 +161,12 @@ def test_system_stop_start_consuming(kafka_cluster):
         wait_dst_count(table, 20)
 
 
-def test_kafka2_system_stop_start_consuming(kafka_cluster):
-    # `StorageKafka2` (offsets in Keeper) is a separate class from `StorageKafka` with its own
-    # background task and action lock, so it needs its own coverage.
-    admin_client = k.get_admin_client(kafka_cluster)
-    table = f"kafka2_stop_{k.random_string(6)}"
-    with k.kafka_topic(admin_client, table):
-        setup_consuming_table(table, table, keeper=True)
-
-        produce(kafka_cluster, table, 0, 10)
-        wait_dst_count(table, 10)
-
-        # STOP halts consumption: new messages stay in the topic, unread.
-        instance.query(f"SYSTEM STOP test.{table}")
-        produce(kafka_cluster, table, 10, 10)
-        assert_dst_count_stable(table, 10)
-
-        # START resumes consumption and the backlog is drained.
-        instance.query(f"SYSTEM START test.{table}")
-        wait_dst_count(table, 20)
-
-
-def test_system_pause_start_consuming(kafka_cluster):
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_system_pause_start_consuming(kafka_cluster, keeper):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_pause_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):
-        setup_consuming_table(table, table)
+        setup_consuming_table(table, table, keeper=keeper)
 
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
@@ -198,11 +182,12 @@ def test_system_pause_start_consuming(kafka_cluster):
         wait_dst_count(table, 20)
 
 
-def test_system_cancel_consuming(kafka_cluster):
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_system_cancel_consuming(kafka_cluster, keeper):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_cancel_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):
-        setup_consuming_table(table, table)
+        setup_consuming_table(table, table, keeper=keeper)
 
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
@@ -214,11 +199,12 @@ def test_system_cancel_consuming(kafka_cluster):
         wait_dst_count(table, 20)
 
 
-def test_system_refresh_consuming(kafka_cluster):
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_system_refresh_consuming(kafka_cluster, keeper):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_refresh_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):
-        setup_consuming_table(table, table)
+        setup_consuming_table(table, table, keeper=keeper)
 
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)

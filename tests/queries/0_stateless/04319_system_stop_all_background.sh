@@ -158,6 +158,43 @@ $CLICKHOUSE_CLIENT -q "
     drop table src;"
 
 # ---------------------------------------------------------------------------
+# Test 4b: SYSTEM REFRESH on a STOPPED view is deferred, not dropped. While the
+# view is stopped the request is remembered but does not run (the view stays
+# Disabled and empty); it fires when SYSTEM START releases the view. This is the
+# same behavior as SYSTEM REFRESH VIEW on a stopped view, and it differs from the
+# streaming engines, where REFRESH runs exactly one cycle even while stopped.
+# ---------------------------------------------------------------------------
+
+$CLICKHOUSE_CLIENT -q "
+    create table src (x Int64) engine Memory;
+    insert into src values (44);
+    create materialized view d refresh every 1 year (x Int64) engine Memory empty as
+        select x from src;
+    system stop d;"
+
+wait_status d Disabled
+
+# REFRESH while stopped: the request is remembered, the view stays Disabled and empty for now.
+$CLICKHOUSE_CLIENT -q "
+    system refresh d;
+    select '<4b: refresh while stopped is deferred>',
+        (select count() from d),
+        (select status from refreshes where view = 'd');"
+
+# START releases the view and the deferred refresh fires, producing the row.
+$CLICKHOUSE_CLIENT -q "system start d;"
+while [ "`$CLICKHOUSE_CLIENT -q "select count() from d -- $LINENO" | xargs`" == '0' ]
+do
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT -q "
+    select '<4b: deferred refresh fires on start>', * from d;
+    system stop view d;
+    drop table d;
+    drop table src;"
+
+# ---------------------------------------------------------------------------
 # The SYSTEM ... ALL BACKGROUND wildcard applies the command to every table with
 # background activity. Here those tables are two refreshable views; the same code
 # path covers the streaming engines (Kafka, S3Queue, RabbitMQ, NATS) too.

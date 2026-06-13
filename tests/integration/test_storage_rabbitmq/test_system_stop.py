@@ -78,8 +78,9 @@ def wait_dst_count(table, expected):
     )
 
 
-def assert_dst_count_stable(table, expected, seconds=10):
-    """The consumer is expected to be stopped, so the row count must not grow."""
+def assert_dst_count_stable(table, expected, seconds=5):
+    """The consumer is expected to be stopped, so the row count must not grow.
+    Still-running consumer polls every kafka_flush_interval_ms (500ms here)."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == expected

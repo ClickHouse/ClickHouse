@@ -3,6 +3,8 @@
 <2b: start resumes the stopped view>	1
 <3: cancel interrupts current refresh but keeps schedule>	0	1
 <4: refresh triggers out-of-schedule refresh>	43
+<4b: refresh while stopped is deferred>	0	Disabled
+<4b: deferred refresh fires on start>	44
 <5: refresh all background refreshes all views>	1	1
 <6: stop all background disables all>	2	2
 <7: pause all background disables all>	2	2

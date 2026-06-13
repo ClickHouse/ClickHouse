@@ -2415,7 +2415,7 @@ std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
     return result;
 }
 
-void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
+void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & query)
 {
     using Type = ASTSystemQuery::Type;
     const auto type = query.type;
@@ -2430,14 +2430,6 @@ void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
             "SYSTEM VIEWS or SYSTEM BACKGROUND on {}", table_id.getNameForLogs());
 
     auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-    if (!storage->isStreamingStorage())
-    {
-        const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
-        if (!mv || !mv->isRefreshable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table {} has no controllable background activity", table_id.getNameForLogs());
-    }
 
     if (storage->isStreamingStorage())
     {
@@ -2465,32 +2457,38 @@ void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
             default:
                 break;
         }
-        return;
     }
-
-    /// Refreshable materialized view, alias the existing SYSTEM ... VIEW
-    switch (type)
+    else
     {
-        case Type::STOP:
-            startStopAction(ActionLocks::ViewRefresh, false);
-            break;
-        case Type::START:
-            startStopAction(ActionLocks::ViewRefresh, true);
-            startStopAction(ActionLocks::ViewRefreshPause, true);
-            break;
-        case Type::PAUSE:
-            startStopAction(ActionLocks::ViewRefreshPause, false);
-            break;
-        case Type::CANCEL:
-            for (const auto & task : getRefreshTasks())
-                task->cancel();
-            break;
-        case Type::REFRESH:
-            for (const auto & task : getRefreshTasks())
-                task->run();
-            break;
-        default:
-            break;
+        const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
+        if (!mv || !mv->isRefreshable())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} has no controllable background activity", table_id.getNameForLogs());
+
+        /// Refreshable materialized view, alias the existing SYSTEM ... VIEW
+        switch (type)
+        {
+            case Type::STOP:
+                startStopAction(ActionLocks::ViewRefresh, false);
+                break;
+            case Type::START:
+                startStopAction(ActionLocks::ViewRefresh, true);
+                startStopAction(ActionLocks::ViewRefreshPause, true);
+                break;
+            case Type::PAUSE:
+                startStopAction(ActionLocks::ViewRefreshPause, false);
+                break;
+            case Type::CANCEL:
+                for (const auto & task : getRefreshTasks())
+                    task->cancel();
+                break;
+            case Type::REFRESH:
+                for (const auto & task : getRefreshTasks())
+                    task->run();
+                break;
+            default:
+                break;
+        }
     }
 }
 
