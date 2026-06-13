@@ -18,11 +18,11 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/oom.xml"],
-    mem_limit="3g\n        memswap_limit: 3g",
+    mem_limit="8g\n        memswap_limit: 8g",
     stay_alive=True,
 )
 
-NUM_WORKERS = 16
+NUM_WORKERS = 24
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -53,7 +53,7 @@ def test_sustained_merges_trigger_kernel_oom_and_server_survives():
     #
     # We reproduce that here with sustained `groupArrayState` merges of randomly varied sizes (rows, array
     # length, number of keys). Each round on its own fits under the limit, but the fragmentation they
-    # accumulate ratchets resident memory up until it crosses the 3 GiB cgroup and the kernel OOM killer
+    # accumulate ratchets resident memory up until it crosses the 8 GiB cgroup and the kernel OOM killer
     # fires. The limits stay enabled at their defaults - no merge-budget or tracker tweak, exactly as in
     # the fuzzer.
     if node.is_built_with_sanitizer():
