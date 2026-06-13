@@ -139,6 +139,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             .is_s3express_bucket = S3::isS3ExpressEndpoint(new_uri.endpoint),
         };
 
+        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(new_uri.endpoint, new_uri.bucket);
+
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -158,7 +160,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::external_id],
                 /*sts_endpoint_override=*/""
             },
-            credentials.GetSessionToken());
+            credentials.GetSessionToken(),
+            shared_cache);
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
 

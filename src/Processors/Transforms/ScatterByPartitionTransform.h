@@ -1,8 +1,9 @@
 #pragma once
+#include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Common/WeakHash.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -28,7 +29,8 @@ private:
     std::vector<char> was_output_processed;
     Chunk chunk;
 
-    WeakHash32 hash;
+    PaddedPODArray<UInt32> hash;
+    IColumn::Selector selector;
     Chunks output_chunks;
 };
 
