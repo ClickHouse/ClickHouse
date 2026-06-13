@@ -4,6 +4,12 @@
 --- url('file://<relative>') resolves under user_files ---
 1	Hello
 2	World
+--- url('FILE://...') mixed-case scheme dispatches to the File engine ---
+1	Hello
+2	World
+--- CREATE TABLE ... ENGINE = URL('FILE://...') mixed-case scheme reads via the File engine ---
+1	Hello
+2	World
 --- format auto-detected from the .csv extension ---
 2
 --- url_base routes a relative reference to the File engine ---

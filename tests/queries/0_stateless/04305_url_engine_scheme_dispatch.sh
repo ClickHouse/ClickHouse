@@ -18,6 +18,15 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://${ABS}', 'CSV', 'a UInt32, b 
 echo "--- url('file://<relative>') resolves under user_files ---"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://${REL}', 'CSV', 'a UInt32, b String') ORDER BY a"
 
+echo "--- url('FILE://...') mixed-case scheme dispatches to the File engine ---"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('FILE://${ABS}', 'CSV', 'a UInt32, b String') ORDER BY a"
+
+echo "--- CREATE TABLE ... ENGINE = URL('FILE://...') mixed-case scheme reads via the File engine ---"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mc"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_mc (a UInt32, b String) ENGINE = URL('FILE://${ABS}', 'CSV')"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_mc ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_mc"
+
 echo "--- format auto-detected from the .csv extension ---"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM url('file://${REL}')"
 

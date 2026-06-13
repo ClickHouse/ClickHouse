@@ -1959,11 +1959,18 @@ const char * tableFunctionNameForURLScheme(URLSchemeTarget target)
 
 String getLocalPathFromFileURL(const String & url)
 {
-    static constexpr std::string_view prefix = "file://";
-    if (!url.starts_with(prefix))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a `file://` URL, got: {}", url);
-    /// `file:///abs/path` -> `/abs/path` (absolute), `file://relative.csv` -> `relative.csv` (relative to user_files).
-    return url.substr(prefix.size());
+    /// The scheme is case-insensitive (matching `classifyURLScheme`), so derive the path from the
+    /// `://` separator rather than matching a literal lowercase `file://` prefix.
+    auto scheme_pos = url.find("://");
+    if (scheme_pos != String::npos)
+    {
+        String scheme = url.substr(0, scheme_pos);
+        boost::to_lower(scheme);
+        if (scheme == "file")
+            /// `file:///abs/path` -> `/abs/path` (absolute), `file://relative.csv` -> `relative.csv` (relative to user_files).
+            return url.substr(scheme_pos + std::string_view("://").size());
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a `file://` URL, got: {}", url);
 }
 
 AzureURLParts parseAzureURL(const String & url)
