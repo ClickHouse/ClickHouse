@@ -671,6 +671,17 @@ class Runner:
             output["PR_BODY"] = ""
             output["PR_TITLE"] = ""
             output["COMMIT_MESSAGE"] = ""
+            # JOB_KV_DATA carries user-authored strings too (e.g. the
+            # `changed_files`/`changed_integration_tests` paths a PR can name
+            # arbitrarily), so a path matching a secret pattern would suppress
+            # the whole output the same way. The downstream-visible `data`
+            # output only needs `workflow_config` as plain JSON (for the GitHub
+            # Actions `if: fromJson(...).workflow_config` expressions); the rest
+            # is consumed solely by _Environment.from_workflow_data. Encode the
+            # whole bucket as opaque base64 so no raw user text can match a
+            # pattern - base64 is already used for `cache_success_base64` in the
+            # same output, so it is known to pass the masker.
+            output["JOB_KV_DATA"] = Utils.to_base64(json.dumps(env.JOB_KV_DATA))
         else:
             output = job_outputs
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:

@@ -280,6 +280,16 @@ class _Environment(MetaClasses.Serializable):
                 f"at the very end of the [{Settings.CI_CONFIG_JOB_NAME}] job log)"
             )
 
+        # JOB_KV_DATA is stored as opaque base64 in the initial job's output
+        # (see Runner.run) to keep user-authored strings such as changed file
+        # paths from matching a secret pattern and suppressing the output -
+        # decode it back into a dict here
+        kv_data = env_dict.get("JOB_KV_DATA")
+        if isinstance(kv_data, str):
+            env_dict["JOB_KV_DATA"] = (
+                json.loads(Utils.from_base64(kv_data)) if kv_data else {}
+            )
+
         # User-authored free text is stripped from the initial job's output
         # (see Runner.run: the runner drops outputs matching secret patterns) -
         # restore it from the local event payload
