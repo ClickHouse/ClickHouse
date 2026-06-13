@@ -15,11 +15,16 @@
 -- so the array is returned unchanged.
 SET variant_throw_on_type_mismatch = 0;
 
--- Variant(Array(UInt32)) — single alternative, no inner truncation.
+-- Variant(Array(UInt32)): single alternative, no inner truncation.
 SELECT arrayRemove([NULL, [257, 65537]], [['hello']]);
 
--- Variant(Array(Int64)) — Int64 to fit the negative value and the very large one.
+-- Variant(Array(Int64)): Int64 to fit the negative value and the very large one.
 SELECT arrayRemove([NULL, [9223372036854775807, -2147483648, 1048576]], [['hello']]);
+
+-- Multi-alternative Variant with no NULL element: [[...Int64...], [...Float64...]]
+-- builds Array(Variant(Array(Int64), Array(Float64))); neither alternative
+-- matches Array(Array(String)) (the type of [['hello']]). Reported on #95839.
+SELECT arrayRemove([[9223372036854775807, -9223372036854775808], [0.9999, 7]], [['hello']]);
 
 -- The default `variant_throw_on_type_mismatch = 1` continues to throw a clean
 -- exception rather than silently no-op'ing.

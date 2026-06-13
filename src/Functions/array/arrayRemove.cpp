@@ -141,7 +141,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         /// equals() on a Variant operand whose alternatives are all incompatible with the other
         /// argument returns Nullable(Nothing) when `variant_throw_on_type_mismatch` is disabled.
         /// In that case removeNullable yields a ColumnNothing while the declared type below is
-        /// UInt8 — passing that mismatch through to FunctionIf::executeGeneric trips an
+        /// UInt8, so passing that mismatch through to FunctionIf::executeGeneric trips an
         /// assertTypeEquality chassert in IColumn::insertFrom. Detect the situation and replace
         /// the column with a constant-zero UInt8: no comparison was possible so no element is
         /// considered equal to elem.
