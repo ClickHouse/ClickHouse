@@ -1,12 +1,3 @@
--- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
--- This test asserts that column DEFAULT values from a table's schema are applied when
--- INSERTing `VALUES (NULL)` through `remote(...)` and `file(...)` table functions. With
--- `send_table_structure_on_insert_with_inline_data=0` the inline-server-parsed path does not
--- propagate the calling-side column descriptions to the receiving INSERT, so DEFAULTs are not
--- applied and NULLs become zero (e.g. `7` -> `0` for `c Int DEFAULT 7`, and `4 77` -> `4 0`
--- for the file case). Pin the legacy path; this is a separate column-description propagation
--- delta in the inline path and should be tracked independently.
-
 SELECT '-- remote table function columns description';
 CREATE TABLE t0 (c Int DEFAULT 7) ENGINE = MergeTree() ORDER BY tuple();
 
