@@ -1090,7 +1090,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
                 const auto km = tryGetKeyMetadata();
                 if (km && km->useRealDiskSize())
                 {
-                    struct stat file_stat;
+                    struct stat file_stat{};
                     if (stat(file_path.c_str(), &file_stat) == 0)
                     {
                         const size_t accounted = km->alignFileSize(reserved_size);
