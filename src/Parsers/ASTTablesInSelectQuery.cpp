@@ -492,7 +492,10 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         children.push_back(database_and_table_name);
     }
 
-    child = r.readChild("table_function");
+    /// `table_function` is parser-owned as an `ASTFunction`; `formatImpl` downcasts it with
+    /// `table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting()`, so a wrong
+    /// node type from malformed `clickhouse_json` must be rejected here.
+    child = r.readChildOfType<ASTFunction>("table_function");
     if (child)
     {
         table_function = child;
@@ -527,7 +530,9 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         children.push_back(column_aliases);
     }
 
-    child = r.readChild("stream_settings");
+    /// `stream_settings` is parser-owned as an `ASTStreamSettings`; `formatImpl` downcasts it
+    /// with `stream_settings->as<ASTStreamSettings &>()`, so reject any other node type here.
+    child = r.readChildOfType<ASTStreamSettings>("stream_settings");
     if (child)
     {
         stream_settings = child;
