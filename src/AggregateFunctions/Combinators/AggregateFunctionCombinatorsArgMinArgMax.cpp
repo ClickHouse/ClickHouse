@@ -1,6 +1,5 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <Common/memory.h>
 
 namespace DB
 {
@@ -17,16 +16,10 @@ namespace
 struct AggregateFunctionCombinatorArgMinArgMaxData
 {
 private:
-    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
-    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
-    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
-    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    SingleValueDataBaseMemoryBlock v_data;
 
 public:
-    explicit AggregateFunctionCombinatorArgMinArgMaxData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-    {
-        generateSingleValueFromType(value_type, v_data);
-    }
+    explicit AggregateFunctionCombinatorArgMinArgMaxData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
 
     ~AggregateFunctionCombinatorArgMinArgMaxData() { data().~SingleValueDataBase(); }
 
@@ -63,7 +56,7 @@ public:
         , data_type(arguments.back())
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
-        , key_offset{::Memory::alignUp(nested_function->sizeOfData(), alignof(Key))}
+        , key_offset{((nested_function->sizeOfData() + alignof(Key) - 1) / alignof(Key)) * alignof(Key)}
         , key_type(arguments[key_col])
     {
         if (!arguments[key_col]->isComparable())
@@ -88,39 +81,6 @@ public:
             return nested_function->getName() + "ArgMin";
         else
             return nested_function->getName() + "ArgMax";
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        const size_t rhs_key_offset = ::Memory::alignUp(rhs_nested->sizeOfData(), alignof(Key));
-        const auto & rhs_key = *reinterpret_cast<const Key *>(rhs_place + rhs_key_offset);
-
-        if ((isMin && data(place).data().setIfSmaller(rhs_key.data(), arena))
-            || (!isMin && data(place).data().setIfGreater(rhs_key.data(), arena)))
-        {
-            nested_function->destroy(place);
-            nested_function->create(place);
-            nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
-        }
-        else if (data(place).data().isEqualTo(rhs_key.data()))
-        {
-            nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
-        }
     }
 
     bool isState() const override { return nested_function->isState(); }
@@ -253,7 +213,6 @@ public:
 
 }
 
-void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>());

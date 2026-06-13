@@ -3,6 +3,8 @@
 
 set -x
 
+# core.COMM.PID-TID
+sysctl kernel.core_pattern='core.%e.%p-%P'
 dmesg --clear ||:
 
 set -e
@@ -19,36 +21,6 @@ export PATH="$repo_dir/ci/tmp/:$PATH"
 export PYTHONPATH=$repo_dir:$repo_dir/ci
 
 cd /workspace
-
-# Direct sanitizer reports to files instead of the server's stderr to avoid 
-# losing the report when the server aborts. The runtime appends ".<pid>"
-# to `log_path`; reports are merged back in by collect_sanitizer_reports.
-# Existing options from the environment/image are preserved.
-SANITIZER_LOG_BASE="/workspace/sanitizer.log"
-for _san in ASAN TSAN MSAN UBSAN LSAN; do
-    _var="${_san}_OPTIONS"
-    export "$_var"="${!_var:+${!_var} }log_path=${SANITIZER_LOG_BASE}"
-done
-unset _san _var
-
-function collect_sanitizer_reports
-{
-    # Merge sanitizer reports captured via log_path into stderr.log (for the
-    # failure parser) and server.log (for context and the OOM grep). Run from an
-    # EXIT trap so early `set -e` aborts are covered too; `|| true` keeps the
-    # exit code intact.
-    local report
-    for report in "${SANITIZER_LOG_BASE}".*; do
-        [ -e "$report" ] || continue
-        echo "Found sanitizer report: $report"
-        {
-            echo "=== sanitizer report from ${report} ==="
-            cat "$report"
-            echo
-        } | tee -a stderr.log >> server.log || true
-    done
-}
-trap collect_sanitizer_reports EXIT
 
 function configure
 {
@@ -68,25 +40,24 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
-    if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
-        cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-    fi
-
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 EOL
 
+    cat > $CONFIG_DIR/config.d/core.xml <<EOL
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+         since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+EOL
 
     (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
 }
@@ -310,10 +281,6 @@ function fuzz
             then
                 # Give it some time to cool down
                 clickhouse-client --query "SHOW PROCESSLIST"
-                sleep 1
-            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
-            then
-                # Server is alive but at memory limit, give it time to reclaim
                 sleep 1
             else
                 echo "Server live check returns $?"

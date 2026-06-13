@@ -36,7 +36,7 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
     return nullptr;
 }
 
-static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
+ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     if (typeid_cast<const ColumnArray *>(column.get()))
         return column;
