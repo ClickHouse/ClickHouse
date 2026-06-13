@@ -10,6 +10,8 @@
 #include <libnuraft/nuraft.hxx>
 #include <IO/WriteBuffer.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -138,6 +140,7 @@ struct SnapshotFileInfo
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
+
 #if USE_ROCKSDB
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
@@ -235,6 +238,8 @@ public:
     size_t getLatestSnapshotIndex() const;
 
     SnapshotFileInfoPtr getLatestSnapshotInfo() const;
+
+    std::map<uint64_t, SnapshotFileInfoPtr> getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
 
     /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
     /// result pins the file against unlink and cross-disk moves.
