@@ -40,6 +40,16 @@ ${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64
 echo "--- trailing semicolon ---"
 ${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT JSONEachRow;"
 
+# When INTO OUTFILE follows the moved FORMAT, the FORMAT child is attached to the EXPLAIN query
+# before INTO OUTFILE is parsed, so the output-option children must be canonicalized; otherwise the
+# AST children order differs from a re-parse of the formatted query (which emits INTO OUTFILE before
+# FORMAT) and trips the debug-only "Inconsistent AST formatting" tree-hash check during execution.
+echo "--- INTO OUTFILE after moved FORMAT ---"
+OUTFILE="${CLICKHOUSE_TMP}/04321_explain_insert_format_settings_values.out"
+rm -f "$OUTFILE"
+${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT JSONEachRow INTO OUTFILE '$OUTFILE'" && echo "ok"
+rm -f "$OUTFILE"
+
 # The choice of where the FORMAT lands must be stable across a formatting roundtrip, so that the
 # AST does not change when re-parsed. Compare the formatted output of the query with the formatted
 # output of its own formatted output for every shape above.
