@@ -155,6 +155,8 @@ struct AlterCommand
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;
 
+    ASTPtr add_enum_values = nullptr;
+
     /// Target column name
     String rename_to;
 

@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace MergeTreeSetting
@@ -118,6 +119,14 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::SETTINGS;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
+}
+
+DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
+{
+    if (!type_ast || !type_ast->as<ASTExpressionList>())
+         return {};
+
+    return createEnumAdd(type_ast, is_enum16);
 }
 
 /// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
@@ -247,6 +256,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
                 command.settings_resets.emplace(identifier.name());
             }
         }
+
+        if (command_ast->add_enum_values)
+            command.add_enum_values = command_ast->add_enum_values;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -1460,6 +1472,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
+    std::unordered_set<String> columns_with_full_type_modify;
 
     auto ast_to_str = [](const ASTPtr & query) -> String
     {
@@ -1477,9 +1490,114 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
+            if (!command.ignore)
+            {
+                if (command.add_enum_values)
+                {
+                    if (columns_with_full_type_modify.contains(command.column_name))
+                    {
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Cannot combine `MODIFY COLUMN` with an explicit type and `MODIFY COLUMN ... ADD ENUM VALUES` "
+                            "in a single ALTER query");
+                    }
+
+                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
+                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
+                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
+                    /// fail explicitly instead of silently dropping the modification.
+                    if (!has_column)
+                        throw Exception(
+                            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
+                            "column created in the same ALTER statement is not supported.",
+                            backQuote(command.column_name));
+
+                }
+                else if (command.data_type)
+                    columns_with_full_type_modify.emplace(command.column_name);
+            }
+
             if (has_column)
             {
                 const auto & column_from_table = columns.get(command.column_name);
+                struct EnumTypeInfo
+                {
+                    const IDataTypeEnum * enum_type = nullptr;
+                    bool is_nullable = false;
+                    bool is_enum16 = false;
+                };
+
+                auto get_enum_type = [](const IDataType * dt) -> EnumTypeInfo
+                {
+                    const auto * column_enum_type = dynamic_cast<const IDataTypeEnum *>(dt);
+                    if (column_enum_type)
+                    {
+                        bool is_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type);
+                        return {column_enum_type, false, is_enum16};
+                    }
+
+                    const auto * column_nullable_type = dynamic_cast<const DataTypeNullable *>(dt);
+                    if (column_nullable_type)
+                    {
+                        const auto * column_nullable_enum_type = dynamic_cast<const IDataTypeEnum *>(column_nullable_type->getNestedType().get());
+                        if (column_nullable_enum_type)
+                        {
+                            bool is_enum16 = typeid_cast<const DataTypeEnum16 *>(column_nullable_enum_type);
+                            return {column_nullable_enum_type, true, is_enum16};
+                        }
+                    }
+                    return {};
+                };
+
+                if (command.add_enum_values)
+                {
+                    EnumTypeInfo eti = get_enum_type(column_from_table.type.get());
+                    if (!eti.enum_type)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot ADD ENUM VALUES to column {}", command.column_name);
+
+                    DataTypePtr enum_dt = tryCreateAddToEnumType(command.add_enum_values, eti.is_enum16);
+                    if (enum_dt)
+                    {
+                        const auto * column_enum_type = eti.enum_type;
+                        if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(enum_dt.get());
+                            alter_enum_type && alter_enum_type->isAdd())
+                        {
+                            if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
+                            {
+                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(alter_enum_type))
+                                    command.data_type = mergeEnumTypes<Int8>(*base_enum8, *add_enum8);
+                                else
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+                            else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
+                            {
+                                if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(alter_enum_type))
+                                    command.data_type = mergeEnumTypes<Int16>(*base_enum16, *add_enum16);
+                                else
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+                            else
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+
+
+                            if (eti.is_nullable)
+                            {
+                                command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
+                            }
+
+                            /// Advance the working snapshot so that a subsequent command in the same
+                            /// ALTER statement (e.g. another `ADD ENUM VALUES` on the same column) merges
+                            /// against the already-extended type instead of the original one. Without this,
+                            /// `MODIFY COLUMN x ADD ENUM VALUES('a'), MODIFY COLUMN x ADD ENUM VALUES('b')`
+                            /// would lose `a`, because the commands are applied sequentially afterwards.
+                            columns.modify(command.column_name, [&](ColumnDescription & col) { col.type = command.data_type; });
+                        }
+                    }
+                }
+
                 if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;

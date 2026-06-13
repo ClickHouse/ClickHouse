@@ -1,9 +1,12 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+
+#include <algorithm>
+#include <cctype>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/DateLUTImpl.h>
-#include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
@@ -343,7 +346,21 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     part_info.disk = disk;
     part_info.dir_name = dir_name;
 
-    /// First, try to find known prefix and parse dir_name as <prefix>_<part_name>.
+    /// First let's check if it ends with the "_tryN" suffix
+    if (const auto try_n_pos = dir_name.rfind(TRY_N_SUFFIX); try_n_pos != String::npos)
+    {
+        chassert(dir_name.size() >= 2);
+        const auto first_char_pos_after_try_n = try_n_pos + TRY_N_SUFFIX.size();
+        /// Require at least one digit after "_try" and accept any number of trailing digits
+        if (first_char_pos_after_try_n < dir_name.size()
+            && std::all_of(dir_name.begin() + first_char_pos_after_try_n, dir_name.end(), [](unsigned char c) { return std::isdigit(c); }))
+        {
+            dir_name.remove_suffix(dir_name.size() - try_n_pos);
+            part_info.has_try_suffix = true;
+        }
+    }
+
+    /// Second, try to find known prefix and parse dir_name as <prefix>_<part_name>.
     /// Arbitrary strings are not allowed for partition_id, so known_prefix cannot be confused with partition_id.
     for (std::string_view known_prefix : DETACH_REASONS)
     {
@@ -399,7 +416,6 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     else
         part_info.valid_name = false;
 
-    // TODO what if name contains "_tryN" suffix?
     return part_info;
 }
 

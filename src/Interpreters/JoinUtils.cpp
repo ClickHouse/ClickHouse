@@ -16,11 +16,11 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
 
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
+#include <algorithm>
 #include <ranges>
 
 namespace DB
@@ -552,12 +552,11 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
-    WeakHash32 hash(num_rows);
+    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
-        hash.update(key_col->getWeakHash32());
+        key_col->computeHashInto(0, num_rows, hash.data(), false);
     }
     auto selector = hashToSelector(hash, sharder);
 

@@ -4,7 +4,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 
@@ -167,24 +166,28 @@ void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHas
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
+/// Finalized per-row CRC32C hash of a decimal value (seeded with `WEAK_HASH32_INITIAL_VALUE`).
+/// Accesses `.value` directly to avoid `wide::integer` implicit-conversion constraints; `intHashCRC32`
+/// consumes the whole native word (folding 64-bit words for 128/256-bit decimals).
 template <is_decimal T>
-WeakHash32 ColumnDecimal<T>::getWeakHash32() const
+static inline UInt32 weakHashDecimalValue32(const T & v) noexcept
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
+    return static_cast<UInt32>(intHashCRC32(v.value, WEAK_HASH32_INITIAL_VALUE));
+}
 
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
-
-    while (begin < end)
-    {
-        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
-    }
-
-    return hash;
+template <is_decimal T>
+void ColumnDecimal<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
+    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+    if (initial)
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = weakHashDecimalValue32(src[i]);
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(weakHashDecimalValue32(src[i]), hash_out[i]);
 }
 
 template <is_decimal T>

@@ -2,6 +2,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/validateColumnType.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
@@ -316,12 +317,40 @@ void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
         column.column->updateHashWithValue(n, hash);
 }
 
-WeakHash32 ColumnFunction::getWeakHash32() const
+void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 hash(elements_size);
+    const size_t n = row_end - row_begin;
+
+    if (captured_columns.empty())
+    {
+        /// No captures: a single fixed per-row hash (all bits set).
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
+        return;
+    }
+
+    if (initial)
+    {
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every capture.
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        for (const auto & column : captured_columns)
+            column.column->computeHashInto(row_begin, row_end, hash_out, false);
+        return;
+    }
+
+    /// Non-initial: build the finalized function row hash in a scratch buffer, then combine that
+    /// single value into the prior key columns' hash (rather than streaming captures straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    PaddedPODArray<UInt32> function_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : captured_columns)
-        hash.update(column.column->getWeakHash32());
-    return hash;
+        column.column->computeHashInto(row_begin, row_end, function_hash.data(), false);
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(function_hash[i], hash_out[i]);
 }
 
 void ColumnFunction::updateHashFast(SipHash & hash) const
