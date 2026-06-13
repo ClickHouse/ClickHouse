@@ -2,3 +2,4 @@ union_cumulative_budget
 intersect_cumulative_budget
 union_invalid_topology
 intersect_invalid_topology
+convexhull_truncated_payload
