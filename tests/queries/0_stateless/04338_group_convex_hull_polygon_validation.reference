@@ -1,0 +1,5 @@
+convexhull_polygon_empty_outer_nonempty_inner
+convexhull_multipolygon_empty_outer_nonempty_inner
+convexhull_polygon_nan_in_hole
+convexhull_polygon_inf_in_hole
+convexhull_multipolygon_nan_in_hole
