@@ -215,7 +215,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 If the `WITH TOTALS` modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the "total" values).
 
-With [group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) `= 1`, the real `GROUP BY` key columns whose types can be wrapped in [Nullable](/sql-reference/data-types/nullable) are converted to `Nullable` and are reported as `NULL` (instead of their default value) in the totals row. Keys whose types cannot be made `Nullable` (for example `Array` or `Map`) keep their default value. A constant key that is folded away before aggregation is not a real key column, so it also keeps its constant value in the totals row.
+With [group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) `= 1` and the analyzer enabled (`enable_analyzer = 1`, the default), the real `GROUP BY` key columns whose types can be wrapped in [Nullable](/sql-reference/data-types/nullable) are converted to `Nullable` and are reported as `NULL` (instead of their default value) in the totals row. Keys whose types cannot be made `Nullable` (for example `Array` or `Map`) keep their default value. A constant key that is folded away before aggregation is not a real key column, so it also keeps its constant value in the totals row. With the old query analyzer (`enable_analyzer = 0`) this conversion is not applied, and the key columns keep their default value in the totals row.
 
 This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separately from the other rows:
 
