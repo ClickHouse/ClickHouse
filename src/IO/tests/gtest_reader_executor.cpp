@@ -80,6 +80,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesFromPageCache;
+    extern const Event ReaderExecutorBytesFromFilesystemCache;
+    extern const Event ReaderExecutorOverReadBytes;
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
@@ -4637,6 +4639,25 @@ namespace
 /// readNextWindow outputs equal describePlan's predicted steps. Window/block/
 /// look-ahead are set >= the file so runs are never chunked and the plan never
 /// rebuilds - the schedule's maximal-run steps then map 1:1 to the live calls.
+///
+/// Byte-KPIs computed analytically from the schedule (the cost oracle): every
+/// byte's origin is in the schedule, so R / served / over-read need no run.
+struct PredictedKpi { size_t from_source = 0; size_t served_from_cache = 0; size_t over_read = 0; };
+
+PredictedKpi predictKpi(const PlanSchedule & s)
+{
+    PredictedKpi k;
+    for (const auto & r : s.retrieves)
+        if (r.source == PlanSchedule::Source::Remote)
+            k.from_source += r.range.size;
+    size_t user_from_remote = 0;
+    for (const auto & tr : s.ranges)
+        if (tr.purpose == PlanSchedule::Purpose::User)
+            (tr.resident ? k.served_from_cache : user_from_remote) += tr.range.size;
+    k.over_read = k.from_source - user_from_remote;  // remote bytes that did not serve the request
+    return k;
+}
+
 void validateScheduleMatchesReality(
     std::shared_ptr<IFileBasedSourceReader> src,
     const StoredObjects & objects,
@@ -4649,6 +4670,14 @@ void validateScheduleMatchesReality(
     opts.block_size = file_size * 2 + 1;
     opts.plan_look_ahead_window = file_size * 2 + 1;
     opts.min_bytes_for_seek = min_bytes_for_seek;
+
+    TestThreadGroup tg;  /// per-call ProfileEvents context for the KPI deltas
+    auto & pe = CurrentThread::getProfileEvents();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
+    const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load();
+    const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load();
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+
     ReaderExecutor executor(src, objects, std::move(caches), opts);
 
     std::vector<ByteRange> outputs;
@@ -4671,6 +4700,23 @@ void validateScheduleMatchesReality(
     {
         EXPECT_EQ(outputs[i].offset, sched.steps[i].output.offset) << "window " << i << " offset";
         EXPECT_EQ(outputs[i].size, sched.steps[i].output.size) << "window " << i << " size";
+    }
+
+    /// The schedule's predicted byte-KPIs equal the executor's actual
+    /// ProfileEvents - for non-bridged plans. With bridging (`min_bytes_for_seek
+    /// > 0`) the schedule's `connections()` predicts a resident hole is
+    /// over-read from remote, but whether the executor actually bridges it is a
+    /// runtime live-connection decision the static schedule cannot predict
+    /// exactly (and the >= file window distorts it further), so the R / over-read
+    /// prediction is only an upper bound there. The no-bridge case is exact.
+    if (min_bytes_for_seek == 0)
+    {
+        const auto k = predictKpi(sched);
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, k.from_source) << "R";
+        EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load() - page0)
+                + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load() - fs0),
+            k.served_from_cache) << "served from cache";
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, k.over_read) << "over-read";
     }
 }
 
@@ -4794,4 +4840,50 @@ TEST(ReaderExecutor, SeveralFetchesFillAllGaps)
     for (size_t b = 0; b < nblocks; ++b)
         EXPECT_TRUE(cache->hasBlock(b))
             << "gap block " << b << " must be cached after the multi-fetch fill";
+}
+
+/// The schedule predicts the executor's byte-KPIs exactly. Gap + resident island
+/// + before-slack (seek mid-block) so R, served, and over-read are all non-zero.
+TEST(ReaderExecutor, SchedulePredictsByteKpis)
+{
+    const size_t block = 64 * 1024;
+    const size_t file = 256 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto fs = std::make_shared<WideGranularityMockCache>(block, "fs");
+    fs->seedBlock(1, 'R');  // resident island [64K,128K)
+
+    TestThreadGroup tg;
+    auto & pe = CurrentThread::getProfileEvents();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
+    const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load();
+    const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load();
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+
+    ReaderExecutor::Options opts;
+    opts.window_size = file * 2;
+    opts.block_size = file * 2;
+    opts.plan_look_ahead_window = file * 2;
+    opts.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {fs}, opts);
+    executor.seek(32 * 1024);  // mid-block-0 -> before-slack [0,32K) when filling block 0
+
+    std::shared_ptr<const ReadPlanGeometry> geom;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (!geom)
+            geom = executor.planGeometryForTest();
+        if (rope.empty())
+            break;
+    }
+    ASSERT_NE(geom, nullptr);
+
+    auto sched = describePlan(*geom, ByteRange{32 * 1024, file - 32 * 1024}, MemoryPressureLevel{}, 0);
+    auto k = predictKpi(sched);
+
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, k.from_source) << "R";
+    EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load() - page0)
+            + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load() - fs0),
+        k.served_from_cache) << "served from cache";
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, k.over_read) << "over-read";
 }
