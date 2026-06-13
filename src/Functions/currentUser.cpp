@@ -90,6 +90,7 @@ SELECT CURRENT_USER
     factory.registerFunction<FunctionCurrentUser>(documentation);
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("session_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }
 
 }
