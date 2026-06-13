@@ -2,9 +2,16 @@ import sys
 from pathlib import Path
 
 from ci.defs.defs import JobNames
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+
+# Labels that mark a PR as a bug fix (set by the `pr_labels_and_category.py`
+# pre-hook from the changelog category). Gating on labels rather than a
+# free-text scan of the PR body avoids self-triggering on prose that merely
+# mentions "Bug Fix".
+_BUGFIX_LABELS = (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
 
 
 def has_new_functional_tests(changed_files):
@@ -54,7 +61,7 @@ def has_ci_report_link(pr_body):
 # the per-arch runner inverts the test status (XFAIL): the job reports OK
 # iff the bug reproduced on master HEAD AND was fixed on the PR for that
 # arch. Per-arch jobs are configured with `allow_failure=True` so an
-# individual FAIL doesn't block PR merge — instead, this post-hook is
+# individual FAIL doesn't block PR merge - instead, this post-hook is
 # responsible for the merge-blocking decision: validation passes iff at
 # least ONE per-arch job is OK (or new unit tests were added; unit tests
 # can't be auto-validated by re-running master HEAD).
@@ -63,10 +70,6 @@ _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES = (
     JobNames.BUGFIX_VALIDATE_FT_ARM,
     JobNames.BUGFIX_VALIDATE_IT_AMD,
     JobNames.BUGFIX_VALIDATE_IT_ARM,
-    # Legacy monolithic names — kept here so cached/historical workflows
-    # (which may still emit these names) still validate correctly.
-    JobNames.BUGFIX_VALIDATE_FT,
-    JobNames.BUGFIX_VALIDATE_IT,
 )
 
 
@@ -76,7 +79,7 @@ def any_bugfix_validation_passed():
 
     SKIPPED jobs do NOT count as a pass: a job that filter_job skipped
     because the corresponding test type wasn't changed has no opinion on
-    whether the bug was validated. We use `is_success()` (strict — OK or
+    whether the bug was validated. We use `is_success()` (strict - OK or
     XFAIL only) rather than `is_ok()` (which treats SKIPPED as OK).
     """
     info = Info()
@@ -84,7 +87,7 @@ def any_bugfix_validation_passed():
         workflow_result = Result.from_fs(info.workflow_name)
     except Exception as e:
         # Defensive: if the workflow result file isn't on disk yet (very
-        # early in a workflow), don't crash — the post-hook will be retried.
+        # early in a workflow), don't crash - the post-hook will be retried.
         print(
             f"WARNING: failed to read workflow result for "
             f"[{info.workflow_name}]: {e}"
@@ -99,13 +102,13 @@ def any_bugfix_validation_passed():
                 passed.append(sub.name)
     if matched:
         print(
-            f"Bugfix validation per-arch jobs: {matched} — "
+            f"Bugfix validation per-arch jobs: {matched} - "
             f"passed: {passed if passed else 'none'}"
         )
     else:
         print(
             "WARNING: no Bugfix Validation per-arch jobs found in workflow "
-            "result — were they all filtered/skipped?"
+            "result - were they all filtered/skipped?"
         )
     return bool(passed)
 
@@ -118,8 +121,13 @@ def check():
     else:
         print("WARNING: Failed to get PR body from GH API - using workflow context")
         pr_body = Info().pr_body
+    if not labels:
+        labels = Info().pr_labels
 
-    if not " Bug Fix" in pr_body:
+    # Gate on the bug-fix labels (set by `pr_labels_and_category.py` from the
+    # changelog category), not on a substring scan of the PR body: ordinary PR
+    # text that mentions "Bug Fix" must not enable this hook.
+    if not any(lb in labels for lb in _BUGFIX_LABELS):
         print("Not a bug fix PR - skip")
         return True
 
@@ -133,12 +141,12 @@ def check():
     # so neither the unit-only shortcut nor the CI-report-link fallback
     # can bypass per-arch Bugfix Validation when the PR adds functional
     # or integration regression tests. (Bot reviews on PR #103541,
-    # 2026-05-03 / 2026-05-04 — concerns #5 and #6.)
+    # 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
 
     # New functional or integration regression tests exist. Those tests
     # MUST validate on at least one arch (the bug reproduces on master
     # HEAD and is fixed on the PR). The CI-report-link fallback is NOT
-    # accepted here — it would let an unvalidated FT/IT regression test
+    # accepted here - it would let an unvalidated FT/IT regression test
     # through and weaken the contract this hook enforces. The presence
     # of an additional unit test alongside FT/IT does not relax this
     # requirement either.
@@ -149,7 +157,7 @@ def check():
             )
             return True
         print(
-            "No per-arch Bugfix Validation job validated the bug — the test "
+            "No per-arch Bugfix Validation job validated the bug - the test "
             "either passes on master HEAD on every arch (so it's not actually "
             "a regression test for the fix) or every arch errored out. See "
             "the per-arch Bugfix validation jobs in the report."
@@ -167,7 +175,7 @@ def check():
 
     # No new tests at all. Allow a link to a CI report in the PR body as
     # proof the bug exists and was fixed (operator-supplied evidence in
-    # lieu of an automated test). This fallback applies only here — it
+    # lieu of an automated test). This fallback applies only here - it
     # does NOT override per-arch Bugfix Validation when FT/IT tests are
     # present (see the branch above).
     if has_ci_report_link(pr_body):

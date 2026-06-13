@@ -6,7 +6,7 @@ test for a bug, which is expected to `FAIL` on master HEAD, is reported as
 "bug reproduced". When the test instead passes on master HEAD, the bug did
 not reproduce on this arch (no-repro): the inverter reports `SKIPPED` and
 returns True, so the caller propagates `SKIPPED` to the top-level result and
-the per-arch job exits 0 without being counted as a validation — another
+the per-arch job exits 0 without being counted as a validation - another
 arch can still validate the bug (the per-arch contract, PR #103541).
 
 When the run itself failed catastrophically (status `ERROR`, e.g. runner

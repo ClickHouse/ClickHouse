@@ -83,7 +83,7 @@ workflow = Workflow.Config(
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
         # both amd64 and aarch64). Each per-arch variant has
-        # `allow_failure=True` so an individual FAIL doesn't block PR merge —
+        # `allow_failure=True` so an individual FAIL doesn't block PR merge -
         # the aggregate decision (validate iff at least one arch passed) lives
         # in the `new_tests_check.py` workflow post-hook below.
         *JobConfigs.bugfix_validation_ft_pr_jobs,

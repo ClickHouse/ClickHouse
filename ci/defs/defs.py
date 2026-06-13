@@ -363,20 +363,12 @@ class JobNames:
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
-    # Legacy monolithic names — kept for backward compatibility with cached
-    # historical CI runs. The current architecture parametrizes each test type
-    # by architecture (amd64 / aarch64) so that arch-specific bug fixes can
-    # validate on at least one architecture; the final pass/fail decision is
-    # made by the `new_tests_check.py` workflow post-hook (which OR's the
-    # per-arch job statuses).
-    BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
-    BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
     # Per-arch bugfix validation jobs. Each runs the new/modified test on
     # master HEAD and on the PR, and reports one of three top-level statuses:
-    #   * `OK`      — bug reproduced on master HEAD AND fixed on PR (validated)
-    #   * `SKIPPED` — bug did not reproduce on master HEAD on this arch
-    #                 (no-repro: another arch can still validate)
-    #   * `ERROR`   — infrastructure error / inconclusive run (no signal)
+    #   * `OK`     : bug reproduced on master HEAD AND fixed on PR (validated)
+    #   * `SKIPPED`: bug did not reproduce on master HEAD on this arch
+    #                (no-repro: another arch can still validate)
+    #   * `ERROR`  : infrastructure error / inconclusive run (no signal)
     # The runners (`ci/jobs/functional_tests.py`,
     # `ci/jobs/integration_test_job.py`) propagate `SKIPPED` to the top-level
     # `R` directly so the post-hook does not treat the no-repro case as
@@ -385,7 +377,7 @@ class JobNames:
     # `ERROR` (sanitizer assert, OOM, runner termination) does not block PR
     # merge on its own. The merge-blocking decision is made by the
     # `new_tests_check.py` post-hook, which uses strict `is_success` (`OK` or
-    # `XFAIL`) — `SKIPPED`/`ERROR`/`FAIL` per-arch jobs do NOT count as a
+    # `XFAIL`); `SKIPPED`/`ERROR`/`FAIL` per-arch jobs do NOT count as a
     # validation. The bug is considered validated as long as AT LEAST ONE
     # per-arch job is strict-success.
     BUGFIX_VALIDATE_FT_AMD = "Bugfix validation (functional tests, amd64)"

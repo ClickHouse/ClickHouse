@@ -6,7 +6,7 @@ The hook gates Bug-Fix PRs on whether at least one per-arch Bugfix Validation
 job (`OK`/`XFAIL`) confirmed the bug reproduces on master HEAD and is fixed
 on the PR. Earlier iterations of this branch had two bypasses in `check`
 (`has_unit` shortcut, CI-report-link fallback) that let an unvalidated FT/IT
-regression test through — both were caught only by review. These tests pin
+regression test through - both were caught only by review. These tests pin
 the truth table so future changes cannot reintroduce a bypass.
 
 Invariant under test: when a Bug-Fix PR adds new functional or integration
@@ -60,10 +60,11 @@ class _StubInfo:
     `any_bugfix_validation_passed` touch is implemented.
     """
 
-    def __init__(self, *, workflow_name="PR", pr_body="", changed_files=None):
+    def __init__(self, *, workflow_name="PR", pr_body="", changed_files=None, labels=None):
         self.workflow_name = workflow_name
         self.pr_body = pr_body
         self._changed_files = list(changed_files or [])
+        self.pr_labels = list(labels or [])
 
     def get_changed_files(self):
         return list(self._changed_files)
@@ -85,11 +86,21 @@ def _install_stubs(
     not required to exist on disk: `has_new_*_tests` use `Path.is_file`, so
     the helpers in `new_tests_check` are also stubbed to return whether any
     matching path was provided.
+
+    `labels` drives the bug-fix gate, which `check()` keys on the
+    `pr-bugfix` / `pr-critical-bugfix` labels (set by the
+    `pr_labels_and_category.py` pre-hook), NOT the PR body text. When not
+    given explicitly, the bug-fix label is inferred from the legacy
+    "Bug Fix" changelog marker in `pr_body` so the truth-table cases below
+    stay terse; pass `labels=[...]` to exercise the label gate directly.
     """
+    if labels is None:
+        labels = ["pr-bugfix"] if " Bug Fix" in pr_body else []
     stub_info = _StubInfo(
         workflow_name="PR",
         pr_body=pr_body,
         changed_files=list(changed_files),
+        labels=labels,
     )
     monkeypatch.setattr(new_tests_check, "Info", lambda: stub_info)
 
@@ -204,7 +215,7 @@ def test_any_bugfix_validation_passed_fail_does_not_count(monkeypatch):
     """A `FAIL` per-arch result must not count as validated.
 
     Per-arch runners propagate `SKIPPED` for the no-repro case rather than
-    `FAIL`, so a `FAIL` here would be a runner regression — the post-hook
+    `FAIL`, so a `FAIL` here would be a runner regression - the post-hook
     must not silently accept it.
     """
     _install_stubs(
@@ -292,7 +303,7 @@ def test_it_present_one_per_arch_ok_passes_check(monkeypatch):
 
 
 def test_ft_plus_unit_does_not_let_unit_bypass_per_arch(monkeypatch):
-    """Concern #5 — unit-only shortcut cannot bypass FT/IT validation.
+    """Concern #5 - unit-only shortcut cannot bypass FT/IT validation.
 
     A PR that adds BOTH a unit test AND a functional regression test must
     still validate via per-arch Bugfix Validation. The unit-test presence
@@ -314,7 +325,7 @@ def test_ft_plus_unit_does_not_let_unit_bypass_per_arch(monkeypatch):
 
 
 def test_ft_plus_ci_report_link_does_not_bypass_per_arch(monkeypatch):
-    """Concern #6 — the CI-report-link fallback cannot bypass FT validation.
+    """Concern #6 - the CI-report-link fallback cannot bypass FT validation.
 
     A Bug-Fix PR that adds an FT regression test AND links a CI report in
     the PR body must still validate via per-arch Bugfix Validation. The
@@ -407,21 +418,54 @@ def test_ft_present_with_xfail_per_arch_passes(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Backwards compatibility: legacy monolithic job names
+# Bug-fix gate keys on labels, not PR body text
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_monolithic_ft_job_name_still_recognized(monkeypatch):
-    """Cached or historical workflows may emit the legacy monolithic job
-    names. The post-hook must still treat their `OK` as a validation.
+def test_ci_only_pr_body_mentioning_bug_fix_is_not_gated(monkeypatch):
+    """A CI-only PR (labeled `pr-ci`, no `pr-bugfix`) whose body merely
+    mentions "Bug Fix" in prose must NOT be treated as a Bug-Fix PR. Gating
+    on the body substring used to self-trigger this hook on exactly such PRs
+    (PR #103541 bot review, 2026-06-13).
     """
     _install_stubs(
         monkeypatch,
-        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        pr_body="CI change.\n\nThis hook should skip unless Bug Fix PR.\n",
+        changed_files=["src/Functions/UnrelatedSourceFile.cpp"],
+        workflow_subresults=[],
+        labels=["pr-ci"],
+    )
+    assert new_tests_check.check() is True
+
+
+def test_bugfix_label_gates_even_without_body_marker(monkeypatch):
+    """The `pr-bugfix` label alone enables the gate, regardless of body text:
+    a labeled Bug-Fix PR with an FT regression test and no per-arch validation
+    is rejected.
+    """
+    _install_stubs(
+        monkeypatch,
+        pr_body="A fix with no changelog marker in the body.\n",
         changed_files=["tests/queries/0_stateless/04500_my_regression.sql"],
         workflow_subresults=[
-            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT, Result.Status.OK),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_ARM, Result.Status.SKIPPED),
         ],
+        labels=["pr-bugfix"],
+    )
+    assert new_tests_check.check() is False
+
+
+def test_critical_bugfix_label_also_gates(monkeypatch):
+    """`pr-critical-bugfix` enables the gate the same way as `pr-bugfix`."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A critical fix.\n",
+        changed_files=["tests/queries/0_stateless/04500_my_regression.sql"],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.OK),
+        ],
+        labels=["pr-critical-bugfix"],
     )
     assert new_tests_check.check() is True
 

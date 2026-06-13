@@ -545,19 +545,20 @@ class JobConfigs:
     # Per-arch Bugfix Validation Check (functional tests).
     #
     # Each variant (amd64, aarch64) runs the new/modified test on master HEAD
-    # and on the PR. A variant validates the bug when the test FAILS on master
-    # HEAD AND PASSES on the PR for that arch — the runner inverts the test
-    # statuses (XFAIL) and reports OK when at least one inversion happened,
-    # FAIL otherwise. See `ci/jobs/functional_tests.py` for the inversion
-    # logic.
+    # and on the PR, then inverts the test status. The runner sets one of three
+    # top-level statuses (see `invert_bugfix_validation_status` in
+    # `ci/jobs/functional_tests.py`):
+    #   * `OK` / `XFAIL`: bug reproduced on master HEAD AND fixed on the PR
+    #                     for this arch (validated)
+    #   * `SKIPPED`: bug did not reproduce on master HEAD on this arch
+    #                (no-repro: another arch can still validate)
+    #   * `ERROR` / `FAIL`: infrastructure error / inconclusive run (no signal)
     #
-    # Each per-arch job has `allow_failure=True` so an individual FAIL does
-    # NOT block PR merge: it's expected that a variant fails when the bug is
-    # arch-specific and doesn't reproduce on the "other" arch. The merge-
-    # blocking decision is centralized in the `new_tests_check.py` workflow
-    # post-hook (see `ci/jobs/scripts/workflow_hooks/new_tests_check.py`),
-    # which OR's the per-arch job statuses: validation passes as long as
-    # AT LEAST ONE per-arch job reported OK.
+    # Each per-arch job has `allow_failure=True` so a genuine `ERROR` does NOT
+    # block PR merge on its own. The merge-blocking decision is centralized in
+    # the `new_tests_check.py` workflow post-hook, which uses strict
+    # `is_success()`: validation passes iff AT LEAST ONE per-arch job is
+    # `OK`/`XFAIL`. `SKIPPED`/`ERROR`/`FAIL` per-arch jobs do NOT count.
     #
     # Rationale: some bug fixes are architecture-specific (e.g. SSE2/AVX-only
     # on x86, NEON-only on aarch64). With the previous monolithic single-arch
@@ -763,10 +764,11 @@ class JobConfigs:
         ),
     )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
-    # comment above for `bugfix_validation_ft_pr_jobs`. Each per-arch variant
-    # has `allow_failure=True` so its FAIL doesn't block PR merge directly;
-    # the `new_tests_check.py` workflow post-hook centralizes the merge
-    # decision by OR'ing the per-arch statuses.
+    # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
+    # per-arch variant has `allow_failure=True` so a genuine `ERROR` doesn't
+    # block PR merge directly; the `new_tests_check.py` workflow post-hook
+    # centralizes the merge decision via strict `is_success()` (validated iff
+    # at least one per-arch job is `OK`/`XFAIL`).
     bugfix_validation_it_jobs = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE)
         .set_command(

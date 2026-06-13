@@ -166,13 +166,13 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     `new_tests_check.py` post-hook (which uses strict `is_success`). This is
     the per-arch contract: a regression test that passes on master HEAD on
     one arch (e.g. an x86-only fix validated on aarch64 where the bug never
-    existed) must not block the PR — another arch can still validate it.
+    existed) must not block the PR - another arch can still validate it.
 
     When the run ended in `Result.Status.ERROR` (runner did not finish,
     e.g. server crash without proper exit code, Python exception,
     infrastructure outage) the per-test list is empty or partial and the
     pre-inversion `ERROR` already tells the truth. Preserve it instead of
-    overwriting with a validation verdict — an infra-induced failure is
+    overwriting with a validation verdict - an infra-induced failure is
     never counted as a validation. See #105789.
     """
     if test_result.status == Result.Status.ERROR:
@@ -194,17 +194,17 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
         elif r.status == Result.Status.OK:
             r.status = Result.Status.FAIL
     if not has_failure:
-        # The bug did not reproduce on this arch — every regression test case
+        # The bug did not reproduce on this arch - every regression test case
         # still passed on master HEAD here. Report SKIPPED so the per-arch job
         # exits 0 (`Result.is_ok` includes SKIPPED) and the GitHub status is
         # not red. The post-hook in `new_tests_check.py` uses `is_success`
-        # (strict — `OK`/`XFAIL` only), so a SKIPPED per-arch job does NOT
+        # (strict - `OK`/`XFAIL` only), so a SKIPPED per-arch job does NOT
         # count as a validation, preserving the contract that at least one
         # arch must reproduce the bug. The caller propagates this SKIPPED to
         # the top-level `R` (see `bugfix_validation_no_repro`).
-        print("Bug does not reproduce on this arch — bugfix validation N/A")
+        print("Bug does not reproduce on this arch - bugfix validation N/A")
         test_result.set_status(Result.Status.SKIPPED).set_info(
-            "Bug does not reproduce on this arch — bugfix validation N/A"
+            "Bug does not reproduce on this arch - bugfix validation N/A"
         )
         return True
     test_result.set_success()
@@ -832,7 +832,7 @@ def main():
         # reproduce on this arch. In that case it sets `test_result` to
         # SKIPPED; the SKIPPED status must also be propagated to the top-level
         # `R` below, because `Result.create_from` treats SKIPPED child results
-        # as benign and defaults the parent status to OK — which would let the
+        # as benign and defaults the parent status to OK - which would let the
         # post-hook in `new_tests_check.py` count this per-arch job as a
         # validation via `is_success()`.
         bugfix_validation_no_repro = invert_bugfix_validation_status(test_result)
@@ -906,7 +906,7 @@ def main():
         # `R` directly so the post-hook does not treat this arch as a
         # validation.
         R.set_status(Result.Status.SKIPPED).set_info(
-            "Bug does not reproduce on this arch — bugfix validation N/A"
+            "Bug does not reproduce on this arch - bugfix validation N/A"
         )
 
     if is_llvm_coverage and not is_per_test_coverage:

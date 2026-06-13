@@ -1131,13 +1131,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
             # post-hook cannot accidentally treat this arch as validated.
             print(
                 "Bugfix validation: infrastructure error or session-level "
-                "failure detected — skipping status inversion to avoid "
+                "failure detected - skipping status inversion to avoid "
                 "leaking an infra outcome into validation success."
             )
             if R.is_success():
                 R.set_error().set_info(
                     "Bugfix validation aborted: infrastructure error during "
-                    "the run — no reliable signal about whether the bug "
+                    "the run - no reliable signal about whether the bug "
                     "reproduces on this arch"
                 )
         else:
@@ -1158,9 +1158,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 # the per-arch job does not count as a validation. Contract:
                 # at least one per-arch job must end up `OK`/`XFAIL` for the
                 # post-hook to consider the bug validated.
-                print("Bug does not reproduce on this arch — bugfix validation N/A")
+                print("Bug does not reproduce on this arch - bugfix validation N/A")
                 R.set_status(Result.Status.SKIPPED)
-                R.set_info("Bug does not reproduce on this arch — bugfix validation N/A")
+                R.set_info("Bug does not reproduce on this arch - bugfix validation N/A")
             else:
                 R.set_success()
 
