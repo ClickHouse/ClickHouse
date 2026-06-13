@@ -10,3 +10,31 @@
 3
 4
 5
+-- WITH alias arrayJoin in SELECT
+3
+4
+5
+-- WITH alias arrayJoin in SELECT, old analyzer
+3
+4
+5
+-- WITH alias arrayJoin in SELECT, optimizer disabled
+3
+4
+5
+-- WITH alias arrayJoin in WHERE only
+3
+4
+5
+-- WITH alias arrayJoin in WHERE only, old analyzer
+3
+4
+5
+-- WITH alias arrayJoin unreferenced: pushdown still valid
+0
+1
+2
+-- WITH alias arrayJoin unreferenced, old analyzer
+0
+1
+2
