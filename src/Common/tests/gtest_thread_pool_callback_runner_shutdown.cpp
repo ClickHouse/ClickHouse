@@ -70,10 +70,11 @@ TEST(ThreadPoolCallbackRunner, DroppedOnShutdownDoesNotBreakPromise)
             {
                 pool.wait();
             }
-            catch (const std::exception &)
+            catch (const std::exception & e)
             {
                 /// The blocker's std::runtime_error is rethrown here; expected. Catch the concrete
                 /// std::exception (not catch-all) so anything unexpected propagates and fails the test.
+                SUCCEED() << "pool.wait() rethrew the expected shutdown exception: " << e.what();
             }
             /// Pool destructor (finalize) runs at scope exit and joins the worker.
         }
@@ -94,9 +95,10 @@ TEST(ThreadPoolCallbackRunner, DroppedOnShutdownDoesNotBreakPromise)
                        << ": victim task was dropped without satisfying its promise (broken promise): "
                        << e.what();
             }
-            catch (const Exception &)
+            catch (const Exception & e)
             {
                 /// Expected for dropped tasks: a normal, catchable DB::Exception (CANNOT_SCHEDULE_TASK).
+                EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SCHEDULE_TASK) << e.what();
             }
         }
     }
