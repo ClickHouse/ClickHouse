@@ -74,17 +74,43 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 5. groupConvexHull: in-range declared point count with a truncated coordinate payload.
---    The count (100,000,000) is exactly MAX_POINTS_IN_CONVEX_HULL_STATE, so it passes the
---    cap check, but no coordinate bytes follow. deserialize must stream the payload in
---    bounded batches and fail on the missing coordinates without first allocating the full
---    100M-point vector (~1.6 GB). With a tight max_memory_usage, the previous
---    points.resize(size) would trip MEMORY_LIMIT_EXCEEDED; the bounded reader instead fails
---    fast with CANNOT_READ_ALL_DATA while staying far under the limit.
+-- 5. groupConvexHull: in-range declared point count followed by a truncated coordinate payload.
+--    The count (100,000,000) is exactly MAX_POINTS_IN_CONVEX_HULL_STATE, so it passes the cap
+--    check, but no coordinate bytes follow. The deserializer reads the points incrementally
+--    instead of pre-sizing to the declared count, so it rejects the state on the missing
+--    coordinates without ever allocating the full 100M-point vector.
 SELECT 'convexhull_truncated_payload';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '01',          -- version
         '80C2D72F'     -- 100,000,000 declared points (== limit); no coordinate payload follows
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
-) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+); -- { serverError CANNOT_READ_ALL_DATA }
+
+-- 6. groupPolygonUnion: in-range ring point count followed by a truncated coordinate payload.
+--    The outer ring claims 10,000,000 points (== MAX_POINTS_PER_RING and == the polygonal state
+--    budget), so it passes the per-ring and cumulative checks, but no coordinate bytes follow.
+--    deserializeGeoRing reads the points incrementally instead of pre-sizing to the declared
+--    count, so it rejects the state on the missing coordinates without ever allocating the full
+--    ring (~160 MiB).
+SELECT 'union_truncated_payload';
+SELECT groupPolygonUnionMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '01',          -- version
+        '01',          -- 1 chunk
+        '01',          -- 1 polygon
+        '80ADE204'     -- 10,000,000-point outer ring (== limit); no coordinate payload follows
+    )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
+); -- { serverError CANNOT_READ_ALL_DATA }
+
+-- 7. Same truncated-ring check for groupPolygonIntersection.
+SELECT 'intersect_truncated_payload';
+SELECT groupPolygonIntersectionMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '01',          -- version
+        '01',          -- mode = NonEmpty
+        '01',          -- 1 chunk
+        '01',          -- 1 polygon
+        '80ADE204'     -- 10,000,000-point outer ring (== limit); no coordinate payload follows
+    )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
+); -- { serverError CANNOT_READ_ALL_DATA }
