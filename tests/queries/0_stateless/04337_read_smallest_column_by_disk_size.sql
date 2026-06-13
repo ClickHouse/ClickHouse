@@ -118,6 +118,9 @@ ALTER TABLE t_evolved_pruned ATTACH PART 'all_1_1_0';
 
 SELECT 1 FROM t_evolved_pruned FORMAT Null; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 
-SELECT count() FROM t_evolved_pruned;
+-- Row count comes from part metadata, so it stays available even though the part is unreadable.
+-- Pin optimize_trivial_count_query: with it off (and implicit projections off) count() would take
+-- the no-columns read path, hit the unreadable part and throw NO_SUCH_COLUMN_IN_TABLE instead.
+SELECT count() FROM t_evolved_pruned SETTINGS optimize_trivial_count_query = 1;
 
 DROP TABLE t_evolved_pruned;
