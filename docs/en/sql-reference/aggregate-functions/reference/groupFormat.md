@@ -36,7 +36,7 @@ Column names in the formatted output are generated as `c1`, `c2`, ... in the ord
 
 The function is order-dependent. If you need a deterministic order, sort the input before aggregation.
 
-Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied.
+Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied. The settings are taken from the query that produces the final string: when a stored `AggregateFunction(groupFormat(...), ...)` state is finalized later (for example with `finalizeAggregation` or the `Merge` combinator), the format settings of the finalizing query are used.
 :::
 
 ## NULL handling {#null-handling}

@@ -103,5 +103,24 @@ select groupFormat('JSONEachRow')(if(number = 1, CAST(NULL, 'Nullable(UInt8)'), 
 select groupFormat('JSONEachRow')(NULL) from numbers(1);
 select groupFormat('JSONEachRow')(NULL) from numbers(3);
 
+-- `Distinct` combinator stacks must also preserve nullable payload: `Distinct` forwards
+-- `getOwnNullAdapter`, so `groupFormatDistinctIf` reaches `AggregateFunctionIfRespectNulls`
+-- and keeps the payload `NULL` row instead of skipping it.
+select groupFormatDistinctIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1)) from numbers(3);
+-- Duplicates (including duplicate `NULL` payload values) are collapsed by `Distinct`.
+select groupFormatDistinctIf('JSONEachRow')(if(number % 2 = 0, NULL, number % 2), toUInt8(1)) from numbers(5);
+-- The state path through `Distinct` preserves nullable payload as well.
+select finalizeAggregation(groupFormatDistinctStateIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1))) from numbers(3);
+
+-- Stored `groupFormatState` values must be finalized with the format settings of the
+-- finalizing query, not with settings captured when the column's data type was created
+-- (the session-level `format_csv_delimiter = ';'` set above is overridden per query here).
+drop table if exists t_group_format_state;
+create table t_group_format_state (st AggregateFunction(groupFormat('CSV'), UInt64, String)) engine = Memory;
+insert into t_group_format_state select groupFormatState('CSV')(number, toString(number)) from numbers(2);
+select finalizeAggregation(st) from t_group_format_state settings format_csv_delimiter = '|';
+select finalizeAggregation(st) from t_group_format_state settings format_csv_delimiter = '#';
+drop table t_group_format_state;
+
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

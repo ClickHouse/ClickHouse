@@ -50,6 +50,24 @@ UInt64 getSerializationProtocolVersion(const ContextPtr & context)
     return DBMS_TCP_PROTOCOL_VERSION;
 }
 
+/// The context of the query this thread currently executes, or the global context.
+/// The function object must not capture a context itself: it is embedded into
+/// `DataTypeAggregateFunction` for `AggregateFunction(groupFormat(...), ...)` columns,
+/// and the data type (with the captured context and its settings) would outlive the
+/// query that created it - states stored in a table would then be finalized with
+/// stale format settings.
+ContextPtr resolveFormatContext()
+{
+    ContextPtr context;
+    if (CurrentThread::isInitialized())
+        context = CurrentThread::get().tryGetQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context is not initialized");
+    return context;
+}
+
 class AggregateFunctionGroupFormat final : public IAggregateFunctionDataHelper<GroupFormatData, AggregateFunctionGroupFormat>
 {
 public:
@@ -57,15 +75,12 @@ public:
         const DataTypes & argument_types_,
         const Array & parameters_,
         String format_name_,
-        FormatSettings format_settings_,
-        ContextPtr context_)
+        UInt64 serialization_protocol_version_)
         : IAggregateFunctionDataHelper<GroupFormatData, AggregateFunctionGroupFormat>(
               argument_types_, parameters_, std::make_shared<DataTypeString>())
         , format_name(std::move(format_name_))
-        , format_settings(std::move(format_settings_))
-        , context(std::move(context_))
+        , serialization_protocol_version(serialization_protocol_version_)
     {
-        serialization_protocol_version = getSerializationProtocolVersion(context);
         size_t num_columns = argument_types.size();
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -205,7 +220,17 @@ public:
         const size_t old_size = chars.size();
 
         WriteBufferFromVector<ColumnString::Chars> buffer(chars, AppendModeTag{});
-        auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, context, format_settings);
+
+        /// Format settings are derived from the query that finalizes the state, so that
+        /// stored `AggregateFunction(groupFormat(...), ...)` states (whose function object
+        /// was created together with the column's data type, possibly long ago) are
+        /// formatted with the settings of the current query.
+        auto format_context = resolveFormatContext();
+        auto format_settings = getFormatSettings(format_context);
+        format_settings.json.valid_output_on_exception = false;
+        format_settings.xml.valid_output_on_exception = false;
+
+        auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, format_context, format_settings);
 
         if (!state.columns.empty())
         {
@@ -236,7 +261,7 @@ public:
         /// the actual nullable columns the executor will pass at runtime.
         /// `addBatchSinglePlaceNotNull` on the returned function ignores the null_map,
         /// preserving NULL payload values instead of skipping them.
-        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
+        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, serialization_protocol_version);
     }
 
     bool preservesNullablePayloadForIf() const override
@@ -246,14 +271,12 @@ public:
 
 private:
     String format_name;
-    FormatSettings format_settings;
-    ContextPtr context;
     Block header;
     UInt64 serialization_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 };
 
 AggregateFunctionPtr createAggregateFunctionGroupFormat(
-    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * /* settings */)
 {
     if (argument_types.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
@@ -269,29 +292,15 @@ AggregateFunctionPtr createAggregateFunctionGroupFormat(
     auto format_name = parameters[0].safeGet<String>();
     FormatFactory::instance().checkFormatName(format_name);
 
-    ContextPtr context;
-    if (CurrentThread::isInitialized())
-        context = CurrentThread::get().tryGetQueryContext();
-    if (!context)
-        context = Context::getGlobalContextInstance();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context is not initialized");
-
-    const Settings & settings_ref = settings ? *settings : context->getSettingsRef();
-    ContextPtr format_context = context;
-    if (settings)
-    {
-        auto context_copy = Context::createCopy(context);
-        context_copy->setSettings(settings_ref);
-        format_context = std::move(context_copy);
-    }
-
-    auto format_settings = getFormatSettings(format_context, settings_ref);
-    format_settings.json.valid_output_on_exception = false;
-    format_settings.xml.valid_output_on_exception = false;
+    /// The serialization protocol version is a plain number captured at creation time:
+    /// states are serialized within the query that creates them (e.g. when partial
+    /// aggregation states are sent between servers of a cluster with different versions).
+    /// Format settings, in contrast, are intentionally not captured here - they are
+    /// derived at finalization time in `insertResultInto`.
+    UInt64 serialization_protocol_version = getSerializationProtocolVersion(resolveFormatContext());
 
     return std::make_shared<AggregateFunctionGroupFormat>(
-        argument_types, parameters, std::move(format_name), std::move(format_settings), std::move(format_context));
+        argument_types, parameters, std::move(format_name), serialization_protocol_version);
 }
 
 }
