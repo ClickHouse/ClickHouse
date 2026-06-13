@@ -860,6 +860,48 @@ def test_quoting_publication(started_cluster):
     )
 
 
+def test_table_schema_changed_while_server_down(started_cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/66273:
+    # when the structure of a replicated PostgreSQL table changes while it is not observed
+    # through the replication stream (e.g. the change happens and then the server restarts),
+    # MaterializedPostgreSQL used to abort startup of the whole database with
+    # `LOGICAL_ERROR: Columns number mismatch`, stopping replication of *all* tables.
+    # Now only the affected table is skipped, the rest keep replicating, and the affected
+    # table can be brought back with DETACH/ATTACH.
+    NUM_TABLES = 3
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Change the structure of one table in PostgreSQL and restart ClickHouse, so that the
+    # change is detected during startup rather than through the replication stream.
+    pg_manager.execute("ALTER TABLE postgresql_replica_0 ADD COLUMN col_added integer")
+    instance.restart_clickhouse()
+
+    # The other tables must keep replicating despite the structure mismatch on replica_0.
+    for i in range(1, NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number from numbers(10, 10)"
+        )
+    for i in range(1, NUM_TABLES):
+        check_tables_are_synchronized(instance, f"postgresql_replica_{i}")
+
+    # The affected table is recoverable with DETACH/ATTACH (it picks up the new structure).
+    instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
+    instance.query("ATTACH TABLE test_database.postgresql_replica_0")
+    assert_number_of_columns(instance, 3, "postgresql_replica_0")
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

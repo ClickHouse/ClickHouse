@@ -71,7 +71,26 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     }
 
     for (const auto & [table_name, storage_info] : storages_info_)
-        storages.emplace(table_name, StorageData(storage_info, log));
+    {
+        try
+        {
+            storages.emplace(table_name, StorageData(storage_info, log));
+        }
+        catch (...)
+        {
+            /// The structure of the PostgreSQL table might no longer match the structure of
+            /// the nested ClickHouse table (for example, a column was added or dropped in
+            /// PostgreSQL while the server was down). Do not fail the whole consumer because
+            /// of a single out-of-sync table: skip it (the user can bring it back with
+            /// DETACH/ATTACH) and keep replicating the rest of the tables.
+            tryLogCurrentException(
+                log,
+                fmt::format("Table {} is skipped from replication because its structure does not match "
+                            "the structure of the nested ClickHouse table. "
+                            "Please perform manual DETACH and ATTACH of the table to bring it back",
+                            table_name));
+        }
+    }
 
     LOG_TRACE(log, "Starting replication. LSN: {} (last: {}), storages: {}",
               getLSNValue(current_lsn), getLSNValue(final_lsn), storages.size());
