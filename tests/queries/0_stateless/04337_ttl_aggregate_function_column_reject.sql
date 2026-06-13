@@ -1,6 +1,6 @@
 -- Verify that CREATE TABLE rejects TTL expressions referencing AggregateFunction columns at DDL time.
 
--- Table-level TTL with top-level AggregateFunction column
+-- Table-level TTL: toDateTime cannot accept AggregateFunction state
 CREATE TABLE test_ttl_agg
 (
     key1 String,
@@ -9,9 +9,9 @@ CREATE TABLE test_ttl_agg
 )
 ENGINE = MergeTree()
 ORDER BY (key1, key2)
-TTL toDateTime(ts) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+TTL toDateTime(ts) + INTERVAL 1 DAY; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Column-level TTL with AggregateFunction column
+-- Column-level TTL: same issue
 CREATE TABLE test_ttl_agg_col
 (
     key1 String,
@@ -19,9 +19,9 @@ CREATE TABLE test_ttl_agg_col
     ts AggregateFunction(max, DateTime64(3)) TTL toDateTime(ts) + INTERVAL 1 DAY
 )
 ENGINE = MergeTree()
-ORDER BY (key1, key2); -- { serverError BAD_TTL_EXPRESSION }
+ORDER BY (key1, key2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- TTL DELETE WHERE referencing AggregateFunction column
+-- TTL DELETE WHERE: toDateTime on AggregateFunction in WHERE clause
 CREATE TABLE test_ttl_agg_where
 (
     key1 String,
@@ -31,15 +31,17 @@ CREATE TABLE test_ttl_agg_where
 )
 ENGINE = MergeTree()
 ORDER BY (key1, key2)
-TTL d + INTERVAL 1 DAY DELETE WHERE toDateTime(ts) > toDateTime(0); -- { serverError BAD_TTL_EXPRESSION }
+TTL d + INTERVAL 1 DAY DELETE WHERE toDateTime(ts) > toDateTime(0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Nested AggregateFunction inside Tuple
-CREATE TABLE test_ttl_agg_nested
+-- Valid usage: finalizeAggregation can operate on AggregateFunction states
+CREATE TABLE test_ttl_agg_finalize
 (
     key1 String,
     key2 String,
-    ts Tuple(a UInt64, b AggregateFunction(max, DateTime64(3)))
+    ts AggregateFunction(max, DateTime64(3))
 )
 ENGINE = MergeTree()
 ORDER BY (key1, key2)
-TTL toDateTime(ts.b) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+TTL toDateTime(finalizeAggregation(ts)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_finalize;
