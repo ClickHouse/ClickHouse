@@ -4,6 +4,12 @@
 -- Separated from correctness tests so that random settings fuzzing
 -- can run against the correctness file without breaking EXPLAIN expectations.
 
+-- The rewrite is intentionally disabled under `serialize_query_plan` (the
+-- `TopNAggregatingStep` does not implement plan serialization yet), so pin it
+-- off here to keep the EXPLAIN expectations stable under the distributed-plan
+-- test configuration, which enables `serialize_query_plan` globally.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t_topn;
 
 CREATE TABLE t_topn (trace_id String, start_time DateTime, service_name String, value UInt64)

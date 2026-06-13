@@ -10,6 +10,13 @@
 --      `TopNAggregatingStep` does not implement plan serialization.
 -- `no-random-settings` keeps the EXPLAIN assertions stable.
 
+-- The rewrite is intentionally disabled under `serialize_query_plan`, so pin it
+-- off at the session level to keep the EXPLAIN expectations stable under the
+-- distributed-plan test configuration, which enables `serialize_query_plan`
+-- globally. Section (3) below overrides it back to 1 per query to verify the
+-- fallback path explicitly.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t_topn_desc;
 CREATE TABLE t_topn_desc (g UInt32, val UInt32)
 ENGINE = MergeTree ORDER BY val DESC

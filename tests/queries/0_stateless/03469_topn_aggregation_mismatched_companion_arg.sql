@@ -3,6 +3,11 @@
 -- argument column differs from the ORDER BY aggregate's argument.
 -- See: https://github.com/ClickHouse/ClickHouse/issues/75098
 
+-- The rewrite is intentionally disabled under `serialize_query_plan`, so pin it
+-- off here to keep the EXPLAIN expectations stable under the distributed-plan
+-- test configuration, which enables `serialize_query_plan` globally.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t_topn_mismatch;
 CREATE TABLE t_topn_mismatch (grp UInt32, ts UInt64, val UInt64, payload String)
 ENGINE = MergeTree ORDER BY ts;
