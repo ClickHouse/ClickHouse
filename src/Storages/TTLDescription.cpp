@@ -1,7 +1,6 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnConst.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -22,6 +21,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -86,24 +86,20 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "TTL expression cannot contain non-deterministic functions, but contains function {}",
                                     func.getName());
+
+                const auto & func_name = func.getName();
+                if (func_name == "finalizeAggregation")
+                    continue;
+
+                for (const auto * child : action.node->children)
+                {
+                    if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
+                        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                            "TTL expression cannot use AggregateFunction column directly in function {}. "
+                            "Use finalizeAggregation() to extract the value first",
+                            func_name);
+                }
             }
-        }
-
-        /// Dry-run the expression on a single-row block to catch type errors
-        /// (e.g. toDateTime applied to an AggregateFunction column) at DDL time
-        /// rather than deferring to insert time.
-        Block check_block;
-        for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
-            check_block.insert(ColumnWithTypeAndName(col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
-
-        try
-        {
-            ttl_expression->execute(check_block, /*dry_run=*/ true);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while validating TTL expression");
-            throw;
         }
     }
 
@@ -375,18 +371,23 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
     {
-        Block check_block;
-        for (const auto & col : where_expression->getRequiredColumnsWithTypes())
-            check_block.insert(ColumnWithTypeAndName(col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
+        for (const auto & action : where_expression->getActions())
+        {
+            if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const auto & func_name = action.node->function_base->getName();
+                if (func_name == "finalizeAggregation")
+                    continue;
 
-        try
-        {
-            where_expression->execute(check_block, /*dry_run=*/ true);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while validating TTL WHERE expression");
-            throw;
+                for (const auto * child : action.node->children)
+                {
+                    if (child->result_type && typeid_cast<const DataTypeAggregateFunction *>(child->result_type.get()))
+                        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                            "TTL WHERE expression cannot use AggregateFunction column directly in function {}. "
+                            "Use finalizeAggregation() to extract the value first",
+                            func_name);
+                }
+            }
         }
     }
 
