@@ -1253,6 +1253,11 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
                 negative_fraction_multiplier = -1;
             }
         }
+
+        /// A value in (-1, 0), e.g. `-0.1`, has a zero whole part, so its sign is lost in the components.
+        /// Restore it the same way the Time64 path does.
+        if (is_negative_timestamp && components.whole == 0 && components.fractional != 0)
+            negative_fraction_multiplier = -1;
     }
     /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 10413792000LL)
