@@ -2482,29 +2482,41 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         /// Among the candidates, pick the one cheapest to read from disk. getSmallestColumn() ranks
         /// by the in-memory value size, which mis-ranks compactly stored columns (a
         /// LowCardinality(String) reads far fewer bytes than a UInt64 yet looks "larger" in memory),
-        /// so prefer the aggregate on-disk size summed over all parts. The size is only meaningful
-        /// when positive: compact parts keep every column in one file and report a per-column size of
-        /// 0, leaving nothing to rank by. Iterate candidates (a stable order) so ties are
-        /// deterministic.
+        /// so prefer the aggregate on-disk size summed over all parts. A compact part keeps every
+        /// column in one file and reports a per-column size of 0, so it contributes nothing to the
+        /// aggregate while its real read cost may dominate the table; the aggregate is therefore only
+        /// trustworthy when *every* selected part reports a positive size for the column. A candidate
+        /// with a zero-size part is left unranked here and handled by the fallback below. Iterate
+        /// candidates (a stable order) so ties are deterministic.
         String carrier;
         size_t smallest_size = std::numeric_limits<size_t>::max();
         for (const auto & column : carrier_candidates)
         {
             size_t size = 0;
+            bool measurable_in_all_parts = true;
             for (const auto & part : parts)
-                size += part.data_part->getColumnSize(column.name).data_compressed;
-            if (size > 0 && size < smallest_size)
+            {
+                size_t part_size = part.data_part->getColumnSize(column.name).data_compressed;
+                if (part_size == 0)
+                {
+                    measurable_in_all_parts = false;
+                    break;
+                }
+                size += part_size;
+            }
+            if (measurable_in_all_parts && size < smallest_size)
             {
                 smallest_size = size;
                 carrier = column.name;
             }
         }
 
-        /// No meaningful on-disk size (e.g. every part is compact) or no column present in every part
-        /// (heavily schema-evolved): fall back to the in-memory heuristic over the safe candidates,
-        /// or over all physical columns when there is none. The carrier stays a current metadata
-        /// column so it resolves against the StorageSnapshot; the per-part read setup substitutes
-        /// columns missing from a given part as before.
+        /// No candidate has a trustworthy on-disk size (e.g. every part is compact, or a mixed
+        /// compact/wide layout where no column is measurable in every part), or no column is present
+        /// in every part (heavily schema-evolved): fall back to the in-memory heuristic over the safe
+        /// candidates, or over all physical columns when there is none. The carrier stays a current
+        /// metadata column so it resolves against the StorageSnapshot; the per-part read setup
+        /// substitutes columns missing from a given part as before.
         if (carrier.empty())
             carrier = ExpressionActions::getSmallestColumn(
                 carrier_candidates.empty() ? available_real_columns : carrier_candidates).name;

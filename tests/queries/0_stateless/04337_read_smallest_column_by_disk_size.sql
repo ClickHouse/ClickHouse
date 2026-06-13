@@ -9,6 +9,12 @@
 -- larger column on disk), so the reader read the large column. The carrier should be
 -- the column that is cheapest to read from disk instead.
 
+-- The carrier path is only reached when the unused column input is pruned from the plan. With
+-- query_plan_remove_unused_columns disabled (CI randomizes it), the planner keeps an arbitrary
+-- column as an input and ReadFromMergeTree reads that column directly instead of choosing a
+-- carrier, which would read megabytes and break the byte-count assertions. Pin it on.
+SET query_plan_remove_unused_columns = 1;
+
 DROP TABLE IF EXISTS t_smallest_column;
 
 -- ORDER BY tuple() so there is no sorting-key column: the carrier choice is then the
@@ -96,6 +102,43 @@ ORDER BY event_time DESC
 LIMIT 1;
 
 DROP TABLE t_smallest_column_compact;
+
+-- Mixed compact/wide layout. The aggregate on-disk size is only trustworthy when every selected
+-- part reports a positive per-column size: a compact part keeps all columns in one file and reports
+-- 0 for each, so it contributes nothing to the sum while its real read cost may dominate the table.
+-- Here a small WIDE part makes 'big' (a constant string, ~1 KB) look smaller than 'tiny' (random
+-- UInt8, ~2 KB), but the dominant COMPACT part stores 'big' as long random strings (~60 MB) and
+-- 'tiny' as a constant (~3 KB). Summing only the wide part's positive sizes would pick 'big' and
+-- read ~60 MB off the compact part. The planner must distrust the aggregate when any part reports 0
+-- and fall back to the in-memory heuristic, which correctly ranks the UInt8 'tiny' below 'big'.
+DROP TABLE IF EXISTS t_smallest_column_mixed;
+
+CREATE TABLE t_smallest_column_mixed (big String, tiny UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+-- Small WIDE part: big constant (cheap on disk), tiny random (less cheap). big looks smallest here.
+INSERT INTO t_smallest_column_mixed SELECT repeat('x', 100), rand() FROM numbers(2000);
+-- Flip thresholds so the next, much larger insert is a COMPACT part (per-column size reported as 0).
+ALTER TABLE t_smallest_column_mixed MODIFY SETTING min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+-- Dominant COMPACT part: big is long random strings (expensive), tiny is constant (cheap).
+INSERT INTO t_smallest_column_mixed SELECT randomString(200), 0 FROM numbers(300000);
+
+SELECT isNullable(tiny) FROM t_smallest_column_mixed FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Carrier must be 'tiny': reading 'big' off the compact part costs ~60 MB, 'tiny' costs a few KB.
+SELECT ProfileEvents['ReadCompressedBytes'] < 100000
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND query = 'SELECT isNullable(tiny) FROM t_smallest_column_mixed FORMAT Null;'
+  AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+ORDER BY event_time DESC
+LIMIT 1;
+
+DROP TABLE t_smallest_column_mixed;
 
 -- The carrier-column lookup must not throw LOGICAL_ERROR on a selected part that has files
 -- for none of the current physical columns (it predates the current schema). Such a part is
