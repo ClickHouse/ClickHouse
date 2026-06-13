@@ -17,6 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
 
 
@@ -46,8 +47,19 @@ namespace HistogramMetrics
 }
 #endif
 
+namespace ProfileEvents
+{
+    extern const Event ReaderExecutorModeledCostMicroseconds;
+    extern const Event ReaderExecutorRequestedBytes;
+}
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_READ_ONLY;
+}
 
 namespace
 {
@@ -65,8 +77,6 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
     sum += x;
     if (Max(x) > max)
         max = x;
-}
-
 }
 
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
@@ -134,6 +144,8 @@ void updateHTTPConnectionPoolTCPBufferMetrics(
 
 #endif
 
+}
+
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
@@ -175,6 +187,31 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+    }
+
+    /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
+    /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
+    {
+        const UInt64 cost_us = static_cast<UInt64>(
+            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
+        const UInt64 req_bytes = static_cast<UInt64>(
+            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        if (!first_run)
+        {
+            const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
+            const UInt64 d_req = req_bytes - prev_reader_executor_requested_bytes;
+            const double ms_per_mib = d_req > 0
+                ? (static_cast<double>(d_cost) / 1000.0) / (static_cast<double>(d_req) / (1024.0 * 1024.0))
+                : 0.0;
+            new_values["ReaderExecutorModeledCostMsPerRequestedMiB"] = { ms_per_mib,
+                "Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested"
+                " bytes over the last update interval, instance-wide -- the ratio of the deltas of"
+                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes."
+                " Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0,"
+                " over-fetch and incomplete connections push it up. 0 means no executor reads in the interval." };
+        }
+        prev_reader_executor_cost_us = cost_us;
+        prev_reader_executor_requested_bytes = req_bytes;
     }
 
     if (auto page_cache = getContext()->getPageCache())
@@ -248,20 +285,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 auto unreserved = disk->getUnreservedSpace();
 
                 new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
 
                 if (available)
                 {
                     new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems do not always provide this information." };
 
                     new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
                 }
 
                 if (unreserved)
                     new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
             }
 
 #if USE_AWS_S3
@@ -287,7 +324,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -310,12 +347,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_number_of_tables = 0;
 
         size_t total_number_of_bytes = 0;
+        size_t total_number_of_bytes_uncompressed = 0;
         size_t total_number_of_rows = 0;
         size_t total_number_of_parts = 0;
 
         size_t total_number_of_tables_system = 0;
 
         size_t total_number_of_bytes_system = 0;
+        size_t total_number_of_bytes_uncompressed_system = 0;
         size_t total_number_of_rows_system = 0;
         size_t total_number_of_parts_system = 0;
 
@@ -353,16 +392,19 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
                     size_t bytes = table_merge_tree->totalBytes(getContext()).value();
+                    size_t bytes_uncompressed = table_merge_tree->totalBytesUncompressed(getContext()->getSettingsRef()).value();
                     size_t rows = table_merge_tree->totalRows(getContext()).value();
                     size_t parts = table_merge_tree->getActivePartsCount();
 
                     total_number_of_bytes += bytes;
+                    total_number_of_bytes_uncompressed += bytes_uncompressed;
                     total_number_of_rows += rows;
                     total_number_of_parts += parts;
 
                     if (is_system)
                     {
                         total_number_of_bytes_system += bytes;
+                        total_number_of_bytes_uncompressed_system += bytes_uncompressed;
                         total_number_of_rows_system += rows;
                         total_number_of_parts_system += parts;
                     }
@@ -409,8 +451,17 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         }
                         catch (...)
                         {
+                            /// The table can transition to readonly between the `status.is_readonly`
+                            /// check above and the call to `getReplicaDelays` (which calls
+                            /// `assertNotReadonly` internally). This is a benign race for a
+                            /// background metrics thread, so do not pollute the error log /
+                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
+                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
+                                ? LogsLevel::debug
+                                : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
+                                level);
                         }
                     }
                 }
@@ -435,6 +486,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             " The excluded database engines are those who generate the set of tables on the fly, like `Lazy`, `MySQL`, `PostgreSQL`, `SQlite`."};
 
         new_values["TotalBytesOfMergeTreeTables"] = { total_number_of_bytes, "Total amount of bytes (compressed, including data and indices) stored in all tables of MergeTree family." };
+        new_values["TotalUncompressedBytesOfMergeTreeTables"] = { total_number_of_bytes_uncompressed, "Total amount of uncompressed bytes, as reported by the part checksums, stored in all tables of MergeTree family. It is the same source as the `total_bytes_uncompressed` column of `system.tables`, and it does not include files that are stored uncompressed, such as marks and primary key indices." };
         new_values["TotalRowsOfMergeTreeTables"] = { total_number_of_rows, "Total amount of rows (records) stored in all tables of MergeTree family." };
         new_values["TotalPartsOfMergeTreeTables"] = { total_number_of_parts, "Total amount of data parts in all tables of MergeTree family."
             " Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key." };
@@ -442,13 +494,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["NumberOfTablesSystem"] = { total_number_of_tables_system, "Total number of tables in the system database on the server stored in tables of MergeTree family." };
 
         new_values["TotalBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_system, "Total amount of bytes (compressed, including data and indices) stored in tables of MergeTree family in the system database." };
+        new_values["TotalUncompressedBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_uncompressed_system, "Total amount of uncompressed bytes, as reported by the part checksums, stored in tables of MergeTree family in the system database. It is the same source as the `total_bytes_uncompressed` column of `system.tables`, and it does not include files that are stored uncompressed, such as marks and primary key indices." };
         new_values["TotalRowsOfMergeTreeTablesSystem"] = { total_number_of_rows_system, "Total amount of rows (records) stored in tables of MergeTree family in the system database." };
         new_values["TotalPartsOfMergeTreeTablesSystem"] = { total_number_of_parts_system, "Total amount of data parts in tables of MergeTree family in the system database." };
 
         new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granules (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granules (only takes active parts into account)." };
 
         new_values["TotalProjectionPrimaryKeyBytesInMemory"] = { total_projection_primary_key_bytes_memory, "The total amount of memory (in bytes) used by projection primary key values (only takes active parts into account)." };
         new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
@@ -465,11 +518,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             queries_memory_usage += info.memory_usage;
             queries_peak_memory_usage += info.peak_memory_usage;
         }
-        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
-        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
+        new_values["QueriesMemoryUsage"] = { queries_memory_usage,
+            "Total memory currently used by all running queries on the server, in bytes."
+            " Useful for attributing memory pressure to the concurrent query load." };
+        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage,
+            "Sum of per-user query memory peaks across all users tracked in `ProcessList`, in bytes."
+            " Each user's peak is the high-water mark of that user's memory tracker, which is reset when the user has no running queries."
+            " This is therefore an aggregate of currently-tracked per-user peaks, not a single server-wide peak of all queries since startup." };
     }
 
-    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper."};
 
     {
         Float64 max_merge_elapsed = 0;
@@ -507,7 +565,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         if (db.second->isExternal())
             continue;
@@ -613,7 +671,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         }
         new_values["DictionaryMaxUpdateDelay"] = {
             std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
-        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
+        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Number of errors since last successful loading in all dictionaries."};
     }
 
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };

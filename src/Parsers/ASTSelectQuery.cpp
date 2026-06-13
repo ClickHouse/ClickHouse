@@ -451,7 +451,7 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
-    assert(database_name != "_temporary_and_external_tables");
+    chassert(database_name != "_temporary_and_external_tables");
     replaceDatabaseAndTable(StorageID(database_name, table_name));
 }
 

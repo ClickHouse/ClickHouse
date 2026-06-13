@@ -330,6 +330,15 @@ namespace
 
     As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
     )", 0) \
+    DECLARE(UInt64, min_allocation_size_to_throw_on_memory_limit, 0, R"(
+    Minimum size, in bytes, of a generic C++ allocation (the kind made by standard containers, strings, `std::vector` growth, smart pointers, etc.) that is allowed to raise `MEMORY_LIMIT_EXCEEDED` once `max_server_memory_usage` is reached. Smaller generic allocations are still counted against the memory tracker but are allowed to succeed even past the limit, which reduces spurious failures during cleanup and exception-handling paths near OOM.
+
+    Allocations made by ClickHouse's own large buffers — column data, hash tables, arenas, query pipelines, IO buffers — always honour the memory limit and may throw regardless of this value. This setting only affects implicit allocations that flow through `operator new`.
+
+    A value of `0` (default) preserves the legacy behaviour: implicit `operator new` allocations are never refused by the memory tracker, and only explicit ClickHouse allocations can raise `MEMORY_LIMIT_EXCEEDED`.
+
+    Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
+    )", 0) \
     DECLARE(Double, max_server_memory_usage_to_ram_ratio, 0.9, R"(
     The maximum amount of memory the server is allowed to use, expressed as a ratio to all available memory.
 
@@ -337,6 +346,13 @@ namespace
 
     Allows lowering the memory usage on low-memory systems.
     On hosts with low RAM and swap, you may possibly need setting [`max_server_memory_usage_to_ram_ratio`](#max_server_memory_usage_to_ram_ratio) set larger than 1.
+
+    This ratio is applied in two ways:
+
+    - At startup (and on configuration reload) it caps the server's hard memory limit at this fraction of the total physical RAM, as described above.
+    - At runtime, the background memory worker periodically recomputes the hard memory limit as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host. When running inside a cgroup with a finite memory limit, the cgroup's available memory is used instead of the host-wide value. As other processes grow and the available memory shrinks, the server's hard limit follows it down, capping growth before the host (or the cgroup) runs out of memory.
+
+    Setting the ratio to `0` disables both the startup cap and the runtime adjustment. The runtime adjustment is also a no-op on non-Linux systems and in `clickhouse-keeper`, which does not expose this setting. To keep the static startup/reload cap but disable the runtime adjustment (the behavior of previous versions), set `memory_worker_dynamic_hard_limit` to `0`.
 
     :::note
     The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
@@ -517,6 +533,9 @@ namespace
     )", 0) \
     DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
+    DECLARE(String, unique_key_index_cache_policy, "SLRU", R"(UNIQUE KEY index cache policy name (SLRU or LRU).)", 0) \
+    DECLARE(UInt64, unique_key_index_cache_size_bytes, 1_GiB, R"(Maximum size (bytes) of the in-process cache for UNIQUE KEY index (SST) blocks. Set to 0 to disable the cache.)", 0) \
+    DECLARE(Double, unique_key_index_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY index cache relative to the cache's total size.)", 0) \
     DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache policy name.)", 0) \
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
@@ -1057,6 +1076,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, 10000000000, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
     DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
+    DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
     Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
@@ -1171,6 +1191,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
+    DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
+    Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
+
+    When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory limit statically, at startup and on configuration reload, as in previous versions.
+
+    Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
+    )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
     )", 0) \
@@ -1200,6 +1227,10 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, load_marks_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(NonZeroUInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 10000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
+    DECLARE(UInt64, iceberg_compaction_threadpool_pool_size, 50, R"(Size of background pool for iceberg compaction)", 0) \
+    DECLARE(UInt64, iceberg_compaction_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg compaction pool)", 0) \
+    DECLARE(UInt64, iceberg_scheduler_compaction_threadpool_pool_size, 50, R"(Size of background pool for iceberg compaction scheduler)", 0) \
+    DECLARE(UInt64, iceberg_scheduler_compaction_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg compaction scheduler pool)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
@@ -1336,10 +1367,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_webterminal, false, R"(Enable experimental web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket.)", EXPERIMENTAL) \
-    DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
+    DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
+    DECLARE(Bool, allow_experimental_webterminal, true, R"(Former (experimental) name of `enable_webterminal`. Still honored for backward compatibility when `enable_webterminal` is not set. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
     DECLARE(UInt64, max_open_files, 0, R"(
     The maximum number of open files.
@@ -1491,6 +1523,45 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
+    DECLARE(Bool, oom_canary_enable, false, R"(
+    Experimental. Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
+    before the main ClickHouse server process, giving the server a chance to shed load.
+    Requires Linux >= 5.3 (for `pidfd_open`); the canary is disabled at startup on older kernels.
+    The OOM response requires cgroup v2 `memory.events.local` OOM-kill evidence and may run global
+    query cancellation, merge cancellation, and `system.crash_log` writes.
+    The canary cannot protect the server when cgroup v2 `memory.oom.group` is enabled for the
+    server's cgroup: the kernel then kills the whole cgroup as one unit, including the server,
+    so the OOM response never runs. A warning is logged at startup in this mode.
+    Behavior may change between ClickHouse versions until production validation is complete.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, oom_canary_size, 104857600, R"(
+    Size in bytes of the memory region that the OOM canary child process allocates and touches.
+    Locking the region with `mlock` is best-effort: it requires `CAP_IPC_LOCK` or a sufficient
+    `RLIMIT_MEMLOCK`, and when locking fails the canary logs a warning and the memory remains
+    allocated but may be swapped out.
+    Default is 100 MB (104857600). Larger values make the canary a more attractive OOM target.
+    )", 0) \
+    DECLARE(Bool, oom_canary_relaunch, true, R"(
+    When true, the OOM canary is automatically relaunched after the canary process dies for any
+    reason other than a permanent setup failure or server shutdown — including OOM kills, other
+    signals, and transient exits — subject to `oom_canary_max_rapid_relaunches` and the backoff
+    settings. The OOM response sequence itself runs only when cgroup v2 `memory.events.local`
+    provides OOM-kill evidence.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
+    Maximum number of consecutive rapid OOM canary relaunches before automatic relaunch is disabled
+    to avoid thrashing under sustained memory pressure. The counter and the relaunch backoff reset
+    once a canary survives longer than `oom_canary_max_backoff_seconds`, so a canary that dies only
+    sporadically over a long uptime is not eventually disabled.
+    Applies only when `oom_canary_relaunch` is true.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_initial_backoff_seconds, 1, R"(
+    Initial backoff delay in seconds between consecutive OOM canary relaunches.
+    The delay doubles on each relaunch up to `oom_canary_max_backoff_seconds`.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_backoff_seconds, 60, R"(
+    Maximum backoff delay in seconds between consecutive OOM canary relaunches.
+    )", 0) \
     DECLARE(Bool, remap_executable, false, R"(
     Setting to reallocate memory for machine code ("text") using huge pages.
 
@@ -1731,6 +1802,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     std::unordered_map<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
+            {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
@@ -1790,6 +1862,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
             {"s3queue_disable_streaming", {"0", ChangeableWithoutRestart::Yes}},
+            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
