@@ -290,6 +290,7 @@ void generateManifestFile(
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
     std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
@@ -483,6 +484,7 @@ void generateManifestList(
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
     for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
     {
