@@ -9,9 +9,7 @@
 #include <AggregateFunctions/DDSketch/Mapping.h>
 #include <AggregateFunctions/DDSketch/Store.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -79,7 +77,7 @@ public:
         }
 
         Float64 rank = quantile * (count - 1);
-        Float64 quantile_value;
+        Float64 quantile_value = 0;
         if (rank < negative_store->count)
         {
             Float64 reversed_rank = negative_store->count - rank - 1;

@@ -56,7 +56,7 @@ X509Certificate::X509Certificate(const std::string & path)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
+static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
     X509Certificate::List certs;
 
@@ -131,10 +131,14 @@ std::string X509Certificate::serialNumber() const
 {
     ASN1_INTEGER * serial = X509_get_serialNumber(certificate);
     BIGNUM * bn = ASN1_INTEGER_to_BN(serial, nullptr);
+    if (!bn)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_INTEGER_to_BN failed: {}", getOpenSSLErrors());
 
     SCOPE_EXIT({ BN_free(bn); });
 
     char * hex = BN_bn2hex(bn);
+    if (!hex)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BN_bn2hex failed: {}", getOpenSSLErrors());
     std::string result(hex);
 
     SCOPE_EXIT({ OPENSSL_free(hex); });

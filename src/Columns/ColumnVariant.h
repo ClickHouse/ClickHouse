@@ -223,6 +223,7 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -346,6 +347,9 @@ public:
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
     void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
 
+    /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.
+    ColumnPtr createNullMap() const;
+
     /// Extend current column with new variants. Change global discriminators of current variants to the new
     /// according to the mapping and add new variants with new global discriminators.
     /// This extension doesn't rewrite any data, just adds new empty variants and modifies global/local discriminators matching.
@@ -353,9 +357,11 @@ public:
 
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
+    bool hasStatistics() const override;
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
     void validateState() const;
 

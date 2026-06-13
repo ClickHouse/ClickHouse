@@ -32,7 +32,7 @@ namespace ErrorCodes
   *
   * Also in-memory compression allows to keep more data in RAM.
   */
-class ColumnCompressed : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
+class ColumnCompressed final : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
 {
 public:
     using Lazy = std::function<ColumnPtr()>;
@@ -137,8 +137,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwMustBeDecompressed(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwMustBeDecompressed(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
     void fixDynamicStructure() override { throwMustBeDecompressed(); }
 
 protected:

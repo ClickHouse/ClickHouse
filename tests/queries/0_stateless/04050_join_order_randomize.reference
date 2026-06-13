@@ -1,0 +1,35 @@
+Expression
+  Join (JOIN FillRightFirst)
+    Expression (Left Pre Join Actions)
+      Expression
+        ReadFromMergeTree (default.t1)
+    Expression (Right Pre Join Actions)
+      BuildRuntimeFilter (Build runtime join filter on __table2.b)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression
+                ReadFromMergeTree (default.t3)
+            Expression (Right Pre Join Actions)
+              BuildRuntimeFilter (Build runtime join filter on __table2.b)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (default.t2)
+Expression
+  Join (JOIN FillRightFirst)
+    Expression (Left Pre Join Actions)
+      Expression
+        ReadFromMergeTree (default.t1)
+    Expression (Right Pre Join Actions)
+      BuildRuntimeFilter (Build runtime join filter on __table2.b)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression
+                ReadFromMergeTree (default.t3)
+            Expression (Right Pre Join Actions)
+              BuildRuntimeFilter (Build runtime join filter on __table2.b)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (default.t2)
+100	4950	49500	99000	148500
+100	4950	49500	99000	148500
+100	4950	49500	99000	148500

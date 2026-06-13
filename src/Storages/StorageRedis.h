@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Redis/Redis.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/RedisCommon.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/Context_fwd.h>
@@ -12,7 +12,7 @@ namespace DB
 /* Implements storage in the Redis.
  * Use ENGINE = Redis(host:port[, db_index[, password[, pool_size]]]) PRIMARY KEY(key);
  */
-class StorageRedis : public IStorage, public IKeyValueEntity, WithContext
+class StorageRedis : public StorageWithCommonVirtualColumns, public IKeyValueEntity, WithContext
 {
     friend class ReadFromRedis;
 public:
@@ -25,7 +25,9 @@ public:
 
     std::string getName() const override { return "Redis"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

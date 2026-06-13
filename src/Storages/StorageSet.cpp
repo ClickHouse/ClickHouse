@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
@@ -8,6 +10,7 @@
 #include <Formats/NativeReader.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
+#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -37,7 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class SetOrJoinSink : public SinkToStorage, WithContext
+class SetOrJoinSink final : public SinkToStorage, WithContext
 {
 public:
     SetOrJoinSink(
@@ -146,18 +149,27 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool persistent_)
-    : IStorage(table_id_), disk(disk_), persistent(persistent_)
+    : StorageWithCommonVirtualColumns(table_id_), disk(disk_), persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
     path = relative_path_;
+}
+
+VirtualColumnsDescription StorageSetOrJoinBase::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -172,7 +184,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
-    Block header = getInMemoryMetadataPtr()->getSampleBlock();
+    Block header = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -333,6 +345,7 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 }
 
 
+void registerStorageSet(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory)
 {
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)

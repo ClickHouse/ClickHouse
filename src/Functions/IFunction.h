@@ -5,6 +5,8 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <DataTypes/IDataType_fwd.h>
 
 #include "config.h"
 
@@ -23,10 +25,6 @@ struct FunctionsStressTestThread;
 
 namespace DB
 {
-
-class IDataType;
-struct DataTypeWithConstInfo;
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class Field;
 struct FieldInterval;
@@ -124,6 +122,10 @@ protected:
       *   └────┘
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+
+    /** True if function might throw an exception during execution.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
 private:
 
@@ -281,7 +283,7 @@ public:
         /// Should we enable lazy execution for the nth argument of short-circuit function?
         /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
         /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
-        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+        UnorderedSetWithMemoryTracking<size_t> arguments_with_disabled_lazy_execution;
 
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
@@ -289,11 +291,11 @@ public:
         /// to execute expr lazily, because it's used in both branches.
         /// Example 2: and(expr1, expr2(..., expr, ...), expr3(..., expr, ...)), here we
         /// should enable lazy execution for expr, because it must be filtered by expr1.
-        bool enable_lazy_execution_for_common_descendants_of_arguments;
+        bool enable_lazy_execution_for_common_descendants_of_arguments{};
         /// Should we enable lazy execution without checking isSuitableForShortCircuitArgumentsExecution?
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
-        bool force_enable_lazy_execution;
+        bool force_enable_lazy_execution{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -368,6 +370,11 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    /// Returns true for higher-order functions that accept a lambda expression as an argument
+    /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
+    /// capability check so callers can avoid invoking `getLambdaArgumentTypes`, which throws
+    /// on non-higher-order functions.
+    virtual bool isHigherOrderFunction() const { return false; }
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
@@ -420,6 +427,8 @@ protected:
       *   - wrap getReturnType() result in Nullable type and pass to build
       *
       * Otherwise build returns build(arguments, getReturnType(arguments));
+      * Note that the function may be called with garbage input for the null rows (but the output will be masked out),
+      * so this is not suitable for heavy functions or functions with side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -561,6 +570,9 @@ public:
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /// Higher-order functions accept at least one lambda expression as an argument.
+    virtual bool isHigherOrderFunction() const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }

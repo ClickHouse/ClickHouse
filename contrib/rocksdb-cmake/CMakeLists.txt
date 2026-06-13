@@ -73,6 +73,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc
+    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_readonly.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_secondary.cc
@@ -92,10 +93,12 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/log_reader.cc
     ${ROCKSDB_SOURCE_DIR}/db/log_writer.cc
     ${ROCKSDB_SOURCE_DIR}/db/malloc_stats.cc
+    ${ROCKSDB_SOURCE_DIR}/db/manifest_ops.cc
     ${ROCKSDB_SOURCE_DIR}/db/memtable.cc
     ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
+    ${ROCKSDB_SOURCE_DIR}/db/multi_scan.cc
     ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
     ${ROCKSDB_SOURCE_DIR}/db/periodic_task_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
@@ -155,6 +158,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/memtable/hash_skiplist_rep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/skiplistrep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/vectorrep.cc
+    ${ROCKSDB_SOURCE_DIR}/memtable/wbwi_memtable.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/write_buffer_manager.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/histogram.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/histogram_windowing.cc

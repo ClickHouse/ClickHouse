@@ -1,0 +1,445 @@
+-- Tests adapted from https://github.com/NeilMacMullen/kusto-loco
+-- Copyright (c) Neil MacMullen. Licensed under the MIT License.
+-- Source: test/BasicTests/
+
+set enable_analyzer=1;
+set allow_experimental_kusto_dialect=1;
+set joined_subquery_requires_alias=0;
+set prefer_column_name_to_alias=1;
+set allow_experimental_dynamic_type=1;
+set allow_experimental_json_type=1;
+set dialect='kusto';
+
+print '-- AdditionalFunctionTests::SqrtFunction_Scalar --';
+print result = sqrt(16);
+print '-- AdditionalFunctionTests::PowFunction_Scalar --';
+print result = pow(2, 8);
+print '-- AdditionalFunctionTests::Log10Function_Scalar --';
+print result = log10(1000);
+print '-- AdditionalFunctionTests::ToBoolFunction_Scalar --';
+print result = tobool('true');
+print '-- AdditionalFunctionTests::IsNanFunction_Scalar --';
+print result = isnan(0.0/0.0);
+print '-- AdditionalFunctionTests::IsInfFunction_Scalar --';
+print result = isinf(1.0/0.0);
+print '-- AdditionalFunctionTests::ToLowerFunction_Scalar --';
+print result = tolower('HELLO');
+print '-- AdditionalFunctionTests::ToUpperFunction_Scalar --';
+print result = toupper('hello');
+print '-- AdditionalFunctionTests::StrLenFunction_Scalar --';
+print result = strlen('hello');
+print '-- AdditionalFunctionTests::Bin_ZeroInterval_ReturnsNull --';
+print c=bin(10, 0);
+print '-- AdditionalFunctionTests::ReplaceStringFunction_Scalar --';
+print result = replace_string('hello world', 'world', 'Kusto');
+print '-- AdditionalFunctionTests::StrcatFunction_Scalar --';
+print result = strcat('a', 'b', 'c');
+print '-- AdditionalFunctionTests::StrcatDelimFunction_Scalar --';
+print result = strcat_delim(',', 'a', 'b', 'c');
+print '-- AdditionalFunctionTests::ReverseFunction_Scalar --';
+print result = reverse('abc');
+print '-- AdditionalFunctionTests::IsEmptyFunction_Scalar --';
+print result = isempty('');
+print '-- AdditionalFunctionTests::IsNotEmptyFunction_Scalar --';
+print result = isnotempty('abc');
+print '-- AdditionalFunctionTests::IndexOfFunction_Scalar --';
+print result = indexof('hello world', 'world');
+print '-- AdditionalFunctionTests::AbsFunction_Scalar --';
+print result = abs(-42);
+print '-- AdditionalFunctionTests::RoundFunction_Scalar --';
+print result = round(3.14159, 2);
+print '-- AdditionalFunctionTests::ToIntFunction_Scalar --';
+print result = toint('42');
+print '-- AdditionalFunctionTests::ToLongFunction_Scalar --';
+print result = tolong('42');
+print '-- AdditionalFunctionTests::ToRealFunction_Scalar --';
+print result = toreal('3.14');
+print '-- AdditionalFunctionTests::ToDecimalFunction_Scalar --';
+print result = todecimal('3.14');
+print '-- AdditionalFunctionTests::ToStringFunction_Scalar --';
+print result = tostring(42);
+print '-- AdditionalFunctionTests::ArrayLengthFunction_Scalar --';
+print result = array_length(dynamic([1,2,3]));
+print '-- AdditionalFunctionTests::ArrayReverseFunction_Scalar --';
+print result = array_reverse(dynamic([1,2,3]));
+print '-- AdditionalFunctionTests::IsNullFunction_Scalar --';
+print result = isnull(int(null));
+print '-- AdditionalFunctionTests::IsNotNullFunction_Scalar --';
+print result = isnotnull(42);
+print '-- AdditionalFunctionTests::CoalesceFunction_Scalar --';
+print result = coalesce(int(null), 42);
+print '-- AdditionalFunctionTests::IffFunction_Scalar --';
+print result = iff(true, 'yes', 'no');
+print '-- AdditionalFunctionTests::NotFunction_Scalar --';
+print result = not(false);
+print '-- AdditionalFunctionTests::StrRepFunction_Scalar --';
+print result = strrep('ab', 3);
+print '-- AdditionalFunctionTests::StrcatArrayFunction_Scalar --';
+print str = strcat_array(dynamic([1, 2, 3]), '->');
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeList_BasicExample --';
+_dt | summarize a = make_list(x);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeList_WithMaxSize --';
+_dt | summarize b = make_list(x, 2);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeListIf_BasicExample --';
+_dt | summarize a = make_list_if(x, x > 1);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeListIf_WithMaxSize --';
+_dt | summarize b = make_list_if(x, true, 3);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (2), (3), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeSet_BasicExample --';
+_dt | summarize a = make_set(x)
+| project a = array_sort_asc(a);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (2), (3), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeSet_WithMaxSize --';
+_dt | summarize b = make_set(x, 2)
+| project b = array_sort_asc(b);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (Region Nullable(String), Sales Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES ('North', 150), ('North', 200), ('South', 100), ('West', 150), ('South', 100);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeSet_FromMicrosoftDocs --';
+_dt | summarize UniqueSalesAmounts = make_set(Sales)
+| project UniqueSalesAmounts = array_sort_asc(UniqueSalesAmounts);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (2), (3), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeSetIf_BasicExample --';
+_dt | summarize a = make_set_if(x, x > 1)
+| project a = array_sort_asc(a);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (2), (3), (1);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeSetIf_WithMaxSize --';
+_dt | summarize b = make_set_if(x, true, 2)
+| project b = array_sort_asc(b);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (Region Nullable(String), Sales Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES ('North', 150), ('North', 200), ('South', 100), ('West', 150);
+set dialect='kusto';
+print '-- AggregationFunctionTests::MakeSetIf_FromMicrosoftDocs --';
+_dt | summarize HighSales = make_set_if(Sales, Sales > 100)
+| project HighSales = array_sort_asc(HighSales);
+print '-- ArgMinMaxTests::Arg_max --';
+-- FIXME: arg_max(x,*) star expansion not yet supported
+-- print x=1,y=2 | summarize arg_max(x,*) by y;
+print '-- BinTests::Long --';
+print bin_at(13, 10, 11);
+print '-- BinTests::Double --';
+print bin_at(6.5, 2.5, 7);
+print '-- BinTests::Durations --';
+print bin_at(time(1h), 1d, 12h);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS d;
+CREATE TABLE d (b Nullable(UInt8), i Nullable(Int32), l Nullable(Int64), r Nullable(Float64), dt Nullable(DateTime64(3)), ts Nullable(String), s Nullable(String)) ENGINE = Memory;
+INSERT INTO d VALUES (1, 1, 1, 1, '2023-01-01', 10, 'a');
+set dialect='kusto';
+-- FIXME: CoalesceTests::BuiltIns_coalesce_Columnar is commented out: coalesce across fullouter join with mixed types not yet supported
+-- print '-- CoalesceTests::BuiltIns_coalesce_Columnar --';
+-- d | where i==2 // get zero rows
+-- | extend jc=1
+-- | join kind=fullouter (d|extend jc=1) on jc
+-- | project b=coalesce(b,b1),
+--           i=coalesce(i,i1),
+--           l=coalesce(l,l1),
+--           r=coalesce(r,r1),
+--           dt=coalesce(dt,dt1),
+--           ts=coalesce(ts,ts1),
+--           s=coalesce(s,s1);
+print '-- DateTimeTests::MakeDateTime_InvalidMonth_ReturnsDefaultDateTime --';
+print c=make_datetime(2020, 13, 1);
+print '-- DateTimeTests::DateTimeBin --';
+print bin(datetime(1970-05-11 13:45:07), 1d);
+print '-- DateTimeTests::DateTimeToLocal --';
+print datetime_utc_to_local(datetime(2015-12-31 23:59:59.9), 'US/Eastern');
+print '-- DateTimeTests::ToDateTime --';
+print D=todatetime('15/01/2024 12:35:35');
+print '-- DateTimeTests::ToDateTime3 --';
+print todatetime('13-02-2022') == datetime(13-02-2022);
+print '-- DateTimeTests::ToDateTime2 --';
+print D=todatetime('2024/01/15 12:35:35');
+print '-- DateTimeTests::ToDateTimeFmt --';
+print D=todatetimefmt('2024-01-15 12:35:35','yyyy-MM-dd HH:mm:ss');
+print '-- DateTimeTests::MakeDateTime --';
+print make_datetime(2000,4,15,1,1);
+print '-- DateTimeTests::MakeDateTime2 --';
+print make_datetime(2000,4,15);
+print '-- DynamicTests::MemberAccess --';
+print o=dynamic({"a":123}) | project z=o.a;
+print '-- DynamicTests::NestedMemberAccess --';
+print o=dynamic({"a":{"b":456}}) | project z=o.a.b;
+print '-- DynamicTests::ArrayAccess --';
+print o=dynamic({"a":[1,2]}) | project z=o.a[0];
+print '-- DynamicTests::NegativeNumber --';
+print -1 *5;
+print '-- DynamicTests::NegativeExpression --';
+print -(1+5);
+print '-- DynamicTests::ArrayAccessWithNegativeIndex --';
+print o=dynamic({"a":[1,2]}) | project z=o.a[-1];
+print '-- SimpleFunctionTests::TrimStart --';
+print trim_start(@'a+','aaainnerbbba');
+print '-- SimpleFunctionTests::TrimEnd --';
+print trim_end(@'b+','baaainnerbbb');
+print '-- SimpleFunctionTests::Trim --';
+print trim(@'a+','aaaainneraaaa');
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (Size Nullable(Int32)) ENGINE = Memory;
+INSERT INTO _dt VALUES (7);
+set dialect='kusto';
+print '-- SimpleFunctionTests::Case --';
+_dt | extend S= case(Size <= 3, 'Small',                        
+                 Size <= 10, 'Medium', 
+                             'Large');
+print '-- SimpleFunctionTests::GeoPointToGeoHashScalarWithDefault --';
+print geohash = geo_point_to_geohash(139.806115, 35.554128);
+print '-- SimpleFunctionTests::SplitScalar --';
+print c=split('this.is.a.string.and.I.need.the.last.part', '.')[-1];
+print '-- SimpleFunctionTests::ToLower --';
+print c=tolower('ABCdef');
+print '-- SimpleFunctionTests::ToUpper --';
+print c=toupper('ABCdef');
+print '-- SimpleFunctionTests::Strlen --';
+print c=strlen('ABCdef');
+print '-- SimpleFunctionTests::SubString --';
+print c=substring('ABCdef',2,3);
+print '-- SimpleFunctionTests::SubStringSingleParameter --';
+print c=substring('ABCdef',2);
+print '-- SimpleFunctionTests::Substring_OutOfRange_ShouldReturnEmpty --';
+print c=substring('abc', 10, 5);
+print '-- SimpleFunctionTests::Trimws --';
+print c=trimws('   abc   ');
+print '-- SimpleFunctionTests::PadLeft --';
+print c=padleft('abc',6);
+print '-- SimpleFunctionTests::PadLeftWithChar --';
+print c=padleft('abc',6,'A');
+print '-- SimpleFunctionTests::PadLeftWithBlankChar --';
+print c=padleft('abc',6,'');
+print '-- SimpleFunctionTests::PadRight --';
+print c=padright('abc',6);
+print '-- SimpleFunctionTests::PadRightWithChar --';
+print c=padright('abc',6,'A');
+print '-- SimpleFunctionTests::PadRightWithBlankChar --';
+print c=padright('abc',6,'');
+print '-- SimpleFunctionTests::TimespanFormatting --';
+print 1d;
+print '-- SimpleFunctionTests::Range --';
+range i from 1 to 10 step 1;
+-- FIXME: SimpleFunctionTests::RangeDescending is commented out: range with negative step (-1) not yet supported — ErrorWrongNumber token parsing issue
+-- print '-- SimpleFunctionTests::RangeDescending --';
+-- range i from 10 to 1 step -1;
+print '-- SimpleFunctionTests::RowNumberNoParam --';
+range i from 1 to 10 step 1 | extend r =row_number();
+print '-- SimpleFunctionTests::RowNumberStartingAt7 --';
+range i from 1 to 5 step 1 | extend r =row_number(7);
+print '-- SimpleFunctionTests::RowNumberWithRanking --';
+-- FIXME: row_number with reset flag (second argument) not yet supported
+-- range i from 1 to 100 step 1
+-- | extend r =row_number(1,i%10==0)
+-- | where r==1
+-- | count;
+print '-- SimpleFunctionTests::BetweenLong --';
+range x from 1 to 100 step 1
+| where x between (50 .. 55);
+print '-- SimpleFunctionTests::BetweenInt --';
+-- FIXME: extend with toint then between causes syntax error
+-- range i from 1 to 100 step 1 | extend i=toint(i) | where i between (50 .. 55)
+print '-- SimpleFunctionTests::RangeTimeSpan --';
+print '-- FIXME: timespan-typed range bounds not yet supported --';
+print '-- SimpleFunctionTests::RangeTimeSpanFiltered --';
+print '-- FIXME: timespan-typed range bounds not yet supported --';
+print '-- SimpleFunctionTests::NotBetweenLong --';
+range x from 1 to 10 step 1
+| where x !between (9 .. 11);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (a Nullable(String)) ENGINE = Memory;
+INSERT INTO _dt VALUES ('abc');
+set dialect='kusto';
+print '-- SimpleFunctionTests::StrLen --';
+_dt | project v1 = strlen(a);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (a Nullable(String)) ENGINE = Memory;
+INSERT INTO _dt VALUES ('');
+set dialect='kusto';
+print '-- SimpleFunctionTests::StrLen0 --';
+_dt | project v1 = strlen(a);
+print '-- SimpleFunctionTests::MultiplyTimespan --';
+print D=1d * 10;
+print '-- SimpleFunctionTests::MultiplyTimespanR --';
+print D=10*1d;
+print '-- SimpleFunctionTests::AbsInt --';
+print D=abs(toint(-99));
+print '-- SimpleFunctionTests::TimeSpanBin --';
+print D=bin(26h,1d);
+print '-- SimpleFunctionTests::TimespanDiv --';
+print 10d/2;
+print '-- SimpleFunctionTests::TimespanDiv2 --';
+print 10d/2.5;
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (a Nullable(Int64)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2);
+set dialect='kusto';
+print '-- SimpleFunctionTests::AvgNumber --';
+_dt | summarize avg(a);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (a Nullable(String)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2);
+set dialect='kusto';
+-- FIXME: SimpleFunctionTests::AvgTimeSpan is commented out: avg on string-typed timespan column produces numeric result, not formatted timespan
+-- print '-- SimpleFunctionTests::AvgTimeSpan --';
+-- _dt | summarize avg(a);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (a Nullable(String)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1), (3), (2);
+set dialect='kusto';
+-- FIXME: SimpleFunctionTests::SumTimeSpan is commented out: sum on string-typed timespan column produces numeric result, not formatted timespan
+-- print '-- SimpleFunctionTests::SumTimeSpan --';
+-- _dt | summarize sum(a);
+-- FIXME: SimpleFunctionTests::RepeatedUnion is commented out: pipe operators (where, count) after chained union are silently dropped, and the resulting UNION ALL output order is non-deterministic
+-- set dialect='clickhouse';
+-- DROP TABLE IF EXISTS d;
+-- CREATE TABLE d (v1 Nullable(Int32), v2 Nullable(Int32), v3 Nullable(Int32)) ENGINE = Memory;
+-- INSERT INTO d VALUES (1, 2, 3), (4, 5, 6);
+-- set dialect='kusto';
+-- print '-- SimpleFunctionTests::RepeatedUnion --';
+-- d | project Type='v1',Val=v1
+-- | union (d | project Type='v2',Val=v2)
+-- | union (d | project Type='v3',Val=v3)
+-- | where Type == 'v2'
+-- | count;
+print '-- SimpleFunctionTests::RoundDouble --';
+print round(3.14,1);
+print '-- SimpleFunctionTests::SignInt --';
+print sign(-4);
+print '-- SimpleFunctionTests::ToLongHex --';
+print parsehex('a0');
+print '-- SimpleFunctionTests::ToLongHexWithPrefix --';
+print parsehex('0xa0');
+print '-- SimpleFunctionTests::ToHex --';
+print tohex(160);
+print '-- SimpleFunctionTests::ToLong2 --';
+print tolong('0xa0');
+print '-- SimpleFunctionTests::MultiStringCat --';
+print strcat('1','2','3','4','5','6','7','8','9','0','1','2','3','4','5');
+print '-- SimpleFunctionTests::IsEmpty --';
+print isempty('');
+print '-- SimpleFunctionTests::IsEmpty2 --';
+print isempty(' ');
+print '-- SimpleFunctionTests::IsNotEmpty --';
+print isnotempty('');
+print '-- SimpleFunctionTests::IsNotEmpty2 --';
+print isnotempty(' ');
+print '-- SimpleFunctionTests::IsAscii --';
+print isascii('blahhh');
+print '-- SimpleFunctionTests::IsUtf8 --';
+print isutf8('blahhh');
+print '-- SimpleFunctionTests::Reverse --';
+print reverse('acdef');
+print '-- SimpleFunctionTests::IsFinite --';
+print isfinite(1.0/10);
+print '-- SimpleFunctionTests::IsFinite2 --';
+print isfinite(1.0/0.0);
+print '-- SimpleFunctionTests::MakeTimespan --';
+print make_timespan(1,15);
+print '-- SimpleFunctionTests::MakeTimespan2 --';
+print make_timespan(1,15,10);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (bitmap Nullable(Int64)) ENGINE = Memory;
+INSERT INTO _dt VALUES (851673153924341805);
+set dialect='kusto';
+print '-- SimpleFunctionTests::MaxLongTest --';
+_dt;
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (bitmap Nullable(Int64)) ENGINE = Memory;
+INSERT INTO _dt VALUES (851673153924341808), (851673153924341805);
+set dialect='kusto';
+print '-- SimpleFunctionTests::MinLongTest --';
+_dt;
+print '-- SimpleFunctionTests::CountOfTest --';
+print countof('abc abc ab','abc');
+print '-- SimpleFunctionTests::CountOfNormalTest --';
+print countof('abc abc ab','abc','normal');
+print '-- SimpleFunctionTests::CountOfRegexTest --';
+print countof('abc abc ab a','a.','regex');
+print '-- SimpleFunctionTests::ReplaceString --';
+print replace_string('A magic trick can turn a cat into a dog','cat','hamster');
+print '-- SimpleFunctionTests::StrRep --';
+print strrep('ABC', 2);
+print '-- SimpleFunctionTests::DecimalLiteral --';
+print decimal(1.23);
+print '-- SimpleFunctionTests::RealLiteral --';
+print double(1.23);
+print '-- SimpleFunctionTests::LongLiteral --';
+print long(123);
+print '-- SimpleFunctionTests::DecimalAddition --';
+print result = decimal(1.1) + decimal(2.2);
+print '-- SimpleFunctionTests::DecimalSubtraction --';
+print result = decimal(5.5) - decimal(2.2);
+print '-- SimpleFunctionTests::DecimalMultiplication --';
+-- FIXME: decimal multiplication overflows scale (68 > max 38)
+-- print result = decimal(1.5) * decimal(2.0);
+print '-- SimpleFunctionTests::DecimalDivision --';
+-- FIXME: decimal division overflows (DECIMAL_OVERFLOW)
+-- print result = decimal(7.5) / decimal(2.5);
+print '-- SimpleFunctionTests::DecimalComparison --';
+print result = decimal(2.5) > decimal(1.5);
+print '-- SimpleFunctionTests::DecimalEquality --';
+print result = decimal(3.3) == decimal(3.3);
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+CREATE TABLE _dt (a Nullable(Float64)) ENGINE = Memory;
+INSERT INTO _dt VALUES (1.1), (2.2), (3.3);
+set dialect='kusto';
+print '-- SimpleFunctionTests::DecimalInTableSummarize --';
+_dt | summarize total = sum(a);
+print '-- SimpleFunctionTests::DecimalRound --';
+print result = round(decimal(3.14159), 2);
+print '-- SimpleFunctionTests::Format --';
+print format(1234, 'x');
+print '-- SimpleFunctionTests::Format1 --';
+print format(1234, 'X');
+print '-- SimpleFunctionTests::FormatInterp --';
+print format_interp('hi there {0:x}',256);
+
+set dialect='clickhouse';
+DROP TABLE IF EXISTS _dt;
+DROP TABLE IF EXISTS d;

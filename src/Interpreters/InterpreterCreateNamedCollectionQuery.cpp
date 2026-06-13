@@ -50,11 +50,11 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().createFromSQL(query);
-    CurrentMetrics::add(CurrentMetrics::NamedCollection);
 
     return {};
 }
 
+void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

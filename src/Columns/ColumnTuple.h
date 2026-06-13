@@ -83,6 +83,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -147,9 +148,11 @@ public:
 
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
+    bool hasStatistics() const override;
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
     /// Empty tuple needs a public method to manage its size.
     void addSize(size_t delta) { column_length += delta; }

@@ -140,7 +140,7 @@ public:
         }
         else
         {
-            auto inner_storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), context);
+            auto inner_storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(context, false), context);
             inner_storage->read(
                     plan,
                     column_names,

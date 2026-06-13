@@ -1,6 +1,3 @@
--- The result contains ᴺᵁᴸᴸ. This is correct, but we were using format_tsv_null_representation='' setting to represent nulls as empty strings
--- https://github.com/ClickHouse/ClickHouse/issues/95168
--- Note: running this query for the first time may produce '', but consecutive runs will produce 'ᴺᵁᴸᴸ'
 SELECT
     s_store_name,
     i_item_desc,
