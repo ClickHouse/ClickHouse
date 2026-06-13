@@ -63,7 +63,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        /// The array can arrive as a constant column when only the array argument is constant
+        /// while `k` varies by row (the all-constant case is already folded by
+        /// useDefaultImplementationForConstants). Materialize it so the per-row offsets below are valid.
+        const ColumnPtr array_holder = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(array_holder.get());
         if (!col_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected array column for function {}", getName());
 

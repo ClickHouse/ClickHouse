@@ -26,6 +26,10 @@ SELECT arrayCombinations(arr, 2) FROM (SELECT [1, 2, 3] AS arr UNION ALL SELECT 
 SELECT arrayPermutations(arr) FROM (SELECT [1, 2] AS arr UNION ALL SELECT emptyArrayUInt8() UNION ALL SELECT [7, 8, 9]) ORDER BY arr;
 SELECT arrayPartialPermutations(arr, 2) FROM (SELECT [1, 2, 3] AS arr UNION ALL SELECT [4, 5] UNION ALL SELECT [9, 8, 7]) ORDER BY arr;
 
+-- constant array with row-varying k: the array arrives as ColumnConst(ColumnArray) and must be materialized
+SELECT arrayCombinations([1, 2, 3], number) FROM numbers(4);
+SELECT arrayPartialPermutations([1, 2, 3], number) FROM numbers(4);
+
 -- size limit: should succeed (C(10,3)=120, total elements = 120*3 = 360 < 1M)
 SELECT length(arrayCombinations(range(toUInt8(10)), 3));
 
