@@ -15,6 +15,13 @@
 -- carrier, which would read megabytes and break the byte-count assertions. Pin it on.
 SET query_plan_remove_unused_columns = 1;
 
+-- The carrier lives in the query-plan layer and only fires under the new analyzer; the old
+-- analyzer keeps a physical column as the read input (the first column for count()), so it never
+-- empties column_names_to_read and never chooses a carrier. The old-analyzer CI job would then
+-- read that column and break the byte-count assertions. Pin the new analyzer so the carrier is
+-- exercised in the only mode where it exists.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_smallest_column;
 
 -- ORDER BY tuple() so there is no sorting-key column: the carrier choice is then the
