@@ -68,6 +68,12 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
+# The Darwin fast test additionally consumes the Darwin skip list, so changes to
+# it must schedule the job (the shared digest above does not cover that file).
+darwin_fast_test_digest_config = Job.CacheDigestConfig(
+    include_paths=fast_test_digest_config.include_paths + ["./ci/defs/darwin.skip"],
+)
+
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
     runs_on=[],  # from parametrize()
@@ -202,9 +208,8 @@ class JobConfigs:
         name="Fast test",
         runs_on=None,  # from parametrize()
         command="python3 ./ci/jobs/fast_test.py",
-        digest_config=fast_test_digest_config,
+        digest_config=darwin_fast_test_digest_config,
         result_name_for_cidb="Tests",
-        force_success=True,
         pre_hooks=[
             "sudo rm -rf /Library/Logs/DiagnosticReports/*",
         ],
@@ -1379,6 +1384,7 @@ class JobConfigs:
             include_paths=[
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
+                "./ci/jobs/scripts/docs",
             ],
             # Exclude everything currently in ./docs so that this job runs only
             # on files that are NOT part of the legacy docs tree (i.e. the new
