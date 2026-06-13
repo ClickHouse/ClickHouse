@@ -70,9 +70,10 @@ TEST(ThreadPoolCallbackRunner, DroppedOnShutdownDoesNotBreakPromise)
             {
                 pool.wait();
             }
-            catch (...)
+            catch (const std::exception &)
             {
-                /// The blocker's std::runtime_error is rethrown here; expected.
+                /// The blocker's std::runtime_error is rethrown here; expected. Catch the concrete
+                /// std::exception (not catch-all) so anything unexpected propagates and fails the test.
             }
             /// Pool destructor (finalize) runs at scope exit and joins the worker.
         }
