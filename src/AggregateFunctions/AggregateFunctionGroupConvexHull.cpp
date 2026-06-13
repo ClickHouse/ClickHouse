@@ -31,6 +31,13 @@ struct GroupConvexHullData
 {
     std::vector<CartesianPoint> points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
+    /// Stored point count right after the most recent `compress`. The compression trigger looks
+    /// at growth since then, not the total size, so a large valid hull (many points in convex
+    /// position, e.g. on a circle) whose vertex count alone exceeds
+    /// `CONVEX_HULL_COMPRESSION_THRESHOLD` does not force a full hull recomputation on every
+    /// subsequent row.
+    size_t size_after_compression = 0;
+
     void addMany(const std::vector<CartesianPoint> & new_points, const char * function_name) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         points.insert(points.end(), new_points.begin(), new_points.end());
@@ -81,7 +88,10 @@ struct GroupConvexHullData
     void compress()
     {
         if (points.size() <= 1)
+        {
+            size_after_compression = points.size();
             return;
+        }
 
         boost::geometry::model::multi_point<CartesianPoint> mp(points.begin(), points.end());
 
@@ -100,11 +110,15 @@ struct GroupConvexHullData
             && points.front().get<0>() == points.back().get<0>()
             && points.front().get<1>() == points.back().get<1>())
             points.pop_back();
+
+        size_after_compression = points.size();
     }
 
     void maybeCompress()
     {
-        if (points.size() > CONVEX_HULL_COMPRESSION_THRESHOLD)
+        /// Trigger on points accumulated since the last compression, not the total size: a hull
+        /// already larger than the threshold must not recompress on every single appended point.
+        if (points.size() - size_after_compression > CONVEX_HULL_COMPRESSION_THRESHOLD)
             compress();
     }
 
