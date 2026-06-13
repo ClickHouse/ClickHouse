@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
+#include <Formats/ParseError.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -118,6 +119,8 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
