@@ -520,6 +520,11 @@ MutationsInterpreter::MutationsInterpreter(
     use_analyzer = shouldUseAnalyzerForMutations(new_context);
     if (!use_analyzer)
         LOG_TEST(logger, "Will use old analyzer to prepare mutation");
+
+    /// Mutation source reads build a synthetic `SELECT` without a table expression,
+    /// so parallel replicas must not be used for them.
+    new_context->setSetting("enable_parallel_replicas", Field(0));
+
     context = std::move(new_context);
 }
 
