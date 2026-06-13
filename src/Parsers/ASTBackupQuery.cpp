@@ -485,20 +485,55 @@ namespace
             }
         }
 
-        /// Validate that the required fields for each element type are present,
-        /// otherwise a malformed JSON could produce an AST that cannot be formatted back.
+        /// Validate per `ElementType` that the required fields are present and that no field
+        /// invalid for the type is supplied. `formatElement` reproduces only a type-specific
+        /// subset of these fields, so accepting the others would let `clickhouse_json` carry data
+        /// that the formatted SQL drops while `BackupEntriesCollector`/`RestorerFromBackup` still
+        /// act on it — for example a `partitions` list on a `TEMPORARY TABLE`, which the parser
+        /// never produces and `formatElement` omits, but the backup/restore logic would honour.
+        auto reject_field = [&](const char * key, const char * type_name)
+        {
+            if (elem_obj.has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field '{}' is not valid for BACKUP/RESTORE element type {} at index {} during AST JSON deserialization",
+                    key, type_name, element_index);
+        };
         switch (e.type)
         {
             case ElementType::TABLE:
-            case ElementType::TEMPORARY_TABLE:
+                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions.
                 if (e.table_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                reject_field("except_tables", "TABLE");
+                reject_field("except_databases", "TABLE");
+                break;
+            case ElementType::TEMPORARY_TABLE:
+                /// Valid: table_name, new_table_name. A temporary table has no database and
+                /// `formatElement` prints neither a database nor `PARTITIONS`/`EXCEPT`.
+                if (e.table_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                reject_field("database_name", "TEMPORARY_TABLE");
+                reject_field("new_database_name", "TEMPORARY_TABLE");
+                reject_field("partitions", "TEMPORARY_TABLE");
+                reject_field("except_tables", "TEMPORARY_TABLE");
+                reject_field("except_databases", "TEMPORARY_TABLE");
                 break;
             case ElementType::DATABASE:
+                /// Valid: database_name, new_database_name, except_tables.
                 if (e.database_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'database_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                reject_field("table_name", "DATABASE");
+                reject_field("new_table_name", "DATABASE");
+                reject_field("partitions", "DATABASE");
+                reject_field("except_databases", "DATABASE");
                 break;
             case ElementType::ALL:
+                /// Valid: except_databases, except_tables.
+                reject_field("table_name", "ALL");
+                reject_field("database_name", "ALL");
+                reject_field("new_table_name", "ALL");
+                reject_field("new_database_name", "ALL");
+                reject_field("partitions", "ALL");
                 break;
         }
 
