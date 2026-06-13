@@ -83,7 +83,22 @@ public:
 
                 /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
                 if (if_arguments_nodes[1]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
-                    new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[1]), if_node->getResultType(), getContext());
+                {
+                    /// For constant arguments, directly convert to Nullable instead of
+                    /// wrapping in _CAST. This avoids column name mismatches in distributed
+                    /// queries where the _CAST FunctionNode (on initiator) vs folded
+                    /// ConstantNode (on remote) produce different type annotations.
+                    if (if_arguments_nodes[1]->as<ConstantNode>())
+                    {
+                        auto converted = if_arguments_nodes[1]->clone();
+                        converted->as<ConstantNode &>().convertToNullable();
+                        new_arguments[0] = std::move(converted);
+                    }
+                    else
+                    {
+                        new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[1]), if_node->getResultType(), getContext());
+                    }
+                }
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[1]);
 
@@ -110,7 +125,18 @@ public:
 
                 /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
                 if (if_arguments_nodes[2]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
-                    new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[2]), if_node->getResultType(), getContext());
+                {
+                    if (if_arguments_nodes[2]->as<ConstantNode>())
+                    {
+                        auto converted = if_arguments_nodes[2]->clone();
+                        converted->as<ConstantNode &>().convertToNullable();
+                        new_arguments[0] = std::move(converted);
+                    }
+                    else
+                    {
+                        new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[2]), if_node->getResultType(), getContext());
+                    }
+                }
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[2]);
 
