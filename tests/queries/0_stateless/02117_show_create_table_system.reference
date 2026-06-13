@@ -143,7 +143,12 @@ CREATE TABLE system.data_type_families
 (
     `name` String,
     `case_insensitive` UInt8,
-    `alias_to` String
+    `alias_to` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableDataTypeFamilies
 COMMENT 'Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.'
@@ -672,6 +677,7 @@ CREATE TABLE system.processes
     `os_user` String,
     `client_hostname` String,
     `client_name` String,
+    `client_agent` LowCardinality(String),
     `client_revision` UInt64,
     `client_version_major` UInt64,
     `client_version_minor` UInt64,
