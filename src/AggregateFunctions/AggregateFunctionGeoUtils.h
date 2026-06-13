@@ -231,8 +231,15 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
             MAX_POINTS_IN_POLYGONAL_STATE);
     budget.points += size;
 
+    /// Do not reserve/resize the ring to the declared count up front. A corrupted state can
+    /// advertise an in-range count (up to `MAX_POINTS_PER_RING`) yet carry a truncated coordinate
+    /// payload, so `ring.resize(size)` would allocate the full ring (up to ~160 MiB) before
+    /// `readBinaryLittleEndian` hits EOF. Append points incrementally with a bounded initial
+    /// reservation; `push_back` then grows the ring geometrically as points are actually read, so
+    /// memory grows only with the bytes present in the serialized state, not the declared count.
+    static constexpr UInt64 deserialize_ring_batch = 4096;
     CartesianRing ring;
-    ring.resize(size);
+    ring.reserve(size < deserialize_ring_batch ? static_cast<size_t>(size) : deserialize_ring_batch);
     for (UInt64 i = 0; i < size; ++i)
     {
         Float64 x = 0;
@@ -246,7 +253,7 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
                 function_name,
                 x,
                 y);
-        ring[i] = CartesianPoint(x, y);
+        ring.push_back(CartesianPoint(x, y));
     }
     return ring;
 }
