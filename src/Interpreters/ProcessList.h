@@ -324,6 +324,12 @@ struct ProcessListForUser
     QueryToElement queries;
     size_t non_internal_queries = 0;
 
+    /// Number of this user's queries that released their admission slot early but whose
+    /// `ProcessListEntry` is not destroyed yet, so they still count toward `non_internal_queries`.
+    /// Lets a `max_concurrent_queries_for_user` waiter holding an admission slot wait only for
+    /// teardowns that can actually decrement *this* user's counter (see `ProcessList::insert`).
+    size_t admission_pending_teardowns = 0;
+
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
@@ -443,8 +449,11 @@ protected:
 
     /// Number of queries that released their admission slot early (via `releaseAdmissionSlot`)
     /// but whose `ProcessListEntry` is not destroyed yet, so they still count toward
-    /// `non_internal_processes` / `query_kind_amounts` / the per-user counters. The secondary-limit
-    /// checks in `insert` wait for this to drain before trusting those counters.
+    /// `non_internal_processes`. The `max_concurrent_queries_for_all_users` check in `insert`
+    /// (which tests the global `non_internal_processes`) waits for this to drain before trusting it.
+    /// The per-kind and per-user limits use the scoped counters `query_kind_pending_teardowns` and
+    /// `ProcessListForUser::admission_pending_teardowns` instead, so that an unrelated teardown does
+    /// not keep a query parked at a secondary limit while it hoards a global admission slot.
     size_t admission_pending_teardowns = 0;
 
     /// When disabled, falls back to legacy `non_internal_processes` counting.
@@ -487,6 +496,13 @@ protected:
     /// amount of queries by query kind, excludes internal queries
     QueryKindAmounts query_kind_amounts;
 
+    /// Per-query-kind analogue of `ProcessListForUser::admission_pending_teardowns`: counts
+    /// early-released queries of each kind whose teardown has not completed yet. Scopes the wait of a
+    /// query-kind secondary-limit check (`max_insert_queries_amount` / `max_select_queries_amount`) to
+    /// teardowns of the same kind, which are the only ones that can decrement `query_kind_amounts` for
+    /// that kind.
+    QueryKindAmounts query_kind_pending_teardowns;
+
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
@@ -494,6 +510,13 @@ protected:
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
+
+    /// Maintain the early-release teardown counters for a query of `query_kind` belonging to `user`,
+    /// scoped per-kind and per-user plus the global `admission_pending_teardowns` (see their comments).
+    /// Increase on early slot release; decrease when the query's `ProcessListEntry` is destroyed.
+    /// Caller must hold `mutex`.
+    void increaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user);
+    void decreaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
