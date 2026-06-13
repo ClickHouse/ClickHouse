@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
@@ -179,6 +180,7 @@ namespace ErrorCodes
     extern const int DELTA_KERNEL_ERROR;
     extern const int FAULT_INJECTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace FailPoints
@@ -381,6 +383,20 @@ BlockIO InterpreterSystemQuery::execute()
             table_id = getContext()->resolveStorageID(id_in_query, Context::ResolveOrdinary);
     }
 
+    /// Table-targeted SYSTEM commands resolve a read-only `Overlay` facade to the underlying
+    /// source table and would act on it (stop/start merges, restart/sync/drop replica, etc.)
+    /// behind the user's back. Reject them on the facade — they must be run against the
+    /// underlying database that owns the table, just like the other write operations.
+    if (table_id)
+    {
+        if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+            database && database->isReadOnly() && typeid_cast<const DatabaseOverlay *>(database.get()))
+            throw Exception(
+                ErrorCodes::TABLE_IS_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run SYSTEM commands in the underlying database that owns the table",
+                backQuote(table_id.database_name));
+    }
 
     BlockIO result;
 

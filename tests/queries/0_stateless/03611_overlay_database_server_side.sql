@@ -77,6 +77,16 @@ TRUNCATE TABLE db_overlay.t_a; -- { serverError TABLE_IS_READ_ONLY }
 DELETE FROM db_overlay.t_a WHERE id = 1; -- { serverError TABLE_IS_READ_ONLY }
 UPDATE db_overlay.t_a SET s = 'nope' WHERE id = 1 SETTINGS enable_lightweight_update = 1; -- { serverError TABLE_IS_READ_ONLY }
 
+-- SYSTEM commands targeting a table are rejected on the facade, so the underlying table is not
+-- stopped/restarted behind the user's back. They must be run against the underlying database.
+SYSTEM STOP MERGES db_overlay.t_a; -- { serverError TABLE_IS_READ_ONLY }
+SYSTEM SYNC REPLICA db_overlay.t_a; -- { serverError TABLE_IS_READ_ONLY }
+
+-- Database-level TRUNCATE on the facade is rejected too: it would otherwise expand to the
+-- underlying source tables. (DROP/DETACH DATABASE of the facade itself remain allowed.)
+TRUNCATE DATABASE db_overlay; -- { serverError TABLE_IS_READ_ONLY }
+TRUNCATE ALL TABLES FROM db_overlay; -- { serverError TABLE_IS_READ_ONLY }
+
 -- The rejected operations had no side effect on the underlying table: it is still fully operational.
 INSERT INTO db_a.t_a VALUES (3, 'a3');
 SELECT * FROM db_overlay.t_a ORDER BY id;

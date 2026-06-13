@@ -492,6 +492,20 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
 
+    /// `TRUNCATE DATABASE`/`TRUNCATE TABLES FROM` on a read-only `Overlay` facade would otherwise
+    /// expand to per-table truncation that targets the underlying source tables. Reject it up front
+    /// — the facade owns no tables, so truncation must be run against the underlying databases.
+    /// (`DROP`/`DETACH DATABASE` of the facade itself are allowed: they only remove its definition.)
+    if (truncate)
+    {
+        if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run TRUNCATE in the underlying database that owns the tables",
+                backQuote(database_name));
+    }
+
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
     auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
