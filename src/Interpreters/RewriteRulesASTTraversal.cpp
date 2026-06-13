@@ -16,6 +16,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool query_rules;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
 }
 
 namespace ErrorCodes
@@ -182,6 +184,23 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
     }
 
     return true;
+}
+
+
+void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & resulting_query, ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto check = [&](const ASTPtr & ast)
+    {
+        if (!ast)
+            return;
+        if (settings[Setting::max_ast_depth])
+            ast->checkDepth(settings[Setting::max_ast_depth]);
+        if (settings[Setting::max_ast_elements])
+            ast->checkSize(settings[Setting::max_ast_elements]);
+    };
+    check(source_query);
+    check(resulting_query);
 }
 
 

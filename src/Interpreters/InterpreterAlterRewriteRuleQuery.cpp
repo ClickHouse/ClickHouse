@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Common/RewriteRules/RewriteRules.h>
 #include <Core/ServerSettings.h>
 
@@ -21,6 +22,7 @@ BlockIO InterpreterAlterRewriteRuleQuery::execute()
 
     const auto & query = query_ptr->as<const ASTAlterRewriteRuleQuery &>();
 
+    checkRewriteRuleTemplateLimits(query.source_query, query.resulting_query, current_context);
     RewriteRules::instance().updateRule(query);
     return {};
 }
