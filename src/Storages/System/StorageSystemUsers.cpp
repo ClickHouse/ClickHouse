@@ -384,7 +384,18 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
     /// Fast path: if predicate contains `name = 'literal'` or `name IN (...)`,
     /// do O(1) lookups instead of iterating all users.
-    if (auto names = extractNamesFromPredicate(predicate, context))
+    ///
+    /// The fast path performs `number of requested names * number of access storages` lookups.
+    /// For a single user or a short `IN` list (the common case this optimization targets) this is
+    /// far cheaper than scanning every user. But a very large requested set — for example
+    /// `name IN (...)` with a huge literal list or subquery result — could perform more lookups
+    /// than a single full scan, making the "fast" path slower than the fallback. Cap it at a
+    /// deliberate limit so it can never become slower than the original behavior; above the limit
+    /// we fall back to the full scan (exactly what happened before this optimization).
+    static constexpr size_t max_names_for_fast_path = 1000;
+
+    auto names = extractNamesFromPredicate(predicate, context);
+    if (names && names->size() <= max_names_for_fast_path)
     {
         /// A name can exist in more than one access storage (for example a user defined in a
         /// local directory shadowing one from `users.xml`), and the full scan over `findAll<User>`

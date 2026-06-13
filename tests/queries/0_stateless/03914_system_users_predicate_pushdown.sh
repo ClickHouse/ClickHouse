@@ -8,6 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# A very large IN set must not make the fast path slower than a full scan: above a deliberate
+# limit it falls back to the full scan. Build a list of 1500 non-existent names (above the limit)
+# plus one real user; the result must stay correct whichever path is taken.
+LARGE_IN=$(seq 1 1500 | sed "s/.*/'test_pushdown_filler_&'/" | paste -sd, -)
+
 ${CLICKHOUSE_LOCAL} -q "
 CREATE USER test_pushdown_alice;
 CREATE USER test_pushdown_bob;
@@ -41,4 +46,8 @@ SELECT name FROM system.users WHERE name LIKE 'test_pushdown_%' ORDER BY name;
 
 -- Fallback path: count all users still works (no predicate)
 SELECT count() > 0 FROM system.users;
+
+-- Fallback path: a large IN set (above the fast-path limit) falls back to the full scan,
+-- and the result is still correct.
+SELECT name FROM system.users WHERE name IN (${LARGE_IN}, 'test_pushdown_alice');
 "
