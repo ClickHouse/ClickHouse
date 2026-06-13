@@ -110,6 +110,77 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
+/// Pick a non-virtual column to read for a query that selects no columns (e.g. SELECT count() or
+/// SELECT isNullable(x), where x constant-folds away). We must read something just to learn the
+/// row count, so prefer the column that is cheapest to read off disk. `parts` are the parts that
+/// will actually be read, so the size aggregate reflects the real cost.
+String chooseColumnToReadForNoColumnsQuery(const RangesInDataParts & parts, const StorageMetadataPtr & metadata_snapshot)
+{
+    NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    /// Carrier candidates: columns physically present in every part. Reading such a column never
+    /// forces the reader to materialise a DEFAULT, which could otherwise pull a large dependency
+    /// column on a part where the carrier is missing. The carrier is global to the read, so a
+    /// column present in only some parts (e.g. one just added by ALTER and stored only in a new
+    /// part) is unsafe and excluded.
+    NamesAndTypesList carrier_candidates;
+    for (const auto & column : available_real_columns)
+    {
+        bool present_in_all = !parts.empty();
+        for (const auto & part : parts)
+            if (!part.data_part->hasColumnFiles(column))
+            {
+                present_in_all = false;
+                break;
+            }
+        if (present_in_all)
+            carrier_candidates.push_back(column);
+    }
+
+    /// Among the candidates, pick the one cheapest to read from disk. getSmallestColumn() ranks by
+    /// the in-memory value size, which mis-ranks compactly stored columns (a LowCardinality(String)
+    /// reads far fewer bytes than a UInt64 yet looks "larger" in memory), so prefer the aggregate
+    /// on-disk size summed over all parts. A compact part keeps every column in one file and reports
+    /// a per-column size of 0, so it contributes nothing to the aggregate while its real read cost
+    /// may dominate the table; the aggregate is therefore only trustworthy when *every* part reports
+    /// a positive size for the column. A candidate with a zero-size part is left unranked here and
+    /// handled by the fallback below. Iterate candidates (a stable order) so ties are deterministic.
+    String carrier;
+    size_t smallest_size = std::numeric_limits<size_t>::max();
+    for (const auto & column : carrier_candidates)
+    {
+        size_t size = 0;
+        bool measurable_in_all_parts = true;
+        for (const auto & part : parts)
+        {
+            size_t part_size = part.data_part->getColumnSize(column.name).data_compressed;
+            if (part_size == 0)
+            {
+                measurable_in_all_parts = false;
+                break;
+            }
+            size += part_size;
+        }
+        if (measurable_in_all_parts && size < smallest_size)
+        {
+            smallest_size = size;
+            carrier = column.name;
+        }
+    }
+
+    /// No candidate has a trustworthy on-disk size (e.g. every part is compact, or a mixed
+    /// compact/wide layout where no column is measurable in every part), or no column is present in
+    /// every part (heavily schema-evolved): fall back to the in-memory heuristic over the safe
+    /// candidates, or over all physical columns when there is none. The carrier stays a current
+    /// metadata column so it resolves against the StorageSnapshot; the per-part read setup
+    /// substitutes columns missing from a given part as before.
+    if (carrier.empty())
+        carrier = ExpressionActions::getSmallestColumn(
+            carrier_candidates.empty() ? available_real_columns : carrier_candidates).name;
+
+    return carrier;
+}
+
 /// check if a DAG node only depends on sorting key columns
 /// (ActionsDAG version of isExpressionOverSortingKey)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
@@ -2455,78 +2526,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     result.column_names_to_read = all_column_names;
 
+    const bool needs_no_columns_carrier = result.column_names_to_read.empty();
+
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource and return here
+    /// before partition/PK pruning, so the carrier can only be chosen over the pre-pruned parts.
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
-    if (result.column_names_to_read.empty())
-    {
-        NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
-
-        /// Carrier candidates: columns physically present in every selected part. Reading such a
-        /// column never forces the reader to materialise a DEFAULT, which could otherwise pull a
-        /// large dependency column on a part where the carrier is missing. The carrier is global to
-        /// the read, so a column present in only some parts (e.g. one just added by ALTER and stored
-        /// only in a new part) is unsafe and excluded.
-        NamesAndTypesList carrier_candidates;
-        for (const auto & column : available_real_columns)
-        {
-            bool present_in_all = !parts.empty();
-            for (const auto & part : parts)
-                if (!part.data_part->hasColumnFiles(column))
-                {
-                    present_in_all = false;
-                    break;
-                }
-            if (present_in_all)
-                carrier_candidates.push_back(column);
-        }
-
-        /// Among the candidates, pick the one cheapest to read from disk. getSmallestColumn() ranks
-        /// by the in-memory value size, which mis-ranks compactly stored columns (a
-        /// LowCardinality(String) reads far fewer bytes than a UInt64 yet looks "larger" in memory),
-        /// so prefer the aggregate on-disk size summed over all parts. A compact part keeps every
-        /// column in one file and reports a per-column size of 0, so it contributes nothing to the
-        /// aggregate while its real read cost may dominate the table; the aggregate is therefore only
-        /// trustworthy when *every* selected part reports a positive size for the column. A candidate
-        /// with a zero-size part is left unranked here and handled by the fallback below. Iterate
-        /// candidates (a stable order) so ties are deterministic.
-        String carrier;
-        size_t smallest_size = std::numeric_limits<size_t>::max();
-        for (const auto & column : carrier_candidates)
-        {
-            size_t size = 0;
-            bool measurable_in_all_parts = true;
-            for (const auto & part : parts)
-            {
-                size_t part_size = part.data_part->getColumnSize(column.name).data_compressed;
-                if (part_size == 0)
-                {
-                    measurable_in_all_parts = false;
-                    break;
-                }
-                size += part_size;
-            }
-            if (measurable_in_all_parts && size < smallest_size)
-            {
-                smallest_size = size;
-                carrier = column.name;
-            }
-        }
-
-        /// No candidate has a trustworthy on-disk size (e.g. every part is compact, or a mixed
-        /// compact/wide layout where no column is measurable in every part), or no column is present
-        /// in every part (heavily schema-evolved): fall back to the in-memory heuristic over the safe
-        /// candidates, or over all physical columns when there is none. The carrier stays a current
-        /// metadata column so it resolves against the StorageSnapshot; the per-part read setup
-        /// substitutes columns missing from a given part as before.
-        if (carrier.empty())
-            carrier = ExpressionActions::getSmallestColumn(
-                carrier_candidates.empty() ? available_real_columns : carrier_candidates).name;
-
-        result.column_names_to_read.push_back(std::move(carrier));
-    }
-
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
     if (query_info_.isStream())
+    {
+        if (needs_no_columns_carrier)
+            result.column_names_to_read.push_back(chooseColumnToReadForNoColumnsQuery(parts, metadata_snapshot));
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -2889,6 +2899,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             }
         }
     }
+
+    /// If there are only virtual columns in the query, you must request at least one non-virtual
+    /// one. Choose it now that pruning has populated result.parts_with_ranges, so the carrier is
+    /// ranked over the parts that will actually be read: parts dropped by partition/PK/skip-index
+    /// pruning, the query-condition cache or projection filtering neither contribute to the size
+    /// aggregate nor make a column "present in every part". When no part survives, the read becomes
+    /// a NullSource that reads nothing, so no carrier is needed.
+    if (needs_no_columns_carrier && !result.parts_with_ranges.empty())
+        result.column_names_to_read.push_back(
+            chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, metadata_snapshot));
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
