@@ -2,6 +2,7 @@
 #include <Parsers/IAST.h>
 
 #include <algorithm>
+#include <limits>
 
 /// Include ALL AST types for the factory.
 #include <Parsers/ASTAsterisk.h>
@@ -229,6 +230,27 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 namespace
 {
 
+/// The serialized JSON wraps every AST edge in extra brackets (a `children` array plus the
+/// child object — about two bracket levels per AST level) and nests structured `Field` literals
+/// further (about two more bracket levels per `Field` level, see `readFieldFromObjectImpl`).
+/// So the raw-text bracket depth of a *valid* serialized AST can reach a small multiple of its
+/// AST-node depth. The pre-scan below is only a stack-overflow guard for the Poco JSON parser
+/// (the real AST-node and `Field` depth limits are enforced during construction), so its budget
+/// must be a safe over-approximation of that multiple — otherwise lowering `max_ast_depth` would
+/// reject ASTs that `checkDepth(max_ast_depth)` accepts and break the
+/// `parseQueryToJSON` -> `formatQueryFromJSON` round trip. A factor of 8 leaves ample headroom
+/// over the ~4x worst case.
+constexpr size_t JSON_NESTING_BUDGET_PER_AST_LEVEL = 8;
+
+/// JSON bracket-nesting budget for the raw pre-scan, derived from the AST depth limit.
+/// Saturates instead of overflowing when `max_ast_depth` is set close to `SIZE_MAX`.
+size_t jsonNestingBudget(size_t max_ast_depth)
+{
+    if (max_ast_depth > std::numeric_limits<size_t>::max() / JSON_NESTING_BUDGET_PER_AST_LEVEL)
+        return std::numeric_limits<size_t>::max();
+    return max_ast_depth * JSON_NESTING_BUDGET_PER_AST_LEVEL;
+}
+
 /// Maximum nesting depth of `{`/`[` in a raw JSON string, ignoring brackets inside string
 /// literals. Used to bound recursion before handing the text to the JSON parser.
 size_t computeJSONNestingDepth(const String & json)
@@ -269,16 +291,20 @@ ASTPtr IAST::createFromJSON(const String & json)
     /// `Poco::JSON::Parser::setDepth` does not actually bound recursion in our Poco fork
     /// (`ParserImpl` stores `_depth` but `handle`/`handleObject`/`handleArray` never read it),
     /// so a hostile deeply-nested payload would recurse through the parser and overflow the
-    /// stack before any AST-level depth check runs. Enforce the limit on the raw text first.
-    if (json_deser_max_depth > 0 && computeJSONNestingDepth(json) > json_deser_max_depth)
+    /// stack before any AST-level depth check runs. Enforce a raw-text bracket budget first.
+    /// The budget is a safe multiple of `max_ast_depth` (the JSON encoding adds bracket levels
+    /// per AST/`Field` level), not `max_ast_depth` itself, so a valid serialized AST is never
+    /// rejected here — the constructed AST depth is still bounded by the counter check below.
+    const size_t json_nesting_budget = jsonNestingBudget(json_deser_max_depth);
+    if (json_deser_max_depth > 0 && computeJSONNestingDepth(json) > json_nesting_budget)
         throw Exception(ErrorCodes::TOO_DEEP_AST,
-            "JSON nesting depth exceeds maximum AST depth limit ({}) during JSON AST deserialization", json_deser_max_depth);
+            "JSON nesting depth exceeds the limit derived from max_ast_depth ({}) during JSON AST deserialization", json_nesting_budget);
 
     Poco::JSON::Parser parser;
     /// Also request the parser-level bound (kept for forward compatibility if the fork starts
     /// honouring it); the pre-scan above is the actual enforcement.
     if (json_deser_max_depth > 0)
-        parser.setDepth(json_deser_max_depth);
+        parser.setDepth(json_nesting_budget);
     Poco::Dynamic::Var result;
     try
     {
