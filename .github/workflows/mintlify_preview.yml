@@ -1,0 +1,30 @@
+name: Mintlify Preview
+
+# Triggers after the PR workflow completes. Runs in the base-repo context
+# so the runner IAM role provides SSM access for both in-repo and fork PRs.
+# The job checks whether "Docs check (Mintlify)" specifically passed in the
+# triggering run (not just the overall workflow) and exits early if not,
+# so non-docs PRs consume only a few seconds of runner time.
+
+on:
+  workflow_run:
+    workflows: ["PR"]
+    types: [completed]
+
+permissions:
+  statuses: write
+
+jobs:
+  preview:
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Mintlify preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WR_RUN_ID: ${{ github.event.workflow_run.id }}
+          WR_SHA: ${{ github.event.workflow_run.head_sha }}
+          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WR_REPO: ${{ github.repository }}
+        run: python3 ./ci/jobs/scripts/docs/trigger_mintlify_preview.py

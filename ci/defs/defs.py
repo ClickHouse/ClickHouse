@@ -91,17 +91,13 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
-    # GitHub Actions secrets (not SSM) so the values are injected by the
-    # trusted workflow YAML rather than fetched via IMDS inside docker.
-    # GitHub withholds these from pull_request events from forks, so fork
-    # PRs gracefully get the non-blocking warning instead of a preview.
     Secret.Config(
-        name="MINTLIFY_API_KEY",
-        type=Secret.Type.GH_SECRET,
+        name="mintlify-api-key",
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
-        name="MINTLIFY_PROJECT_ID",
-        type=Secret.Type.GH_SECRET,
+        name="mintlify-project-id",
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
 ]
 
