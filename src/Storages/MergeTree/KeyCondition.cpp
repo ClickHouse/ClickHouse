@@ -1097,7 +1097,8 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
 
     ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
-    return &inverted_dag.addFunction(function_builder, args, "");
+    const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
+    return &cloneDAGWithInversionPushDown(cmp_node, inverted_dag, inputs_mapping, context, false);
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
