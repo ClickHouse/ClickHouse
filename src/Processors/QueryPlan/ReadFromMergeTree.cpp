@@ -2464,10 +2464,35 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         /// in-memory value size, which mis-ranks compactly stored columns: a LowCardinality(String)
         /// reads far fewer bytes than a UInt64 yet looks "larger" in memory. Use the on-disk
         /// compressed size instead, matching the carrier chosen later in injectRequiredColumns().
+        ///
+        /// The carrier is global to the read, so sum each column's compressed size over all selected
+        /// parts rather than sampling one part: a column that is tiny in one part but dense elsewhere
+        /// must not be chosen. Only columns physically present in a part contribute its size, so a
+        /// part that predates the current schema (it has files for none of the current columns) simply
+        /// does not vote. If no current column has files in any part, fall back to getSmallestColumn;
+        /// the carrier stays a current metadata column either way so it resolves against the
+        /// StorageSnapshot, and the per-part read setup substitutes missing columns as before.
+        std::unordered_map<String, size_t> compressed_size_by_column;
+        for (const auto & part : parts)
+            for (const auto & column : available_real_columns)
+                if (part.data_part->hasColumnFiles(column))
+                    compressed_size_by_column[column.name] += part.data_part->getColumnSize(column.name).data_compressed;
+
+        /// Iterate available_real_columns (a stable order) rather than the map so ties resolve
+        /// deterministically.
         String smallest_column_name;
-        if (!parts.empty())
-            smallest_column_name = parts.front().data_part->getColumnNameWithMinimumCompressedSize(available_real_columns);
-        else
+        size_t smallest_size = std::numeric_limits<size_t>::max();
+        for (const auto & column : available_real_columns)
+        {
+            auto it = compressed_size_by_column.find(column.name);
+            if (it != compressed_size_by_column.end() && it->second < smallest_size)
+            {
+                smallest_size = it->second;
+                smallest_column_name = column.name;
+            }
+        }
+
+        if (smallest_column_name.empty())
             smallest_column_name = ExpressionActions::getSmallestColumn(available_real_columns).name;
 
         result.column_names_to_read.push_back(std::move(smallest_column_name));
