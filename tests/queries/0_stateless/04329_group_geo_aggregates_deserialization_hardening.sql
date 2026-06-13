@@ -73,3 +73,18 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
         '00'                   -- 0 inner rings
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
+
+-- 5. groupConvexHull: in-range declared point count with a truncated coordinate payload.
+--    The count (100,000,000) is exactly MAX_POINTS_IN_CONVEX_HULL_STATE, so it passes the
+--    cap check, but no coordinate bytes follow. deserialize must stream the payload in
+--    bounded batches and fail on the missing coordinates without first allocating the full
+--    100M-point vector (~1.6 GB). With a tight max_memory_usage, the previous
+--    points.resize(size) would trip MEMORY_LIMIT_EXCEEDED; the bounded reader instead fails
+--    fast with CANNOT_READ_ALL_DATA while staying far under the limit.
+SELECT 'convexhull_truncated_payload';
+SELECT groupConvexHullMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '01',          -- version
+        '80C2D72F'     -- 100,000,000 declared points (== limit); no coordinate payload follows
+    )) AS AggregateFunction(groupConvexHull, Point)) AS state
+) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }

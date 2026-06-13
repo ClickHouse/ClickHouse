@@ -272,7 +272,6 @@ public:
                 getName(),
                 static_cast<int>(GEO_SERDE_VERSION));
 
-        auto & points = AggregateFunctionGroupConvexHull::data(place).points;
         UInt64 size = 0;
         readVarUInt(size, buf);
         if (size > MAX_POINTS_IN_CONVEX_HULL_STATE)
@@ -283,7 +282,19 @@ public:
                 size,
                 MAX_POINTS_IN_CONVEX_HULL_STATE);
 
-        points.resize(size);
+        /// Do not pre-size the accumulator to the declared count. A corrupted state can advertise
+        /// an in-range count (up to `MAX_POINTS_IN_CONVEX_HULL_STATE`) yet carry a truncated
+        /// coordinate payload, so `points.resize(size)` would force an allocation for up to
+        /// `MAX_POINTS_IN_CONVEX_HULL_STATE` `CartesianPoint` values before `readBinaryLittleEndian`
+        /// hits EOF. Read the payload in bounded batches and feed them through `addMany`, which
+        /// compresses the accumulator once it grows past `CONVEX_HULL_COMPRESSION_THRESHOLD`:
+        /// memory then grows only with the bytes actually present, not with the declared count.
+        constexpr UInt64 deserialize_batch_size = 4096;
+        auto & data = AggregateFunctionGroupConvexHull::data(place);
+
+        std::vector<CartesianPoint> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        batch.reserve(size < deserialize_batch_size ? static_cast<size_t>(size) : deserialize_batch_size);
+
         for (UInt64 i = 0; i < size; ++i)
         {
             Float64 x = 0;
@@ -297,8 +308,17 @@ public:
                     getName(),
                     x,
                     y);
-            points[i] = CartesianPoint(x, y);
+            batch.push_back(CartesianPoint(x, y));
+
+            if (batch.size() >= deserialize_batch_size)
+            {
+                data.addMany(batch, getName().c_str());
+                batch.clear();
+            }
         }
+
+        if (!batch.empty())
+            data.addMany(batch, getName().c_str());
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
