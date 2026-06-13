@@ -539,6 +539,11 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
+        /// Create the database in restore mode (SECONDARY_CREATE), like the table-restore path does.
+        /// This skips creation-time sanity checks that do not hold mid-restore — e.g. an `Overlay`
+        /// facade whose source databases are restored in the same operation and may not exist yet
+        /// when the facade is created (they are resolved lazily by name afterwards).
+        interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }
     catch (Exception & e)

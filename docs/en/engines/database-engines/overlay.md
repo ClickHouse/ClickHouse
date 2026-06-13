@@ -68,6 +68,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 * `DROP TABLE dboverlay.*` and `DETACH TABLE dboverlay.*` are rejected so that they cannot stop or detach the real table living in the underlying database. Drop or detach the table in the database that owns it.
 * `DROP DATABASE dboverlay` drops the facade only; it does not call `shutdown`/`drop` on the member databases.
 * `BACKUP DATABASE dboverlay` stores only the facade definition (`CREATE DATABASE … ENGINE = Overlay(...)`). The tables are backed up with the underlying databases that own them, so back up those databases (or `BACKUP ALL`) to capture the data.
+* `RESTORE DATABASE dboverlay AS ...` rewrites the facade's source database names through the restore renaming map. If a source database is restored under a new name in the same `RESTORE` (e.g. `RESTORE DATABASE db_a AS db_a2, DATABASE dboverlay AS dboverlay2`), the restored facade points at the restored source (`db_a2`); a source that is not renamed is referenced under its original name.
 
 ---
 

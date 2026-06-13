@@ -324,7 +324,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
+    /// During RESTORE the database is created in secondary (SECONDARY_CREATE) mode, like restored
+    /// tables: this skips creation-time checks that do not hold mid-restore, e.g. an `Overlay` facade
+    /// whose source databases are restored in the same operation and may not exist yet at this point.
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ is_restore_from_backup);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
