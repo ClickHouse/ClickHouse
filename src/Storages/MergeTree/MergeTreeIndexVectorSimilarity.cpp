@@ -10,6 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/TargetSpecific.h>
@@ -1133,7 +1134,7 @@ struct E8Codebook
     bool use_clamp = false;                             /// whether to clamp query points into the fully-contained region
     float clamp_radius = 0.0f;                          /// clamp radius (lattice units); guarantees decode lands in-set
     std::vector<float> coords;                          /// num_points * 8, already multiplied by `scale`
-    std::unordered_map<UInt64, UInt32> point_to_index;  /// e8Key(2*coord) -> codebook index
+    HashMap<UInt64, UInt32> point_to_index;             /// e8Key(2*coord) -> codebook index (flat, cache-friendly)
 };
 
 /// Recursively enumerate all E8 lattice points (in 2*coordinate units, so all entries share parity `parity`) whose
@@ -1292,10 +1293,10 @@ inline void encodeE8(const E8Codebook & cb, const float * rhat, size_t dimension
         nearestE8(y, c2);
 
         UInt32 idx = 0;
-        auto it = cb.point_to_index.find(e8Key(c2));
-        if (it != cb.point_to_index.end())
+        const auto * it = cb.point_to_index.find(e8Key(c2));
+        if (it != nullptr)
         {
-            idx = it->second;
+            idx = it->getMapped();
         }
         else
         {
