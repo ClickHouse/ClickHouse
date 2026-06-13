@@ -1093,12 +1093,19 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     if (!function_builder)
         return nullptr;
 
-    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false);
-    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
+    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false, false);
+    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, false);
 
     ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
     const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
-    return &cloneDAGWithInversionPushDown(cmp_node, inverted_dag, inputs_mapping, context, false);
+    /// Normalize the generated comparison through tryRewriteCoalesceComparison so that
+    /// the template KeyCondition and each skip-index KeyCondition produce the same RPN atoms.
+    /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
+    /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
+    const String cmp_name(canonical_op);
+    if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    return &cmp_node;
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(

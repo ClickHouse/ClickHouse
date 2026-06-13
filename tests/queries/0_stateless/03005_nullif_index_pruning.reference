@@ -115,7 +115,18 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.t_nullif_coalesce)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              b
+            Condition: (b in [5, 5])
             Parts: 1/1
-            Granules: 1/1
+            Granules: 2/3
+            Search Algorithm: binary search
+          Skip
+            Name: idx_b
+            Description: minmax GRANULARITY 1
+            Condition: (b in [5, 5])
+            Parts: 1/1
+            Granules: 1/2
           Ranges: 1
+1
+1

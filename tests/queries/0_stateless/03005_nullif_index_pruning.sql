@@ -48,11 +48,16 @@ OPTIMIZE TABLE t_nullif_skip_index FINAL;
 EXPLAIN indexes = 1 SELECT count() FROM t_nullif_skip_index WHERE nullIf(s, 255) = 50;
 DROP TABLE IF EXISTS t_nullif_skip_index;
 
--- Bot Review Fix: Test recursive rewriting for nullIf wrapping coalesce with skip-indexes
+-- Regression test: nullIf(b, sentinel) = const with skip index must produce non-trivial condition
+-- and prune granules. This fails if tryRewriteNullIfComparison is removed.
 DROP TABLE IF EXISTS t_nullif_coalesce;
-CREATE TABLE t_nullif_coalesce (a UInt8, b UInt8, INDEX idx_b b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192;
-INSERT INTO t_nullif_coalesce VALUES (1, 1), (5, 5);
-
-EXPLAIN indexes = 1 SELECT count() FROM t_nullif_coalesce WHERE nullIf(coalesce(a, b), 255) = 5;
-
+CREATE TABLE t_nullif_coalesce (a Nullable(UInt8), b UInt8, INDEX idx_b b TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY b SETTINGS index_granularity = 3;
+INSERT INTO t_nullif_coalesce VALUES (NULL,1),(NULL,2),(NULL,3),(NULL,5),(NULL,6),(NULL,7),(NULL,250),(NULL,251),(NULL,252);
+SET use_skip_indexes_for_disjunctions = 1;
+-- nullIf(b, 255) = 5 must prune via idx_b (non-trivial condition, reduced granules)
+EXPLAIN indexes = 1 SELECT count() FROM t_nullif_coalesce WHERE nullIf(b, 255) = 5;
+SELECT count() FROM t_nullif_coalesce WHERE nullIf(b, 255) = 5;
+-- nullIf(coalesce(a, b), 255) = 5 correctness: result must be 1 even with skip indexes enabled
+SELECT count() FROM t_nullif_coalesce WHERE nullIf(coalesce(a, b), 255) = 5;
 DROP TABLE t_nullif_coalesce;
