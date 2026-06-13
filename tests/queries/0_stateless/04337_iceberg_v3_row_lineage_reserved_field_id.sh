@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} --query "
 DATAFILE=$(ls "${ICEBERG_TABLE_PATH}"/data/*.parquet 2>/dev/null | head -1)
 
 # Materialise the reserved row-lineage column `_row_id` (field_id 2147483540) into the data file,
-# exactly as an Iceberg v3 writer (e.g. Spark, after a RewriteDataFiles maintenance action) does.
+# exactly as a spec-compliant Iceberg v3 writer does.
 # Column `x` keeps its original field_id 1 so it still maps to the table column.
 python3 - "$DATAFILE" <<'PY'
 import sys
