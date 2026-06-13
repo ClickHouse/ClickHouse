@@ -439,6 +439,12 @@ IMPLEMENT_SETTING_ENUM(
      {"none", SearchOrphanedPartsDisks::NONE}})
 
 IMPLEMENT_SETTING_ENUM(
+    TextIndexPostingListCodec,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", TextIndexPostingListCodec::None},
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,
     ErrorCodes::BAD_ARGUMENTS,
     {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},

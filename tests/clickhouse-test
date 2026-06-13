@@ -1696,6 +1696,7 @@ class MergeTreeSettingsRandomizer:
         "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
+        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),

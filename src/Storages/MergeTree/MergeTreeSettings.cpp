@@ -681,6 +681,10 @@ namespace ErrorCodes
     Default posting list block size for text indexes (bytes).
     Can be overridden by explicit `posting_list_block_size` index argument.
     )", 0) \
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    Default posting list codec for text indexes.
+    Can be overridden by explicit `posting_list_codec` index argument.
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in

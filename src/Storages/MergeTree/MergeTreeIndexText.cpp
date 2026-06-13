@@ -68,6 +68,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 text_index_dictionary_block_size;
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsUInt64 text_index_posting_list_block_size;
+    extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
 }
 
 namespace Setting
@@ -75,8 +76,6 @@ namespace Setting
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
 }
-
-static constexpr String DEFAULT_POSTING_LIST_CODEC = "none";
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
 static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
@@ -1751,7 +1750,8 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index, const MergeTr
         posting_list_block_size,
         std::move(preprocessor_ast)};
 
-    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
+        .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
     if (!options.empty())
@@ -1787,7 +1787,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
-        .value_or(DEFAULT_POSTING_LIST_CODEC);
+        .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
 
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
