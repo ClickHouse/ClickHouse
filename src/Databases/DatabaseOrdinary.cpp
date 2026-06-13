@@ -33,6 +33,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -73,6 +74,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char database_ordinary_alter_table_fail[];
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -713,6 +720,16 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::alterTable");
     auto db_disk = getDisk();
     waitDatabaseStarted();
+
+    /// Test-only: emulate a metadata-write failure. The settings-only ALTER paths in
+    /// `StorageMergeTree::alter` / `StorageReplicatedMergeTree::alter` call this after
+    /// `changeSettings` has already mutated the live in-memory settings; throwing here proves
+    /// the caller reverts those settings before the disk-registration scope rolls the new
+    /// inline disk back. See 04157 and issue #63019.
+    fiu_do_on(FailPoints::database_ordinary_alter_table_fail,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in DatabaseOrdinary::alterTable");
+    });
 
     String table_name = table_id.table_name;
 

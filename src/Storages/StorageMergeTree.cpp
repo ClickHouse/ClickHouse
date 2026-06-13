@@ -487,8 +487,24 @@ void StorageMergeTree::alter(
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
 
-        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// `changeSettings` has already mutated the live `storage_settings` (and the in-memory
+            /// metadata when statistics changed). If the metadata write throws, restore the old
+            /// live state before `disk_scope`'s destructor rolls the freshly-registered inline disk
+            /// back, otherwise the table would keep settings resolving to a disk no longer present
+            /// in `DiskSelector`. Mirrors the full-ALTER branch below. See issue #63019.
+            LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+            if (statistics_changed)
+                setInMemoryMetadata(old_metadata);
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            throw;
+        }
         disk_scope.commit();
     }
     else if (commands.isCommentAlter())

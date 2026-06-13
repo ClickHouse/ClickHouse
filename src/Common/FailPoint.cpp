@@ -197,7 +197,8 @@ static struct InitFiu
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE_ONCE(disk_from_ast_pause_after_tentative_registration) \
     PAUSEABLE_ONCE(disk_from_ast_unscoped_observer_pause_after_sentinel) \
-    ONCE(create_table_fail_after_disk_registration_before_metadata)
+    ONCE(create_table_fail_after_disk_registration_before_metadata) \
+    ONCE(database_ordinary_alter_table_fail)
 
 namespace FailPoints
 {

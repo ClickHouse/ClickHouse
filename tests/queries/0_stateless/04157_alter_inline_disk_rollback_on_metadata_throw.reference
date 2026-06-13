@@ -1,0 +1,6 @@
+mt alter_failed_injected: yes
+mt ttl_reverted_to_100: 1
+mt table_queryable: 0
+rmt alter_failed_injected: yes
+rmt ttl_reverted_to_100: 1
+rmt table_queryable: 0

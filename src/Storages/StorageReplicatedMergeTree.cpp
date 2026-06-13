@@ -6800,13 +6800,31 @@ void StorageReplicatedMergeTree::alter(
         /// scope's destructor rolls the new disk back from `DiskSelector` /
         /// `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
         DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
+        /// Snapshot the live metadata before `changeSettings` mutates `storage_settings`, so the
+        /// failure path can restore it before `disk_scope` rolls the new inline disk back.
+        StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
         changeSettings(future_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
 
         if (statistics_changed)
             setInMemoryMetadata(future_metadata);
 
-        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// `changeSettings` already installed the new disk in the live settings. If the metadata
+            /// write throws, restore the old settings (and metadata) before `disk_scope`'s destructor
+            /// removes the freshly-registered disk, otherwise the replica would keep settings pointing
+            /// at a disk no longer present in `DiskSelector`. See issue #63019.
+            LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+            if (statistics_changed)
+                setInMemoryMetadata(old_metadata);
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            throw;
+        }
         disk_scope.commit();
         return;
     }
@@ -6852,6 +6870,31 @@ void StorageReplicatedMergeTree::alter(
     /// from `DiskSelector` / `FileCacheFactory`. See `MergeTreeData::changeSettings` and
     /// issue #63019.
     DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
+
+    /// Snapshot of the live metadata before the loop runs `changeSettings`, used to restore the
+    /// live settings if we throw after mutating them but before the ZooKeeper commit makes them
+    /// durable. `live_metadata_mutated` is set once `changeSettings` (or the comment path) has
+    /// mutated the live table, and cleared after a successful commit. This `SCOPE_EXIT` is
+    /// declared AFTER `disk_scope`, so on an exceptional exit it runs FIRST (restoring the old
+    /// settings) and only then does `disk_scope`'s destructor roll the freshly-registered inline
+    /// disk back. Without this restore the replica would keep settings resolving to a disk no
+    /// longer present in `DiskSelector` / `FileCacheFactory`. See issue #63019.
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
+    bool live_metadata_mutated = false;
+    SCOPE_EXIT({
+        if (live_metadata_mutated)
+        {
+            try
+            {
+                changeSettings(old_metadata.settings_changes, table_lock_holder);
+                setInMemoryMetadata(old_metadata);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to revert in-memory settings after a failed settings ALTER");
+            }
+        }
+    });
 
     while (true)
     {
@@ -6943,9 +6986,11 @@ void StorageReplicatedMergeTree::alter(
             {
                 /// Just change settings. The outer-scope `disk_scope` carries ownership of
                 /// any inline disk registration; the scope is committed only after the ZK
-                /// `tryMulti` commit succeeds further down.
+                /// `tryMulti` commit succeeds further down. The `SCOPE_EXIT` declared above
+                /// restores these live settings if a later step in the loop throws.
                 metadata_copy.settings_changes = future_metadata.settings_changes;
                 changeSettings(metadata_copy.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
+                live_metadata_mutated = true;
             }
 
             /// The comment is not replicated as of today, but we can implement it later.
@@ -6953,6 +6998,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 metadata_copy.setComment(future_metadata.comment);
                 setInMemoryMetadata(metadata_copy);
+                live_metadata_mutated = true;
             }
 
             /// Only the comment and/or settings changed here, so it is okay to assume alterTable won't throw as neither
@@ -7087,7 +7133,8 @@ void StorageReplicatedMergeTree::alter(
 
     /// ZooKeeper `tryMulti` returned ZOK. The metadata transition is now durable in ZK and
     /// the new inline disk (if any) is permanently part of the table; commit the scope so
-    /// the destructor does not roll the disk back.
+    /// the destructor does not roll the disk back, and disarm the in-memory settings revert.
+    live_metadata_mutated = false;
     disk_scope.commit();
 
     table_lock_holder.unlock();

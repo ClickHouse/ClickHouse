@@ -2436,6 +2436,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
 
     String temporary_table_name = create.getTable();
 
+    /// Own any inline custom disk (`SETTINGS disk = disk(...)`) registered while building the
+    /// storage, committing it only after the temporary table is installed in the session.
+    /// A bare `REPLACE TEMPORARY TABLE` on a name that does not exist throws `UNKNOWN_TABLE`
+    /// from `updateExternalTable` after the disk was already registered; without this scope
+    /// the disk would leak in `DiskSelector` / `FileCacheFactory`. Mirrors the persistent
+    /// temporary path in `doCreateTable`. See issue #63019.
+    DiskFromAST::CustomDiskRegistrationScope create_disk_scope(getContext(), /*install_as_ambient_create_scope=*/true);
     auto creator = [&](const StorageID & table_id)
     {
         auto res = StorageFactory::instance().get(create,
@@ -2458,6 +2465,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
         session_context->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
     else
         session_context->updateExternalTable(temporary_table_name, std::move(temporary_table));
+    create_disk_scope.commit();
     /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
     return fillTableIfNeeded(create);
 }
