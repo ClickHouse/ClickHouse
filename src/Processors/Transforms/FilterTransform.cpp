@@ -110,6 +110,11 @@ bool containsFixedString(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isFixedString);
 }
 
+bool containsEnum(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isEnum);
+}
+
 bool containsVariant(const DataTypePtr & type)
 {
     return containsType(*type, &WhichDataType::isVariant);
@@ -128,7 +133,7 @@ bool containsDateOrTime(const DataTypePtr & type)
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
 /// have the same representation as the constant after conversion to the result type.
 /// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
-/// `Decimal` vs `Float`, `String` vs `FixedString`, `Object` / `JSON`, mixed date/time-family types,
+/// `Decimal` vs `Float`, `String` vs `FixedString` / `Enum`, `Object` / `JSON`, mixed date/time-family types,
 /// or runtime-dispatched `Dynamic` / `Variant` comparisons.
 bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
@@ -144,7 +149,7 @@ bool canReplaceColumnWithConstantAfterFilter(
         return false;
 
     if (containsString(result_type)
-        && (containsFixedString(constant_type) || constant_type_is_dynamic))
+        && (containsFixedString(constant_type) || containsEnum(constant_type) || constant_type_is_dynamic))
         return false;
 
     if (containsFixedString(result_type) && !result_type->equals(*constant_type))
