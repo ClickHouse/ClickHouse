@@ -755,6 +755,8 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
+    DECLARE(Bool, use_reader_executor, false, R"(
+Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -2437,11 +2439,11 @@ When set to 1, a random seed is generated, when set to a value > 1, that value i
 This is intended for testing to find errors caused by different join orderings.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, enable_join_transitive_predicates, false, R"(
+    DECLARE(Bool, enable_join_transitive_predicates, true, R"(
 Infer transitive equi-join predicates from existing join conditions.
 For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
 is added so the join order optimizer can consider direct (A JOIN C) plans.
-)", EXPERIMENTAL) \
+)", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
@@ -6348,6 +6350,9 @@ Possible values:
     DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
 Maximum number of microseconds the function `sleep` is allowed to sleep for each block. If a user called it with a larger value, it throws an exception. It is a safety threshold.
 )", 0) \
+    DECLARE(UInt64, function_base58_max_input_size, 10000, R"(
+Maximum size, in bytes, of a single input value for the functions `base58Encode`, `base58Decode` and `tryBase58Decode`. The generic `base58` conversion is quadratic in the input length, so a single large value can run for a very long time. `base58` is meant for short data (keys, hashes, addresses), so the default of 10 KB is a generous safety threshold. `base58Encode` and `base58Decode` throw `TOO_LARGE_STRING_SIZE` for larger inputs, while `tryBase58Decode` returns an empty string. A value of `0` disables the limit (the behavior before this setting was introduced). The linear `base32` and `base64` functions are unaffected.
+)", 0) \
     DECLARE(UInt64, function_visible_width_behavior, 1, R"(
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \
@@ -7349,6 +7354,9 @@ To re-enable the deprecated functions (e.g., during a transition period), please
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
+    DECLARE(Bool, optimize_limit_by_in_order, true, R"(
+Optimize `SELECT ... LIMIT N BY <cols>` queries when `<cols>` (in any order) form a prefix of the table's sorting key, or become one after `WHERE col = const` fixes leading columns. With this enabled the source reads data in primary-key order, so rows with equal values of the `BY` columns arrive adjacent to each other within each stream. When the data arrives in a single sorted stream, `LIMIT BY` filters it in streaming mode with O(1) memory, instead of building a hash table of every distinct combination of `BY` columns seen. When the sorted data arrives in multiple streams and the same `BY` values can appear in more than one of them, each stream is first prefiltered in streaming mode down to at most `LIMIT + OFFSET` rows per group, then the streams are combined and a final hash-based `LIMIT BY` deduplicates groups that span several streams. That final pass still keeps an entry for every distinct combination of `BY` columns, but it only processes the prefiltered rows.
+)", 0) \
     DECLARE(Bool, keeper_map_strict_mode, false, R"(
 Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key
 )", 0) \
@@ -7880,6 +7888,9 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
+)", 0) \
+    DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, true, R"(
+When the hash join build side has been converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that map directly as the runtime filter for the probe side, replacing the Set/BloomFilter that the runtime filter framework otherwise builds for the same join.
 )", 0) \
     \
     /* ####################################################### */ \
