@@ -93,18 +93,33 @@ struct CallbackRunnerTask
         if (was_run)
             return;
 
-        /// The task was dropped without running (e.g. the thread pool was shut down while it was
-        /// still queued). Satisfy the promise with a normal exception so the waiter does not observe
-        /// a broken-promise std::future_error (a std::logic_error that aborts the server).
+        /// Task dropped unrun (the pool was shut down while it was still queued). Satisfy the promise
+        /// with a normal exception instead of letting ~promise() store the broken-promise
+        /// std::future_error (a std::logic_error that aborts the server).
+        ///
+        /// Build the exception_ptr first: constructing the DB::Exception captures a stack trace and
+        /// may itself throw (e.g. std::bad_alloc under shutdown memory pressure). If it does, fall
+        /// back to the in-flight exception so the promise is NEVER left unset (an unset promise here
+        /// recreates the very broken-promise std::future_error this class exists to prevent).
+        std::exception_ptr eptr;
         try
         {
-            promise.set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)")));
+            eptr = std::make_exception_ptr(
+                Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)"));
+        }
+        catch (...)
+        {
+            eptr = std::current_exception();
+        }
+
+        try
+        {
+            promise.set_exception(eptr);
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
-            /// set_exception throws only if the promise was already satisfied, which cannot happen
-            /// here because run() (the only other place that touches it) sets was_run first.
+            /// Ok: set_exception throws only if the promise is already satisfied, impossible here
+            /// because run() (the only other writer) sets was_run first.
         }
     }
 };
