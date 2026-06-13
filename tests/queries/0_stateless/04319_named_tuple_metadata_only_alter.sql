@@ -288,7 +288,28 @@ CREATE TABLE t_named_tuple_alter
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-INSERT INTO t_named_tuple_alter SELECT * FROM generateRandom() LIMIT 100;
+-- 100 rows where every Nullable subfield is NULL, Map is empty, Array is empty.
+-- The exact values are irrelevant — Case 15 only verifies that the four metadata-only
+-- ALTERs below trigger zero mutations and that the freshly-added subfields read back
+-- as defaults. (Earlier versions used `generateRandom()` here, but that table function
+-- ignores the INSERT target schema in server mode and produces a random column count,
+-- which makes the INSERT non-deterministic; see `NUMBER_OF_COLUMNS_DOESNT_MATCH`.)
+INSERT INTO t_named_tuple_alter
+SELECT
+    toDateTime64('2024-01-01', 3),
+    toString(number),
+    (
+        NULL, NULL, NULL,
+        map(),
+        (
+            NULL, NULL,
+            (
+                NULL, NULL,
+                []::Array(Tuple(hero_id Nullable(Int64), star Nullable(Int64), damage Nullable(Int64)))
+            )
+        )
+    )
+FROM numbers(100);
 
 SELECT 'Case 15 customer schema before ALTERs:';
 SELECT count() FROM t_named_tuple_alter;
