@@ -98,6 +98,18 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     if (columns_for_dummy.empty())
         columns_for_dummy.emplace_back("_dummy", std::make_shared<DataTypeUInt8>());
 
+    /// `available_columns` may contain duplicate names: a flattened Tuple sub-column
+    /// (e.g. `n.a` from `n Tuple(a)`) can coincide with a separate physical column
+    /// literally named `n.a`.  `ColumnsDescription::add` rejects such a duplicate with
+    /// `ILLEGAL_COLUMN`, which would mask the storage-level validation that reports this
+    /// collision with a clearer error.  Keep only the first occurrence of each name here
+    /// (it is irrelevant for analysis which one we keep — the schema is rejected anyway),
+    /// preserving the legacy behaviour of `TreeRewriter`, which tolerated such lists.
+    {
+        NameSet seen_names;
+        std::erase_if(columns_for_dummy, [&](const auto & elem) { return !seen_names.insert(elem.name).second; });
+    }
+
     ColumnsDescription columns_description(columns_for_dummy);
     auto storage = std::make_shared<StorageDummy>(StorageID{"_analyze_expression_db", "_analyze_expression_table"}, columns_description);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
