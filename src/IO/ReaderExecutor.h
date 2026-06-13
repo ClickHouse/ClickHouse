@@ -892,7 +892,7 @@ private:
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     /// The machine driver over `prefetch_pool`: state writes, scheduling and
     /// the revoke/release edges live there; every policy decision stays here.
-    /// Created in `setPrefetchPool`; null without a pool.
+    /// Created in the constructor from `Options::prefetch_pool`; null without a pool.
     std::unique_ptr<FetchMachineRunner> runner;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
