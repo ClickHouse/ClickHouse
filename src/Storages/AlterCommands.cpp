@@ -1333,12 +1333,9 @@ bool tupleAddsSubfieldsOnlyImpl(const IDataType * from, const IDataType * to, co
 
 }
 
-bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to)
+bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
-    /// MergeTree key-safety callers do not have a query context handy.
-    /// JSON-hint metadata-only changes are gated by a per-context setting and cannot
-    /// appear as a Tuple subfield in practice, so passing `nullptr` is safe here.
-    return tupleAddsSubfieldsOnlyImpl(from, to, nullptr);
+    return tupleAddsSubfieldsOnlyImpl(from, to, context);
 }
 
 bool AlterCommand::isSettingsAlter() const

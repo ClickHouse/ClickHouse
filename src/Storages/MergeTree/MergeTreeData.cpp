@@ -4820,7 +4820,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// keep their current behavior.
             auto old_type_it = old_types.find(command.column_name);
             if (old_type_it != old_types.end()
-                && tupleAddsSubfieldsOnly(old_type_it->second, command.data_type.get()))
+                && tupleAddsSubfieldsOnly(old_type_it->second, command.data_type.get(), local_context))
             {
                 if (columns_alter_type_forbidden.contains(command.column_name)
                     || columns_alter_type_check_safe_for_partition.contains(command.column_name)

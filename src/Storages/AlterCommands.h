@@ -203,7 +203,13 @@ class Context;
 /// return false. Used by MergeTree key/index safety checks: while named-Tuple subfield
 /// additions are metadata-only for ordinary columns, they change the on-disk shape of
 /// any `Tuple` value embedded in a key column, so they must be rejected for keys.
-bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to);
+///
+/// `context` is forwarded to `isMetadataOnlyConversion` so that context-gated conversions
+/// (e.g. `allow_experimental_json_lazy_type_hints`) match the same classification used by
+/// `isRequireMutationStage`; otherwise an ALTER that combines a Tuple subfield addition with
+/// a JSON-hint-only change could skip the mutation branch yet bypass the key-safety check
+/// here.
+bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to, const ContextPtr & context);
 
 /// Vector of AlterCommand with several additional functions
 class AlterCommands : public std::vector<AlterCommand>
