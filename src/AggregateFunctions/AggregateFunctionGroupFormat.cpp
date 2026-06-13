@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -153,6 +154,25 @@ public:
         /// null_map is ignored: this function preserves nullable payload,
         /// so nulls should be included in the output rather than skipped.
         addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        /// `groupFormat` is order-dependent, so rows must be processed in input order.
+        /// The inherited implementation appends all non-default sparse values first and
+        /// then the default rows via `addManyDefaults`, which would reorder the output.
+        /// Iterate row-by-row instead, mirroring the generic `addBatchSparse` path.
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        auto offset_it = column_sparse.getIterator(row_begin);
+
+        for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
+            add(place, &values, offset_it.getValueIndex(), arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
