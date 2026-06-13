@@ -153,7 +153,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             return std::move(*properties);
     }
 
-    if (auto * /*union_step*/ _ = typeid_cast<UnionStep *>(parent->step.get()))
+    if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
 
@@ -162,6 +162,12 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         if (!common_sort_description.empty())
         {
+            /// We are about to advertise per-stream sortedness to steps above the union
+            /// (which may convert Sorting to FinishSorting or enable DISTINCT-in-order).
+            /// Narrowing the union pipeline would concatenate sorted streams and silently
+            /// invalidate this property, so forbid it.
+            union_step->disableNarrowing();
+
             /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
             /// children each stream stays sorted by the common prefix.
             auto sort_scope = parent->children.size() == 1 ? properties->sort_scope : SortingProperty::SortScope::Stream;
