@@ -513,11 +513,11 @@ def test_dotnet_client(started_cluster):
             f"cd /pg_testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
-    # `dotnet run` builds first, so the .NET SDK can prepend build diagnostics
-    # (e.g. a Roslyn `CSC : warning AD0001` analyzer crash) to stdout. Match the
-    # reference as a substring so such environmental noise does not break the
-    # protocol assertion. Mirrors test_mysql_protocol::test_mysql_dotnet_client.
-    assert reference in res
+    # `dotnet run` builds first, so the .NET SDK can prepend build diagnostics to
+    # stdout. That noise only appears before the client output, so tolerate it
+    # with a directional suffix check while still catching any trailing or
+    # inserted protocol divergence.
+    assert res.endswith(reference)
 
 
 def test_restricted_user_cannot_bypass_grants(started_cluster):
