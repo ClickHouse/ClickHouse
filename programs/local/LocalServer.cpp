@@ -454,7 +454,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    /// clickhouse-local keeps a generous default limit on temporary data as a safety net against
+    /// clickhouse-local keeps a generous default limit on temporary data
     /// runaway queries filling up the disk. It can be raised, or lifted entirely with a value of 0,
     /// via the `max_temporary_data_on_disk_size` server setting.
     const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
