@@ -93,14 +93,28 @@ struct CallbackRunnerTask
         if (was_run)
             return;
 
-        /// Task dropped unrun (the pool was shut down while it was still queued). Satisfy the promise
-        /// with a normal exception instead of letting ~promise() store the broken-promise
-        /// std::future_error (a std::logic_error that aborts the server).
+        /// The task was dropped without running (the pool was shut down while it was still queued,
+        /// so ThreadPool::worker drains it via job_data.reset()). Mirror the run() path above:
         ///
-        /// Build the exception_ptr first: constructing the DB::Exception captures a stack trace and
-        /// may itself throw (e.g. std::bad_alloc under shutdown memory pressure). If it does, fall
-        /// back to the in-flight exception so the promise is NEVER left unset (an unset promise here
-        /// recreates the very broken-promise std::future_error this class exists to prevent).
+        /// 1. Release the callback (destroying its captures) under the task's thread group and
+        ///    BEFORE satisfying the promise. set_exception can wake a waiter immediately; a waiter
+        ///    that treats future.get() as "the task is done" may then tear down state that the
+        ///    captures reference, so the captures must be gone first (same ordering the run path
+        ///    keeps with ThreadGroupSwitcher + SCOPE_EXIT_SAFE before set_value). ThreadGroupSwitcher's
+        ///    ctor is noexcept and a no-op for a null/identical group, so this is safe on the drain
+        ///    thread; SCOPE_EXIT_SAFE keeps a throwing capture destructor from escaping this destructor.
+        {
+            ThreadGroupSwitcher switcher(thread_group, thread_name);
+            SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
+        }
+
+        /// 2. Satisfy the promise with a normal DB::Exception instead of letting ~promise() store a
+        ///    broken-promise std::future_error (a std::logic_error reported via
+        ///    getCurrentExceptionMessageAndPattern -> abortOnFailedAssertion, which aborts the server).
+        ///    Build the exception_ptr first: constructing the DB::Exception captures a stack trace and
+        ///    may itself throw (e.g. std::bad_alloc under shutdown memory pressure). If it does, fall
+        ///    back to the in-flight exception so the promise is NEVER left unset (an unset promise here
+        ///    recreates the very broken-promise std::future_error this class exists to prevent).
         std::exception_ptr eptr;
         try
         {
