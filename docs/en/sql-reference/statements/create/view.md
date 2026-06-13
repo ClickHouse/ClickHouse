@@ -66,7 +66,7 @@ INSERT INTO v_positive VALUES (3, 'ok');     -- succeeds
 INSERT INTO v_positive VALUES (-1, 'fail');  -- VIOLATED_CONSTRAINT
 ```
 
-`ORDER BY` is allowed in the view and ignored for inserts. Views containing `JOIN`, `GROUP BY`, `HAVING`, `LIMIT`, `DISTINCT`, `UNION`, or non-trivial expressions in the `SELECT` list are not insertable and raise `NOT_IMPLEMENTED`.
+Only a plain `ORDER BY` is allowed in the view, and it is ignored for inserts. Every other clause that changes which rows the view represents on read makes the view non-insertable: any such view raises `NOT_IMPLEMENTED` on `INSERT`. This includes `JOIN`, `UNION`, `GROUP BY`, `HAVING`, `DISTINCT`, `LIMIT`, `LIMIT BY`, `OFFSET`, `SAMPLE`, `PREWHERE`, `ARRAY JOIN`, `QUALIFY`, `WINDOW`, `WITH`, `FINAL`, a `SETTINGS` clause, `ORDER BY ... WITH FILL` / `INTERPOLATE`, and any non-trivial expression in the `SELECT` list (only bare column references, optionally with `AS` aliases, are accepted).
 
 Combined with `SQL SECURITY DEFINER`, a writable view can act as a permissioned alias of an underlying table: the view's owner grants read/write through the view while the caller is not granted any direct access to the target. This is convenient for renaming or restricting columns without exposing the base table.
 
