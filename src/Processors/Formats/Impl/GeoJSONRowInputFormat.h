@@ -32,7 +32,10 @@ protected:
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readGeometry(IColumn & col);
+    /// Read and validate a Feature's `geometry` member. When `col` is null the geometry is only
+    /// validated (and nothing is inserted), so a `geometry` that is not a requested output column is
+    /// still checked for structural validity instead of being skipped as generic JSON.
+    void readGeometry(IColumn * col);
     void validateTopLevelTypeMember(ReadBuffer & buf);
 
     const FormatSettings format_settings;

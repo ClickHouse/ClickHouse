@@ -284,10 +284,10 @@ void validateGeoJSONGeometryMembers(
     size_t current_depth);
 
 /// Validate that a JSON value read from `buf` is a well-formed GeoJSON geometry, throwing
-/// `INCORRECT_DATA` on malformed input. Nothing is inserted: this is used to validate geometries
-/// that are going to be stored as NULL (a top-level unrepresentable geometry, or the members of a
-/// `GeometryCollection`, when `input_format_geojson_unsupported_geometry_handling = 'null'`), so
-/// that truncated or malformed documents are still rejected rather than silently loaded as NULL.
+/// `INCORRECT_DATA` on malformed input. Nothing is inserted: this is used to validate the members
+/// of a `GeometryCollection` that is going to be stored as NULL (when
+/// `input_format_geojson_unsupported_geometry_handling = 'null'`), so that truncated or malformed
+/// documents are still rejected rather than silently loaded as NULL.
 void validateGeoJSONGeometry(ReadBuffer & buf, const FormatSettings & format_settings, size_t current_depth)
 {
     if (unlikely(current_depth > format_settings.json.max_depth))
@@ -295,11 +295,12 @@ void validateGeoJSONGeometry(ReadBuffer & buf, const FormatSettings & format_set
     if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
         checkStackSize();
 
+    /// Each member of a `GeometryCollection` must be a geometry object. Unlike a Feature's top-level
+    /// `geometry` member, a JSON `null` is not a valid geometry here, so reject any non-object value.
     if (!JSONUtils::checkAndSkipObjectStart(buf))
-    {
-        assertString("null", buf);
-        return;
-    }
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: a member of a 'GeometryCollection' must be a geometry object, not a scalar or null");
 
     String geo_type;
     String raw_coordinates;
@@ -571,20 +572,27 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
             has_id = true;
             return true;
         }
-        if (key == "geometry" && geometry_col_idx.has_value())
+        /// `geometry` and `properties` are required members of every Feature, so they are validated
+        /// and required even when they are not requested output columns. An unrequested `geometry` is
+        /// still fully validated (without inserting); an unrequested `properties` is validated as a
+        /// well-formed JSON value by the strict skipper.
+        if (key == "geometry")
         {
             if (has_geometry)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'geometry' field in a feature");
-            readGeometry(*columns[*geometry_col_idx]);
+            readGeometry(geometry_col_idx.has_value() ? columns[*geometry_col_idx].get() : nullptr);
             has_geometry = true;
             return true;
         }
-        if (key == "properties" && properties_col_idx.has_value())
+        if (key == "properties")
         {
             if (has_properties)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'properties' field in a feature");
-            SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
-                *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
+            if (properties_col_idx.has_value())
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
+                    *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
+            else
+                skipJSONValueStrict(buf, format_settings.json);
             has_properties = true;
             return true;
         }
@@ -599,27 +607,29 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
     /// `id` is optional in a GeoJSON feature, but `geometry` and `properties` are required members
     /// (`geometry` may be an explicit JSON `null`). Default only the optional `id`; reject a feature
-    /// that is missing a requested required member instead of silently inserting a default value.
+    /// that is missing a required member regardless of whether it is a requested output column, so a
+    /// malformed Feature is rejected even when only `id` is selected.
     if (!has_id && id_col_idx.has_value())
         columns[*id_col_idx]->insertDefault();
-    if (!has_geometry && geometry_col_idx.has_value())
+    if (!has_geometry)
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: feature is missing the required 'geometry' member");
-    if (!has_properties && properties_col_idx.has_value())
+    if (!has_properties)
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: feature is missing the required 'properties' member");
 
     ext.read_columns.assign(columns.size(), 1);
     return true;
 }
 
-void GeoJSONRowInputFormat::readGeometry(IColumn & col)
+void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 {
     auto & buf = getReadBuffer();
-    auto & variant_col = assert_cast<ColumnVariant &>(col);
 
     if (!JSONUtils::checkAndSkipObjectStart(buf))
     {
+        /// A null geometry is valid at the top level of a Feature.
         assertString("null", buf);
-        variant_col.insertDefault();
+        if (col)
+            assert_cast<ColumnVariant &>(*col).insertDefault();
         return;
     }
 
@@ -658,7 +668,8 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
                 /// `GeometryCollection` containing a malformed child) are still rejected rather than
                 /// being silently loaded as NULL.
                 validateGeoJSONGeometryMembers(geo_type, raw_coordinates, raw_geometries, format_settings, 0);
-                variant_col.insertDefault();
+                if (col)
+                    assert_cast<ColumnVariant &>(*col).insertDefault();
                 return;
             }
             throw Exception(
@@ -681,16 +692,21 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
             ErrorCodes::INCORRECT_DATA,
             "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
 
+    /// Parse the coordinates and enforce the GeoJSON shape invariants for the geometry type before
+    /// inserting, so that degenerate lines and unclosed/too-short rings are rejected as malformed
+    /// input instead of being stored as valid `Geometry` values. This runs in validation-only mode
+    /// too (`col == nullptr`), so an unrequested `geometry` member is still fully validated.
+    ReadBufferFromString coord_buf(raw_coordinates);
+    Field coordinates_field = parseAndValidateGeometryCoordinates(geo_type, coord_buf);
+
+    if (!col)
+        return;
+
+    auto & variant_col = assert_cast<ColumnVariant &>(*col);
     ColumnVariant::Discriminator global_discr = geometry_discriminants.at(geo_type);
     auto & sub_col = variant_col.getVariantByGlobalDiscriminator(global_discr);
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();
-
-    /// Parse the coordinates and enforce the GeoJSON shape invariants for the geometry type before
-    /// inserting, so that degenerate lines and unclosed/too-short rings are rejected as malformed
-    /// input instead of being stored as valid `Geometry` values.
-    ReadBufferFromString coord_buf(raw_coordinates);
-    Field coordinates_field = parseAndValidateGeometryCoordinates(geo_type, coord_buf);
 
     sub_col.insert(coordinates_field);
     variant_col.getLocalDiscriminators().push_back(local_discr);

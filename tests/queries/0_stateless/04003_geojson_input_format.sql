@@ -416,3 +416,44 @@ FROM format('GeoJSON', '{
         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1e400, 0]}, "properties": {}}
     ]
 }'); -- { serverError INCORRECT_DATA }
+
+-- A GeometryCollection whose 'geometries' array contains a JSON null is malformed: a collection
+-- member must be a geometry object (only a Feature's top-level geometry may be null). It is rejected
+-- even under null handling rather than being silently loaded as NULL.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "GeometryCollection", "geometries": [null]}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- The required 'geometry' and 'properties' members are validated even when they are not requested
+-- output columns. A Feature missing them is rejected when only 'id' is selected.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1"}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A malformed 'geometry' is rejected even when 'geometry' is not a requested output column.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": {"type": "Point", "coordinates": [+Inf, 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A Feature with all required members but only 'id' selected is accepted, and the unrequested
+-- 'geometry'/'properties' members are validated without being inserted.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {}}
+    ]
+}');
