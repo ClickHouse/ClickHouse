@@ -82,6 +82,10 @@ UPDATE db_overlay.t_a SET s = 'nope' WHERE id = 1 SETTINGS enable_lightweight_up
 SYSTEM STOP MERGES db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 SYSTEM SYNC REPLICA db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
+-- Database-scoped SYSTEM commands naming the facade are rejected too: they would otherwise expand
+-- to the underlying source tables and act on them with only a facade-scoped grant.
+SYSTEM DROP REPLICA 'r1' FROM DATABASE db_overlay; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+
 -- Database-level TRUNCATE on the facade is rejected too: it would otherwise expand to the
 -- underlying source tables. (DROP/DETACH DATABASE of the facade itself remain allowed.)
 TRUNCATE DATABASE db_overlay; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
