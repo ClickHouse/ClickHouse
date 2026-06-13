@@ -173,8 +173,16 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
         }
         if (is_template)
         {
-            applyRule(ast, rule, matching_map);
             applied_rules.push_back(name);
+            /// A `REJECT WITH` rule throws from `applyRule` before the end-of-function
+            /// logging is reached, so the rejection would otherwise never appear in
+            /// `system.query_rules_log`. Record the match first (with an empty
+            /// `resulting_query`, which marks a rejection because a rewrite always
+            /// produces a non-empty resulting query) so operators can audit which rule
+            /// rejected a query.
+            if (query_rule.reject())
+                RewriteRules::instance().addLog(original_query, applied_rules, /* resulting_query */ "");
+            applyRule(ast, rule, matching_map);
         }
     }
 
