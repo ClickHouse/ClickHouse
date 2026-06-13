@@ -347,6 +347,13 @@ namespace
     Allows lowering the memory usage on low-memory systems.
     On hosts with low RAM and swap, you may possibly need setting [`max_server_memory_usage_to_ram_ratio`](#max_server_memory_usage_to_ram_ratio) set larger than 1.
 
+    This ratio is applied in two ways:
+
+    - At startup (and on configuration reload) it caps the server's hard memory limit at this fraction of the total physical RAM, as described above.
+    - At runtime, the background memory worker periodically recomputes the hard memory limit as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host. When running inside a cgroup with a finite memory limit, the cgroup's available memory is used instead of the host-wide value. As other processes grow and the available memory shrinks, the server's hard limit follows it down, capping growth before the host (or the cgroup) runs out of memory.
+
+    Setting the ratio to `0` disables both the startup cap and the runtime adjustment. The runtime adjustment is also a no-op on non-Linux systems and in `clickhouse-keeper`, which does not expose this setting. To keep the static startup/reload cap but disable the runtime adjustment (the behavior of previous versions), set `memory_worker_dynamic_hard_limit` to `0`.
+
     :::note
     The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
     :::
@@ -1185,6 +1192,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
+    DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
+    Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
+
+    When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory limit statically, at startup and on configuration reload, as in previous versions.
+
+    Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
+    )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
     )", 0) \
