@@ -5102,7 +5102,8 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
 
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
-    AlterLockHolder & /* table_lock_holder */)
+    AlterLockHolder & /* table_lock_holder */,
+    bool run_sanity_checks)
 {
     if (new_settings)
     {
@@ -5155,14 +5156,17 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
-        copy->sanityCheck(
-            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_beta,
-            getContext()->wasBackgroundPoolAutoLowered());
+        if (run_sanity_checks)
+        {
+            const auto & ac = getContext()->getAccessControl();
+            bool allow_experimental = ac.getAllowExperimentalTierSettings();
+            bool allow_beta = ac.getAllowBetaTierSettings();
+            copy->sanityCheck(
+                getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+                allow_experimental,
+                allow_beta,
+                getContext()->wasBackgroundPoolAutoLowered());
+        }
 
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];

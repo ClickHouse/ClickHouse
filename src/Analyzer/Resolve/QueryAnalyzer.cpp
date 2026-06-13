@@ -2363,7 +2363,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2967,7 +2967,8 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
   * 1. Non-correlated reference. The key is owned by `scope` itself (e.g. the projection
   *    `c0` in `SELECT max(c0), c0 ... GROUP BY c0`). `c0` inside `max(...)` must keep its
   *    original type because the aggregate sees per-group raw rows, so the walk skips a
-  *    scope whose expression-resolve stack already contains an aggregate function.
+  *    scope whose expression-resolve stack already contains an aggregate or `grouping`
+  *    function (the latter matches its arguments against the keys in their original form).
   *
   * 2. Correlated reference. A subquery references an outer query's GROUP BY key (e.g.
   *    `SELECT (SELECT c0) ... GROUP BY c0 WITH ROLLUP`). The values fed into the subquery
@@ -3016,21 +3017,22 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
         return !correlated_columns->empty();
     };
 
-    /// `is_aggregate_argument` is OR-accumulated across the LAMBDA scopes of a single query: a
-    /// reference inside an aggregate's arguments (including `* APPLY x -> agg(x, key)`, where the
-    /// aggregate is on the lambda's stack while the key set is on the enclosing query's scope)
-    /// must not be wrapped. It is reset when crossing into an outer query for a correlated
-    /// expression, because the inner query's aggregate context does not constrain how the outer
-    /// query's GROUP BY keys wrap the correlated reference.
-    bool is_aggregate_argument = false;
+    /// `is_aggregate_or_grouping_argument` is OR-accumulated across the LAMBDA scopes of a single
+    /// query: a reference inside an aggregate's arguments (including `* APPLY x -> agg(x, key)`,
+    /// where the aggregate is on the lambda's stack while the key set is on the enclosing query's
+    /// scope) must not be wrapped. The same holds for `grouping(...)` arguments, which only
+    /// identify GROUP BY keys and are matched against them in their original form. It is reset when
+    /// crossing into an outer query for a correlated expression, because the inner query's
+    /// aggregate context does not constrain how the outer query's GROUP BY keys wrap the reference.
+    bool is_aggregate_or_grouping_argument = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
     {
-        is_aggregate_argument = is_aggregate_argument
-            || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+        is_aggregate_or_grouping_argument = is_aggregate_or_grouping_argument
+            || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
 
         /// `find(node)` computes `node`'s hash, so skip scopes with no keys (avoids the hash for
         /// the common scope that is not under `group_by_use_nulls`).
-        if (!is_aggregate_argument && !scope_ptr->nullable_group_by_keys.empty())
+        if (!is_aggregate_or_grouping_argument && !scope_ptr->nullable_group_by_keys.empty())
         {
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
@@ -3072,7 +3074,7 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
         if (!is_correlated() || ownsCorrelatedSource(*scope_ptr, *correlated_columns))
             break;
 
-        is_aggregate_argument = false;
+        is_aggregate_or_grouping_argument = false;
     }
 }
 
