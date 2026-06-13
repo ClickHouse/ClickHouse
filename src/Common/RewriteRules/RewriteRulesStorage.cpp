@@ -17,6 +17,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -247,6 +248,7 @@ public:
         if (root_path.front() != '/')
             root_path = "/" + root_path;
 
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::ZooKeeperStorage");
         auto client = getClient();
         if (root_path != "/" && !client->exists(root_path))
         {
@@ -271,6 +273,7 @@ public:
             return true;
         }
 
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::waitUpdate");
         std::string res;
         Coordination::Stat stat;
         auto client = getClient();
@@ -300,6 +303,7 @@ public:
 
     std::vector<std::string> list() const override
     {
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::list");
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
@@ -341,16 +345,19 @@ public:
 
     bool exists(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::exists");
         return getClient()->exists(getPath(file_name));
     }
 
     std::string read(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::read");
         return getClient()->get(getPath(file_name));
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::write");
         if (replace)
         {
             getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
@@ -379,11 +386,13 @@ public:
 
     void remove(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::remove");
         getClient()->remove(getPath(file_name));
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::removeIfExists");
         auto code = getClient()->tryRemove(getPath(file_name));
         if (code == Coordination::Error::ZOK)
             return true;
