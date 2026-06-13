@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -8,7 +7,6 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/ParseError.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -590,7 +588,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !canContainNull(type))
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {
@@ -608,7 +606,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
@@ -795,7 +793,6 @@ void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::Data
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
-void registerInputFormatValues(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -808,7 +805,6 @@ void registerInputFormatValues(FormatFactory & factory)
     });
 }
 
-void registerValuesSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)

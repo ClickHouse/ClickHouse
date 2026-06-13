@@ -55,6 +55,7 @@ class Labels:
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     NO_FAST_TESTS = "no-fast-tests"
+    CI_MACOS = "ci-macos"
     MUST_BACKPORT = "pr-must-backport"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"

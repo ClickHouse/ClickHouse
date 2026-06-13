@@ -15,7 +15,6 @@
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -40,29 +39,6 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     format_settings.pretty_format = true;
     format_settings.json = FormatSettings::JSON{};
     format_settings.json.pretty_print_indent_multiplier = 1;
-
-    use_nbsp_for_padding = format_settings.pretty.use_nbsp_for_padding
-        && format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
-}
-
-namespace
-{
-    /// `U+00A0` survives tools that compress or trim runs of regular spaces.
-    constexpr std::string_view nbsp_utf8{"\xC2\xA0"};
-}
-
-void PrettyBlockOutputFormat::writePaddingSpace()
-{
-    if (use_nbsp_for_padding)
-        writeString(nbsp_utf8, out);
-    else
-        writeChar(' ', out);
-}
-
-void PrettyBlockOutputFormat::writePaddingSpaces(size_t count)
-{
-    for (size_t i = 0; i < count; ++i)
-        writePaddingSpace();
 }
 
 bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows)
@@ -210,7 +186,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         }
 
         /// Should be written from writeSuffix()
-        chassert(!mono_chunk);
+        assert(!mono_chunk);
     }
 
     writeChunk(chunk, port_kind);
@@ -288,16 +264,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     String left_blank;
     if (format_settings.pretty.row_numbers)
-    {
-        if (use_nbsp_for_padding)
-        {
-            left_blank.reserve(row_number_width * nbsp_utf8.size());
-            for (size_t i = 0; i < row_number_width; ++i)
-                left_blank.append(nbsp_utf8);
-        }
-        else
-            left_blank.assign(row_number_width, ' ');
-    }
+        left_blank.assign(row_number_width, ' ');
 
     String header_begin;    /// ┏━━┳━━━┓
     String header_end;      /// ┡━━╇━━━┩
@@ -442,29 +409,22 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeString(left_blank, out);
 
         if (style == Style::Full)
-        {
-            out << vertical_bold_bar;
-            writePaddingSpace();
-        }
+            out << vertical_bold_bar << " ";
         else if (style == Style::Compact)
             out << grid[is_top ? 6 : 3][0] << horizontal_bar;
         else if (style == Style::Space)
-            writePaddingSpace();
+            out << " ";
 
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (i != 0)
             {
                 if (style == Style::Full)
-                {
-                    writePaddingSpace();
-                    out << vertical_bold_bar;
-                    writePaddingSpace();
-                }
+                    out << " " << vertical_bold_bar << " ";
                 else if (style == Style::Compact)
                     out << horizontal_bar << grid[is_top ? 6 : 3][2] << horizontal_bar;
                 else if (style == Style::Space)
-                    writePaddingSpaces(3);
+                    out << "   ";
             }
 
             const auto & col = header->getByPosition(i);
@@ -485,7 +445,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     if (style == Style::Compact)
                         out << horizontal_bar;
                     else
-                        writePaddingSpace();
+                        out << " ";
                 }
             };
 
@@ -501,10 +461,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             }
         }
         if (style == Style::Full)
-        {
-            writePaddingSpace();
-            out << vertical_bold_bar;
-        }
+            out << " " << vertical_bold_bar;
         else if (style == Style::Compact)
             out << horizontal_bar << grid[is_top ? 6 : 3][3];
 
@@ -574,7 +531,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     {
                         /// Write row number;
                         auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
-                        writePaddingSpaces(row_number_width - row_num_string.size());
+                        for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
+                            writeChar(' ', out);
 
                         if (color)
                             out << "\033[90m";
@@ -594,7 +552,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     if (style != Style::Space)
                         out << vertical_bar;
                     else if (j != 0)
-                        writePaddingSpace();
+                        out << " ";
 
                     const auto & type = header->getByPosition(j).type;
                     writeValueWithPadding(
@@ -741,7 +699,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     auto write_padding = [&]()
     {
         if (pad_to_width > value_width)
-            writePaddingSpaces(pad_to_width - value_width);
+            for (size_t k = 0; k < pad_to_width - value_width; ++k)
+                writeChar(' ', out);
     };
 
     if (is_continuation)
@@ -753,7 +712,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             out << "\033[0m";
     }
     else
-        writePaddingSpace();
+        out.write(' ');
 
     if (align_right)
     {
@@ -775,7 +734,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             out << "\033[0m";
     }
     else if (!is_cut)
-        writePaddingSpace();
+        out.write(' ');
 
     if (start_from_offset < serialized_value->size())
         ++start_from_offset;
@@ -852,7 +811,6 @@ void PrettyBlockOutputFormat::onRowsReadBeforeUpdate()
     total_rows = getRowsReadBefore();
 }
 
-void registerOutputFormatPretty(FormatFactory & factory);
 void registerOutputFormatPretty(FormatFactory & factory)
 {
     /// Various combinations are available under their own names, e.g. PrettyCompactNoEscapesMonoBlock.

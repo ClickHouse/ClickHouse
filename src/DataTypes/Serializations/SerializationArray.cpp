@@ -15,7 +15,6 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
-#include <Formats/ParseError.h>
 
 #include <algorithm>
 
@@ -63,7 +62,7 @@ void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr
 
 void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
@@ -103,7 +102,7 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
@@ -656,8 +655,6 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
             nested_column.popBack(size);
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return ReturnType(false);
     }
 

@@ -101,7 +101,6 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
-class UniqueKeyIndexCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
@@ -279,12 +278,6 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
-/// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
-/// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
-
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -302,6 +295,13 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
+
+/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
+/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
+/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
+struct IRuntimeFilterLookup;
+using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -351,7 +351,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared{};
+    ContextSharedPart * shared;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -630,7 +630,7 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
-    /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
+    /// Used at query runtime to save per-query runtime filters and find them by names
     RuntimeFilterLookupPtr runtime_filter_lookup;
 
 public:
@@ -870,8 +870,8 @@ public:
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
     void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
     void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
-    UUIDs getCurrentProfiles() const;
-    UUIDs getEnabledProfiles() const;
+    std::vector<UUID> getCurrentProfiles() const;
+    std::vector<UUID> getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -1249,9 +1249,6 @@ public:
     bool getS3QueueDisableStreaming() const;
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
-    bool getMessageQueueDisableInsertion() const;
-    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
-
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -1403,13 +1400,6 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
-
-    /// UNIQUE KEY index cache: ClickHouse-side `CacheBase` adapter
-    /// over the RocksDB block cache used by SST-backed UNIQUE KEY indexes.
-    void setUniqueKeyIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
-    void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
-    std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
-    void clearUniqueKeyIndexCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
@@ -1620,12 +1610,6 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the new analyzer in mutations.
-    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
-    /// Set from the main config reload callback.
-    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
-    std::optional<bool> getMutationsUseAnalyzerOverride() const;
-
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
@@ -1821,8 +1805,8 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
-    /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
-    /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
+    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
+    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
