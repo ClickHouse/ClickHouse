@@ -1,7 +1,12 @@
 CREATE TABLE system.aggregate_function_combinators
 (
     `name` String,
-    `is_internal` UInt8
+    `is_internal` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemAggregateFunctionCombinators
 COMMENT 'Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.'
@@ -143,7 +148,12 @@ CREATE TABLE system.data_type_families
 (
     `name` String,
     `case_insensitive` UInt8,
-    `alias_to` String
+    `alias_to` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableDataTypeFamilies
 COMMENT 'Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.'
@@ -209,6 +219,18 @@ CREATE TABLE system.dictionaries
 )
 ENGINE = SystemDictionaries
 COMMENT 'Contains information about dictionaries.'
+CREATE TABLE system.dictionary_layouts
+(
+    `name` String,
+    `is_complex` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDictionaryLayouts
+COMMENT 'Contains a list of all available dictionary layouts along with their embedded documentation.'
 CREATE TABLE system.disks
 (
     `name` String,
