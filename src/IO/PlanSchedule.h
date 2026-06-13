@@ -58,7 +58,10 @@ struct PlanSchedule
     {
         ByteRange range;                              /// physical, plan coords
         Source source = Source::Remote;
-        CacheTier upper_source_tier{};                /// valid iff source == UpperCacheRead
+        /// The tier the bytes are read from, for the non-`Remote` sources:
+        /// `UpperCacheRead` reads its `range` from this tier; `HandedRope`
+        /// records the tier the served rope came from.
+        CacheTier upper_source_tier{};
         VectorWithMemoryTracking<WriteTarget> into;   /// cells to populate
         bool retain_for_serve = false;                /// User range vs FillOnly
         VectorWithMemoryTracking<size_t> deps;        /// same-segment predecessors (natural order)

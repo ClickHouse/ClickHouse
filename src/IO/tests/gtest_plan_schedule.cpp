@@ -235,13 +235,60 @@ TEST(PlanScheduleRetrieves, SpanningSegmentSplitHasDep)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // ONE segment [0,12), incremental
     });
     auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/2);  // split
-    ASSERT_EQ(s.retrieves.size(), 2u);
-    // both write the spanning fs segment [0,12)
-    EXPECT_TRUE(intoHas(s.retrieves[0], 1, {0, 12}));
-    EXPECT_TRUE(intoHas(s.retrieves[1], 1, {0, 12}));
-    ASSERT_EQ(s.retrieves[1].deps.size(), 1u) << "later connection appends after the earlier";
-    EXPECT_EQ(s.retrieves[1].deps[0], 0u);
-    EXPECT_TRUE(s.retrieves[0].deps.empty());
+    /// Two Remote connections [0,4),[8,12), both filling the spanning fs segment;
+    /// the later one appends after the earlier.
+    std::vector<size_t> remotes;
+    for (size_t i = 0; i < s.retrieves.size(); ++i)
+        if (s.retrieves[i].source == PlanSchedule::Source::Remote)
+        {
+            EXPECT_TRUE(intoHas(s.retrieves[i], 1, {0, 12}));
+            remotes.push_back(i);
+        }
+    ASSERT_EQ(remotes.size(), 2u);
+    const size_t lo = s.retrieves[remotes[0]].range.offset <= s.retrieves[remotes[1]].range.offset ? remotes[0] : remotes[1];
+    const size_t hi = lo == remotes[0] ? remotes[1] : remotes[0];
+    bool hi_deps_on_lo = false;
+    for (size_t d : s.retrieves[hi].deps)
+        if (d == lo)
+            hi_deps_on_lo = true;
+    EXPECT_TRUE(hi_deps_on_lo) << "later connection appends after the earlier";
+}
+
+/// The embedded-upper-hit case: a faster tier holds [4,8) inside the slow fs
+/// segment [0,12), and the [4,8) hole is too wide to bridge (split). It becomes
+/// an UpperCacheRead - filled into fs from the page tier, not over-read.
+TEST(PlanScheduleRetrieves, UpperCacheReadForSplitEmbeddedHit)
+{
+    auto g = geometry(0, 12, {
+        tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // ONE segment [0,12)
+    });
+    auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/2);  // split at [4,8)
+
+    size_t upper = s.retrieves.size();
+    for (size_t i = 0; i < s.retrieves.size(); ++i)
+        if (s.retrieves[i].source == PlanSchedule::Source::UpperCacheRead)
+            upper = i;
+    ASSERT_LT(upper, s.retrieves.size()) << "an UpperCacheRead must be emitted for the embedded hit";
+    EXPECT_EQ(s.retrieves[upper].range.offset, 4u);
+    EXPECT_EQ(s.retrieves[upper].range.size, 4u);
+    EXPECT_EQ(s.retrieves[upper].upper_source_tier, CacheTier::PageCache);
+    EXPECT_TRUE(intoHas(s.retrieves[upper], 1, {0, 12})) << "filled down into the fs segment";
+    EXPECT_FALSE(s.retrieves[upper].retain_for_serve);
+}
+
+/// A SMALL embedded hit (bridged, within min_bytes_for_seek) stays a remote
+/// over-read - NO UpperCacheRead (reopening for it would cost more).
+TEST(PlanScheduleRetrieves, BridgedEmbeddedHitStaysRemoteOverRead)
+{
+    auto g = geometry(0, 12, {
+        tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),
+    });
+    auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/8);  // hole 4 <= 8 -> bridged
+    for (const auto & r : s.retrieves)
+        EXPECT_NE(r.source, PlanSchedule::Source::UpperCacheRead)
+            << "a bridged hole is over-read from remote, not UpperCacheRead";
 }
 
 /// A user range resident in a SLOWER tier is promoted up into the faster tier

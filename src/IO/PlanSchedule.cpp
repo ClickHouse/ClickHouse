@@ -240,6 +240,57 @@ PlanSchedule describePlan(
             sched.retrieves.push_back(std::move(promote));
     }
 
+    /// A lower-tier fill cell that spans a resident run held by a FASTER tier,
+    /// where that run is NOT covered by any Remote connection (a split gap, too
+    /// wide to bridge), is filled across the run from the upper cache rather
+    /// than over-read from remote - so the append-only lower segment completes
+    /// without re-fetching bytes a faster tier already has. A run a connection
+    /// DOES cover (a bridged small hole) stays a remote over-read: reopening for
+    /// it would cost more than the wasted bytes. Collect the unique lower cells
+    /// from the Remote retrieves first (a spanning cell appears in both
+    /// connections' `into`).
+    VectorWithMemoryTracking<PlanSchedule::WriteTarget> lower_cells;
+    for (const auto & r : sched.retrieves)
+    {
+        if (r.source != PlanSchedule::Source::Remote)
+            continue;
+        for (const auto & wt : r.into)
+        {
+            bool seen = false;
+            for (const auto & c : lower_cells)
+                if (c.entry == wt.entry && c.cell.offset == wt.cell.offset && c.cell.size == wt.cell.size)
+                    seen = true;
+            if (!seen)
+                lower_cells.push_back(wt);
+        }
+    }
+    const auto covered_by_remote = [&](ByteRange sub)
+    {
+        for (const auto & r : sched.retrieves)
+            if (r.source == PlanSchedule::Source::Remote && contains(r.range, sub))
+                return true;
+        return false;
+    };
+    for (const auto & cell : lower_cells)
+        for (const auto & rr : sched.ranges)
+        {
+            if (!rr.resident || rr.tier_entry >= cell.entry)
+                continue;  /// only a strictly-faster resident tier fills the lower cell
+            const size_t lo = std::max(rr.range.offset, cell.cell.offset);
+            const size_t hi = std::min(rr.range.end(), cell.cell.end());
+            if (lo >= hi)
+                continue;
+            const ByteRange sub{lo, hi - lo};
+            if (covered_by_remote(sub))
+                continue;  /// bridged into a connection -> stays a remote over-read
+            PlanSchedule::Retrieve up;
+            up.range = sub;
+            up.source = PlanSchedule::Source::UpperCacheRead;
+            up.upper_source_tier = rr.tier;
+            up.into.push_back(cell);
+            sched.retrieves.push_back(std::move(up));
+        }
+
     /// --- deps: natural-order among retrieves writing the same cell ---
     /// A segment appends at its write frontier, so two retrieves filling the
     /// same (entry, cell) must run in offset order (the spanning-writer case
