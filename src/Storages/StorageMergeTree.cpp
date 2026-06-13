@@ -3298,6 +3298,14 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
                 auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 calculated_checksums.checkEqual(part->checksums, true, part->name);
 
+                /// Persisting the recomputed `checksums.txt` writes into the part's data
+                /// directory, which for `leader_election` tables lives on shared object
+                /// storage. Only the writable leader may write there; a follower would
+                /// otherwise race the node that holds the lease. Followers still validate
+                /// the part read-only above and report the missing file without repairing.
+                if (leader_election_ptr && !leader_election_ptr->isLeaderAndWritable())
+                    return CheckResult(part->name, true, "Checksums are missing; not rewritten because this node is not the writable leader (leader_election).");
+
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
