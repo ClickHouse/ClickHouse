@@ -193,7 +193,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 
 ## Aliases {#aliases}
 
-Table engine `Paimon` is an alias to `PaimonS3` now.
+The `Paimon` table engine auto-detects the storage backend from the `disk` setting and dispatches to `PaimonS3`, `PaimonAzure`, or `PaimonLocal` accordingly. When no `disk` is specified, it defaults to the `PaimonS3` implementation.
 
 ## Virtual Columns {#virtual-columns}
 
