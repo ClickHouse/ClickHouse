@@ -2191,16 +2191,17 @@ public:
     /// re-dispatching to the original backend.
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override
     {
-        StorageURL::materializeResolvedURLInEngineArgs(args, resolved_url, context);
-
         /// Persist the delegate's inferred format into the stored `URL(...)` arguments, mirroring
         /// `StorageURL::addInferredEngineArgsToCreateQuery` for the plain `URL` engine. Without this,
         /// a `format = auto` URL without a recognizable extension (e.g. `URL('file://.../data')`)
         /// would be stored without a format, and `ATTACH`/restart would rebuild the delegate with
         /// `format = auto` and re-read the external resource to rediscover the format even though the
         /// schema is already persisted — incurring I/O at startup and risking failure or divergence
-        /// if the resource is unavailable or has changed.
-        materializeResolvedFormatInEngineArgs(args);
+        /// if the resource is unavailable or has changed. This runs before the URL materialization,
+        /// matching the order in `StorageURL::addInferredEngineArgsToCreateQuery`.
+        materializeResolvedFormatInEngineArgs(args, context);
+
+        StorageURL::materializeResolvedURLInEngineArgs(args, resolved_url, context);
     }
 
     /// Preserve the `URL` engine's metadata-only rename: a plain `URL` table can be renamed without
@@ -2230,30 +2231,18 @@ public:
     }
 
 private:
-    /// Write `resolved_format` into the persisted `URL(...)` engine arguments (positional form only)
-    /// when it is a concrete format. Mirrors the positional handling in `StorageFile`.
-    void materializeResolvedFormatInEngineArgs(ASTs & args) const
+    /// Write `resolved_format` into the persisted `URL(...)` engine arguments when it is a concrete
+    /// format. Reuses the plain `URL` engine's materialization path so that both the positional form
+    /// `URL('url' [, format] [, compression])` and the named-collection / key-value forms
+    /// (`URL(nc)`, `URL(url='...')`) get the inferred format persisted. The helper only overrides a
+    /// `format` left as `auto` (or absent), so an explicitly given format is preserved.
+    void materializeResolvedFormatInEngineArgs(ASTs & args, const ContextPtr & context) const
     {
         if (resolved_format.empty() || resolved_format == "auto" || args.empty())
             return;
 
-        /// Only the positional form `URL('url' [, format] [, compression])` is handled here; the
-        /// named-collection / key-value forms already carry an explicit `format=` when needed.
-        const auto * url_literal = args[0]->as<ASTLiteral>();
-        if (!url_literal || url_literal->value.getType() != Field::Types::String)
-            return;
-
-        if (args.size() == 1)
-        {
-            args.push_back(make_intrusive<ASTLiteral>(resolved_format));
-            return;
-        }
-
-        /// The format is the second positional argument; replace it only when it was left as `auto`.
-        if (const auto * format_literal = args[1]->as<ASTLiteral>();
-            format_literal && format_literal->value.getType() == Field::Types::String
-            && format_literal->value.safeGet<String>() == "auto")
-            args[1] = make_intrusive<ASTLiteral>(resolved_format);
+        TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false);
     }
 
     StoragePtr nested;
