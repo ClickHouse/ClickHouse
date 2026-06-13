@@ -859,8 +859,26 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
         {
             vars.reset();
             reasons.emplace_back();
-            if (DataTypePtr res = alternative->check(args, vars, reasons.back()))
-                return res;
+            try
+            {
+                if (DataTypePtr res = alternative->check(args, vars, reasons.back()))
+                    return res;
+            }
+            catch (const Exception & e)
+            {
+                /// On the types-only path a const-value-dependent return type (e.g.
+                /// `DateTime(tz)` for a `const tz String` argument that is not actually
+                /// constant) throws `ILLEGAL_COLUMN` from `Variables::get` while applying
+                /// the return type — after this alternative has already matched the
+                /// argument types. That must fail only the current alternative, not abort
+                /// the whole matcher, so a later non-const fallback (e.g.
+                /// `[StringOrFixedString] -> DateTime`) can still match. Scope the catch to
+                /// exactly that condition (this alternative recorded an unavailable const
+                /// value) so genuine errors keep propagating.
+                if (e.code() != ErrorCodes::ILLEGAL_COLUMN || vars.const_value_unavailable.empty())
+                    throw;
+                reasons.back() = e.message();
+            }
         }
 
         WriteBufferFromOwnString out;

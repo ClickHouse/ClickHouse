@@ -34,6 +34,18 @@ String checkSignature(const String & signature, const ColumnsWithTypeAndName & a
     return type->getName();
 }
 
+/// The `types_only` path: the arguments carry no column information, so a `const`
+/// position cannot be rejected for non-constness and its value cannot be captured.
+String checkSignatureTypesOnly(const String & signature, const ColumnsWithTypeAndName & args)
+{
+    FunctionSignature checker(signature);
+    String reason;
+    auto type = checker.check(args, reason, /*types_only=*/ true);
+    if (!type)
+        return "FAIL: " + reason;
+    return type->getName();
+}
+
 }
 
 
@@ -278,4 +290,20 @@ GTEST_TEST(FunctionSignature, OptionalPairEllipsis)
     EXPECT_THAT(
         checkSignature(group, {makeColumn("Array(Tuple(String, String))"), makeColumn("String")}),
         ::testing::StartsWith("FAIL:"));
+}
+
+GTEST_TEST(FunctionSignature, AlternativeFallbackOnUnavailableConst)
+{
+    /// The first alternative needs a const argument's value to build its return
+    /// type; on the `types_only` path that value is unavailable, so applying the
+    /// return type raises `ILLEGAL_COLUMN`. This must fail only that alternative,
+    /// letting a later non-const fallback still match (this is what makes the
+    /// setting-compatible timezone signatures usable on the type-only path).
+    String sig = "f(const tz String) -> typeFromString(tz) OR f(String) -> DateTime";
+
+    /// Types-only: the const value is unavailable, so the fallback alternative wins.
+    EXPECT_EQ(checkSignatureTypesOnly(sig, {makeColumn("String")}), "DateTime");
+
+    /// With an actual constant the first alternative is used.
+    EXPECT_EQ(checkSignature(sig, {makeConstColumn("String", Field(String("UInt16")))}), "UInt16");
 }
