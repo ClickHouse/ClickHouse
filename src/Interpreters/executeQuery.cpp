@@ -1209,8 +1209,18 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     }
     else if (const auto * backup = ast->as<ASTBackupQuery>())
     {
+        /// For `BACKUP`, `database_name`/`table_name` is the local table being read.
+        /// For `RESTORE TABLE old AS new`, `database_name`/`table_name` is the object name inside the backup,
+        /// while the local table the query touches is the destination `new_database_name`/`new_table_name`.
+        /// (When the restore creates a new table, the destination does not exist yet and `addTableIfNotEmpty`
+        /// skips it, so this never detaches an unrelated existing table with the same in-backup name.)
         for (const auto & element : backup->elements)
-            data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes);
+        {
+            if (backup->kind == ASTBackupQuery::RESTORE)
+                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes);
+            else
+                data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes);
+        }
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
     {
