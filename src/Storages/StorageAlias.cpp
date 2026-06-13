@@ -72,11 +72,13 @@ public:
     AliasSink(
         StorageAlias & storage_,
         ContextPtr context_,
-        const StorageMetadataPtr & metadata_snapshot_)
+        const StorageMetadataPtr & metadata_snapshot_,
+        bool async_insert_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
         , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
+        , async_insert(async_insert_)
     {
     }
 
@@ -94,13 +96,17 @@ public:
         insert_context->makeQueryContext();
         addInterpreterContext(insert_context);
 
+        /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
+        /// Alias matches a direct insert: async batches select async dedup settings and skip the
+        /// strict block-limit squashing that would slice their multi-token DeduplicationInfo and
+        /// break its row/offset invariant.
         InterpreterInsertQuery interpreter(
             query_ptr,
             insert_context,
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
-            /* async_insert */ false);
+            /* async_insert */ async_insert);
 
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
@@ -144,6 +150,7 @@ public:
 private:
     StorageAlias & storage;
     Block non_materialized_header;
+    bool async_insert;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
 };
@@ -184,14 +191,14 @@ SinkToStoragePtr StorageAlias::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    bool /*async_insert*/)
+    bool async_insert)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
-    return std::make_shared<AliasSink>(*this, local_context, target_metadata);
+    return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
 }
 
 void StorageAlias::alter(
