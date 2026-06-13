@@ -4756,3 +4756,42 @@ TEST(ReaderExecutor, SchedulesFillOfSeekStraddledLowerSegment)
         EXPECT_GE(range.offset, 64u * 1024u) << "fast tier has no sub-plan-start cell";
     EXPECT_TRUE(fast->hasBlock(2)) << "fast tier still fills the requested [64K,...) blocks";
 }
+
+/// Several fetches fill several gaps within ONE plan: resident islands split the
+/// file into gaps, and a one-block window makes each multi-block gap take
+/// several fetches - all driven by the single schedule computed once for the
+/// plan. Every gap block must end up cached.
+TEST(ReaderExecutor, SeveralFetchesFillAllGaps)
+{
+    const size_t block = 4096;
+    const size_t nblocks = 8;
+    const size_t file = block * nblocks;  // 32K
+    auto [src, objects] = srcOf(file);
+    auto cache = std::make_shared<WideGranularityMockCache>(block, "Mock");
+    cache->seedBlock(2, 'R');  // resident islands at blocks 2 and 5 ...
+    cache->seedBlock(5, 'R');  // ... so the gaps are blocks {0,1}, {3,4}, {6,7}
+
+    auto pool = std::make_shared<SyncPrefetchPool>();  // deferred fill runs inline, deterministic
+    ReaderExecutor::Options opts;
+    opts.window_size = block;             // one block per window -> a 2-block gap = two fetches
+    opts.block_size = block;
+    opts.plan_look_ahead_window = file;   // ONE plan over the whole file -> one schedule, many fetches
+    opts.min_bytes_for_seek = 0;
+    opts.prefetch_pool = pool;
+    ReaderExecutor executor(src, objects, {cache}, opts);
+
+    size_t delivered = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        delivered += rope.range().size;
+    }
+    executor.seek(0);  // tear the plan down so any pending fills reap
+
+    EXPECT_EQ(delivered, file) << "the whole file is delivered across the windowed reads";
+    for (size_t b = 0; b < nblocks; ++b)
+        EXPECT_TRUE(cache->hasBlock(b))
+            << "gap block " << b << " must be cached after the multi-fetch fill";
+}

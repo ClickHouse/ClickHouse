@@ -77,6 +77,11 @@ bool intoHas(const PlanSchedule::Retrieve & r, size_t entry, ByteRange cell)
     return false;
 }
 
+bool rangeContains(ByteRange outer, ByteRange inner)
+{
+    return inner.offset >= outer.offset && inner.end() <= outer.end();
+}
+
 }
 
 TEST(PlanScheduleSteps, ColdAllGap)
@@ -278,4 +283,45 @@ TEST(PlanScheduleRetrieves, StraddlingCellBeyondPlan)
     EXPECT_EQ(s.retrieves[0].range.offset, 0u) << "extends below plan_start to the segment start";
     EXPECT_EQ(s.retrieves[0].range.size, 256u) << "and past plan_end to the segment end";
     EXPECT_TRUE(intoHas(s.retrieves[0], 0, {0, 256})) << "the whole straddling cell is a fill target";
+}
+
+/// Several separate gaps -> several Remote retrieves, each gap step wired to its
+/// OWN retrieve; hit steps wait on none. Pins the multi-retrieve step wiring.
+TEST(PlanScheduleRetrieves, SeveralGapsEachWiredToOwnRetrieve)
+{
+    auto g = geometry(0, 20, {
+        tierEntry(CacheTier::PageCache, {{4, 2}, {12, 2}}, {{0, 4}, {6, 6}, {14, 6}}, /*head*/1, /*tail*/2),
+    });
+    // resident islands [4,6) and [12,14) -> gaps [0,4), [6,12), [14,20)
+    auto s = describe(g, {0, 20});
+
+    expectSteps(s, {{0, 4}, {4, 2}, {6, 6}, {12, 2}, {14, 6}});
+
+    /// Three Remote retrieves, one per gap (holes are resident runs of size 2,
+    /// but min_bytes_for_seek=2 would bridge - use a fresh describe with mbs 0).
+    auto split = describeSeek(g, {0, 20}, /*min_bytes_for_seek=*/0);
+    size_t remotes = 0;
+    for (const auto & r : split.retrieves)
+        if (r.source == PlanSchedule::Source::Remote)
+            ++remotes;
+    EXPECT_EQ(remotes, 3u) << "one Remote retrieve per gap";
+
+    /// Each gap step points to a retrieve covering it; the three gap steps point
+    /// to three DISTINCT retrieves; hit steps have none.
+    ASSERT_EQ(split.steps.size(), 5u);
+    EXPECT_FALSE(split.steps[1].require_retrieve.has_value());  // hit [4,6)
+    EXPECT_FALSE(split.steps[3].require_retrieve.has_value());  // hit [12,14)
+    ASSERT_TRUE(split.steps[0].require_retrieve.has_value());
+    ASSERT_TRUE(split.steps[2].require_retrieve.has_value());
+    ASSERT_TRUE(split.steps[4].require_retrieve.has_value());
+    const size_t r0 = *split.steps[0].require_retrieve;
+    const size_t r2 = *split.steps[2].require_retrieve;
+    const size_t r4 = *split.steps[4].require_retrieve;
+    EXPECT_NE(r0, r2);
+    EXPECT_NE(r2, r4);
+    EXPECT_NE(r0, r4);
+    // and each names a retrieve whose range covers that gap step's output
+    EXPECT_TRUE(rangeContains(split.retrieves[r0].range, split.steps[0].output));
+    EXPECT_TRUE(rangeContains(split.retrieves[r2].range, split.steps[2].output));
+    EXPECT_TRUE(rangeContains(split.retrieves[r4].range, split.steps[4].output));
 }
