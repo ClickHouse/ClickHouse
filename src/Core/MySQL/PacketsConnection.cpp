@@ -149,7 +149,7 @@ void HandshakeResponse::readPayloadImpl(ReadBuffer & payload)
     else if (capability_flags & CLIENT_SECURE_CONNECTION)
     {
         UInt8 len = 0;
-        payload.readStrict(reinterpret_cast<char *>(&len), 1);
+        readBinary(len, payload);
         auth_response.resize(len);
         payload.readStrict(auth_response.data(), len);
     }
