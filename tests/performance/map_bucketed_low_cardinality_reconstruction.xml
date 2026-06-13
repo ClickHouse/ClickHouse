@@ -1,0 +1,62 @@
+<test>
+    <!-- Exercises bucketed Map reconstruction when keys and/or values are LowCardinality.
+         The queries read the full map or the keys/values subcolumns, forcing all buckets
+         to be reassembled into one logical column. -->
+
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE map_lc_reconstruction
+        (
+            id UInt64,
+            m_str Map(String, String),
+            m_key_lc Map(LowCardinality(String), String),
+            m_value_lc Map(String, LowCardinality(String)),
+            m_both_lc Map(LowCardinality(String), LowCardinality(String))
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            map_serialization_version = 'with_buckets',
+            map_serialization_version_for_zero_level_parts = 'with_buckets',
+            map_buckets_strategy = 'constant',
+            max_buckets_in_map = 32,
+            map_buckets_min_avg_size = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_lc_reconstruction
+        SELECT
+            number,
+            mapFromArrays(keys, values),
+            mapFromArrays(keys, values),
+            mapFromArrays(keys, values),
+            mapFromArrays(keys, values)
+        FROM
+        (
+            SELECT
+                number,
+                arrayMap(i -> concat('key', toString(i)), range(200)) AS keys,
+                arrayMap(i -> concat('value', toString(i)), range(200)) AS values
+            FROM numbers(50000)
+        )
+    </fill_query>
+
+    <query>SELECT m_str FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT m_key_lc FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT m_value_lc FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT m_both_lc FROM map_lc_reconstruction FORMAT Null</query>
+
+    <query>SELECT mapKeys(m_key_lc) FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT mapValues(m_value_lc) FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT mapKeys(m_both_lc), mapValues(m_both_lc) FROM map_lc_reconstruction FORMAT Null</query>
+
+    <query>SELECT m_key_lc['key7'], m_key_lc FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT m_value_lc['key7'], m_value_lc FROM map_lc_reconstruction FORMAT Null</query>
+    <query>SELECT m_both_lc['key7'], m_both_lc FROM map_lc_reconstruction FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS map_lc_reconstruction</drop_query>
+</test>
