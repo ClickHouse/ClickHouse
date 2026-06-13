@@ -9,7 +9,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = 3)
+WHERE and(equals(__table1.i, 3), equals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -19,7 +19,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_eq_diff
 SELECT
@@ -30,7 +30,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = 5)
+WHERE and(equals(__table1.i, 3), equals(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -51,7 +51,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (3 = __table1.i) AND (__table1.i = 5)
+WHERE and(equals(3, __table1.i), equals(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -74,7 +74,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = _CAST(3, \'UInt8\'))
+WHERE and(equals(__table1.i, 3), equals(__table1.i, toUInt8(3)))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -84,7 +84,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_eq_cross_diff
 SELECT
@@ -95,7 +95,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = _CAST(5, \'UInt8\'))
+WHERE and(equals(__table1.i, 3), equals(__table1.i, toUInt8(5)))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -118,7 +118,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = 3.)
+WHERE and(equals(__table1.i, 3), equals(__table1.i, 3.))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -128,7 +128,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_eq_float_lossy
 SELECT
@@ -139,7 +139,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = 3.5)
+WHERE and(equals(__table1.i, 3), equals(__table1.i, 3.5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -162,7 +162,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i < 5)
+WHERE and(equals(__table1.i, 3), less(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -172,7 +172,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_lt_conflict
 SELECT
@@ -183,7 +183,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i < 2)
+WHERE and(equals(__table1.i, 3), less(__table1.i, 2))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -206,7 +206,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i > 1)
+WHERE and(equals(__table1.i, 3), greater(__table1.i, 1))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -216,7 +216,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_gt_conflict
 SELECT
@@ -227,7 +227,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i > 5)
+WHERE and(equals(__table1.i, 3), greater(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -250,7 +250,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i <= 3)
+WHERE and(equals(__table1.i, 3), lessOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -260,7 +260,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_ge_prune
 3	30	3	c	y	2024-06-15 12:00:00
@@ -273,7 +273,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i >= 3)
+WHERE and(equals(__table1.i, 3), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -283,7 +283,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_le_conflict
 SELECT
@@ -294,7 +294,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i <= 2)
+WHERE and(equals(__table1.i, 3), lessOrEquals(__table1.i, 2))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -315,7 +315,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i >= 4)
+WHERE and(equals(__table1.i, 3), greaterOrEquals(__table1.i, 4))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -338,7 +338,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i < 3.5)
+WHERE and(equals(__table1.i, 3), less(__table1.i, 3.5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -348,7 +348,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_lt_cross_conflict
 SELECT
@@ -359,7 +359,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i < 2.5)
+WHERE and(equals(__table1.i, 3), less(__table1.i, 2.5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -382,7 +382,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i != 5)
+WHERE and(equals(__table1.i, 3), notEquals(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -392,7 +392,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 eq_ne_conflict
 SELECT
@@ -403,7 +403,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i != 3)
+WHERE and(equals(__table1.i, 3), notEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -426,7 +426,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i < 3)
+WHERE and(notEquals(__table1.i, 3), less(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -436,7 +436,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i < 3
+WHERE less(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 ne_gt_prune
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -449,7 +449,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i > 3)
+WHERE and(notEquals(__table1.i, 3), greater(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -459,7 +459,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i > 3
+WHERE greater(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 ne_le_strengthen
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -472,7 +472,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i <= 3)
+WHERE and(notEquals(__table1.i, 3), lessOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -482,7 +482,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i < 3
+WHERE less(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 ne_ge_strengthen
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -495,7 +495,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i >= 3)
+WHERE and(notEquals(__table1.i, 3), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -505,7 +505,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i > 3
+WHERE greater(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 ne_ne_same
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -520,7 +520,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i != 3
+WHERE notEquals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -530,7 +530,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i != 3
+WHERE notEquals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 ne_ne_diff
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -543,7 +543,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i != 5)
+WHERE and(notEquals(__table1.i, 3), notEquals(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -553,7 +553,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i != 5)
+WHERE and(notEquals(__table1.i, 3), notEquals(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 1
 lt_lt_tighter
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -566,7 +566,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 5) AND (__table1.i < 3)
+WHERE and(less(__table1.i, 5), less(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -576,7 +576,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i < 3
+WHERE less(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 le_le_tighter
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -591,7 +591,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i <= 5) AND (__table1.i <= 3)
+WHERE and(lessOrEquals(__table1.i, 5), lessOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -601,7 +601,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i <= 3
+WHERE lessOrEquals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 lt_le_same_val
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -614,7 +614,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 3) AND (__table1.i <= 3)
+WHERE and(less(__table1.i, 3), lessOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -624,7 +624,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i < 3
+WHERE less(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 le_lt_same_val
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -637,7 +637,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i <= 3) AND (__table1.i < 3)
+WHERE and(lessOrEquals(__table1.i, 3), less(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -647,7 +647,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i < 3
+WHERE less(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 gt_gt_tighter
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -660,7 +660,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i > 3)
+WHERE and(greater(__table1.i, 1), greater(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -670,7 +670,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i > 3
+WHERE greater(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 ge_ge_tighter
 3	30	3	c	y	2024-06-15 12:00:00
@@ -685,7 +685,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i >= 1) AND (__table1.i >= 3)
+WHERE and(greaterOrEquals(__table1.i, 1), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -695,7 +695,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i >= 3
+WHERE greaterOrEquals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 gt_ge_same_val
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -708,7 +708,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 3) AND (__table1.i >= 3)
+WHERE and(greater(__table1.i, 3), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -718,7 +718,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i > 3
+WHERE greater(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 lt_gt_valid
 3	30	3	c	y	2024-06-15 12:00:00
@@ -731,7 +731,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 5) AND (__table1.i > 1)
+WHERE and(less(__table1.i, 5), greater(__table1.i, 1))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -741,7 +741,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 5) AND (__table1.i > 1)
+WHERE and(less(__table1.i, 5), greater(__table1.i, 1))
 SETTINGS optimize_redundant_comparisons = 1
 lt_gt_conflict
 SELECT
@@ -752,7 +752,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 1) AND (__table1.i > 5)
+WHERE and(less(__table1.i, 1), greater(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -775,7 +775,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i <= 3) AND (__table1.i >= 3)
+WHERE and(lessOrEquals(__table1.i, 3), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -785,7 +785,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i <= 3) AND (__table1.i >= 3)
+WHERE and(lessOrEquals(__table1.i, 3), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 1
 lt_ge_conflict
 SELECT
@@ -796,7 +796,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 3) AND (__table1.i >= 3)
+WHERE and(less(__table1.i, 3), greaterOrEquals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -817,7 +817,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i <= 3) AND (__table1.i > 3)
+WHERE and(lessOrEquals(__table1.i, 3), greater(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -838,7 +838,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 3) AND (__table1.i > 3)
+WHERE and(less(__table1.i, 3), greater(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -863,7 +863,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5.5)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5.5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -873,7 +873,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5.5)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5.5))
 SETTINGS optimize_redundant_comparisons = 1
 flip_less
 3	30	3	c	y	2024-06-15 12:00:00
@@ -886,7 +886,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (5 > __table1.i) AND (__table1.i > 1)
+WHERE and(greater(5, __table1.i), greater(__table1.i, 1))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -896,7 +896,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (5 > __table1.i) AND (__table1.i > 1)
+WHERE and(greater(5, __table1.i), greater(__table1.i, 1))
 SETTINGS optimize_redundant_comparisons = 1
 flip_equals_and_range
 3	30	3	c	y	2024-06-15 12:00:00
@@ -909,7 +909,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (3 = __table1.i) AND (10 > __table1.i)
+WHERE and(equals(3, __table1.i), greater(10, __table1.i))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -919,7 +919,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE 3 = __table1.i
+WHERE equals(3, __table1.i)
 SETTINGS optimize_redundant_comparisons = 1
 flip_both_sides
 3	30	3	c	y	2024-06-15 12:00:00
@@ -932,7 +932,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (5 > __table1.i) AND (1 < __table1.i)
+WHERE and(greater(5, __table1.i), less(1, __table1.i))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -942,7 +942,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (5 > __table1.i) AND (1 < __table1.i)
+WHERE and(greater(5, __table1.i), less(1, __table1.i))
 SETTINGS optimize_redundant_comparisons = 1
 multi_expr
 3	30	3	c	y	2024-06-15 12:00:00
@@ -955,7 +955,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5) AND (__table1.f > 2.) AND (__table1.f < 6.)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), greater(__table1.f, 2.), less(__table1.f, 6.))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -965,7 +965,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5) AND (__table1.f > 2.) AND (__table1.f < 6.)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), greater(__table1.f, 2.), less(__table1.f, 6.))
 SETTINGS optimize_redundant_comparisons = 1
 multi_expr_conflict
 SELECT
@@ -976,7 +976,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = 5) AND (__table1.f > 1.)
+WHERE and(equals(__table1.i, 3), equals(__table1.i, 5), greater(__table1.f, 1.))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -999,7 +999,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i > 1) AND (__table1.i < 5)
+WHERE and(equals(__table1.i, 3), greater(__table1.i, 1), less(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1009,7 +1009,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 range_tighten
 SELECT
@@ -1020,7 +1020,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5) AND (__table1.i > 3)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), greater(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1030,7 +1030,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 5) AND (__table1.i > 3)
+WHERE and(less(__table1.i, 5), greater(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 1
 three_way_conflict
 SELECT
@@ -1041,7 +1041,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i < 5) AND (__table1.i > 5)
+WHERE and(equals(__table1.i, 3), less(__table1.i, 5), greater(__table1.i, 5))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1064,7 +1064,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.lc = \'y\') AND (__table1.lc = \'y\')
+WHERE and(equals(__table1.lc, \'y\'), equals(__table1.lc, \'y\'))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1074,7 +1074,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE _CAST(__table1.lc = \'y\', \'UInt8\')
+WHERE _CAST(equals(__table1.lc, \'y\'), \'UInt8\')
 SETTINGS optimize_redundant_comparisons = 1
 lc_eq_conflict
 SELECT
@@ -1085,7 +1085,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.lc = \'y\') AND (__table1.lc = \'z\')
+WHERE and(equals(__table1.lc, \'y\'), equals(__table1.lc, \'z\'))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1108,7 +1108,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.s = \'c\') AND (__table1.s = \'c\')
+WHERE and(equals(__table1.s, \'c\'), equals(__table1.s, \'c\'))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1118,7 +1118,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.s = \'c\'
+WHERE equals(__table1.s, \'c\')
 SETTINGS optimize_redundant_comparisons = 1
 str_eq_conflict
 SELECT
@@ -1129,7 +1129,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.s = \'c\') AND (__table1.s = \'a\')
+WHERE and(equals(__table1.s, \'c\'), equals(__table1.s, \'a\'))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1150,7 +1150,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND (__table1.i = __table1.u) AND (__table1.u = 5) AND (__table1.i = 5) AND (__table1.u = 3)
+WHERE and(equals(__table1.i, 3), equals(__table1.i, __table1.u), equals(__table1.u, 5), equals(__table1.i, 5), equals(__table1.u, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1171,7 +1171,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 3) AND (__table1.u > 3) AND (__table1.u < 10)
+WHERE and(less(__table1.i, 3), greater(__table1.u, 3), less(__table1.u, 10))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1181,7 +1181,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i < 3) AND (__table1.u > 3) AND (__table1.u < 10)
+WHERE and(less(__table1.i, 3), greater(__table1.u, 3), less(__table1.u, 10))
 SETTINGS optimize_redundant_comparisons = 1
 transitive_infer
 SELECT
@@ -1192,7 +1192,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > __table1.u) AND (__table1.u > 2) AND (__table1.i > 2)
+WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), greater(__table1.i, 2))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1202,7 +1202,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > __table1.u) AND (__table1.u > 2) AND (__table1.i > 2)
+WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), greater(__table1.i, 2))
 SETTINGS optimize_redundant_comparisons = 1
 transitive_eq_chain
 SELECT
@@ -1213,7 +1213,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = __table1.u) AND (__table1.u = 3) AND (__table1.i = 3)
+WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), equals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1223,7 +1223,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = __table1.u) AND (__table1.u = 3) AND (__table1.i = 3)
+WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), equals(__table1.i, 3))
 SETTINGS optimize_redundant_comparisons = 1
 mixed_operands
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1236,7 +1236,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5) AND notEmpty(__table1.s)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), notEmpty(__table1.s))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1246,7 +1246,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > 1) AND (__table1.i < 5) AND notEmpty(__table1.s)
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), notEmpty(__table1.s))
 SETTINGS optimize_redundant_comparisons = 1
 ne_chain_not_in
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -1259,7 +1259,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i NOT IN (1, 3, 7)
+WHERE notIn(__table1.i, (1, 3, 7))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1269,7 +1269,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i NOT IN (1, 3, 7)
+WHERE notIn(__table1.i, (1, 3, 7))
 SETTINGS optimize_redundant_comparisons = 1
 ne_chain_dedup
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -1282,7 +1282,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i NOT IN (1, 3)
+WHERE notIn(__table1.i, (1, 3))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1292,7 +1292,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i NOT IN (1, 3)
+WHERE notIn(__table1.i, (1, 3))
 SETTINGS optimize_redundant_comparisons = 1
 single
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1305,7 +1305,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1315,7 +1315,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE __table1.i = 3
+WHERE equals(__table1.i, 3)
 SETTINGS optimize_redundant_comparisons = 1
 non_const
 SELECT
@@ -1326,7 +1326,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > __table1.u) AND (__table1.i < __table1.u)
+WHERE and(greater(__table1.i, __table1.u), less(__table1.i, __table1.u))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1336,7 +1336,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i > __table1.u) AND (__table1.i < __table1.u)
+WHERE and(greater(__table1.i, __table1.u), less(__table1.i, __table1.u))
 SETTINGS optimize_redundant_comparisons = 1
 null_safe
 SELECT
@@ -1347,7 +1347,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND _CAST(NULL, \'Nullable(Nothing)\')
+WHERE and(equals(__table1.i, 3), greater(__table1.i, _CAST(NULL, \'Nullable(Nothing)\')))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -1357,25 +1357,25 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i = 3) AND _CAST(NULL, \'Nullable(Nothing)\')
+WHERE and(equals(__table1.i, 3), greater(__table1.i, _CAST(NULL, \'Nullable(Nothing)\')))
 SETTINGS optimize_redundant_comparisons = 1
 non_deterministic
 SELECT count() AS `count()`
 FROM numbers(1) AS __table1
-WHERE ((rand() % 2) < 1) AND ((rand() % 2) >= 1)
+WHERE and(less(modulo(rand(), 2), 1), greaterOrEquals(modulo(rand(), 2), 1))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT count() AS `count()`
 FROM numbers(1) AS __table1
-WHERE ((rand() % 2) < 1) AND ((rand() % 2) >= 1)
+WHERE and(less(modulo(rand(), 2), 1), greaterOrEquals(modulo(rand(), 2), 1))
 SETTINGS optimize_redundant_comparisons = 1
 non_deterministic_transitive
 SELECT count() AS `count()`
 FROM numbers(1) AS __table1
-WHERE ((rand() % 2) = (__table1.number % 2)) AND ((rand() % 2) = 1) AND ((__table1.number % 2) = 0)
+WHERE and(equals(modulo(rand(), 2), modulo(__table1.number, 2)), equals(modulo(rand(), 2), 1), equals(modulo(__table1.number, 2), 0))
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1
 SELECT count() AS `count()`
 FROM numbers(1) AS __table1
-WHERE ((rand() % 2) = (__table1.number % 2)) AND ((rand() % 2) = 1) AND ((__table1.number % 2) = 0)
+WHERE and(equals(modulo(rand(), 2), modulo(__table1.number, 2)), equals(modulo(rand(), 2), 1), equals(modulo(__table1.number, 2), 0))
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1
 nan_guard
 0
