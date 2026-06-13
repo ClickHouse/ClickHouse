@@ -17,11 +17,14 @@ DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 #  - row group 1: '1000' .. '1049'
 #  - row group 2: '2000' .. '2049'
 # Each value set is tiny, so the writer dictionary-encodes the column.
+# `max_block_size` is pinned so the data arrives in a single block and the writer splits it into row
+# groups deterministically; otherwise the randomized `max_block_size` shifts the row group
+# boundaries, the per-row-group value sets stop being disjoint, and the expected row counts change.
 ${CLICKHOUSE_CLIENT} --query="
     insert into function file('${DATA_FILE}', Parquet)
     select number as n, toString(intDiv(number, 10000) * 1000 + (number % 50)) as category
     from numbers(30000)
-    settings output_format_parquet_row_group_size = 10000, engine_file_truncate_on_insert = 1;
+    settings output_format_parquet_row_group_size = 10000, engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
 # Disable the other row-group/page filters so we observe the dictionary filter in isolation.
