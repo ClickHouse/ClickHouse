@@ -84,3 +84,34 @@ def test_query_result_cache_survives_restart():
     result = run_cached(MULTILINE_QUERY, "qrc_disk_after_restart")
     assert result == expected
     assert cache_hits_for("qrc_disk_after_restart") == 1
+
+
+# A JOIN that replicates a single left row across several matching right rows. With
+# `enable_lazy_columns_replication` (on by default) the left string column is materialized
+# lazily as a `ColumnReplicated`. When such a result is compressed and written to the on-disk
+# tier, the replicated column is hidden inside a compressed column; `NativeWriter` de-replicates
+# before it decompresses, so the `ColumnReplicated` reconstructed by decompression used to reach
+# the serialization unchanged and trigger a "Bad cast" logical error. The replicated column must
+# be materialized before compression so the result is persisted and served after a restart.
+REPLICATED_COLUMN_QUERY = """SELECT l.s
+FROM (SELECT materialize('replicated value') AS s, 1 AS k) AS l
+INNER JOIN (SELECT arrayJoin([1, 1, 1]) AS k) AS r ON l.k = r.k
+ORDER BY l.s"""
+
+
+def test_query_result_cache_on_disk_replicated_columns():
+    node.query("SYSTEM DROP QUERY CACHE")
+
+    # First execution: the result contains a replicated column and is written through to disk.
+    expected = run_cached(REPLICATED_COLUMN_QUERY, "qrc_disk_replicated_first")
+    assert expected != ""
+    assert cache_on_disk_entries() >= 1
+
+    # Restart wipes the in-memory cache; the on-disk tier must repopulate it.
+    node.restart_clickhouse()
+    assert cache_on_disk_entries() >= 1
+
+    # Served from disk after the restart; the materialized result must match exactly.
+    result = run_cached(REPLICATED_COLUMN_QUERY, "qrc_disk_replicated_after_restart")
+    assert result == expected
+    assert cache_hits_for("qrc_disk_replicated_after_restart") == 1

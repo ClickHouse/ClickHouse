@@ -1250,6 +1250,21 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
 
     /// To keep the file format simple, squash the result chunks to a single chunk.
     chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
+
+    /// Replicated columns (produced by lazy replication in JOIN / ARRAY JOIN) must be materialized before the columns are
+    /// compressed and serialized. `NativeWriter` de-replicates a column before decompressing it, so for a compressed column it
+    /// never sees the `ColumnReplicated` that `decompress` reconstructs (see `ColumnReplicated::compress`); the replicated column
+    /// then reaches the serialization unchanged and triggers a "Bad cast" logical error. Materializing here, before compression,
+    /// guarantees that only full columns are ever persisted.
+    for (auto & chunk : chunks)
+    {
+        const size_t num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfReplicated();
+        chunk.setColumns(std::move(columns), num_rows);
+    }
+
     if (key.is_compressed)
         chunks = compressChunks(chunks);
 
