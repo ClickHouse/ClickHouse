@@ -860,6 +860,57 @@ def test_quoting_publication(started_cluster):
     )
 
 
+def test_use_extended_date_and_time_types_setting(started_cluster):
+    # https://github.com/ClickHouse/ClickHouse/issues/43153
+    # By default PostgreSQL `date`/`timestamp` map to ClickHouse Date32/DateTime64 (wider range).
+    # materialized_postgresql_use_extended_date_and_time_types = 0 falls back to Date/DateTime.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_date_types")
+    cursor.execute(
+        "CREATE TABLE test_date_types (key integer PRIMARY KEY, d date, t timestamp)"
+    )
+    cursor.execute(
+        "INSERT INTO test_date_types VALUES (1, '2000-05-12', '2000-05-12 12:12:12.012345')"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_date_types'",
+            "materialized_postgresql_use_extended_date_and_time_types = 0",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    assert_eq_with_retry(
+        instance, "SELECT count() FROM test_database.test_date_types", "1"
+    )
+
+    assert "Date" == instance.query(
+        "SELECT type FROM system.columns WHERE database='test_database' "
+        "AND table='test_date_types' AND name='d'"
+    ).strip()
+    assert "DateTime" == instance.query(
+        "SELECT type FROM system.columns WHERE database='test_database' "
+        "AND table='test_date_types' AND name='t'"
+    ).strip()
+    assert "2000-05-12\t2000-05-12 12:12:12" == instance.query(
+        "SELECT d, t FROM test_database.test_date_types WHERE key = 1"
+    ).strip()
+
+    # Ongoing replication must keep working with the narrower types.
+    cursor.execute(
+        "INSERT INTO test_date_types VALUES (2, '2020-01-01', '2020-01-01 01:02:03')"
+    )
+    assert_eq_with_retry(
+        instance, "SELECT count() FROM test_database.test_date_types", "2"
+    )
+
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_date_types")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
