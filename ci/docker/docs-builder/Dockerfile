@@ -4,7 +4,6 @@ FROM node:22-bookworm-slim
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-    awscli \
     git \
     openssh-client \
     python3 \

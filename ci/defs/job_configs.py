@@ -1395,8 +1395,10 @@ class JobConfigs:
                 "./docs/en/",
             ],
         ),
-        # --network=host required for ec2 metadata http endpoint (aws cli auth) to work
-        run_in_docker="clickhouse/docs-builder+--network=host",
+        run_in_docker="clickhouse/docs-builder",
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/docs/trigger_mintlify_preview.py",
+        ],
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
