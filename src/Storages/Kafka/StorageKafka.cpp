@@ -106,11 +106,6 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-namespace ActionLocks
-{
-    extern const StorageActionBlockType StreamConsume;
-}
-
 class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
 {
 public:
@@ -179,7 +174,7 @@ StorageKafka::StorageKafka(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStorage(table_id_)
+    : StreamingBackgroundControlOwner(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
@@ -307,36 +302,12 @@ void StorageKafka::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
-ActionLock StorageKafka::getActionLock(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        return stream_control.block();
-    return {};
-}
-
-void StorageKafka::onActionLockRemove(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        triggerBackgroundActivity();
-}
-
-void StorageKafka::triggerBackgroundActivity()
+void StorageKafka::scheduleStreamingTasks()
 {
     if (shutdown_called)
         return;
     for (auto & task : tasks)
         task->holder->schedule();
-}
-
-void StorageKafka::refreshBackgroundActivity()
-{
-    stream_control.requestRefreshOnce();
-    triggerBackgroundActivity();
-}
-
-void StorageKafka::cancelBackgroundActivity()
-{
-    stream_control.requestCancel();
 }
 
 
@@ -681,6 +652,8 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else if (num_views)
+            LOG_DEBUG(log, "Consumption is stopped");
         else
             LOG_DEBUG(log, "No attached views");
 

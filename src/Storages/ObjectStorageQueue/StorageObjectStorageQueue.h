@@ -13,7 +13,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StreamingBackgroundControl.h>
+#include <Storages/StreamingBackgroundControlOwner.h>
 #include <base/defines.h>
 
 
@@ -22,7 +22,7 @@ namespace DB
 class ObjectStorageQueueMetadata;
 struct ObjectStorageQueueSettings;
 
-class StorageObjectStorageQueue : public IStorage, WithContext
+class StorageObjectStorageQueue : public StreamingBackgroundControlOwner, WithContext
 {
 public:
     StorageObjectStorageQueue(
@@ -40,17 +40,7 @@ public:
 
     String getName() const override { return engine_name; }
 
-    bool isStreamingStorage() const override { return true; }
-
     ObjectStorageType getType() { return type; }
-
-    ActionLock getActionLock(StorageActionBlockType action_type) override;
-    void onActionLockRemove(StorageActionBlockType action_type) override;
-    void triggerBackgroundActivity() override;
-    void refreshBackgroundActivity() override;
-    void cancelBackgroundActivity() override;
-    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
-    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     void read(
         QueryPlan & query_plan,
@@ -171,7 +161,7 @@ private:
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
 
-    StreamingBackgroundControl stream_control;
+    void scheduleStreamingTasks() override;
 
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;

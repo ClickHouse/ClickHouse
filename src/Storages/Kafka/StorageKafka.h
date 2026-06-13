@@ -5,7 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/Kafka_fwd.h>
-#include <Storages/StreamingBackgroundControl.h>
+#include <Storages/StreamingBackgroundControlOwner.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -34,7 +34,7 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStorage, WithContext
+class StorageKafka final : public StreamingBackgroundControlOwner, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
     friend KafkaInterceptors;
@@ -54,20 +54,10 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
-    bool isStreamingStorage() const override { return true; }
-
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    ActionLock getActionLock(StorageActionBlockType action_type) override;
-    void onActionLockRemove(StorageActionBlockType action_type) override;
-    void triggerBackgroundActivity() override;
-    void refreshBackgroundActivity() override;
-    void cancelBackgroundActivity() override;
-    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
-    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -169,7 +159,7 @@ private:
 
     std::atomic<bool> shutdown_called = false;
 
-    StreamingBackgroundControl stream_control;
+    void scheduleStreamingTasks() override;
 
     void threadFunc(size_t idx);
 

@@ -52,6 +52,7 @@ namespace NATSSetting
 {
     extern const NATSSettingsString nats_credential_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
+    extern const NATSSettingsBool nats_wait_for_flush_interval;
     extern const NATSSettingsString nats_format;
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
@@ -86,11 +87,6 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
 }
 
-namespace ActionLocks
-{
-    extern const StorageActionBlockType StreamConsume;
-}
-
 
 StorageNATS::StorageNATS(
     const StorageID & table_id_,
@@ -99,7 +95,7 @@ StorageNATS::StorageNATS(
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode)
-    : IStorage(table_id_)
+    : StreamingBackgroundControlOwner(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
     , subjects(parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_subjects]), ','))
@@ -471,35 +467,11 @@ void StorageNATS::startup()
     initialize_consumers_task->activateAndSchedule();
 }
 
-ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        return stream_control.block();
-    return {};
-}
-
-void StorageNATS::onActionLockRemove(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        triggerBackgroundActivity();
-}
-
-void StorageNATS::triggerBackgroundActivity()
+void StorageNATS::scheduleStreamingTasks()
 {
     if (shutdown_called)
         return;
     streaming_task->schedule();
-}
-
-void StorageNATS::refreshBackgroundActivity()
-{
-    stream_control.requestRefreshOnce();
-    triggerBackgroundActivity();
-}
-
-void StorageNATS::cancelBackgroundActivity()
-{
-    stream_control.requestCancel();
 }
 
 
@@ -704,7 +676,7 @@ void StorageNATS::threadFunc()
     if (num_views != 0)
     {
         /// While paused/stopped the loop above does no work, so reschedule with a delay to avoid
-        /// busy-looping; SYSTEM START reschedules it promptly via `triggerBackgroundActivity`.
+        /// busy-looping; SYSTEM START reschedules it promptly via `scheduleStreamingTasks`.
         if (consumers_queues_are_empty || stream_control.isBlocked())
             streaming_task->scheduleAfter(RESCHEDULE_MS);
         else
@@ -782,10 +754,9 @@ bool StorageNATS::streamToViews()
             : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         source->setTimeLimit(max_execution_time);
-        /// Only hold blocks open for the whole flush interval when it was requested explicitly (and
-        /// is a finite, positive interval); the default keeps the low-latency "flush as soon as the
-        /// queue drains" behaviour.
-        source->setWaitForFlushInterval(flush_interval_set && max_execution_time.totalMicroseconds() > 0);
+        /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
+        source->setWaitForFlushInterval(
+            (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));

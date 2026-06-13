@@ -603,13 +603,9 @@ public:
     /// Call when lock from previous method removed
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 
-    /// Trigger an out-of-order run of the table's background activity now.
-    /// Also used to resume promptly after SYSTEM START. No-op for tables without such activity.
-    virtual void triggerBackgroundActivity() {}
-
     /// Run exactly one unit of background activity now (without resuming further activity).
     /// No-op for tables without such activity.
-    virtual void refreshBackgroundActivity() { triggerBackgroundActivity(); }
+    virtual void refreshBackgroundActivity() {}
 
     /// Abort the in-flight unit of background activity without blocking future ones, discarding its
     /// uncommitted result so it is retried later. No-op for tables without such activity.

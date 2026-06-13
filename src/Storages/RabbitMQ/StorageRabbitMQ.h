@@ -9,7 +9,7 @@
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Storages/StreamingBackgroundControl.h>
+#include <Storages/StreamingBackgroundControlOwner.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -21,7 +21,7 @@ namespace DB
 struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
-class StorageRabbitMQ final: public IStorage, WithContext
+class StorageRabbitMQ final: public StreamingBackgroundControlOwner, WithContext
 {
 public:
     StorageRabbitMQ(
@@ -38,20 +38,10 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
-    bool isStreamingStorage() const override { return true; }
-
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    ActionLock getActionLock(StorageActionBlockType action_type) override;
-    void onActionLockRemove(StorageActionBlockType action_type) override;
-    void triggerBackgroundActivity() override;
-    void refreshBackgroundActivity() override;
-    void cancelBackgroundActivity() override;
-    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
-    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -171,7 +161,7 @@ private:
     std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
-    StreamingBackgroundControl stream_control;
+    void scheduleStreamingTasks() override;
 
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which

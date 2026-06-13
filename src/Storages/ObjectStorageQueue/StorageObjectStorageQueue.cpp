@@ -154,11 +154,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-namespace ActionLocks
-{
-    extern const StorageActionBlockType StreamConsume;
-}
-
 namespace
 {
     void validateSettings(
@@ -273,7 +268,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
     bool keep_data_in_keeper_)
-    : IStorage(table_id_)
+    : StreamingBackgroundControlOwner(table_id_)
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
@@ -536,36 +531,12 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     LOG_TRACE(log, "Shut down storage");
 }
 
-ActionLock StorageObjectStorageQueue::getActionLock(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        return stream_control.block();
-    return {};
-}
-
-void StorageObjectStorageQueue::onActionLockRemove(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        triggerBackgroundActivity();
-}
-
-void StorageObjectStorageQueue::triggerBackgroundActivity()
+void StorageObjectStorageQueue::scheduleStreamingTasks()
 {
     if (shutdown_called)
         return;
     for (auto & task : streaming_tasks)
         task->schedule();
-}
-
-void StorageObjectStorageQueue::refreshBackgroundActivity()
-{
-    stream_control.requestRefreshOnce();
-    triggerBackgroundActivity();
-}
-
-void StorageObjectStorageQueue::cancelBackgroundActivity()
-{
-    stream_control.requestCancel();
 }
 
 void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)

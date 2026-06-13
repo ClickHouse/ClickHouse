@@ -136,11 +136,6 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 extern const int TIMEOUT_EXCEEDED;
 }
 
-namespace ActionLocks
-{
-    extern const StorageActionBlockType StreamConsume;
-}
-
 namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
@@ -153,7 +148,7 @@ StorageKafka2::StorageKafka2(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStorage(table_id_)
+    : StreamingBackgroundControlOwner(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
@@ -589,36 +584,12 @@ void StorageKafka2::startup()
     activating_task->activateAndSchedule();
 }
 
-ActionLock StorageKafka2::getActionLock(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        return stream_control.block();
-    return {};
-}
-
-void StorageKafka2::onActionLockRemove(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        triggerBackgroundActivity();
-}
-
-void StorageKafka2::triggerBackgroundActivity()
+void StorageKafka2::scheduleStreamingTasks()
 {
     if (shutdown_called)
         return;
     for (auto & task : tasks)
         task->holder->schedule();
-}
-
-void StorageKafka2::refreshBackgroundActivity()
-{
-    stream_control.requestRefreshOnce();
-    triggerBackgroundActivity();
-}
-
-void StorageKafka2::cancelBackgroundActivity()
-{
-    stream_control.requestCancel();
 }
 
 
@@ -1269,6 +1240,8 @@ void StorageKafka2::threadFunc(size_t idx)
                 }
             }
         }
+        else if (num_views)
+            LOG_DEBUG(log, "Consumption is stopped");
     }
     catch (...)
     {

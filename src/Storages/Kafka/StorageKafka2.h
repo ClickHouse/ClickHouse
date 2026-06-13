@@ -9,7 +9,7 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
-#include <Storages/StreamingBackgroundControl.h>
+#include <Storages/StreamingBackgroundControlOwner.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -55,7 +55,7 @@ class ThreadStatus;
 ///
 /// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
-class StorageKafka2 final : public IStorage, WithContext
+class StorageKafka2 final : public StreamingBackgroundControlOwner, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
@@ -85,20 +85,10 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
-    bool isStreamingStorage() const override { return true; }
-
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    ActionLock getActionLock(StorageActionBlockType action_type) override;
-    void onActionLockRemove(StorageActionBlockType action_type) override;
-    void triggerBackgroundActivity() override;
-    void refreshBackgroundActivity() override;
-    void cancelBackgroundActivity() override;
-    UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
-    bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
     void drop() override;
 
@@ -182,7 +172,8 @@ private:
     String collection_name;
     std::atomic<bool> shutdown_called = false;
 
-    StreamingBackgroundControl stream_control;
+    void scheduleStreamingTasks() override;
+
     /// Number of background streaming threads currently consuming for materialized views.
     /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
     /// Uses a counter instead of a boolean because with thread_per_consumer=1,

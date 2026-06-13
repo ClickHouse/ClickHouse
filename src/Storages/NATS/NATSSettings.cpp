@@ -33,6 +33,7 @@ namespace ErrorCodes
     DECLARE(UInt64, nats_skip_broken_messages, 0, "Skip at least this number of broken messages from NATS per block", 0) \
     DECLARE(UInt64, nats_max_block_size, 0, "Number of row collected before flushing data from NATS.", 0) \
     DECLARE(Milliseconds, nats_flush_interval_ms, 0, "Timeout for flushing data from NATS.", 0) \
+    DECLARE(Bool, nats_wait_for_flush_interval, false, "If true, a streaming cycle stays open for the whole flush interval instead of finishing as soon as the consumer queue drains, batching more messages per block at the cost of latency.", 0) \
     DECLARE(String, nats_username, "", "NATS username", 0) \
     DECLARE(String, nats_password, "", "NATS password", 0) \
     DECLARE(String, nats_token, "", "NATS token", 0) \

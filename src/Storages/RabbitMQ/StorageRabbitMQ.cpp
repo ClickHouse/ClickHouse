@@ -100,11 +100,6 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
 }
 
-namespace ActionLocks
-{
-    extern const StorageActionBlockType StreamConsume;
-}
-
 namespace ExchangeType
 {
     /// Note that default here means default by implementation and not by rabbitmq settings
@@ -125,7 +120,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & comment,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
         LoadingStrictnessLevel mode)
-        : IStorage(table_id_)
+        : StreamingBackgroundControlOwner(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_exchange_name]))
@@ -901,35 +896,11 @@ void StorageRabbitMQ::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
-ActionLock StorageRabbitMQ::getActionLock(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        return stream_control.block();
-    return {};
-}
-
-void StorageRabbitMQ::onActionLockRemove(StorageActionBlockType action_type)
-{
-    if (action_type == ActionLocks::StreamConsume)
-        triggerBackgroundActivity();
-}
-
-void StorageRabbitMQ::triggerBackgroundActivity()
+void StorageRabbitMQ::scheduleStreamingTasks()
 {
     if (shutdown_called)
         return;
     streaming_task->schedule();
-}
-
-void StorageRabbitMQ::refreshBackgroundActivity()
-{
-    stream_control.requestRefreshOnce();
-    triggerBackgroundActivity();
-}
-
-void StorageRabbitMQ::cancelBackgroundActivity()
-{
-    stream_control.requestCancel();
 }
 
 
