@@ -59,12 +59,17 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsString disk;
@@ -258,7 +263,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     if (has_valid_arguments)
     {
-        bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+        bool is_replicated_database = local_context->isDDLOrOnClusterInternal() &&
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
 
         /// Get path and name from engine arguments
@@ -315,7 +320,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         /// TODO maybe use hostname if {replica} is not defined?
 
         /// Modify query, so default values will be written to metadata
-        assert(arg_num == 0);
+        chassert(arg_num == 0);
         ASTs old_args;
         std::swap(engine_args, old_args);
         auto path_arg = make_intrusive<ASTLiteral>("");
@@ -809,7 +814,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
-        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
+        /// We use the local (query) context here so that user-level settings profiles can control
+        /// access to dynamic disk features such as `from_env`, `include`, and `from_zk`
+        /// (settings `dynamic_disk_allow_from_env`, `dynamic_disk_allow_include`, `dynamic_disk_allow_from_zk`).
+        /// When loading from existing metadata (`FORCE_ATTACH` / `FORCE_RESTORE`, e.g. server
+        /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
+        /// intentionally skipped because the disk configuration was already validated when the
+        /// table was originally created.
+        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
+        /// still be subject to these checks.
+        storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
@@ -844,6 +858,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+        metadata.add_minmax_index_for_block_number_column = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_number_column] && (*storage_settings)[MergeTreeSetting::enable_block_number_column];
+        metadata.add_minmax_index_for_block_offset_column = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_offset_column] && (*storage_settings)[MergeTreeSetting::enable_block_offset_column];
         metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
@@ -852,8 +868,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
-                auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-                    || metadata.add_minmax_index_for_temporal_columns;
+                auto using_auto_minmax_index =
+                       metadata.add_minmax_index_for_numeric_columns
+                    || metadata.add_minmax_index_for_string_columns
+                    || metadata.add_minmax_index_for_temporal_columns
+                    || metadata.add_minmax_index_for_block_number_column
+                    || metadata.add_minmax_index_for_block_offset_column;
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -880,6 +900,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.addImplicitIndicesForColumn(column, context);
         }
+        metadata.addImplicitIndicesForVirtualColumns(context);
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
@@ -894,7 +915,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context);
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1014,6 +1035,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
+    /// Only SummingMergeTree, AggregatingMergeTree and CoalescingMergeTree understand
+    /// `allow_tuple_element_aggregation`. For other engines the setting is silently
+    /// ignored so that the default value can be flipped on without breaking them.
+    if (merging_params.mode == MergeTreeData::MergingParams::Summing
+        || merging_params.mode == MergeTreeData::MergingParams::Aggregating
+        || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
+    {
+        merging_params.allow_tuple_element_aggregation
+            = (*storage_settings)[MergeTreeSetting::allow_tuple_element_aggregation];
+    }
+    else
+    {
+        merging_params.allow_tuple_element_aggregation = false;
+    }
+
     if (replicated)
     {
         bool need_check_table_structure = true;
@@ -1052,6 +1088,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
+void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

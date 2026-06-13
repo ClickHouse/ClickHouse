@@ -14,6 +14,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -152,6 +153,7 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
+    extern const Event FileProgressCallbackInvocations;
 }
 
 namespace DB::ErrorCodes
@@ -269,7 +271,8 @@ struct TurnOffBoolSettingTemporary
     }
 };
 
-Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+Block convertColumnsToBLOBs(
+    const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings, bool remove_low_cardinality)
 {
     if (block.empty() || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
@@ -284,7 +287,16 @@ Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt
     {
         ColumnWithTypeAndName column = elem;
         if (!elem.column->isConst() && !isTuple(elem.type->getTypeId()))
+        {
+            /// NativeWriter will announce LowCardinality-stripped types on the wire,
+            /// so the blob must contain data serialized with the stripped type as well.
+            if (remove_low_cardinality)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+                column.type = recursiveRemoveLowCardinality(column.type);
+            }
             column.column = ColumnBLOB::create(column, codec, client_revision, format_settings);
+        }
         res.insert(std::move(column));
     }
     return res;
@@ -825,11 +837,13 @@ void TCPHandler::runImpl()
             query_state->query_context->setBlockMarshallingCallback(
                 [this, &query_state](const Block & block)
                 {
+                    const auto & query_settings = query_state->query_context->getSettingsRef();
                     return convertColumnsToBLOBs(
                         block,
-                        getCompressionCodec(query_state->query_context->getSettingsRef(), query_state->compression),
+                        getCompressionCodec(query_settings, query_state->compression),
                         client_tcp_protocol_version,
-                        getFormatSettings(query_state->query_context));
+                        getFormatSettings(query_state->query_context),
+                        !query_settings[Setting::low_cardinality_allow_in_native_format]);
                 });
 
             query_state->query_context->setInteractiveCancelCallback(
@@ -936,7 +950,7 @@ void TCPHandler::runImpl()
         {
             exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
-// Server should die on std logic errors in debug, like with assert()
+// Server should die on std logic errors in debug, like with chassert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in tests.
 #ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
@@ -1238,7 +1252,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
             {
-                bool empty_block;
+                bool empty_block = false;
                 if (state.skipping_data)
                     empty_block = !processUnexpectedData();
                 else
@@ -1446,7 +1460,8 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
             {
                 std::lock_guard lock(*callback_mutex);
-                sendProgress(state);
+                if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
+                    sendProgress(state);
                 sendInsertProfileEvents(state);
             }
             return;
@@ -1470,7 +1485,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
-    sendProgress(state);
     sendInsertProfileEvents(state);
 }
 
@@ -1586,7 +1600,7 @@ void TCPHandler::processTablesStatusRequest()
     }
     else
     {
-        assert(session);
+        chassert(session);
         context_to_resolve_table_names = session->sessionContext();
     }
 
@@ -2103,7 +2117,7 @@ void TCPHandler::receiveAddendum()
 
 void TCPHandler::processUnexpectedHello()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
@@ -2129,22 +2143,60 @@ void TCPHandler::sendHello()
         writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
+    /// Reject oversized config-driven Hello fields at the server boundary so the
+    /// operator sees which setting is misconfigured, rather than a downstream
+    /// `UNEXPECTED_PACKET_FROM_SERVER` on the client.
+    auto check_hello_field_size = [](const String & value, const String & setting_name)
+    {
+        if (value.size() > DBMS_MAX_HELLO_STRING_SIZE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Server config setting <{}> is {} bytes, maximum allowed in Hello is {}. "
+                "Shorten the value.",
+                setting_name, value.size(), DBMS_MAX_HELLO_STRING_SIZE);
+    };
+
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    {
+        check_hello_field_size(server_display_name, "display_name");
         writeStringBinary(server_display_name, *out);
+    }
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
     {
-        writeStringBinary(server.config().getString("proto_caps.send", "notchunked"), *out);
-        writeStringBinary(server.config().getString("proto_caps.recv", "notchunked"), *out);
+        const auto proto_send = server.config().getString("proto_caps.send", "notchunked");
+        const auto proto_recv = server.config().getString("proto_caps.recv", "notchunked");
+        check_hello_field_size(proto_send, "proto_caps.send");
+        check_hello_field_size(proto_recv, "proto_caps.recv");
+        writeStringBinary(proto_send, *out);
+        writeStringBinary(proto_recv, *out);
     }
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
 
+        /// Mirror the client-side cap so a misconfiguration fails at the server's own
+        /// boundary with a message pointing at the config, rather than producing an
+        /// `UNEXPECTED_PACKET_FROM_SERVER` on the client.
+        if (rules.size() > DBMS_MAX_PASSWORD_COMPLEXITY_RULES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Configured {} password-complexity rules, maximum allowed is {}. "
+                "Reduce the number of <password_complexity> entries in the server config.",
+                rules.size(), DBMS_MAX_PASSWORD_COMPLEXITY_RULES);
+
         writeVarUInt(rules.size(), *out);
         for (const auto & [original_pattern, exception_message] : rules)
         {
+            /// Same per-string cap the client enforces on receive; fail at the
+            /// server boundary so the operator fixes the offending entry instead
+            /// of seeing a downstream client-side rejection.
+            if (original_pattern.size() > DBMS_MAX_HELLO_STRING_SIZE
+                || exception_message.size() > DBMS_MAX_HELLO_STRING_SIZE)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Password-complexity rule pattern or message exceeds the maximum "
+                    "size of {} bytes. Shorten the offending <password_complexity> "
+                    "entry in the server config.",
+                    DBMS_MAX_HELLO_STRING_SIZE);
             writeStringBinary(original_pattern, *out);
             writeStringBinary(exception_message, *out);
         }
@@ -2263,7 +2315,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (part_uuids_to_ignore.has_value())
         state->part_uuids_to_ignore = std::move(part_uuids_to_ignore);
 
-    readStringBinary(state->query_id, *in);
+    readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 
     /// In interserver mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
@@ -2375,7 +2427,12 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        std::string data(salt);
+        /// `StringWithMemoryTracking` so the duplicate of the (potentially
+        /// large) query body that the hash needs goes through the throwing
+        /// memory-tracker path. With a plain `std::string` the append below
+        /// would allocate through `allocNoThrow` and could push the server
+        /// past `max_server_memory_usage` without throwing.
+        StringWithMemoryTracking data(salt);
         // For backward compatibility
         if (nonce.has_value())
             data += std::to_string(nonce.value());
@@ -2386,7 +2443,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         data += received_extra_roles;
 
         std::string calculated_hash = encodeSHA256(data);
-        assert(calculated_hash.size() == 32);
+        chassert(calculated_hash.size() == 32);
 
         /// TODO maybe also check that peer address actually belongs to the cluster?
         if (calculated_hash != received_hash)
@@ -2459,6 +2516,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             auto current_state = state_wptr.lock();
             if (!current_state)
                 return;
+            ProfileEvents::increment(ProfileEvents::FileProgressCallbackInvocations);
             this->updateProgress(*current_state, Progress(value));
         });
 
@@ -2468,11 +2526,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             auto current_state = state_wptr.lock();
             if (!current_state)
                 return block;
+            const auto & query_settings = current_state->query_context->getSettingsRef();
             return convertColumnsToBLOBs(
                 block,
-                getCompressionCodec(current_state->query_context->getSettingsRef(), current_state->compression),
+                getCompressionCodec(query_settings, current_state->compression),
                 client_tcp_protocol_version,
-                getFormatSettings(current_state->query_context));
+                getFormatSettings(current_state->query_context),
+                !query_settings[Setting::low_cardinality_allow_in_native_format]);
         });
 
     ///
@@ -2536,7 +2596,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
 void TCPHandler::processUnexpectedQuery()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in);

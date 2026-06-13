@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
@@ -69,6 +70,9 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int BACKUP_ENTRY_NOT_FOUND;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -76,7 +80,7 @@ namespace FailPoints
     extern const char backup_add_empty_memory_table[];
 }
 
-class MemorySink : public SinkToStorage
+class MemorySink final : public SinkToStorage
 {
 public:
     MemorySink(
@@ -244,6 +248,30 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
+
+    /// `Memory` tables do not own patch parts (lightweight update support is provided only by
+    /// engines from the `MergeTree` family) and do not maintain a `_row_exists` deletion mask.
+    /// `APPLY PATCHES` / `APPLY DELETED MASK` are therefore semantic no-ops here: the post-state
+    /// the user is asking for ("all patches applied", "deleted rows physically removed") is
+    /// already satisfied trivially. Filtering them out before constructing the mutation pipeline
+    /// avoids reaching `MutationsInterpreter` with a command set that has no stages to apply to
+    /// the in-memory blocks. The previous code path produced N output blocks with 0 rows each
+    /// (matching the input block count but empty), which then failed the partial-column
+    /// invariant check at the bottom of this function with
+    /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    MutationCommands commands_to_run;
+    commands_to_run.reserve(commands.size());
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::APPLY_PATCHES
+         || command.type == MutationCommand::APPLY_DELETED_MASK)
+            continue;
+        commands_to_run.push_back(command);
+    }
+
+    if (commands_to_run.empty())
+        return;
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
@@ -255,7 +283,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     MutationsInterpreter::Settings settings(true);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands_to_run, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
@@ -270,31 +298,79 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
+    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
+    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
+    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
+    const auto final_status = executor.getExecutionStatus();
+    const bool cancelled
+        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
+
+    auto throw_on_cancellation = [&]
+    {
+        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+    };
+
     std::unique_ptr<Blocks> new_data;
 
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
+        /// Replacing the entire data set: we cannot validate completeness precisely (some mutations
+        /// legitimately change the block count). Fail-close on cancellation rather than silently
+        /// swap in a possibly-truncated result.
+        if (cancelled)
+            throw_on_cancellation();
         new_data = std::make_unique<Blocks>(out);
     }
     else
     {
         /// just some of the column affected, we need update it with new column
-        new_data = std::make_unique<Blocks>(*(data.get()));
+        const auto & old_data = *(data.get());
+        /// Partial-column mutations preserve the input block count *and* per-block row counts.
+        /// Both shape checks are required before suppressing a late cancellation flag, because
+        /// `PullingPipelineExecutor::pull(Block)` can return `true` with an empty block on
+        /// timeout. A block-count match alone would let that empty trailing block slip past:
+        /// `updateBlockData` no-ops on a block with no columns, silently keeping the
+        /// un-mutated old block.
+        auto reject_incomplete = [&](const String & reason)
+        {
+            if (cancelled)
+                throw_on_cancellation();
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mutation of `Memory` table produced incomplete output: {}",
+                reason);
+        };
+
+        if (out.size() != old_data.size())
+            reject_incomplete(fmt::format(
+                "got {} blocks, expected {}", out.size(), old_data.size()));
+
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            if (out[i].rows() != old_data[i].rows())
+                reject_incomplete(fmt::format(
+                    "block {} has {} rows, expected {}", i, out[i].rows(), old_data[i].rows()));
+        }
+
+        new_data = std::make_unique<Blocks>(old_data);
         auto data_it = new_data->begin();
         auto out_it = out.begin();
 
         while (data_it != new_data->end())
         {
             /// Mutation does not change the number of blocks
-            assert(out_it != out.end());
+            chassert(out_it != out.end());
 
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
 
-        assert(out_it == out.end());
+        chassert(out_it == out.end());
     }
 
     size_t rows = 0;
@@ -631,6 +707,7 @@ std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
     return total_size_bytes.load(std::memory_order_relaxed);
 }
 
+void registerStorageMemory(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory)
 {
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)

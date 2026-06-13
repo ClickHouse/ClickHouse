@@ -467,7 +467,17 @@
       -->
     <async_load_databases>true</async_load_databases>
 
-    <!-- On memory constrained environments you may have to set this to value larger than 1.
+    <!-- The maximum amount of memory the server is allowed to use, as a ratio to the available memory.
+
+         Besides capping the hard memory limit at startup, the background memory worker periodically
+         recomputes the limit at runtime as (resident memory + system available memory) * this ratio,
+         so the server leaves room for other processes on the same host. In a cgroup with a finite
+         memory limit, the cgroup's available memory is used instead of the host-wide value.
+
+         On memory constrained environments you may have to set this to a value larger than 1.
+         A value of 0 disables both the startup cap and the runtime adjustment.
+         To keep only the static cap (the behavior of previous versions), set
+         memory_worker_dynamic_hard_limit to 0.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
 
@@ -1310,18 +1320,6 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
-
-    <!-- Histogram metric log contains periodic snapshots of histogram metrics (e.g. S3/Azure latency distributions, Keeper response times). -->
-    <histogram_metric_log>
-        <database>system</database>
-        <table>histogram_metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
-    </histogram_metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>

@@ -11,7 +11,6 @@
 #    include <boost/algorithm/string/case_conv.hpp>
 #    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 #    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #    include <Interpreters/Context.h>
 
@@ -53,16 +52,20 @@ Chunk ORCBlockInputFormat::read()
 
     auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
+        throwFromArrowStatus(batch_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader");
 
     auto batch = batch_result.ValueOrDie();
     if (!batch)
         return {};
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*batch);
+
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
-        throw Exception(
-            ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
+        throwFromArrowStatus(table_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data");
 
     /// We should extract the number of rows directly from the stripe, because in case when
     /// record batch contains 0 columns (for example if we requested only columns that
@@ -83,7 +86,7 @@ Chunk ORCBlockInputFormat::read()
     if (auto status = file_reader->ReadMetadata(); status.ok())
         metadata = status.ValueOrDie();
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error while reading parquet metadata {}", status.status().message());
+        throwFromArrowStatus(status.status(), ErrorCodes::BAD_ARGUMENTS, "Unexpected error while reading ORC metadata");
 
     return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, metadata, block_missing_values_ptr);
 }
@@ -116,12 +119,12 @@ static void getFileReaderAndSchema(
 
     auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
     if (!result.ok())
-        throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+        throwFromArrowStatus(result.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open ORC file");
     file_reader = std::move(result).ValueOrDie();
 
     auto read_schema_result = file_reader->ReadSchema();
     if (!read_schema_result.ok())
-        throw Exception::createDeprecated(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+        throwFromArrowStatus(read_schema_result.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to read ORC schema");
     schema = std::move(read_schema_result).ValueOrDie();
 }
 
@@ -200,6 +203,7 @@ std::optional<size_t> ORCSchemaReader::readNumberOrRows()
     return file_reader->NumberOfRows();
 }
 
+void registerInputFormatORC(FormatFactory & factory);
 void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -217,9 +221,9 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 const bool has_file_size = isBufferWithFileSize(buf);
                 auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
-                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
+                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_settings.prefetch && has_file_size && seekable_in
                     && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
-                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
+                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
                 res = std::make_shared<NativeORCBlockInputFormat>(
                     buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
             }
@@ -231,6 +235,7 @@ void registerInputFormatORC(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
+void registerORCSchemaReader(FormatFactory & factory);
 void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -259,6 +264,8 @@ void registerORCSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerInputFormatORC(FormatFactory &);
+    void registerORCSchemaReader(FormatFactory &);
     void registerInputFormatORC(FormatFactory &)
     {
     }

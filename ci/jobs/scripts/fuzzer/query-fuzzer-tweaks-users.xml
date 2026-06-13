@@ -48,6 +48,7 @@
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
             <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
             <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
+            <allow_experimental_cleanup_old_data_files_compaction>1</allow_experimental_cleanup_old_data_files_compaction>
             <allow_experimental_codecs>1</allow_experimental_codecs>
             <allow_experimental_correlated_subqueries>1</allow_experimental_correlated_subqueries>
             <allow_experimental_database_glue_catalog>1</allow_experimental_database_glue_catalog>
@@ -58,6 +59,7 @@
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+            <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
             <allow_experimental_expire_snapshots>1</allow_experimental_expire_snapshots>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
             <allow_experimental_geo_types_in_iceberg>1</allow_experimental_geo_types_in_iceberg>
@@ -76,6 +78,7 @@
             <allow_experimental_query_deduplication>1</allow_experimental_query_deduplication>
             <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+            <allow_experimental_unique_key>1</allow_experimental_unique_key>
             <allow_experimental_window_view>1</allow_experimental_window_view>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
@@ -110,6 +113,7 @@
             <enable_materialized_cte>1</enable_materialized_cte>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
+            <enable_streaming_queries>1</enable_streaming_queries>
             <enable_time_time64_type>1</enable_time_time64_type>
             <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>

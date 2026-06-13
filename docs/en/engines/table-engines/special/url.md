@@ -8,8 +8,6 @@ title: 'URL table engine'
 doc_type: 'reference'
 ---
 
-# URL table engine
-
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
 Syntax: `URL(URL [,Format] [,CompressionMethod])`

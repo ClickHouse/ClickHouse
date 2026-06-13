@@ -17,7 +17,6 @@ def only_docs(changed_files):
             file.startswith("docs/")
             or file.startswith("docker/docs")
             or file.endswith(".md")
-            or "aspell-dict.txt" in file
         ):
             continue
         else:
@@ -114,14 +113,6 @@ def should_skip_job(job_name):
             )
         return False, ""
 
-    if job_name == JobNames.PR_BODY:
-        # Run the job if AI assistant is explicitly enabled in the PR body
-        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
-            return True, "AI PR assistant is explicitly disabled in the PR body"
-        if "Reverts ClickHouse/" in _info_cache.pr_body:
-            return True, "Skipped for revert PRs"
-        return False, ""
-
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
         and "build" not in job_name.lower()
@@ -134,13 +125,6 @@ def should_skip_job(job_name):
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
-
-    if (
-        job_name == JobNames.SMOKE_TEST_MACOS
-        and _info_cache.pr_number
-        and Labels.CI_MACOS not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
 
     if (
         JobNames.BUILD_TOOLCHAIN in job_name

@@ -187,8 +187,12 @@ std::optional<String> optimizeUseNormalProjections(
 
     if (!force_optimize_projection)
     {
-        /// /// Skip normal projection analysis if the query has no filter condition
-        if (!query.dag || !query.filter_node)
+        /// A normal projection can help in two ways:
+        ///     1. Pruning rows via a filter
+        ///     2. Providing data already in the order required by an outer ORDER BY (read-in-order).
+        bool has_filter = query.dag && query.filter_node;
+        bool can_use_sort_order = outer_sorting_step && optimization_settings.read_in_order;
+        if (!has_filter && !can_use_sort_order)
             return {};
     }
 
@@ -262,8 +266,12 @@ std::optional<String> optimizeUseNormalProjections(
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
+    /// Clear row_level_filter - it will be included in the prewhere_info below via splitAndFillPrewhereInfo.
+    /// The QueryDAG::build() already collected the RLS filter into query.dag/filter_nodes.
+    /// Keeping row_level_filter here would cause it to be applied twice and fail because
+    /// the projection's sample block doesn't necessarily match the original table's layout.
     projection_query_info.row_level_filter = nullptr;
-    if (query.dag)
+    if (query.dag && query.filter_node)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
