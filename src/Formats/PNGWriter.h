@@ -43,6 +43,9 @@ private:
     [[noreturn]] static void errorCallback(png_struct_def * png_ptr, png_const_charp error_msg);
     [[noreturn]] static void warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg);
 
+    /// Copy a libpng message into `error_message` without allocating (see the note on `error_message`).
+    void saveMessage(png_const_charp message);
+
     void cleanup();
 
     WriteBuffer & out;
@@ -53,7 +56,13 @@ private:
     /// libpng error handling uses `longjmp`, so C++ exceptions must not be thrown through its C frames.
     /// Instead, callbacks save the state here and `longjmp` back to `writeImage`, which rethrows.
     std::exception_ptr saved_exception;
-    std::string error_message;
+
+    /// The error message is stored in a fixed-size buffer rather than a `std::string`, because the error
+    /// callback must not allocate before `png_longjmp`: an allocation failure would throw `std::bad_alloc`
+    /// through libpng's C frames, which is undefined behavior. libpng's own messages are bounded
+    /// (`PNG_MAX_ERROR_TEXT` is 196); a longer message is silently truncated.
+    static constexpr size_t error_message_capacity = 256;
+    char error_message[error_message_capacity] = {};
 
     const size_t width;
     const size_t height;

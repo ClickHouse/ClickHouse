@@ -4,6 +4,9 @@
 
 #include <png.h>
 
+#include <algorithm>
+#include <cstring>
+
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
 
@@ -63,7 +66,7 @@ void PNGWriter::writeImage(const unsigned char * pixels)
         if (saved_exception)
             std::rethrow_exception(saved_exception);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error while encoding image: {}",
-            error_message.empty() ? "unknown" : error_message);
+            error_message[0] ? error_message : "unknown");
     }
 
     png_set_write_fn(png_ptr, this, &PNGWriter::writeDataCallback, &PNGWriter::flushDataCallback);
@@ -133,11 +136,22 @@ void PNGWriter::flushDataCallback(png_struct_def * png_ptr_)
     }
 }
 
+void PNGWriter::saveMessage(png_const_charp message)
+{
+    /// Copy into the fixed-size buffer without allocating: an allocation here could throw `std::bad_alloc`
+    /// through libpng's C frames before we reach `png_longjmp`, which is undefined behavior.
+    if (!message)
+        return;
+    const size_t length = std::min(strlen(message), sizeof(error_message) - 1);
+    memcpy(error_message, message, length);
+    error_message[length] = '\0';
+}
+
 [[noreturn]] void PNGWriter::errorCallback(png_struct_def * png_ptr_, png_const_charp error_msg)
 {
     auto * writer = reinterpret_cast<PNGWriter *>(png_get_error_ptr(png_ptr_));
     if (writer)
-        writer->error_message = error_msg ? error_msg : "unknown";
+        writer->saveMessage(error_msg);
     png_longjmp(png_ptr_, 1);
 }
 
@@ -146,7 +160,7 @@ void PNGWriter::flushDataCallback(png_struct_def * png_ptr_)
     /// We do not expect any warnings; treat them as errors.
     auto * writer = reinterpret_cast<PNGWriter *>(png_get_error_ptr(png_ptr_));
     if (writer)
-        writer->error_message = warning_msg ? warning_msg : "unknown";
+        writer->saveMessage(warning_msg);
     png_longjmp(png_ptr_, 1);
 }
 
