@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 
@@ -46,7 +47,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
         database && database->isReadOnly() && typeid_cast<const DatabaseOverlay *>(database.get()))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run OPTIMIZE TABLE in the underlying database that owns the table",
             backQuote(table_id.getDatabaseName()));

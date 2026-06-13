@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_, bool readonly_)
@@ -135,7 +136,7 @@ void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run CREATE TABLE in an underlying database",
             backQuote(getDatabaseName()));
@@ -159,7 +160,7 @@ void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, 
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run DROP TABLE in the underlying database that owns the table",
             backQuote(getDatabaseName()));
@@ -183,7 +184,11 @@ void DatabaseOverlay::attachTable(
     ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
     if (readonly)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overlay Database is read-only; ATTACH not supported");
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run ATTACH TABLE in an underlying database",
+            backQuote(getDatabaseName()));
 
     for (auto & db : resolveDatabases())
     {
@@ -209,7 +214,7 @@ StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & tabl
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run DETACH TABLE in the underlying database that owns the table",
             backQuote(getDatabaseName()));
@@ -236,7 +241,7 @@ void DatabaseOverlay::renameTable(
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run RENAME TABLE in an underlying database",
             backQuote(getDatabaseName()));
@@ -316,7 +321,7 @@ String DatabaseOverlay::getTableDataPath(const String & table_name) const
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
             backQuote(getDatabaseName()));
     String result;
@@ -333,7 +338,7 @@ String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
             backQuote(getDatabaseName()));
     String result;
@@ -399,7 +404,7 @@ void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & tab
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run ALTER TABLE in an underlying database",
             backQuote(getDatabaseName()));
@@ -447,7 +452,7 @@ void DatabaseOverlay::createTableRestoredFromBackup(
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run CREATE TABLE in an underlying database",
             backQuote(getDatabaseName()));
@@ -734,7 +739,7 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
 {
     if (readonly)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
             "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
             backQuote(getDatabaseName()));
     for (const auto & db : databases)

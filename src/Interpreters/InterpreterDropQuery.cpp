@@ -54,7 +54,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
@@ -189,21 +188,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// real underlying table (and `truncate` does not consult the database at all).
         /// Reject up front, before any side effect on the table.
         if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
-        {
-            if (query.kind == ASTDropQuery::Kind::Truncate)
-                throw Exception(
-                    ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-                    "Database {} is an Overlay facade (read-only). "
-                    "Run TRUNCATE TABLE in the underlying database that owns the table",
-                    backQuote(table_id.database_name));
-
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
                 "Database {} is an Overlay facade (read-only). "
                 "Run {} in the underlying database that owns the table",
                 backQuote(table_id.database_name),
-                query.kind == ASTDropQuery::Kind::Detach ? "DETACH TABLE" : "DROP TABLE");
-        }
+                query.kind == ASTDropQuery::Kind::Truncate ? "TRUNCATE TABLE"
+                    : query.kind == ASTDropQuery::Kind::Detach ? "DETACH TABLE"
+                    : "DROP TABLE");
 
         const auto & settings = getContext()->getSettingsRef();
         if (query.if_empty)

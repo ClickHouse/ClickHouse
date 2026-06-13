@@ -57,20 +57,20 @@ SELECT * FROM db_overlay.t_new ORDER BY k;
 
 SELECT * FROM db_a.t_new ORDER BY k;
 
-CREATE TABLE db_overlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE db_overlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
-ATTACH TABLE db_overlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE db_overlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
-RENAME TABLE db_overlay.t_a TO db_overlay.t_a_renamed_via_overlay; -- { serverError BAD_ARGUMENTS }
+RENAME TABLE db_overlay.t_a TO db_overlay.t_a_renamed_via_overlay; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 CREATE DATABASE loop_self ENGINE = Overlay('loop_self'); -- { serverError BAD_ARGUMENTS }
 
 CREATE DATABASE bad_overlay ENGINE = Overlay('this_db_does_not_exist'); -- { serverError BAD_ARGUMENTS }
 
 -- DROP/DETACH/TRUNCATE TABLE on the facade are rejected so that the underlying tables are not stopped behind the user's back.
-DROP TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
-DETACH TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
-OPTIMIZE TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
+DROP TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+DETACH TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+OPTIMIZE TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 TRUNCATE TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 -- Standalone lightweight mutation statements are rejected the same way as ALTER.
