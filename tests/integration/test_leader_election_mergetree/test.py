@@ -278,9 +278,23 @@ def test_failover(started_cluster):
     assert old_leader_is_readonly, "Restarted old leader did not become read-only"
     logging.info(f"Old leader {leader.name} is now read-only as expected")
 
-    # Verify data is accessible from the restarted node
-    count = leader.query("SELECT count() FROM test_fo WHERE x > 0").strip()
-    assert int(count) >= 3, f"Expected at least 3 rows, got {count}"
+    # The restarted old leader is now a follower. The failover contract requires it to
+    # refresh and observe the row the new leader committed after takeover (x = 10), not
+    # only the rows it wrote before failover (1, 2, 3). Follower part refresh is
+    # asynchronous, so poll for a bounded period until the post-takeover write appears,
+    # then assert the exact positive row set (the rejected x = 999 probes must be absent).
+    expected = "1\n2\n3\n10"
+    deadline = time.monotonic() + 60
+    rows = ""
+    while time.monotonic() < deadline:
+        rows = leader.query("SELECT x FROM test_fo WHERE x > 0 ORDER BY x").strip()
+        if rows == expected:
+            break
+        time.sleep(1)
+    assert rows == expected, (
+        "Restarted old leader (now follower) did not refresh to the full post-failover "
+        f"row set; expected x in {{1, 2, 3, 10}}, got: {rows!r}"
+    )
 
     node1.query("DROP TABLE IF EXISTS test_fo SYNC")
     node2.query("DROP TABLE IF EXISTS test_fo SYNC")
