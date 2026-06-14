@@ -427,9 +427,9 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 
     factory.setDocumentation("JSONEachRow", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias                 |
-|-------|--------|-----------------------|
-| ✔     | ✔      | `JSONLines`, `NDJSON` |
+| Input | Output | Alias                          |
+|-------|--------|--------------------------------|
+| ✔     | ✔      | `JSONLines`, `NDJSON`, `JSONL` |
 
 ## Description {#description}
 
@@ -678,6 +678,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
     factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
     factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
     factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONL", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
@@ -687,6 +688,7 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONLines", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONL", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerJSONEachRowSchemaReader(FormatFactory & factory);
