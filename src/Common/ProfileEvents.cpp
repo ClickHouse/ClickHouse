@@ -861,8 +861,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPromoteSkipped, "Number of ReaderExecutor tier promotions skipped under contention (target writers on loan, pool full, or over the machine cap) - purely optional work, regenerable by any later read.", ValueType::Number) \
     M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
     M(ReaderExecutorPrefetchWastedCacheBytes, "Cache-tier bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded - near-free, unlike wasted source bytes.", ValueType::Bytes) \
-    M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a LiveConnectionLimit slot for a live-buffer read.", ValueType::Number) \
-    M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a LiveConnectionLimit slot.", ValueType::Number) \
+    M(LongConnectionSlotAcquired, "Number of times ReaderExecutor acquired a LongConnectionLimit slot to open a long source connection.", ValueType::Number) \
+    M(LongConnectionSlotFailed, "Number of times ReaderExecutor failed to acquire a LongConnectionLimit slot (at capacity), falling back to a one-shot read.", ValueType::Number) \
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
@@ -1500,10 +1500,10 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
-    M(LiveSourceBufferCreated, "Number of live source buffers opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
-    M(LiveSourceBufferHits, "Number of times ReaderExecutor reused an existing live source buffer for a sequential read.", ValueType::Number) \
-    M(LiveSourceBufferFallbacks, "Number of times ReaderExecutor fell back to stateless read because no live buffer slot was available.", ValueType::Number) \
-    M(LiveSourceBufferBytes, "Total bytes read through live source buffers.", ValueType::Bytes) \
+    M(LongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
+    M(LongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
+    M(LongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
+    M(LongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

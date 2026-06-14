@@ -36,7 +36,7 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
 
         {"cache_get_requests", std::make_shared<DataTypeUInt64>(), "Number of `CacheReader::read` invocations."},
         {"cache_populate_requests", std::make_shared<DataTypeUInt64>(), "Number of `CacheWriter::write` invocations."},
-        {"source_requests", std::make_shared<DataTypeUInt64>(), "Number of source-side requests (live-buffer reuses are not counted)."},
+        {"source_requests", std::make_shared<DataTypeUInt64>(), "Number of source-side requests (long-connection reuses are not counted)."},
         {"incomplete_connections", std::make_shared<DataTypeUInt64>(), "Number of source connections dropped before being drained to their right bound (not pool-reusable)."},
         {"over_read_bytes", std::make_shared<DataTypeUInt64>(), "Bytes fetched from source that did not serve the requested window (head-alignment slack and bridged-gap bytes)."},
 

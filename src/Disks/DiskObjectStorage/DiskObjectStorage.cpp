@@ -885,9 +885,9 @@ void DiskObjectStorage::prepareRead(
             && read_settings.remote_fs_settings.prefetch)
             pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
         /// Without a buffer limit the executor takes the stateless (one-shot per
-        /// window) path; `reader_executor_use_live_connections=0` selects it.
-        if (read_settings.reader_executor_use_live_connections)
-            pipeline.needBufferLimit(global_context->getLiveConnectionLimit());
+        /// window) path; `reader_executor_use_long_connections=0` selects it.
+        if (read_settings.reader_executor_use_long_connections)
+            pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
     }
 }
 

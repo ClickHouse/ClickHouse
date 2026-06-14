@@ -24,7 +24,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/DiskCacheProvider.h>
 #include <IO/PageCacheProvider.h>
-#include <IO/LiveConnectionLimit.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -374,7 +374,7 @@ public:
         executor_options.block_size = BLOCK;
         executor_options.log_file_path = {};
         executor_options.max_tail_for_drain = MAX_TAIL_FOR_DRAIN;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(buffer_slots);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(buffer_slots);
         ReaderExecutor executor(src, objects, std::move(caches), executor_options);
 
         size_t total = 0;

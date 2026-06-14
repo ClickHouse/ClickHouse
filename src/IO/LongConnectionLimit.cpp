@@ -1,27 +1,27 @@
-#include <IO/LiveConnectionLimit.h>
+#include <IO/LongConnectionLimit.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
 {
-    extern const Metric LiveSourceBuffers;
+    extern const Metric LongConnections;
 }
 
 namespace DB
 {
 
-LiveConnectionSlot::~LiveConnectionSlot()
+LongConnectionSlot::~LongConnectionSlot()
 {
     release();
 }
 
-LiveConnectionSlot::LiveConnectionSlot(LiveConnectionSlot && other) noexcept
+LongConnectionSlot::LongConnectionSlot(LongConnectionSlot && other) noexcept
     : limit(std::move(other.limit))
     , held(other.held)
 {
     other.held = false;
 }
 
-LiveConnectionSlot & LiveConnectionSlot::operator=(LiveConnectionSlot && other) noexcept
+LongConnectionSlot & LongConnectionSlot::operator=(LongConnectionSlot && other) noexcept
 {
     if (this != &other)
     {
@@ -33,29 +33,29 @@ LiveConnectionSlot & LiveConnectionSlot::operator=(LiveConnectionSlot && other) 
     return *this;
 }
 
-LiveConnectionSlot::LiveConnectionSlot(std::shared_ptr<LiveConnectionLimit> limit_)
+LongConnectionSlot::LongConnectionSlot(std::shared_ptr<LongConnectionLimit> limit_)
     : limit(std::move(limit_))
     , held(true)
 {
 }
 
-void LiveConnectionSlot::release()
+void LongConnectionSlot::release()
 {
     if (held && limit)
     {
         limit->release();
-        CurrentMetrics::sub(CurrentMetrics::LiveSourceBuffers);
+        CurrentMetrics::sub(CurrentMetrics::LongConnections);
     }
     held = false;
 }
 
 
-LiveConnectionLimit::LiveConnectionLimit(size_t max_slots_)
+LongConnectionLimit::LongConnectionLimit(size_t max_slots_)
     : max_slots(max_slots_)
 {
 }
 
-LiveConnectionSlot LiveConnectionLimit::tryAcquire(std::shared_ptr<LiveConnectionLimit> self)
+LongConnectionSlot LongConnectionLimit::tryAcquire(std::shared_ptr<LongConnectionLimit> self)
 {
     /// Claim a unit iff under capacity. A `setCapacity` lowering below the
     /// live count is soft - new acquirers just wait it out.
@@ -64,19 +64,19 @@ LiveConnectionSlot LiveConnectionLimit::tryAcquire(std::shared_ptr<LiveConnectio
     {
         if (count.compare_exchange_weak(cur, cur + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
         {
-            CurrentMetrics::add(CurrentMetrics::LiveSourceBuffers);
-            return LiveConnectionSlot(std::move(self));
+            CurrentMetrics::add(CurrentMetrics::LongConnections);
+            return LongConnectionSlot(std::move(self));
         }
     }
     return {};
 }
 
-void LiveConnectionLimit::setCapacity(size_t new_max_slots)
+void LongConnectionLimit::setCapacity(size_t new_max_slots)
 {
     max_slots.store(new_max_slots, std::memory_order_relaxed);
 }
 
-void LiveConnectionLimit::release()
+void LongConnectionLimit::release()
 {
     count.fetch_sub(1, std::memory_order_acq_rel);
 }

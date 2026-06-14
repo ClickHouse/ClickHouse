@@ -251,12 +251,10 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
-    , live_connection_min_read_bytes(
-          options.live_connection_min_read_bytes ? options.live_connection_min_read_bytes : options.window_size)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
-    , buffer_limit(std::move(options.buffer_limit))
+    , long_connection_limit(std::move(options.long_connection_limit))
     , reader_executor_log(std::move(options.reader_executor_log))
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
@@ -522,7 +520,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
 {
     /// `prefetch_pool` and `reader_executor_log` are intentionally NOT
     /// propagated: a one-shot `readBigAt` can't amortise prefetch latency, and
-    /// per-call log rows would spam `system.reader_executor_log`. `buffer_limit`
+    /// per-call log rows would spam `system.reader_executor_log`. `long_connection_limit`
     /// is shared (dormant until the long-connection rework).
     Options transient_options;
     transient_options.window_size = window_size;
@@ -531,8 +529,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     transient_options.log_file_path = log_file_path;
     transient_options.max_tail_for_drain = max_tail_for_drain;
     transient_options.plan_look_ahead_window = plan_look_ahead_window;
-    transient_options.live_connection_min_read_bytes = live_connection_min_read_bytes;
-    transient_options.buffer_limit = buffer_limit;
+    transient_options.long_connection_limit = long_connection_limit;
     auto t = std::make_unique<ReaderExecutor>(source, stored_objects, caches, std::move(transient_options));
 
 #if USE_SSL

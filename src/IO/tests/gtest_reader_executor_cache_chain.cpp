@@ -18,7 +18,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/PageCacheProvider.h>
 #include <IO/DiskCacheProvider.h>
-#include <IO/LiveConnectionLimit.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -396,7 +396,7 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -408,7 +408,7 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -447,7 +447,7 @@ TEST_F(ReaderExecutorCacheChain, ReadBigAtInsidePageCacheBlock)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = 4 * block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         const String got = readBigAtViaTransient(executor, off, want);
         EXPECT_EQ(got, content.substr(off, want)) << "cold readBigAt inside a block returns the exact slice";
@@ -462,7 +462,7 @@ TEST_F(ReaderExecutorCacheChain, ReadBigAtInsidePageCacheBlock)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = 4 * block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         const String got2 = readBigAtViaTransient(executor, block_size + 40, 8);   // [104, 112)
         EXPECT_EQ(got2, content.substr(block_size + 40, 8));
@@ -504,7 +504,7 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -518,7 +518,7 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -571,7 +571,7 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -590,7 +590,7 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -610,7 +610,7 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -652,7 +652,7 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = half;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         auto rope = executor.readNextWindow();
         ASSERT_EQ(rope.range().size, half);
@@ -672,7 +672,7 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = file_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -716,7 +716,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -732,7 +732,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -777,7 +777,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -791,7 +791,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -833,7 +833,7 @@ TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -853,7 +853,7 @@ TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -870,7 +870,7 @@ TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = block_size;
         executor_options.min_bytes_for_seek = 0;
-        executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
         EXPECT_EQ(drainAll(executor), content);
     }
@@ -914,7 +914,7 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainKeepsSingleConnection)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = window;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     auto flood_fs = [&](size_t round)

@@ -5,7 +5,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/IntervalSet.h>
 #include <IO/IFileBasedSourceReader.h>
-#include <IO/LiveConnectionLimit.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/ReadPlanGeometry.h>
 #include <IO/PlanSchedule.h>
 #include <IO/FetchMachine.h>
@@ -74,11 +74,8 @@ public:
         String log_file_path;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD;
-        /// 0 = use `window_size` (override comes from
-        /// `reader_executor_live_connection_min_read_bytes`).
-        size_t live_connection_min_read_bytes = 0;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-        std::shared_ptr<LiveConnectionLimit> buffer_limit;
+        std::shared_ptr<LongConnectionLimit> long_connection_limit;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
     };
 
@@ -694,10 +691,6 @@ private:
     size_t min_bytes_for_seek;
     size_t block_size;
     size_t max_tail_for_drain;
-    /// Minimum gap reach (see `streamReach`) that warrants a live connection
-    /// + lease. Defaults to `window_size`; `setLiveConnectionMinReadBytes`
-    /// overrides.
-    size_t live_connection_min_read_bytes;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
 
@@ -742,11 +735,11 @@ private:
     /// under the live fill frontier non-evictable across windows: re-pointed at
     /// each `finalizeAssembledWindow`, dropped on seek / EOF / plan rebuild.
     /// Foreground-only (a prefetch worker does a pure source fetch and never
-    /// touches it). NOT live-connection state - a one-shot fill needs it too.
+    /// touches it). NOT long-connection state - a one-shot fill needs it too.
     CacheWriter::CacheSegmentPin inflight_segment_pin;
-    /// Server-wide live-connection limit handle, kept for the future long-connection
-    /// rework (shared with `makeTransientForReadAt`). Dormant for now.
-    std::shared_ptr<LiveConnectionLimit> buffer_limit;
+    /// Server-wide long-connection limit handle, shared with
+    /// `makeTransientForReadAt`. Gates long-connection opens; dormant for now.
+    std::shared_ptr<LongConnectionLimit> long_connection_limit;
 
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
     /// and every seek. Constructed with `near_gap == min_bytes_for_seek` so a

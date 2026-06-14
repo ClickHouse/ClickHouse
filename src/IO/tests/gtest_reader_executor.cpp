@@ -6,7 +6,7 @@
 #include <IO/IntervalSet.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/LiveConnectionLimit.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/PageCacheProvider.h>
@@ -586,7 +586,7 @@ TEST(ReaderExecutor, PrefetchBoxRoundTripServesAllBytes)
     objects.emplace_back("obj", "", 8000);
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
-    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto limit = std::make_shared<LongConnectionLimit>(10);
     TestThreadGroup tg;
     String result;
     {
@@ -595,7 +595,7 @@ TEST(ReaderExecutor, PrefetchBoxRoundTripServesAllBytes)
         executor_options.window_size = 1000;
         executor_options.min_bytes_for_seek = 0;
         executor_options.prefetch_pool = pool;
-        executor_options.buffer_limit = limit;
+        executor_options.long_connection_limit = limit;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
         while (true)
@@ -750,7 +750,7 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
     /// Read-ahead is speculative, so the prefetch window tracks memory pressure: it
     /// uses the full synchronous window at Normal/Elevated and is suppressed at
     /// High/Critical. Uses the stateless path (a present-but-zero-capacity
-    /// buffer_limit, so no slot is acquired) so the window read is observable.
+    /// long_connection_limit, so no slot is acquired) so the window read is observable.
     struct Reading { size_t sync_window; bool scheduled; size_t prefetch_window; };
     auto measure = [](double pressure) -> Reading
     {
@@ -763,13 +763,13 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
         objects.emplace_back("obj", "", 1u << 20);
 
         auto pool = std::make_shared<PrefetchThreadPool>(2);
-        auto limit = std::make_shared<LiveConnectionLimit>(0);   // present but no slots -> stateless window reads
+        auto limit = std::make_shared<LongConnectionLimit>(0);   // present but no slots -> stateless window reads
         ReaderExecutor::Options executor_options;
         executor_options.window_size = 256u << 10;
         executor_options.min_bytes_for_seek = 0;
         executor_options.block_size = 32u << 10;
         executor_options.prefetch_pool = pool;
-        executor_options.buffer_limit = limit;
+        executor_options.long_connection_limit = limit;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
         Rope rope = executor.readNextWindow();   // synchronous full-window read, then schedules a prefetch
@@ -987,14 +987,14 @@ TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
     EXPECT_EQ(result, plaintext);
 }
 
-TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
+TEST(ReaderExecutor, EncryptedEofReleasesLongConnectionSlot)
 {
     /// Regression: `atEnd` used to compare the logical `position` against
     /// the physical `offset_map.totalSize()`. For an encrypted file the
     /// physical size is larger by `data_start_offset` bytes, so after the
     /// last plaintext byte `position` is strictly less than
     /// `offset_map.totalSize()` and `atEnd` stays false. That skipped the
-    /// EOF branch in `readNextWindow` and left the `LiveConnectionLimit`
+    /// EOF branch in `readNextWindow` and left the `LongConnectionLimit`
     /// slot pinned past EOF.
     String key(16, 'k');
     FileEncryption::InitVector iv(UInt128{0xfeedfacecafeULL});
@@ -1006,11 +1006,11 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_bytes.size());
 
-    auto buffer_limit = std::make_shared<LiveConnectionLimit>(4);
+    auto long_connection_limit = std::make_shared<LongConnectionLimit>(4);
 
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 512;
-    executor_options.buffer_limit = buffer_limit;
+    executor_options.long_connection_limit = long_connection_limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer(
         "/test", 0,
@@ -1024,7 +1024,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
             break;
     }
 
-    EXPECT_EQ(buffer_limit->getActiveCount(), 0u);
+    EXPECT_EQ(long_connection_limit->getActiveCount(), 0u);
 }
 
 TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
@@ -1363,7 +1363,7 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
 
 TEST(ReaderExecutor, LocalReadUsesFullWindow)
 {
-    /// Local reads have no LiveConnectionLimit / live buffer, so they take the
+    /// Local reads have no LongConnectionLimit / live buffer, so they take the
     /// stateless path. Like stateless remote reads, they keep the full window
     /// (not a single block) so one open amortises its setup over a window
     /// instead of reopening the source per block.
@@ -1374,7 +1374,7 @@ TEST(ReaderExecutor, LocalReadUsesFullWindow)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_size);
 
-    /// No buffer_limit, no caches -> stateless local path; default 8 MiB window.
+    /// No long_connection_limit, no caches -> stateless local path; default 8 MiB window.
     ReaderExecutor executor(source, objects, {});
 
     auto w = executor.readNextWindow();
@@ -1400,7 +1400,7 @@ TEST(ReaderExecutor, ConfiguredBlockSizeControlsNodeSize)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_size);
 
-    /// No buffer_limit, no caches -> stateless local path.
+    /// No long_connection_limit, no caches -> stateless local path.
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 4 * 1024 * 1024;
     executor_options.min_bytes_for_seek = 0;
@@ -1477,7 +1477,7 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
 TEST(ReaderExecutor, ConsumePathCancelledPrefetchStashedBeforeThrowingSyncRead)
 {
     /// First open succeeds (window 1); the second (window 2's fallback read,
-    /// no live buffer is kept without a buffer_limit) throws.
+    /// no live buffer is kept without a long_connection_limit) throws.
     auto source = std::make_shared<ThrowOnSecondOpenSourceReader>(String(2000, 'Z'));
     StoredObjects objects;
     objects.emplace_back("obj", "", 2000);
@@ -1812,12 +1812,12 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto limit = std::make_shared<LongConnectionLimit>(10);
 
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
@@ -1874,12 +1874,12 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     caches.push_back(cache);
 
     auto pool = std::make_shared<SyncPrefetchPool>();
-    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto limit = std::make_shared<LongConnectionLimit>(10);
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
     executor_options.prefetch_pool = pool;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
@@ -1930,7 +1930,7 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     ReaderExecutor executor(source, objects, caches, executor_options);
 
     ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
@@ -1967,7 +1967,7 @@ TEST(ReaderExecutor, PutFailedTakesNoPin)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = std::make_shared<LiveConnectionLimit>(10);
+    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     ReaderExecutor executor(source, objects, caches, executor_options);
 
     auto rope = executor.readNextWindow();   /// [0,1000)
@@ -2106,11 +2106,11 @@ TEST(ReaderExecutor, ReadBigAtBoundsConnectionToRequest)
     StoredObjects objects;
     objects.emplace_back("obj", "", 1u << 20);
 
-    auto limit = std::make_shared<LiveConnectionLimit>(10);   // a unit is free, but a transient never takes one
+    auto limit = std::make_shared<LongConnectionLimit>(10);   // a unit is free, but a transient never takes one
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 64u << 10;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto transient = executor.makeTransientForReadAt(offset, want);
@@ -2131,7 +2131,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsConnectionToRequest)
     EXPECT_EQ(*log.read_until[0], offset + want) << "bounded to the request extent (object-local coordinates)";
 }
 
-TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionOnEncryptedFile)
+TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionOnEncryptedFile)
 {
     /// Encrypted readBigAt over the live path. Inside readFromSource the
     /// `logical_offset` parameter is a physical (header-inclusive) offset, so the
@@ -2154,11 +2154,11 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionOnEncryptedFile)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_bytes.size());
 
-    auto limit = std::make_shared<LiveConnectionLimit>(10);   // slot available -> live path
+    auto limit = std::make_shared<LongConnectionLimit>(10);   // slot available -> live path
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 256u << 10;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer("/test", 0, [&](UInt128, const String &) { return key; });
     executor.initDecryption();   // parses the header -> data_start_offset = 64
@@ -2195,7 +2195,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionOnEncryptedFile)
         << "object-local physical bound includes data_start_offset (the encryption header)";
 }
 
-TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
+TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionToObjectEndAcrossBoundary)
 {
     /// A readBigAt extent that straddles two objects on the live path: each
     /// connection is per object, so the non-tail object's connection must be
@@ -2210,11 +2210,11 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
     objects.emplace_back("o0", "", s0);
     objects.emplace_back("o1", "", s1);
 
-    auto limit = std::make_shared<LiveConnectionLimit>(10);   // slot available -> live path on the first object
+    auto limit = std::make_shared<LongConnectionLimit>(10);   // slot available -> live path on the first object
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1u << 20;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     const size_t offset = 90u << 10;   // 90 KiB into o0
@@ -2241,7 +2241,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
 TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
 {
     /// The no-slot one-shot branch: an unknown-size source with a finite advertised
-    /// extent but no available LiveConnectionLimit slot must still bound each one-shot
+    /// extent but no available LongConnectionLimit slot must still bound each one-shot
     /// connection (to what it reads), so it drains and is returned to the pool
     /// reusable instead of an open-ended GET abandoned after the clamped read.
     /// Before the fix the bound was skipped whenever the size was unknown, even with
@@ -2255,7 +2255,7 @@ TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    /// No `buffer_limit` in Options -> no slot -> the stateless one-shot path.
+    /// No `long_connection_limit` in Options -> no slot -> the stateless one-shot path.
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 64u << 10;
     executor_options.min_bytes_for_seek = 0;
@@ -2325,11 +2325,11 @@ TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
         << "the parent's destruction does not re-emit the rolled-up source bytes";
 }
 
-TEST(LiveConnectionLimit, MoveAssignReleasesPreviousSlot)
+TEST(LongConnectionLimit, MoveAssignReleasesPreviousSlot)
 {
     /// Move-assignment must release the currently-held unit BEFORE taking `other`'s,
     /// else a unit of capacity leaks permanently.
-    auto limit = std::make_shared<LiveConnectionLimit>(2);
+    auto limit = std::make_shared<LongConnectionLimit>(2);
 
     auto a = limit->tryAcquire(limit);
     auto b = limit->tryAcquire(limit);
@@ -2345,25 +2345,25 @@ TEST(LiveConnectionLimit, MoveAssignReleasesPreviousSlot)
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
-TEST(LiveConnectionLimit, MoveAssignFromEmptyLeaseReleasesCurrent)
+TEST(LongConnectionLimit, MoveAssignFromEmptyLeaseReleasesCurrent)
 {
     /// Assigning an empty lease into a holding one must still release the current unit.
-    auto limit = std::make_shared<LiveConnectionLimit>(2);
+    auto limit = std::make_shared<LongConnectionLimit>(2);
 
     auto a = limit->tryAcquire(limit);
     ASSERT_TRUE(a);
     EXPECT_EQ(limit->getActiveCount(), 1u);
 
-    LiveConnectionSlot empty;          // holds no unit
+    LongConnectionSlot empty;          // holds no unit
     a = std::move(empty);            // must drop a's unit
     EXPECT_FALSE(a);
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
-TEST(LiveConnectionLimit, SelfMoveAssignIsNoOp)
+TEST(LongConnectionLimit, SelfMoveAssignIsNoOp)
 {
     /// Self-assignment must not double-release.
-    auto limit = std::make_shared<LiveConnectionLimit>(1);
+    auto limit = std::make_shared<LongConnectionLimit>(1);
     auto s = limit->tryAcquire(limit);
     ASSERT_TRUE(s);
     EXPECT_EQ(limit->getActiveCount(), 1u);
@@ -2448,10 +2448,10 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalRead)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto limit = std::make_shared<LongConnectionLimit>(10);
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 500;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     String collected;
@@ -3424,13 +3424,13 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(provider);
 
-    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto limit = std::make_shared<LongConnectionLimit>(10);
     /// NOTE: no prefetch pool — keep reads synchronous so the flood between
     /// windows is deterministic.
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 2000;
     executor_options.min_bytes_for_seek = 0;
-    executor_options.buffer_limit = limit;
+    executor_options.long_connection_limit = limit;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     /// Flood the cache with unrelated keys to force eviction of any releasable

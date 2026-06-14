@@ -22,7 +22,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class PageCache;
 class PrefetchThreadPool;
-class LiveConnectionLimit;
+class LongConnectionLimit;
 class IAsynchronousReader;
 class IBackup;
 struct AsyncReadCounters;
@@ -156,7 +156,7 @@ public:
     void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
     /// Used only by the `ReaderExecutor` live-buffer optimization.
-    void needBufferLimit(std::shared_ptr<LiveConnectionLimit> limit);
+    void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
 
     /// `key_finder` is invoked at build time with the key fingerprint parsed
     /// from the encryption header and must return the decryption key.
@@ -239,7 +239,7 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-    std::shared_ptr<LiveConnectionLimit> buffer_limit;
+    std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
     LoggerPtr log = getLogger("ReadPipeline");

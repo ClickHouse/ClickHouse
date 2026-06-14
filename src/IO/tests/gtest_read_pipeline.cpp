@@ -393,7 +393,7 @@ catch (...)
 TEST(ReadPipeline, NonLiveSourceReadIsRightBounded)
 try
 {
-    /// With no buffer_limit there is no live-connection slot, so readFromSource
+    /// With no long_connection_limit there is no live-connection slot, so readFromSource
     /// takes the one-shot (non-live) path. For a right-bounded source it must
     /// issue a bounded range [offset, offset+want) - setReadUntilPosition called
     /// with the window end - so the underlying connection is fully consumed and

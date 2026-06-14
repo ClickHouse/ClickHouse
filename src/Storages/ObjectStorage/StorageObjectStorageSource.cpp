@@ -1293,11 +1293,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             && effective_read_settings.remote_fs_settings.prefetch)
             pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
         /// Without a buffer limit the executor takes the stateless (one-shot per
-        /// window) path; `reader_executor_use_live_connections=0` selects it. Gate
+        /// window) path; `reader_executor_use_long_connections=0` selects it. Gate
         /// it like `DiskObjectStorage::prepareRead` so the setting is honored on the
         /// object-storage table-engine path too.
-        if (effective_read_settings.reader_executor_use_live_connections)
-            pipeline.needBufferLimit(context_->getLiveConnectionLimit());
+        if (effective_read_settings.reader_executor_use_long_connections)
+            pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
     }
 
     LOG_TRACE(
