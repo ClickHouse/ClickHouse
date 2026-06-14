@@ -566,6 +566,7 @@ if not args.use_existing_tables:
         depth = 0
         name_start = -1
         value_start = -1
+        last_top_level_comma = -1
         while i < n:
             c = query[i]
             next_c = query[i + 1] if i + 1 < n else ""
@@ -614,6 +615,13 @@ if not args.use_existing_tables:
                 depth -= 1
                 i += 1
                 continue
+            if depth == 0 and c == ",":
+                # Top-level comma: the separator between two settings. Remember
+                # the last one before the matched name so the cut can remove the
+                # whole separator (including any comment between it and the name).
+                last_top_level_comma = i
+                i += 1
+                continue
             if depth == 0 and query[i : i + name_len].lower() == name_lower:
                 before_ok = i == settings_pos + len("SETTINGS") or not (
                     query[i - 1].isalnum() or query[i - 1] == "_"
@@ -639,15 +647,18 @@ if not args.use_existing_tables:
         if name_start < 0:
             return query
 
-        # Optionally include a preceding comma (and surrounding whitespace)
-        # so the assignment is removed cleanly when it is not the first
-        # entry in the SETTINGS clause.
-        cut_start = name_start
-        j = cut_start - 1
-        while j >= 0 and query[j] in " \t\r\n":
-            j -= 1
-        if j >= 0 and query[j] == ",":
-            cut_start = j
+        # When the dropped assignment is not the first entry in the SETTINGS
+        # clause, cut from the top-level comma that separates it from the
+        # previous entry, so the whole separator (the comma plus any whitespace
+        # or comments between it and the setting name) is removed cleanly. The
+        # comma position comes from the comment- and literal-aware forward scan
+        # above, so a `/* ... */` comment sitting in the separator does not
+        # defeat it. A plain backward whitespace scan, by contrast, would stop
+        # at such a comment and leave the orphaned comma (and comment) behind.
+        if last_top_level_comma >= 0:
+            cut_start = last_top_level_comma
+        else:
+            cut_start = name_start
 
         def is_word_at(text, pos, word):
             """Case-insensitive word-boundary match of `word` at `pos`."""
@@ -737,11 +748,10 @@ if not args.use_existing_tables:
                 break
             i += 1
 
-        # When the dropped assignment was the first entry of the SETTINGS
-        # clause, consume the trailing comma (and any whitespace around it)
-        # too. The reverse scan for a preceding comma is not comment-aware
-        # and so a comment between `SETTINGS` and the dropped entry would
-        # otherwise leave a stray leading `,` after the cut.
+        # When the dropped assignment is the first entry of the SETTINGS clause
+        # (no preceding top-level comma to cut from, so `cut_start` stayed at
+        # `name_start`), consume the trailing comma and any whitespace after it
+        # so the next entry is not left with a stray leading separator.
         if cut_start == name_start and i < n and query[i] == ",":
             i += 1
             while i < n and query[i] in " \t\r\n":
