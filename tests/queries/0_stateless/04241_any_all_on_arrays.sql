@@ -35,6 +35,25 @@ SELECT (3 <> ALL([1, 2, 4])) = (NOT has([1, 2, 4], 3));
 SELECT (5 < SOME([1, 2, 6])) = arrayExists(_a -> 5 < _a, [1, 2, 6]);
 SELECT (5 > ALL([1, 2, 3])) = arrayAll(_a -> 5 > _a, [1, 2, 3]);
 
+-- Besides symbolic comparison operators, the array form also accepts the keyword
+-- comparison predicates `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`, routed through
+-- the `arrayExists` / `arrayAll` form.
+SELECT 1 IS DISTINCT FROM ALL([2, 3]);      -- distinct from each          -> 1
+SELECT 1 IS DISTINCT FROM ALL([1, 2]);      -- not distinct from 1         -> 0
+SELECT 1 IS DISTINCT FROM SOME([1, 2]);     -- distinct from 2             -> 1
+SELECT 1 IS NOT DISTINCT FROM SOME([1, 2]); -- not distinct from 1         -> 1
+SELECT 1 IS NOT DISTINCT FROM ALL([1, 2]);  -- distinct from 2             -> 0
+SELECT (1 IS DISTINCT FROM ALL([2, 3])) = arrayAll(_a -> 1 IS DISTINCT FROM _a, [2, 3]);
+
+-- The string-search predicates (`LIKE`, `ILIKE`, `REGEXP`, ...) are intentionally not
+-- routed through the array form: `MatchImpl` does not support a constant haystack with a
+-- non-constant needle, so `arrayExists(x -> 'abc' LIKE x, ...)` would throw
+-- `ILLEGAL_COLUMN`. Since `SOME` only acts as a quantifier after a comparison operator,
+-- after `LIKE` it is left as an ordinary function name, and `SOME` is not a registered
+-- function, so `'abc' LIKE SOME([...])` throws `UNKNOWN_FUNCTION` rather than becoming an
+-- array quantifier. Write such queries out explicitly with `arrayExists` / `arrayAll`.
+SELECT 'abc' LIKE SOME(['a%', 'b%']); -- { serverError UNKNOWN_FUNCTION }
+
 -- The lambda variable for the higher-order form must not collide with an
 -- identifier on the LHS, so the parser walks the LHS and suffixes `_a` until
 -- it finds a free name (`_a1`, `_a2`, ...).

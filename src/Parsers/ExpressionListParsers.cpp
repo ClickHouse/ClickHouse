@@ -694,6 +694,14 @@ public:
         return operators.back().type;
     }
 
+    const Operator * previousOperator() const
+    {
+        if (operators.empty())
+            return nullptr;
+
+        return &operators.back();
+    }
+
     /// True when any operator of the given type is pending anywhere on the
     /// operators stack of the current element. Used to detect a pending lambda
     /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
@@ -3391,6 +3399,26 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     }
 }
 
+/// Binary comparison predicates that are valid on the left of `SOME`/`ALL` for the
+/// array (non-subquery) right-hand side, but are not tagged `OperatorType::Comparison`
+/// in `operators_table` (the keyword forms have the default `OperatorType::None`). These
+/// are routed only through the `arrayExists`/`arrayAll` lambda form, never the
+/// subquery -> `IN` rewrite, which has no meaning for them.
+///
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
+/// deliberately excluded: their implementation (`MatchImpl`) does not support a constant
+/// haystack with a non-constant needle, so `'abc' LIKE SOME([...])` would throw
+/// `ILLEGAL_COLUMN`. Keep this in sync with the operator documentation for the array
+/// quantifier.
+static bool isArrayQuantifierPredicate(std::string_view function_name)
+{
+    static const std::unordered_set<std::string_view> predicates
+    {
+        "isDistinctFrom", "isNotDistinctFrom"
+    };
+    return predicates.contains(function_name);
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -3436,19 +3464,30 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         return Action::OPERATOR;
     }
 
-    if (layers.back()->previousType() == OperatorType::Comparison)
+    const auto * prev_operator = layers.back()->previousOperator();
+    const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
+    /// `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` (keyword forms) are comparison predicates
+    /// that are not tagged `OperatorType::Comparison`. They are valid on the left of the
+    /// array form of `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    const bool prev_is_array_predicate
+        = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
+
+    if (prev_is_comparison || prev_is_array_predicate)
     {
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
         bool is_subquery = true;
 
         /// `ANY`/`SOME`/`ALL` with a subquery right-hand side is the existing
-        /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`.
+        /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`. This form is
+        /// only valid after a symbolic comparison operator (`=`, `<>`, `<`, ...).
         ///
         /// `SOME`/`ALL` (but deliberately not `ANY`) additionally accept a
         /// non-subquery array expression (PostgreSQL-style), rewritten here to
         /// `has`/`NOT has` for the `=`/`<>` special cases that have an optimized
-        /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise.
+        /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
+        /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
+        /// `IS NOT DISTINCT FROM`, which only go through the lambda form.
         /// `ANY` is excluded from the array form because `any` is also an aggregate
         /// function, so `expr = any(x)` must keep its function-call meaning.
         const bool any_kw = any_parser.ignore(pos, expected);
@@ -3459,7 +3498,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         {
             subquery_function_type = all_kw ? SubqueryFunctionType::ALL : SubqueryFunctionType::ANY;
 
-            if (subquery_parser.parse(pos, tmp, expected))
+            if (prev_is_comparison && subquery_parser.parse(pos, tmp, expected))
             {
                 /// Existing subquery path: leave `is_subquery = true`.
             }
