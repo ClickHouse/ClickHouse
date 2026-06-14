@@ -136,3 +136,28 @@ def test_system_keeper_changelogs(start_cluster):
     assert int(size_bytes) > 0
     assert int(modification_time) > 0
     assert is_broken == "false"
+
+
+def test_system_keeper_snapshots(start_cluster):
+    keeper_utils.wait_until_connected(cluster, node)
+    response = keeper_utils.send_4lw_cmd(cluster, node, cmd="csnp")
+    assert response.strip().isdigit(), f"csnp did not return a log index: {response!r}"
+
+    assert_eq_with_retry(
+        node,
+        "SELECT count() >= 1 FROM system.keeper_snapshots WHERE NOT is_received",
+        "1",
+    )
+
+    row = node.query(
+        "SELECT last_log_index, path, disk_name, size_bytes, toUnixTimestamp(last_modified_at) "
+        "FROM system.keeper_snapshots "
+        "WHERE NOT is_received LIMIT 1 FORMAT TSV"
+    ).strip().split("\t")
+
+    last_log_index, path, disk_name, size_bytes, last_modified_at = row
+    assert int(last_log_index) > 0
+    assert path.startswith("snapshot_") and (path.endswith(".bin") or path.endswith(".bin.zstd"))
+    assert disk_name
+    assert int(size_bytes) > 0
+    assert int(last_modified_at) > 0
