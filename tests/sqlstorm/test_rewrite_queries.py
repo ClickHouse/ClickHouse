@@ -271,6 +271,18 @@ class TestUnnestJoinRewrite(unittest.TestCase):
         sql = "SELECT * FROM t CROSS JOIN (SELECT unnest(arr) AS a FROM u) v ON TRUE"
         self.assertEqual(rewrite_query(sql), sql)
 
+    def test_join_subquery_on_true_and_predicate_left_untouched(self):
+        # `ON TRUE AND ...` still carries a real predicate that `ARRAY JOIN`
+        # cannot represent; consuming only `ON TRUE` would leave the boolean
+        # tail dangling (`ARRAY JOIN arr AS a AND ...`), which is invalid SQL and
+        # also silently drops the join filter. Leave the whole construct alone.
+        sql = "SELECT * FROM t JOIN (SELECT unnest(arr) AS a) u ON TRUE AND u.a > 0 WHERE id = 1"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_join_subquery_on_true_or_predicate_left_untouched(self):
+        sql = "SELECT * FROM t JOIN (SELECT unnest(arr) AS a) u ON TRUE OR u.a > 0"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner

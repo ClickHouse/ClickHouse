@@ -356,11 +356,15 @@ def rewrite_unnest_lateral(sql):
             pos = alias_m.end()
             if alias_m.group(2):
                 col = alias_m.group(2)
-        # Consume `ON TRUE`; a genuine join condition cannot be expressed as
-        # ARRAY JOIN, so leave the whole construct untouched in that case.
+        # Consume a no-op `ON TRUE`. A genuine join condition cannot be expressed
+        # as `ARRAY JOIN`, so leave the whole construct untouched in that case.
+        # `ON TRUE AND ...` / `ON TRUE OR ...` still carry a real predicate, so
+        # the negative lookahead keeps them on the unchanged path instead of
+        # consuming only `ON TRUE` and leaving the boolean tail dangling (which
+        # would produce `ARRAY JOIN arr AS a AND ...`, invalid ClickHouse SQL).
         on_m = re.match(r'\s*ON\b', after[pos:], re.IGNORECASE)
         if on_m:
-            on_true_m = re.match(r'\s*ON\s+TRUE\b', after[pos:], re.IGNORECASE)
+            on_true_m = re.match(r'\s*ON\s+TRUE\b(?!\s+(?:AND|OR)\b)', after[pos:], re.IGNORECASE)
             if not on_true_m:
                 result.append(sql[i:m.end()])
                 i = m.end()
