@@ -245,14 +245,19 @@ StorageMergeTree::StorageMergeTree(
         for (const auto & disk : getDisks())
         {
             auto description = disk->getDataSourceDescription();
-            if (description.object_storage_type != ObjectStorageType::S3
-                && description.object_storage_type != ObjectStorageType::Azure)
+            /// `Azure` is intentionally not accepted yet: the lease protocol's conditional-write
+            /// and error-mapping behavior is backend-specific and is currently only covered by
+            /// `S3` (Minio) integration tests. Restrict to `S3` until an Azurite two-node failover
+            /// test exists. The lease code already maps `AZURE_BLOB_STORAGE_ERROR`, so re-enabling
+            /// `Azure` here is a one-line change once it is covered.
+            if (description.object_storage_type != ObjectStorageType::S3)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The `leader_election` setting requires every disk in the storage policy to be"
-                    " an `S3` or `Azure` object storage disk that supports conditional writes, but"
-                    " disk '{}' uses a different backend. Mixed shared and non-shared disks would"
-                    " place parts on a node-local volume that another node cannot see after failover.",
+                    "The `leader_election` setting currently requires every disk in the storage policy"
+                    " to be an `S3` object storage disk that supports conditional writes, but disk '{}'"
+                    " uses a different backend. (`Azure` is implemented but not yet covered by tests,"
+                    " so it is rejected for now.) Mixed shared and non-shared disks would also place"
+                    " parts on a node-local volume that another node cannot see after failover.",
                     disk->getName());
             }
 

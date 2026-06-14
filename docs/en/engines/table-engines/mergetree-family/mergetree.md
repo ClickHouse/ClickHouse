@@ -1218,7 +1218,7 @@ Coordination is implemented using conditional writes (`If-Match` / `If-None-Matc
 
 Requirements and constraints:
 
-- Supported backends: `S3` and `Azure` (the only object storages that currently expose conditional writes in ClickHouse).
+- Supported backend: `S3` (which exposes the conditional writes the lease protocol needs). `Azure` is implemented but not yet covered by tests, so it is currently rejected at table creation; it will be enabled once an Azure failover test is in place.
 - Shared metadata: every disk in the storage policy must use `metadata_type = plain_rewritable` (recommended) or `metadata_type = keeper`. These are the only metadata layouts where the directory of parts is visible to every participating instance, so the next leader after a failover sees all parts written by the previous leader. The default `metadata_type = local` is rejected at table creation because each replica's part list would otherwise be invisible to its peers.
 - Shared storage: every participating instance must read and write the same bucket and prefix.
 - Clock synchronization: keep node clocks well within `leader_election_heartbeat_interval` of each other (for example, via `NTP`). The conditional-write protocol prevents two writers from extending the lease successively, but skew beyond approximately `session_timeout - 2 * heartbeat_interval` can leave both the old and new leader believing they hold the lease for up to one heartbeat interval, until the old leader's next heartbeat fails the ETag check.
