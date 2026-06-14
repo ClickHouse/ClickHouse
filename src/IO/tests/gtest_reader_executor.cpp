@@ -4411,3 +4411,149 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
     EXPECT_EQ(executor.predictedReachForTest(), file)
         << "the estimator captured the full contiguous read across all plans";
 }
+
+namespace
+{
+
+String ropeBytes(const Rope & rope)
+{
+    String s;
+    for (const auto & node : rope.getNodes())
+        s.append(node.data(), node.size);
+    return s;
+}
+
+/// A plain (unencrypted) single-object executor for exercising the long-connection
+/// mechanics in isolation - the open path is not wired into the read funnel yet, so
+/// the tests drive `openLong*` / `serveFromLong*` / `dropLong*` directly.
+struct LongConnRig
+{
+    String content;
+    std::shared_ptr<MemorySourceReader> source;
+    StoredObjects objects;
+    std::shared_ptr<LongConnectionLimit> limit;
+    std::unique_ptr<ReaderExecutor> executor;
+
+    LongConnRig(size_t size, size_t min_bytes_for_seek, size_t block, size_t max_tail_for_drain)
+    {
+        content.resize(size);
+        for (size_t i = 0; i < size; ++i)
+            content[i] = static_cast<char>('A' + (i % 26));
+        source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"obj", content}});
+        objects.emplace_back("obj", "", size);
+        limit = std::make_shared<LongConnectionLimit>(4);
+
+        ReaderExecutor::Options opts;
+        opts.window_size = block;
+        opts.block_size = block;
+        opts.min_bytes_for_seek = min_bytes_for_seek;
+        opts.max_tail_for_drain = max_tail_for_drain;
+        opts.long_connection_limit = limit;
+        executor = std::make_unique<ReaderExecutor>(
+            source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, opts);
+    }
+};
+
+}
+
+TEST(ReaderExecutor, LongConnectionContiguousServeReleasesAtBound)
+{
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    LongConnRig rig(size, /*min_bytes_for_seek=*/4096, block, /*max_tail_for_drain=*/1024);
+    auto & ex = *rig.executor;
+
+    ex.openLongForTest(/*phys_offset=*/0, /*reach=*/size);
+    EXPECT_TRUE(ex.hasLongConnForTest());
+    EXPECT_EQ(ex.longConnPositionForTest(), 0u);
+    EXPECT_EQ(ex.longConnBoundForTest(), size);
+    EXPECT_TRUE(ex.longConnServesForTest("obj"));
+    EXPECT_EQ(rig.limit->getActiveCount(), 1u);
+
+    String got;
+    size_t pos = 0;
+    while (ex.hasLongConnForTest() && pos < size)
+    {
+        Rope w = ex.serveFromLongForTest(pos, block);
+        ASSERT_GT(w.totalBytes(), 0u);
+        got += ropeBytes(w);
+        pos += w.totalBytes();
+    }
+
+    EXPECT_EQ(got, rig.content);                         /// byte-exact contiguous read
+    EXPECT_FALSE(ex.hasLongConnForTest());               /// released at bound
+    EXPECT_EQ(rig.limit->getActiveCount(), 0u);          /// slot freed
+    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);    /// clean exhaust, no I
+}
+
+TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
+{
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    const size_t min_seek = 8192;
+    LongConnRig rig(size, min_seek, block, /*max_tail_for_drain=*/1024);
+    auto & ex = *rig.executor;
+    ex.openLongForTest(0, size);
+
+    Rope w0 = ex.serveFromLongForTest(0, block);
+    EXPECT_EQ(ropeBytes(w0), rig.content.substr(0, block));
+    EXPECT_EQ(ex.longConnPositionForTest(), block);
+
+    /// canContinue truth table at frontier `block`:
+    EXPECT_TRUE(ex.longConnCanContinueForTest(block + 2048, block));         /// forward, gap <= min_seek
+    EXPECT_FALSE(ex.longConnCanContinueForTest(block + min_seek + 1, block)); /// gap > min_seek
+    EXPECT_FALSE(ex.longConnCanContinueForTest(0, block));                   /// backward
+    EXPECT_FALSE(ex.longConnCanContinueForTest(size - 100, block));          /// off+want past bound
+
+    /// Serve across a 2048-byte forward gap -> bridged (frontier jumps past the gap).
+    const size_t gap_off = block + 2048;
+    Rope w1 = ex.serveFromLongForTest(gap_off, block);
+    EXPECT_EQ(ropeBytes(w1), rig.content.substr(gap_off, block));
+    EXPECT_EQ(ex.longConnPositionForTest(), gap_off + block);                /// gap discarded, not re-served
+}
+
+TEST(ReaderExecutor, LongConnectionDropBeforeBoundCountsIncomplete)
+{
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    LongConnRig rig(size, 4096, block, /*max_tail_for_drain=*/1024);
+    auto & ex = *rig.executor;
+    ex.openLongForTest(0, size);                         /// bound = 64 KiB
+    ex.serveFromLongForTest(0, block);                   /// transferred 4 KiB; tail to bound >> drain
+    EXPECT_TRUE(ex.hasLongConnForTest());
+
+    ex.dropLongForTest();                                /// tail too big to drain -> incomplete
+    EXPECT_FALSE(ex.hasLongConnForTest());
+    EXPECT_EQ(ex.incompleteConnectionsForTest(), 1u);
+    EXPECT_EQ(rig.limit->getActiveCount(), 0u);
+}
+
+TEST(ReaderExecutor, LongConnectionDropDrainsSmallTail)
+{
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    const size_t drain = 2048;
+    LongConnRig rig(size, 4096, block, drain);
+    auto & ex = *rig.executor;
+    ex.openLongForTest(0, /*reach=*/block + 1024);       /// bound = 5120
+    EXPECT_EQ(ex.longConnBoundForTest(), block + 1024);
+    ex.serveFromLongForTest(0, block);                   /// position 4096; tail 1024 <= drain
+    EXPECT_TRUE(ex.hasLongConnForTest());
+
+    ex.dropLongForTest();                                /// drains the 1 KiB tail to the bound
+    EXPECT_FALSE(ex.hasLongConnForTest());
+    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);    /// completed -> not incomplete
+    EXPECT_EQ(rig.limit->getActiveCount(), 0u);
+}
+
+TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
+{
+    const size_t size = 64 * 1024;
+    LongConnRig rig(size, 4096, 4096, 1024);
+    auto & ex = *rig.executor;
+
+    EXPECT_EQ(ex.clampReachForTest(/*reach=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
+    EXPECT_EQ(ex.clampReachForTest(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
+    EXPECT_FALSE(ex.shouldOpenLongForTest(0));            /// open path not wired (Stage 1)
+}

@@ -294,6 +294,14 @@ ReaderExecutor::~ReaderExecutor()
     /// window of local I/O each) so bytes in hand are not dropped.
     sweepPutMachines(/*wait=*/true);
 
+    /// Account and release a still-held long connection abandoned at teardown.
+    /// Never drain here - a source read can throw and this destructor is noexcept.
+    if (long_conn)
+    {
+        accountLongDrop(long_conn, /*at_eof=*/false, stats);
+        long_conn.reset();
+    }
+
     /// A transient `readBigAt` executor rolls its stats into the parent via
     /// mergeTransientStats; emitting ProfileEvents / a reader_executor_log row
     /// here too would double-count. The parent's destructor reports the aggregate.
@@ -1645,6 +1653,179 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::alloc
         pos += chunk;
     }
     return blocks;
+}
+
+// ─── Long connection ────────────────────────────────────────────────────────
+
+Rope ReaderExecutor::LongConnection::readInto(
+    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
+    const MachineBase * stop)
+{
+    Rope rope;
+    size_t total_read = 0;
+    for (auto & block : blocks)
+    {
+        /// Stop BETWEEN blocks: a long connection stops freely - it stays put with
+        /// its frontier and continues later, nothing forfeited.
+        if (stopRequested(stop))
+            break;
+        const size_t got = readIntoBlock(*buffer, block->data(), block->size());
+        if (got == 0)
+            break;
+        rope.append(RopeNode{block, 0, got, logical_offset + total_read});
+        total_read += got;
+    }
+    current_position += total_read;
+    return rope;
+}
+
+size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_bytes)
+{
+    /// The source is in external-buffer mode, so discard through a scratch block
+    /// (mirrors `readIntoBlock`): the bytes cross the wire (over-read) but the source
+    /// request is saved. Short only at EOF.
+    if (gap == 0)
+        return 0;
+    const size_t scratch_size = std::min(gap, block_bytes);
+    auto scratch = std::make_shared<OwnedRopeBuffer>(scratch_size);
+    size_t skipped = 0;
+    while (skipped < gap)
+    {
+        const size_t got = readIntoBlock(*buffer, scratch->data(), std::min(gap - skipped, scratch_size));
+        if (got == 0)
+            break;
+        skipped += got;
+    }
+    current_position += skipped;
+    return skipped;
+}
+
+size_t ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes)
+{
+    if (current_position >= read_until)
+        return 0;
+    const size_t tail = read_until - current_position;
+    if (tail > max_tail)
+        return 0;
+    return skipForward(tail, block_bytes);
+}
+
+size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
+{
+    /// The estimator's reach is unclamped; bound it to the physical file end when the
+    /// size is known (an unknown-size object has no end to clamp against).
+    size_t end = phys_off + reach;
+    if (!hasUnknownSize())
+        end = std::min(end, totalSize() + data_start_offset);
+    return end;
+}
+
+bool ReaderExecutor::shouldOpenLong(size_t /*phys_off*/) const
+{
+    /// Stage 1: the open path is not wired. The structural rule (a connection whose
+    /// range exceeds the current read window is "long") lands with the read funnel.
+    return false;
+}
+
+void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const StoredObject & object,
+    size_t offset, size_t read_until, LongConnectionSlot slot, Stats & out_stats) const
+{
+    /// The foreground is the sole opener. Open a bounded GET and store it; the first
+    /// `readInto` issues the lazy request.
+    auto opened = source->open(object);
+    if (offset > 0)
+        opened->seek(offset, SEEK_SET);
+    if (opened->supportsRightBoundedReads())
+        opened->setReadUntilPosition(read_until);
+
+    conn.emplace(LongConnection{
+        .buffer = std::move(opened),
+        .object_path = object.remote_path,
+        .opened_at = offset,
+        .current_position = offset,
+        .read_until = read_until,
+        .slot = std::move(slot),
+    });
+    out_stats.add(Stats::SourceRequests);
+}
+
+Rope ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t offset,
+    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
+    const MachineBase * stop, Stats & out_stats) const
+{
+    /// Precondition: the caller has checked `servesObject` + `canContinue`.
+    if (offset > conn->current_position)
+    {
+        /// Bridge the small forward gap by discarding it on the open stream: the
+        /// bytes cross the wire (over-read) but the source request is saved.
+        const size_t skipped = conn->skipForward(offset - conn->current_position, block_size);
+        out_stats.add(Stats::BytesFromSource, skipped);
+        out_stats.add(Stats::OverReadBytes, skipped);
+    }
+    /// The served bytes are counted as `BytesFromSource` by the caller (the returned
+    /// rope), as on the one-shot path.
+    Rope rope = conn->readInto(std::move(blocks), logical_offset, stop);
+    releaseLongAtBound(conn);
+    return rope;
+}
+
+bool ReaderExecutor::maybeDrainLongTail(std::optional<LongConnection> & conn, Stats & out_stats) const
+{
+    if (!conn)
+        return false;
+    const size_t drained = conn->drainTail(max_tail_for_drain, block_size);
+    out_stats.add(Stats::BytesFromSource, drained);
+    out_stats.add(Stats::OverReadBytes, drained);
+    return drained > 0 && !conn->atBound();
+}
+
+void ReaderExecutor::dropLong(std::optional<LongConnection> & conn, Stats & out_stats) const
+{
+    if (!conn)
+        return;
+    /// Drain a small tail so the connection returns to the pool reusable; the drain
+    /// reports whether it ended short of the bound (EOF).
+    const bool ended_at_eof = maybeDrainLongTail(conn, out_stats);
+    accountLongDrop(conn, /*at_eof=*/ended_at_eof, out_stats);
+    conn.reset();
+}
+
+void ReaderExecutor::accountLongDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const
+{
+    /// A connection dropped before it was fully consumed (not read to its bound or to
+    /// EOF) is abandoned mid-response, not pool-reusable. One that never transferred
+    /// is excluded: its lazy GET never started.
+    if (conn && !conn->isComplete(at_eof) && conn->everTransferred())
+        out_stats.add(Stats::IncompleteConnections);
+}
+
+void ReaderExecutor::releaseLongAtBound(std::optional<LongConnection> & conn) const
+{
+    if (conn && conn->atBound())
+        conn.reset();
+}
+
+void ReaderExecutor::openLongForTest(size_t phys_offset, size_t reach)
+{
+    auto ranges = offset_map.map(ByteRange{phys_offset, 1});
+    chassert(!ranges.empty());
+    const auto & pr = ranges.front();
+    const size_t obj_file_offset = phys_offset - pr.object_offset;
+    const size_t phys_bound = std::min<size_t>(clampReach(reach, phys_offset), obj_file_offset + pr.object.bytes_size);
+    const size_t read_until = phys_bound - obj_file_offset;
+    LongConnectionSlot slot = long_connection_limit
+        ? long_connection_limit->tryAcquire(long_connection_limit)
+        : LongConnectionSlot{};
+    openLong(long_conn, pr.object, pr.object_offset, read_until, std::move(slot), stats);
+}
+
+Rope ReaderExecutor::serveFromLongForTest(size_t phys_offset, size_t want)
+{
+    auto ranges = offset_map.map(ByteRange{phys_offset, want});
+    chassert(!ranges.empty());
+    const auto & pr = ranges.front();
+    auto blocks = allocateBlocks(want, block_size, {});
+    return serveFromLong(long_conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, stats);
 }
 
 void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope & assembled)

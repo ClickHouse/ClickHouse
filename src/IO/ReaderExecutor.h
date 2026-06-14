@@ -179,6 +179,23 @@ public:
     /// feed, for verifying the wiring.
     size_t predictedReachForTest() const { return continuity_tracker.predictedReach(); }
 
+    /// Test-only probes / drivers of the long-connection mechanics (not yet wired
+    /// into the production read path).
+    bool hasLongConnForTest() const { return long_conn.has_value(); }
+    size_t longConnPositionForTest() const { return long_conn ? long_conn->current_position : 0; }
+    size_t longConnBoundForTest() const { return long_conn ? long_conn->read_until : 0; }
+    bool longConnServesForTest(const String & path) const { return long_conn && long_conn->servesObject(path); }
+    bool longConnCanContinueForTest(size_t off, size_t want) const
+    {
+        return long_conn && long_conn->canContinue(off, want, min_bytes_for_seek);
+    }
+    bool shouldOpenLongForTest(size_t phys_off) const { return shouldOpenLong(phys_off); }
+    size_t clampReachForTest(size_t reach, size_t phys_off) const { return clampReach(reach, phys_off); }
+    void openLongForTest(size_t phys_offset, size_t reach);
+    Rope serveFromLongForTest(size_t phys_offset, size_t want);
+    void dropLongForTest() { dropLong(long_conn, stats); }
+    UInt64 incompleteConnectionsForTest() const { return stats.get(Stats::IncompleteConnections); }
+
     /// Merge ranges separated by less than `min_gap`, to reduce request count.
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
@@ -301,6 +318,53 @@ private:
         size_t object_file_offset = 0;
         CacheViewPtr view;
         VectorWithMemoryTracking<MissEntry> writers;
+    };
+
+    /// One held source connection for a sequential run: a bounded GET opened ONCE
+    /// (only by the foreground - a machine never opens one, it can only RECEIVE one
+    /// at launch) and drained incrementally across windows while reads continue
+    /// forward within its bound. A small forward gap is bridged by discarding it on
+    /// the open stream (`skipForward`); a read it cannot continue reopens. Move-only
+    /// so it can ride the `FetchMachine` payload as a SINGLE owner (foreground member
+    /// <-> machine payload, never shared across threads). Offsets are OBJECT-LOCAL (a
+    /// GET streams one object); `read_until` is the predicted-reach bound, set ONCE.
+    struct LongConnection
+    {
+        std::unique_ptr<ReadBufferFromFileBase> buffer;
+        String object_path;
+        size_t opened_at = 0;
+        size_t current_position = 0;
+        size_t read_until = 0;
+        LongConnectionSlot slot;
+
+        /// Read to its bound - fully consumed and pool-reusable.
+        bool atBound() const { return current_position >= read_until; }
+        /// Dropping now leaves it pool-reusable.
+        bool isComplete(bool at_eof) const { return at_eof || atBound(); }
+        /// At least one byte crossed the wire. The GET is issued lazily, so a
+        /// never-read connection returns to the pool untouched and must not count
+        /// as incomplete.
+        bool everTransferred() const { return current_position > opened_at; }
+        bool servesObject(const String & path) const { return object_path == path; }
+        /// Forward, within `near_gap`, and `[off, off+want)` stays inside the bound.
+        bool canContinue(size_t off, size_t want, size_t near_gap) const
+        {
+            return off >= current_position
+                && off - current_position <= near_gap
+                && off + want <= read_until;
+        }
+
+        /// Read the pre-allocated `blocks` off the open stream into a Rope,
+        /// advancing the frontier; `stop` (nullable) is polled between blocks.
+        Rope readInto(VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks,
+            size_t logical_offset, const MachineBase * stop);
+        /// Discard up to `gap` bytes so the frontier advances over an already-cached
+        /// hole (over-read; the request is saved). Returns bytes skipped (< `gap`
+        /// only at EOF).
+        size_t skipForward(size_t gap, size_t block_bytes);
+        /// If only a tail <= `max_tail` remains to the bound, read it out so the
+        /// connection completes. Returns bytes drained.
+        size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
@@ -552,6 +616,46 @@ private:
     static VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(
         size_t size, size_t block_size, const VectorWithMemoryTracking<size_t> & splits = {});
 
+    // ─── Long connection ─────────────────────────────────────────────────
+
+    /// Clamp the estimator's (unclamped) reach to a concrete physical end: the file
+    /// end when the size is known (an unknown-size object has no end to clamp).
+    size_t clampReach(size_t reach, size_t phys_off) const;
+
+    /// Whether to open a long connection at physical `phys_off`: the predicted reach
+    /// exceeds the current read window. NOT wired into the read path yet (returns
+    /// false); the structural rule lands with the read-rule funnel.
+    bool shouldOpenLong(size_t phys_off) const;
+
+    /// Open a bounded GET over `object` at object-local `offset`, bounded at
+    /// object-local `read_until`, taking the already-acquired `slot`; store it in
+    /// `conn`. The ONLY place a long connection is opened, and only on the foreground
+    /// - a machine never calls this.
+    void openLong(std::optional<LongConnection> & conn, const StoredObject & object,
+        size_t offset, size_t read_until, LongConnectionSlot slot, Stats & out_stats) const;
+
+    /// Serve a read at object-local `offset` from `conn` (caller has checked
+    /// `servesObject` + `canContinue`): bridge a forward gap by discarding it
+    /// (over-read), `readInto` the blocks, then release the connection at its bound.
+    Rope serveFromLong(std::optional<LongConnection> & conn, size_t offset,
+        VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks,
+        size_t logical_offset, const MachineBase * stop, Stats & out_stats) const;
+
+    /// If only a tail <= `max_tail_for_drain` remains to the bound, read it out so
+    /// the connection completes and returns to the pool reusable. Returns true iff it
+    /// drained but did not reach the bound (EOF inside the tail).
+    bool maybeDrainLongTail(std::optional<LongConnection> & conn, Stats & out_stats) const;
+
+    /// Close `conn`: drain a small tail, account a still-incomplete drop, reset.
+    void dropLong(std::optional<LongConnection> & conn, Stats & out_stats) const;
+
+    /// Account an incomplete-connection drop (`everTransferred` and not
+    /// `isComplete`) for `conn`.
+    void accountLongDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const;
+
+    /// Reset `conn` if it reached its bound (a clean pool return).
+    void releaseLongAtBound(std::optional<LongConnection> & conn) const;
+
     // ─── Deferred puts / promotes ────────────────────────────────────────
 
     /// The retrigger verb: turn a just-collected machine into its PUT step.
@@ -740,6 +844,10 @@ private:
     /// Server-wide long-connection limit handle, shared with
     /// `makeTransientForReadAt`. Gates long-connection opens; dormant for now.
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
+    /// The held long source connection. Foreground hold (it rides the machine
+    /// payload when a prefetch carries it - a later stage). Empty until the open
+    /// path is wired in; Stage 1 introduces the type and mechanics only.
+    std::optional<LongConnection> long_conn;
 
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
     /// and every seek. Constructed with `near_gap == min_bytes_for_seek` so a
