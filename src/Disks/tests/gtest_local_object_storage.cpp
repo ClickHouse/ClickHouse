@@ -352,6 +352,105 @@ TEST(LocalObjectStorage, TryGetObjectMetadataToleratesNonDirectoryPathComponent)
     }
 }
 
+/// Regression test for the third clickhouse-gh[bot] review on PR #107432.
+/// Tolerating the disappearance class is not enough: with a single
+/// `recursive_directory_iterator`, a vanished *directory* aborts the entire
+/// traversal. libc++ opens each child directory with `opendir` while
+/// incrementing (`__try_recursion`); if that `opendir` fails (the directory was
+/// concurrently removed), the iterator resets itself to `end()`, so every later,
+/// still-present sibling is silently dropped. A caller such as
+/// `DataLakeCommon::listFiles` then reads a truncated listing with no error.
+///
+/// The fix descends with an explicit worklist of non-recursive
+/// `directory_iterator`s, so a vanished directory skips only its own subtree.
+/// This test churns several subdirectories (create inner file, then remove the
+/// whole directory) next to a fixed set of stable files, and asserts that every
+/// successful listing still reports ALL stable files. Before the fix the listing
+/// is intermittently truncated (a stable file goes missing); after it, the stable
+/// set is always complete.
+TEST(LocalObjectStorage, ListObjectsKeepsSiblingsWhenADirectoryVanishesMidTraversal)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_vanish_dir");
+    const auto & root = tmp.path;
+
+    /// A spread of stable files. Some will be enumerated after a churning
+    /// directory, so a truncating listing would lose at least one of them.
+    constexpr int stable_count = 24;
+    for (int i = 0; i < stable_count; ++i)
+        std::ofstream(root / ("stable_" + std::to_string(i) + ".txt")) << i;
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    std::atomic<bool> stop{false};
+    std::atomic<bool> listing_threw{false};
+    std::atomic<bool> listing_truncated{false};
+    std::atomic<size_t> listings_done{0};
+
+    /// Writers: repeatedly create a subdirectory with a file inside and then
+    /// remove the whole subtree, reproducing a directory that exists during
+    /// enumeration but vanishes when the lister tries to descend into it.
+    auto writer_loop = [&](int w)
+    {
+        const fs::path dir = root / ("churn_dir_" + std::to_string(w));
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            std::error_code ec;
+            fs::create_directory(dir, ec);
+            std::ofstream(dir / "inner.txt") << w;
+            fs::remove_all(dir, ec);
+        }
+    };
+
+    /// Readers: list the directory in a tight loop. A throw, or a listing that is
+    /// missing any stable file, fails the test.
+    auto reader_loop = [&]()
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            DB::RelativePathsWithMetadata children;
+            try
+            {
+                storage->listObjects(root.string(), children, /* max_keys */ 0);
+            }
+            catch (...)
+            {
+                /// Ok: catch-all is the test's failure assertion. Record only an atomic
+                /// flag (not the message) so the reader threads stay data-race-free under TSAN.
+                listing_threw.store(true, std::memory_order_relaxed);
+                return;
+            }
+
+            size_t stable_seen = 0;
+            for (const auto & c : children)
+                if (fs::path(c->relative_path).filename().string().starts_with("stable_"))
+                    ++stable_seen;
+
+            if (stable_seen != static_cast<size_t>(stable_count))
+            {
+                listing_truncated.store(true, std::memory_order_relaxed);
+                return;
+            }
+            listings_done.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+
+    std::vector<std::thread> threads;
+    for (int w = 0; w < 4; ++w)
+        threads.emplace_back(writer_loop, w);
+    for (int r = 0; r < 4; ++r)
+        threads.emplace_back(reader_loop);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    stop.store(true, std::memory_order_relaxed);
+    for (auto & t : threads)
+        t.join();
+
+    EXPECT_FALSE(listing_threw.load()) << "listObjects threw on a concurrently-removed directory";
+    EXPECT_FALSE(listing_truncated.load())
+        << "listObjects dropped stable siblings when a directory vanished mid-traversal";
+    EXPECT_GT(listings_done.load(), 0u) << "no listing completed";
+}
+
 /// A non-existent or non-directory input must return an empty listing,
 /// never throw or crash.
 TEST(LocalObjectStorage, ListObjectsHandlesMissingAndNonDirectoryPaths)

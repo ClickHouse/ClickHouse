@@ -436,37 +436,73 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     /// error (EACCES, EIO, ...) is propagated, so a caller never reads a
     /// silently truncated listing. The same tolerance is applied by
     /// `tryGetObjectMetadata` below for the per-entry metadata stat.
-    auto throw_unless_vanished = [&](const std::error_code & e)
+    auto throw_unless_vanished = [&](const std::error_code & e, const fs::path & at)
     {
         if (!isVanishedEntryError(e))
-            throw fs::filesystem_error("Cannot list local object storage directory", path, e);
+            throw fs::filesystem_error("Cannot list local object storage directory", at, e);
     };
 
-    std::error_code ec;
-    fs::recursive_directory_iterator it(path, ec);
-    if (ec)
-    {
-        throw_unless_vanished(ec);
-        return;
-    }
+    /// We descend with an explicit stack of non-recursive `directory_iterator`s
+    /// rather than a single `recursive_directory_iterator`. The recursive
+    /// iterator opens each child directory with `opendir` while incrementing and,
+    /// if that `opendir` fails (e.g. the directory was concurrently removed), it
+    /// resets itself to `end()` - silently dropping every later, still-present
+    /// sibling. Listing only the open directory at a time lets a vanished
+    /// directory skip just its own subtree while the remaining entries are still
+    /// reported. Each directory is fully drained before any subdirectory is
+    /// opened, so an invalid path (e.g. a NUL-truncated argument) fails fast on
+    /// the per-entry stat instead of recursing.
+    std::vector<fs::path> pending_dirs;
+    pending_dirs.emplace_back(path);
 
-    const fs::recursive_directory_iterator end;
-    while (it != end)
+    while (!pending_dirs.empty())
     {
-        const bool is_dir = it->is_directory(ec);
+        const fs::path dir = std::move(pending_dirs.back());
+        pending_dirs.pop_back();
+
+        std::error_code ec;
+        fs::directory_iterator it(dir, ec);
         if (ec)
-            throw_unless_vanished(ec); /// entry vanished before we could stat it: skip it
-        else if (!is_dir)
         {
-            if (auto metadata = tryGetObjectMetadata(it->path(), /*with_tags=*/ false))
-                children.emplace_back(std::make_shared<RelativePathWithMetadata>(it->path(), std::move(*metadata)));
+            /// The directory itself vanished (or a path component was replaced)
+            /// before we could open it: omit only this subtree, keep the rest.
+            throw_unless_vanished(ec, dir);
+            continue;
         }
 
-        it.increment(ec);
-        if (ec)
+        const fs::directory_iterator end;
+        while (it != end)
         {
-            throw_unless_vanished(ec);
-            return; /// increment resets the iterator to end() on error
+            const fs::path entry_path = it->path();
+            const bool is_dir = it->is_directory(ec); /// follows symlinks
+            if (ec)
+            {
+                throw_unless_vanished(ec, entry_path); /// entry vanished before we could stat it: skip it
+            }
+            else if (is_dir)
+            {
+                /// Descend only into real subdirectories, never into symlinks,
+                /// matching the no-follow-symlink default of the recursive
+                /// iterator (avoids cycles). A symlink-to-directory is neither
+                /// descended into nor reported as an object.
+                std::error_code sym_ec;
+                if (!it->is_symlink(sym_ec) && !sym_ec)
+                    pending_dirs.push_back(entry_path);
+            }
+            else
+            {
+                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
+                    children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
+            }
+
+            it.increment(ec);
+            if (ec)
+            {
+                /// `increment` resets the iterator to end() on error; a vanished
+                /// entry only affects this directory, the worklist preserves the rest.
+                throw_unless_vanished(ec, dir);
+                break;
+            }
         }
     }
 }
