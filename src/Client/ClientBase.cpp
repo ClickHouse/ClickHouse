@@ -538,7 +538,24 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                     }
 
                     if (depth == 0)
+                    {
                         json_end = q;
+
+                        /// Require the next significant token after the balanced JSON object to be a
+                        /// statement delimiter (`;`) or the end of input. Without this, multiquery
+                        /// input like `<json ast> garbage;` would deserialize and send the JSON prefix
+                        /// and only fail on `garbage` in the next iteration, whereas the SQL path
+                        /// rejects the same shape as excessive input before executing the prefix.
+                        Tokens after_json_tokens(json_end, end);
+                        IParser::Pos after_json_iterator(
+                            after_json_tokens,
+                            static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+                            static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
+                        if (after_json_iterator.isValid() && after_json_iterator->type != TokenType::Semicolon)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Excessive input after the JSON AST object: expected end of query or ';' "
+                                "during clickhouse_json deserialization");
+                    }
                 }
             }
 
