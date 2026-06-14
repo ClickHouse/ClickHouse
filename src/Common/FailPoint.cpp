@@ -37,7 +37,9 @@ static struct InitFiu
     REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
+    REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
+    ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -57,6 +59,7 @@ static struct InitFiu
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
     ONCE(smt_lightweight_snapshot_fail) \
+    ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
@@ -87,6 +90,8 @@ static struct InitFiu
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
+    REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
+    REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
@@ -179,6 +184,7 @@ static struct InitFiu
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
+    ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
@@ -188,7 +194,8 @@ static struct InitFiu
     REGULAR(compact_part_writer_fail_in_add_streams) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
     REGULAR(transaction_force_unknown_state_after_commit) \
-    PAUSEABLE(transaction_after_commit_pause)
+    PAUSEABLE(transaction_after_commit_pause) \
+    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc)
 
 namespace FailPoints
 {
