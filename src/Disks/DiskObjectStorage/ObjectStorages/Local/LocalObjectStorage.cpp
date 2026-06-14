@@ -396,8 +396,14 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
         throw fs::filesystem_error("Got unexpected error while getting last write time", path, error);
     }
 
-    /// no_such_file_or_directory is ignored only for last_write_time for consistency
-    object_metadata.size_bytes = fs::file_size(path);
+    object_metadata.size_bytes = fs::file_size(path, error);
+    if (error)
+    {
+        /// The file may vanish between the two stat calls (concurrent removal).
+        if (error == std::errc::no_such_file_or_directory)
+            return {};
+        throw fs::filesystem_error("Got unexpected error while getting file size", path, error);
+    }
 
     object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
@@ -410,12 +416,29 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
-    for (const auto & entry : fs::recursive_directory_iterator(path))
+    /// Listing is a best-effort snapshot: entries may be created or removed
+    /// concurrently (e.g. an external writer atomically replacing a file via
+    /// rename). Drive the iterator with the non-throwing `error_code` overloads
+    /// and skip entries that vanish mid-listing, mirroring how a remote object
+    /// store simply omits a concurrently-deleted object. The previous code used
+    /// the throwing overloads, so a file removed between enumeration and the
+    /// metadata stat aborted the whole listing with a `filesystem_error`.
+    std::error_code ec;
+    fs::recursive_directory_iterator it(path, ec);
+    if (ec)
+        return;
+
+    const fs::recursive_directory_iterator end;
+    for (; it != end; it.increment(ec))
     {
-        if (entry.is_directory())
+        if (ec)
+            return;
+
+        if (it->is_directory(ec) || ec)
             continue;
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
+        if (auto metadata = tryGetObjectMetadata(it->path(), /*with_tags=*/ false))
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(it->path(), std::move(*metadata)));
     }
 }
 

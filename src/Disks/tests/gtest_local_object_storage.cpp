@@ -5,10 +5,12 @@
 #include <unistd.h> /// for ::getpid
 
 #include <algorithm> /// for std::sort
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -185,6 +187,86 @@ TEST(LocalObjectStorage, ListObjectsHandlesPathWithEmbeddedNul)
 
     /// Sanity: the test finished (no crash / no infinite loop).
     SUCCEED();
+}
+
+/// Regression test for the Iceberg `test_format_version_upgrade_concurrent_reads`
+/// flake. `listObjects` enumerated the directory and then stat-ed each entry with
+/// the *throwing* `fs::last_write_time` / `fs::file_size`. When a concurrent writer
+/// atomically replaced a file (`write tmp; rename tmp -> final`, exactly what the
+/// Iceberg metadata-upgrade path does), the transient name could vanish between
+/// enumeration and the stat, so `last_write_time` threw `no_such_file_or_directory`
+/// and aborted the whole listing with a `filesystem_error` (surfaced as a query
+/// failure: `SELECT ... FROM iceberg_table`). Listing is a best-effort snapshot, so
+/// a concurrently-removed entry must simply be omitted, never throw.
+///
+/// This test reproduces the race deterministically: writer threads churn the
+/// directory with atomic renames while reader threads call `listObjects` in a tight
+/// loop. Before the fix this reliably throws within a few milliseconds; after it,
+/// every listing succeeds.
+TEST(LocalObjectStorage, ListObjectsToleratesConcurrentAtomicRename)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_race");
+    const auto & root = tmp.path;
+
+    /// A few stable files so a successful listing is non-empty.
+    for (int i = 0; i < 4; ++i)
+        std::ofstream(root / ("stable_" + std::to_string(i) + ".txt")) << i;
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    std::atomic<bool> stop{false};
+    std::atomic<bool> listing_threw{false};
+    std::atomic<size_t> listings_done{0};
+
+    /// Writers: continuously replace `churn_<w>.json` via the same
+    /// write-temp-then-rename dance used by the Iceberg metadata writer.
+    auto writer_loop = [&](int w)
+    {
+        const fs::path final_path = root / ("churn_" + std::to_string(w) + ".json");
+        size_t gen = 0;
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            const fs::path tmp_path = root / ("churn_" + std::to_string(w) + ".json.tmp." + std::to_string(gen++));
+            { std::ofstream(tmp_path) << "{\"v\":" << gen << "}"; }
+            std::error_code ec;
+            fs::rename(tmp_path, final_path, ec);
+            if (ec)
+                fs::remove(tmp_path, ec);
+        }
+    };
+
+    /// Readers: list the directory in a tight loop. A single throw fails the test.
+    auto reader_loop = [&]()
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            try
+            {
+                DB::RelativePathsWithMetadata children;
+                storage->listObjects(root.string(), children, /* max_keys */ 0);
+                listings_done.fetch_add(1, std::memory_order_relaxed);
+            }
+            catch (...)
+            {
+                listing_threw.store(true, std::memory_order_relaxed);
+                return;
+            }
+        }
+    };
+
+    std::vector<std::thread> threads;
+    for (int w = 0; w < 3; ++w)
+        threads.emplace_back(writer_loop, w);
+    for (int r = 0; r < 4; ++r)
+        threads.emplace_back(reader_loop);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    stop.store(true, std::memory_order_relaxed);
+    for (auto & t : threads)
+        t.join();
+
+    EXPECT_FALSE(listing_threw.load()) << "listObjects threw on a concurrently-renamed entry";
+    EXPECT_GT(listings_done.load(), 0u) << "no listing completed";
 }
 
 /// A non-existent or non-directory input must return an empty listing,
