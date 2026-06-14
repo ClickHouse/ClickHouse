@@ -5,7 +5,7 @@ import random
 import subprocess
 from pathlib import Path
 
-from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
+from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
@@ -389,7 +389,10 @@ def main():
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
-        bt_paths = {bt: f"{temp_dir}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
+        # Download the master-HEAD binaries matching this job's runner arch:
+        # the aarch64 job runs on an ARM runner and must use the ARM builds.
+        build_types = bugfix_build_types(info.job_name)
+        bt_paths = {bt: f"{temp_dir}/clickhouse_{bt}" for bt in build_types}
         # In local runs, only reuse existing binaries; probing master commits in S3
         # depends on `master_commits` workflow data populated by CI workflow hooks
         # and is not available locally.
@@ -401,7 +404,7 @@ def main():
             )
             build_urls = None
         else:
-            build_urls = find_master_builds()
+            build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
             for bt, url in build_urls.items():
@@ -412,7 +415,7 @@ def main():
                     )
                     Shell.run(f"chmod +x {bt_path}", verbose=True)
         Shell.run(
-            f"cp {temp_dir}/clickhouse_{BUGFIX_BUILD_TYPES[0]} {temp_dir}/clickhouse",
+            f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
             verbose=True,
             strict=True,
         )
@@ -710,7 +713,7 @@ def main():
                 random_order=is_bugfix_validation,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
-                build_type=BUGFIX_BUILD_TYPES[0] if is_bugfix_validation else None,
+                build_type=build_types[0] if is_bugfix_validation else None,
             )
 
         test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
@@ -723,12 +726,12 @@ def main():
         # build type are detected even when logs are cleaned between builds.
         if is_bugfix_validation:
             for r in test_result.results:
-                r.set_label(BUGFIX_BUILD_TYPES[0])
+                r.set_label(build_types[0])
 
             # Check fatal messages for the first build type before cleaning logs
             first_bt_fatals = CH.check_fatal_messages_in_logs()
             for r in first_bt_fatals:
-                r.set_label(BUGFIX_BUILD_TYPES[0])
+                r.set_label(build_types[0])
             # `extend_sub_results` recomputes the aggregate status from child
             # rows only, which would erase a runner-level `ERROR` set by
             # `FTResultsProcessor` (e.g. `not s.success_finish`) when the
@@ -741,7 +744,7 @@ def main():
                 test_result.status = Result.Status.ERROR
 
             if test_result.is_ok():
-                for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+                for bugfix_bt in build_types[1:]:
                     print(f"\n=== Bugfix validation with {bugfix_bt} ===")
                     # Stop the server before overwriting the binary: on Linux,
                     # `cp` over a running ELF fails with `Text file busy`,

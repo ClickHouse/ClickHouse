@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 
 from more_itertools import tail
 
-from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
+from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
@@ -707,7 +707,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
     if is_bugfix_validation:
-        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
+        # Download the master-HEAD binaries matching this job's runner arch:
+        # the aarch64 job runs on an ARM runner and must use the ARM builds.
+        build_types = bugfix_build_types(info.job_name)
+        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in build_types}
         # In local runs, only reuse existing binaries; probing master commits in S3
         # depends on `master_commits` workflow data populated by CI workflow hooks
         # and is not available locally.
@@ -719,7 +722,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
             build_urls = None
         else:
-            build_urls = find_master_builds()
+            build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
             for bt, url in build_urls.items():
@@ -730,7 +733,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
                     )
                     Shell.run(f"chmod +x {bt_path}", verbose=True)
-        clickhouse_path = f"{temp_path}/clickhouse_{BUGFIX_BUILD_TYPES[0]}"
+        clickhouse_path = f"{temp_path}/clickhouse_{build_types[0]}"
 
     if is_bugfix_validation or is_flaky_check:
         assert (
@@ -1003,11 +1006,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Run additional build types for bugfix validation.
     # Exit early on first failure to avoid duplicate test names and workspace pollution.
     if is_bugfix_validation:
+        build_types = bugfix_build_types(info.job_name)
         for r in test_results:
-            r.set_label(BUGFIX_BUILD_TYPES[0])
+            r.set_label(build_types[0])
 
         if all(r.is_ok() for r in test_results):
-            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+            for bugfix_bt in build_types[1:]:
                 print(f"\n=== Bugfix validation with {bugfix_bt} ===")
                 bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
                 test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
