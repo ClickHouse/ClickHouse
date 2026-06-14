@@ -228,6 +228,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     NameSet files_to_remove_after_sync;
+    NameSet removed_unhashed_stream_names;
     if (reset_columns)
     {
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
@@ -235,13 +236,25 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync
-            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
+            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, new_part->expired_subfields_by_column, serialization_infos, checksums, &removed_unhashed_stream_names);
+
+        new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    }
+    else if (!new_part->expired_columns.empty() || !new_part->expired_subfields_by_column.empty())
+    {
+        /// INSERT path uses reset_columns=false but may still flag subfields for pruning
+        /// (e.g. via Tuple subfield detection). Run the prune pass without touching the
+        /// freshly-built SerializationInfos otherwise.
+        auto part_columns = total_columns_list ? *total_columns_list : columns_list;
+        auto serialization_infos = new_part->getSerializationInfos();
+        files_to_remove_after_sync
+            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, new_part->expired_subfields_by_column, serialization_infos, checksums, &removed_unhashed_stream_names);
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    written_files = finalizePartOnDisk(new_part, checksums, gathered_data);
+    written_files = finalizePartOnDisk(new_part, checksums, gathered_data, removed_unhashed_stream_names);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -286,7 +299,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums,
-    const GatheredData & gathered_data)
+    const GatheredData & gathered_data,
+    const NameSet & removed_stream_names)
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
@@ -406,6 +420,11 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         writer->getColumnsSubstreams(),
         gathered_data.columns_substreams,
         new_part->getColumns().getNames());
+
+    /// Drop substream entries that correspond to files removed by
+    /// `removeEmptyColumnsFromPart` (named-Tuple subfield pruning). Keeps
+    /// `columns_substreams.txt` in sync with the set of files actually on disk.
+    columns_substreams.removeSubstreams(removed_stream_names);
 
     if (!columns_substreams.empty())
     {

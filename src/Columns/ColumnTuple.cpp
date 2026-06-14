@@ -179,6 +179,14 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     return true;
 }
 
+bool ColumnTuple::hasOnlyTypeDefaults() const
+{
+    for (const auto & col : columns)
+        if (!col->hasOnlyTypeDefaults())
+            return false;
+    return true;
+}
+
 std::string_view ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());

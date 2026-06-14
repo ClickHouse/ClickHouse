@@ -6,7 +6,9 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -1117,7 +1119,53 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
 
 /// If true, then in order to ALTER the type of the column from the type from to the type to
 /// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
-/// The function works for Arrays and Nullables of the same structure.
+/// The function recurses through Array, Nullable, Map, and named Tuple wrappers.
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context);
+
+/// Named Tuple subfields are stored as separate streams named by the field name path
+/// (e.g. `data.c2s.statistics.heros_statistics.damage.bin`), not by position. Therefore,
+/// adding new subfields to a named Tuple (in any position) only introduces new stream
+/// files; all preexisting subfield stream files remain valid as-is. Reading old parts
+/// that lack the new streams will fall back to the type's default value via the existing
+/// `fillMissingColumns` infrastructure. Removing or renaming subfields, or changing
+/// existing subfield types in a non-metadata-only way, still requires a full data mutation.
+bool isNamedTupleMetadataOnlyChange(const DataTypeTuple & from, const DataTypeTuple & to, const ContextPtr & context)
+{
+    if (!from.hasExplicitNames() || !to.hasExplicitNames())
+        return false;
+
+    const auto & from_names = from.getElementNames();
+    const auto & from_types = from.getElements();
+    const auto & to_names = to.getElementNames();
+    const auto & to_types = to.getElements();
+
+    std::unordered_map<std::string_view, size_t> to_index_by_name;
+    to_index_by_name.reserve(to_names.size());
+    for (size_t i = 0; i < to_names.size(); ++i)
+        to_index_by_name.emplace(to_names[i], i);
+
+    /// Every old subfield must still exist in `to` (by name) with a metadata-only-compatible
+    /// type change, AND must appear in the same relative order. Reordering existing fields
+    /// is not metadata-only: `primary.idx` and explicit skip-index bytes for embedded tuple
+    /// values are serialized in the old field order, while the new type deserializes and
+    /// compares in the new order. New subfields can be inserted at any position.
+    size_t last_to_index = 0;
+    bool first = true;
+    for (size_t i = 0; i < from_names.size(); ++i)
+    {
+        auto it = to_index_by_name.find(from_names[i]);
+        if (it == to_index_by_name.end())
+            return false;
+        if (!first && it->second <= last_to_index)
+            return false;
+        last_to_index = it->second;
+        first = false;
+        if (!isMetadataOnlyConversion(from_types[i].get(), to_types[it->second].get(), context))
+            return false;
+    }
+    return true;
+}
+
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
@@ -1191,10 +1239,115 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, cons
             continue;
         }
 
+        const auto * map_from = typeid_cast<const DataTypeMap *>(from);
+        const auto * map_to = typeid_cast<const DataTypeMap *>(to);
+        if (map_from && map_to)
+        {
+            if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+                return false;
+            from = map_from->getValueType().get();
+            to = map_to->getValueType().get();
+            continue;
+        }
+
+        const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from);
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(to);
+        if (tuple_from && tuple_to)
+            return isNamedTupleMetadataOnlyChange(*tuple_from, *tuple_to, context);
+
         return false;
     }
 }
 
+/// Internal recursion: true iff the type change includes at least one named-Tuple
+/// subfield addition and every other field change is itself a metadata-only conversion.
+bool tupleAddsSubfieldsOnlyImpl(const IDataType * from, const IDataType * to, const ContextPtr & context)
+{
+    if (from->equals(*to))
+        return false;
+
+    if (const auto * arr_from = typeid_cast<const DataTypeArray *>(from))
+    {
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (!arr_to)
+            return false;
+        return tupleAddsSubfieldsOnlyImpl(arr_from->getNestedType().get(), arr_to->getNestedType().get(), context);
+    }
+
+    if (const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from))
+    {
+        const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+        if (!nullable_to)
+            return false;
+        return tupleAddsSubfieldsOnlyImpl(nullable_from->getNestedType().get(), nullable_to->getNestedType().get(), context);
+    }
+
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(to);
+        if (!map_to)
+            return false;
+        if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+            return false;
+        return tupleAddsSubfieldsOnlyImpl(map_from->getValueType().get(), map_to->getValueType().get(), context);
+    }
+
+    const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from);
+    const auto * tuple_to = typeid_cast<const DataTypeTuple *>(to);
+    if (!tuple_from || !tuple_to
+        || !tuple_from->hasExplicitNames() || !tuple_to->hasExplicitNames())
+        return false;
+
+    const auto & from_names = tuple_from->getElementNames();
+    const auto & from_types = tuple_from->getElements();
+    const auto & to_names = tuple_to->getElementNames();
+    const auto & to_types = tuple_to->getElements();
+
+    std::unordered_map<std::string_view, size_t> to_index_by_name;
+    to_index_by_name.reserve(to_names.size());
+    for (size_t i = 0; i < to_names.size(); ++i)
+        to_index_by_name.emplace(to_names[i], i);
+
+    /// Same relative-order constraint as `isNamedTupleMetadataOnlyChange`: reordering
+    /// existing fields is not metadata-only and must not be misidentified as a
+    /// pure addition.
+    bool found_addition = to_names.size() > from_names.size();
+    size_t last_to_index = 0;
+    bool first = true;
+    for (size_t i = 0; i < from_names.size(); ++i)
+    {
+        auto it = to_index_by_name.find(from_names[i]);
+        if (it == to_index_by_name.end())
+            return false;
+        if (!first && it->second <= last_to_index)
+            return false;
+        last_to_index = it->second;
+        first = false;
+        const IDataType * old_elem = from_types[i].get();
+        const IDataType * new_elem = to_types[it->second].get();
+        if (old_elem->equals(*new_elem))
+            continue;
+
+        /// Field present in both old and new, but type changed: must be a metadata-only
+        /// conversion (Enum widening, Date <-> UInt16, nested named-Tuple addition, ...).
+        /// If it's a nested Tuple addition, also flag `found_addition` so the outer
+        /// "size didn't grow but inner did" case is detected.
+        if (tupleAddsSubfieldsOnlyImpl(old_elem, new_elem, context))
+        {
+            found_addition = true;
+            continue;
+        }
+        if (!isMetadataOnlyConversion(old_elem, new_elem, context))
+            return false;
+    }
+    return found_addition;
+}
+
+}
+
+bool tupleAddsSubfieldsOnly(const IDataType * from, const IDataType * to, const ContextPtr & context)
+{
+    return tupleAddsSubfieldsOnlyImpl(from, to, context);
 }
 
 bool AlterCommand::isSettingsAlter() const

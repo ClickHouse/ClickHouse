@@ -13,6 +13,10 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -130,6 +134,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsBool enable_tuple_subfield_pruning;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
@@ -163,6 +168,116 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+bool typeContainsNamedTuple(const DataTypePtr & type)
+{
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        return tuple->hasExplicitNames();
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsNamedTuple(array->getNestedType());
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeContainsNamedTuple(nullable->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return typeContainsNamedTuple(map->getValueType());
+    return false;
+}
+
+/// Returns true if @type contains anything we can't safely represent as a dotted
+/// leaf-stream path for merge-side Sub-case A pruning:
+///   * A named-`Tuple` element whose explicit name contains `.` (would alias another
+///     nested path).
+///   * A `Map`: its bucketed serialization streams are not enumerable from the type alone,
+///     so promoting a missing `Map` to a removed leaf could orphan bucket payload files.
+///
+/// When this is true for any source/storage column type involved, that whole column is
+/// ineligible for merge-side narrowing.
+bool typeIsAmbiguousForMergePrune(const DataTypePtr & type)
+{
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        return true;
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (tuple->hasExplicitNames())
+        {
+            for (const auto & name : tuple->getElementNames())
+                if (name.find('.') != String::npos)
+                    return true;
+        }
+        for (const auto & elem : tuple->getElements())
+            if (typeIsAmbiguousForMergePrune(elem))
+                return true;
+        return false;
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeIsAmbiguousForMergePrune(array->getNestedType());
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeIsAmbiguousForMergePrune(nullable->getNestedType());
+    return false;
+}
+
+/// Walk a (possibly Tuple/Array/Nullable/Map-wrapped) named-Tuple type and add the dotted
+/// leaf-stream paths into `out`. `path` is the dotted prefix reached so far.
+/// The path layout mirrors `narrowDataTypeByExpiredSubstreams`: Array/Nullable/Map do not
+/// add to the path; only Tuple's element names do.
+void collectAllLeafSubstreams(const DataTypePtr & type, const String & path, NameSet & out)
+{
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (tuple->hasExplicitNames())
+        {
+            const auto & names = tuple->getElementNames();
+            const auto & elements = tuple->getElements();
+            /// Element names containing `.` would alias nested dotted paths; we cannot
+            /// safely represent leaves under this Tuple in the dotted path scheme.
+            /// Treat the whole Tuple as an opaque leaf so the merge-side comparison
+            /// never matches a "missing leaf" and never prunes anything inside it.
+            for (const auto & name : names)
+            {
+                if (name.find('.') != String::npos)
+                {
+                    out.insert(path);
+                    return;
+                }
+            }
+            for (size_t i = 0; i < elements.size(); ++i)
+                collectAllLeafSubstreams(elements[i], path + "." + names[i], out);
+            return;
+        }
+        out.insert(path);
+        return;
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        collectAllLeafSubstreams(array->getNestedType(), path, out);
+        return;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        collectAllLeafSubstreams(nullable->getNestedType(), path, out);
+        return;
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        /// Treat `Map(K, V)` as an opaque leaf at this path. `SerializationMap` in
+        /// `with_buckets` mode hides its bucketed value streams behind state that
+        /// `enumerateStreams` cannot see without a written column, so deriving stream
+        /// names for narrowing from the type alone is unsafe. INSERT-side pruning also
+        /// never recurses into `Map`, so a merge-side narrowing of a `Map` value
+        /// subfield can only land if some source part is missing that leaf — which
+        /// already means the schema is inconsistent across sources. Conservatively
+        /// keep the whole `Map` as a single leaf.
+        (void)map;
+        out.insert(path);
+        return;
+    }
+    /// Scalar leaf.
+    out.insert(path);
+}
+
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -647,6 +762,70 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         {
             if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
+        }
+
+        /// Sub-case A (monotonic): for named-Tuple-shaped storage columns, preserve subfield
+        /// narrowings that ALL source parts already have. A leaf subfield is expired in the
+        /// merged part iff it is missing from every source part's actual type. This way a
+        /// merged part never re-materializes default values for a subfield that was
+        /// consistently pruned in the inputs.
+        ///
+        /// Sub-case B (writer-side per-stream re-detection of all-default leaves at merge
+        /// output) is intentionally not implemented here.
+        if ((*global_ctx->data_settings)[MergeTreeSetting::enable_tuple_subfield_pruning]
+            && !global_ctx->future_part->part_info.isPatch())
+        {
+            for (const auto & storage_column : global_ctx->storage_columns)
+            {
+                if (!typeContainsNamedTuple(storage_column.type))
+                    continue;
+                if (global_ctx->new_data_part->expired_columns.contains(storage_column.name))
+                    continue;
+                if (columns_desc.getDefault(storage_column.name))
+                    continue;  /// Conservatively keep DEFAULT-driven columns intact.
+                if (typeIsAmbiguousForMergePrune(storage_column.type))
+                    continue;  /// dotted-name Tuple or Map — see helper for rationale.
+
+                NameSet full_leaves;
+                collectAllLeafSubstreams(storage_column.type, storage_column.name, full_leaves);
+
+                NameSet union_present;
+                bool any_part_full = false;
+                for (const auto & part : global_ctx->future_part->parts)
+                {
+                    auto part_col = part->tryGetColumn(storage_column.name);
+                    if (!part_col)
+                    {
+                        /// Missing column = all defaults — contributes nothing to the union of
+                        /// present leaves. (Same conservative treatment as the standard
+                        /// expired-columns loop above.)
+                        continue;
+                    }
+                    if (typeIsAmbiguousForMergePrune(part_col->type))
+                    {
+                        any_part_full = true;
+                        break;
+                    }
+                    NameSet part_leaves;
+                    collectAllLeafSubstreams(part_col->type, storage_column.name, part_leaves);
+                    if (part_leaves == full_leaves)
+                    {
+                        any_part_full = true;
+                        break;
+                    }
+                    union_present.merge(std::move(part_leaves));
+                }
+                if (any_part_full)
+                    continue;
+                NameSet expired_for_column;
+                for (const auto & leaf : full_leaves)
+                {
+                    if (!union_present.contains(leaf))
+                        expired_for_column.insert(leaf);
+                }
+                if (!expired_for_column.empty())
+                    global_ctx->new_data_part->expired_subfields_by_column.emplace(storage_column.name, std::move(expired_for_column));
+            }
         }
     }
 

@@ -4873,6 +4873,86 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 }
             }
         }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
+            && old_metadata.getColumns().hasPhysical(command.column_name)
+            && new_metadata.getColumns().hasPhysical(command.column_name))
+        {
+            /// Metadata-only ALTER that adds new subfields to a named `Tuple` (possibly
+            /// wrapped in `Array`/`Nullable`/`Map`) skips the mutation branch above, so it
+            /// must still respect key/index immutability. Without this, a metadata-only
+            /// `MODIFY COLUMN t Tuple(a, b) -> Tuple(a, b, c)` on a column whose subcolumn
+            /// appears in `ORDER BY` would leave old `primary.idx` bytes that no longer
+            /// match the new tuple shape.
+            ///
+            /// Restricted to named-Tuple subfield additions (`tupleAddsSubfieldsOnly`) so
+            /// existing metadata-only conversions on key columns (e.g. `Date` -> `UInt16`)
+            /// keep their current behavior.
+            auto old_type_it = old_types.find(command.column_name);
+            if (old_type_it != old_types.end()
+                && tupleAddsSubfieldsOnly(old_type_it->second, command.data_type.get(), local_context))
+            {
+                if (columns_alter_type_forbidden.contains(command.column_name)
+                    || columns_alter_type_check_safe_for_partition.contains(command.column_name)
+                    || columns_alter_type_metadata_only.contains(command.column_name))
+                {
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of key column {} to add new Tuple subfields is forbidden",
+                        backQuoteIfNeed(command.column_name));
+                }
+
+                if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER column {} whose subcolumns ({}) are part of key expression",
+                        backQuoteIfNeed(command.column_name),
+                        boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+                }
+
+                /// Explicit skip indexes that depend on this column or any of its tuple
+                /// subcolumns have on-disk bytes (skp_idx_*.idx) serialized with the old
+                /// Tuple shape. Metadata-only ALTER does not produce a
+                /// `MutationCommand::READ_COLUMN`, so the rebuild/drop logic in
+                /// `MutationsInterpreter` cannot refresh them. Reject unconditionally —
+                /// independent of `alter_column_secondary_index_mode` — because no mode can
+                /// recover the stale index bytes for this code path.
+                ///
+                /// The match must include `column_name + "."` prefixes so that an index
+                /// keyed on a tuple subcolumn (e.g. `INDEX idx t.sub TYPE set(0)`) is still
+                /// caught when the storage column `t` is altered.
+                if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Adding new Tuple subfields to column '{}' is forbidden because it is used by the explicit skip index '{}'. "
+                        "Drop the index first, then re-create it after the ALTER",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
+                /// For dotted index keys, resolve through `tryGetColumnOrSubcolumn` to
+                /// distinguish a true subcolumn (e.g. `t.sub` of column `t`) from an
+                /// unrelated top-level column whose name happens to start with
+                /// `command.column_name + "."` (e.g. column `data.deeper` when altering
+                /// `data`). Only reject when the indexed key resolves to a real subcolumn
+                /// of the storage column being altered.
+                const auto & old_columns_desc = old_metadata.getColumns();
+                for (const auto & [indexed_col, index_name] : columns_in_explicit_indices)
+                {
+                    if (!indexed_col.starts_with(command.column_name + "."))
+                        continue;
+                    auto resolved = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, indexed_col);
+                    if (!resolved || resolved->getNameInStorage() != command.column_name)
+                        continue;
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Adding new Tuple subfields to column '{}' is forbidden because its subcolumn '{}' is used by the explicit skip index '{}'. "
+                        "Drop the index first, then re-create it after the ALTER",
+                        backQuoteIfNeed(command.column_name),
+                        indexed_col,
+                        index_name);
+                }
+            }
+        }
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);

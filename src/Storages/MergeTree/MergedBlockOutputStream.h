@@ -84,7 +84,8 @@ private:
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
         MergeTreeData::DataPart::Checksums & checksums,
-        const GatheredData & gathered_data);
+        const GatheredData & gathered_data,
+        const NameSet & removed_stream_names);
 
     NamesAndTypesList columns_list;
     size_t rows_count = 0;

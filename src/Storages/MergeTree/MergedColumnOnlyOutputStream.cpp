@@ -93,7 +93,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
         if (new_part->expired_columns.contains(column.name))
             empty_columns.emplace(column.name);
     }
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, empty_columns, serialization_infos, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, empty_columns, {}, serialization_infos, checksums);
 
     for (const String & removed_file : removed_files)
     {

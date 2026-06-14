@@ -1242,6 +1242,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
+            {"enable_tuple_subfield_pruning", false, true, "New default-on optimization. When enabled, INSERT and merge omit stream files for named-Tuple subfields whose values in the part are entirely type-defaults; the part's `columns.txt` records a narrowed Tuple type. Reads use `CAST(narrowed_tuple, full_tuple)` to materialize defaults. Pre-26.6 compatibility (`compatibility = '26.5'`) restores the old behavior of writing all subfield streams."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {

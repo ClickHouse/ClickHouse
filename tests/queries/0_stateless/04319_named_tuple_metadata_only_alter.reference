@@ -1,0 +1,91 @@
+Case 1 (flat, append at end):
+mutations:	0
+0	0	\N
+1	1	\N
+2	2	\N
+t (whole):	(0,'0',NULL)
+t (whole):	(1,'1',NULL)
+t (whole):	(2,'2',NULL)
+Case 2 (flat, insert in middle):
+mutations:	0
+0	0	\N
+1	1	\N
+2	2	\N
+t (whole):	(0,NULL,'0')
+t (whole):	(1,NULL,'1')
+t (whole):	(2,NULL,'2')
+Case 3 (nested Tuple, inner append):
+mutations:	0
+0	0	0	\N
+1	10	100	\N
+2	20	200	\N
+Case 4 (Array of Tuple):
+mutations:	0
+[0,1,2]	['0','1','2']	[NULL,NULL,NULL]
+t (whole):	[(0,'0',NULL),(1,'1',NULL),(2,'2',NULL)]
+Case 5 (Nested with flatten_nested=0):
+mutations:	0
+[0,1,2]	['0','1','2']	[NULL,NULL,NULL]
+Case 6 (Map of Tuple):
+mutations:	0
+{'k1':(10,'x',NULL),'k2':(20,'y',NULL)}
+Case 7 (non-Nullable new subfield):
+mutations:	0
+0	0	0
+1	1	0
+2	2	0
+Case 8 (multiple sequential ALTERs):
+mutations:	0
+0	0	\N	\N	[]
+1	1	\N	\N	[]
+t (whole):	(0,NULL,'0',NULL,[])
+t (whole):	(1,NULL,'1',NULL,[])
+Case 9 (unnamed Tuple rejected):
+Case 10 (subfield removal triggers mutation):
+mutations:	1
+(10)
+Case 11 (subfield rename triggers mutation):
+mutations:	1
+Case 12 (incompatible subfield type change triggers mutation):
+mutations:	1
+('42')
+Case 13 before merge (parts count):
+1
+Case 13 after merge: old rows return NULL, new row returns the inserted value:
+\N
+\N
+42
+Case 13 part count after merge:
+1
+Case 14 (stream collision rejected):
+Case 15 customer schema before ALTERs:
+100
+Case 15 mutations after 4 ALTERs:
+0
+Case 15 new subfields readable:
+100	100	100	100
+Case 15 whole tuple read works:
+100
+Case 16a (subcolumn in ORDER BY rejected):
+Case 16b (subcolumn in PARTITION BY rejected):
+Case 16c (whole Tuple in ORDER BY rejected):
+Case 16d (Tuple not in any key still works):
+mutations:	0
+10	20	\N
+Case 17a (nested addition, subcolumn under it in ORDER BY rejected):
+Case 17b (nested addition with whole Tuple in ORDER BY rejected):
+Case 17c (nested addition, sibling subcolumn in ORDER BY rejected):
+Case 17d (nested addition, no key dep, succeeds as metadata-only):
+mutations:	0
+10	100	\N
+Case 18a (explicit set skip index on whole column rejected, default mode):
+Case 18b (explicit skip index rejected even with rebuild mode):
+Case 18c (explicit skip index on Tuple subcolumn rejected):
+Case 18d (skip index on dotted top-level column does not block sibling):
+mutations:	0
+Case 19a (pure reorder triggers mutation):
+mutations:	1
+(20,10)
+Case 19b (insertion preserving order is metadata-only):
+mutations:	0
+10	20	\N
