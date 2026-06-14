@@ -15,6 +15,12 @@
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
 EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+# Heuristic style checks must skip the verbatim Markdown documentation embedded into
+# the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
+# in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
+# trailing whitespace inherited from the Markdown pages, etc.). Hits inside those raw
+# strings are filtered out by this helper rather than excluding whole files.
+FILTER_DOCS="python3 $ROOT_PATH/ci/jobs/scripts/check_style/filter_embedded_docs.py"
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -48,13 +54,13 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    rg -v '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
+    rg -v '//|\s+\*|\$\(\(| \)"' | $FILTER_DOCS && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 } > "$O.01" 2>&1 &
 
 # 02: Tabs and namespace comments
 {
-xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -F $'\t' && echo '^ tabs are not allowed'
+xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -H -n -F $'\t' | $FILTER_DOCS && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
 result=$(xargs < "$STYLE_TMPDIR/all_excluded" rg $@ '}\s*//+\s*namespace\s*' 2>/dev/null)
@@ -211,7 +217,7 @@ xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!",' | grep . && echo "No need for
 
 # 06b: Trailing whitespaces
 {
-xargs < "$STYLE_TMPDIR/all_excluded" grep -n ' $' | grep . && echo "^ Trailing whitespaces."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn ' $' | $FILTER_DOCS && echo "^ Trailing whitespaces."
 } > "$O.06b" 2>&1 &
 
 # 07a: Forbidden patterns in nobase_excluded (part 1)
