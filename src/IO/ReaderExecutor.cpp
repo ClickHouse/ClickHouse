@@ -269,6 +269,12 @@ ReaderExecutor::ReaderExecutor(
     creator_query_id = String(CurrentThread::getQueryId());
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, block_size, caches.size());
+
+    /// Keep the estimator's continuity gap in lockstep with the executor's seek
+    /// bound, so a bridged gap feeds the same whether modeled as a read or a seek.
+    ContinuityTracker::Options continuity_options;
+    continuity_options.near_gap = min_bytes_for_seek;
+    continuity_tracker = ContinuityTracker(continuity_options);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -474,6 +480,12 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     cancelMachine(/*cancelled=*/true);
+
+    const size_t new_physical = new_position + data_start_offset;
+    /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
+    /// so the post-seek plan re-feeds its predicted reads from here.
+    continuity_tracker.onSeek(new_physical);
+    continuity_fed_end = new_physical;
 
     /// A seek away from the current frontier strands the in-flight fill segment;
     /// drop its pin (the next window re-establishes it).
@@ -2096,9 +2108,39 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
         read_plan.geometry()->pressure_level,
         min_bytes_for_seek);
 
-    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} entries, {} retrieves",
+    /// Feed this plan's predicted source reads into the continuity estimator, then
+    /// snapshot its prediction into the schedule (unused for now - a later revision
+    /// sizes long source connections from it).
+    feedScheduleToContinuity(read_plan.schedule);
+    read_plan.schedule.predicted_reach = continuity_tracker.predictedReach();
+
+    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} entries, {} retrieves, predicted_reach={}",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
-        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
+        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size(),
+        read_plan.schedule.predicted_reach);
+}
+
+void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
+{
+    /// The predicted SOURCE reads are the `Source::Remote` retrieves; upper-tier
+    /// reads and promotes open no source connection, so a wide upper hit between
+    /// them correctly breaks the run. Feed in offset order, only past the
+    /// watermark, so overlapping re-plans never double-feed.
+    VectorWithMemoryTracking<ByteRange> source_reads;
+    for (const auto & r : schedule.retrieves)
+        if (r.source == PlanSchedule::Source::Remote)
+            source_reads.push_back(r.range);
+    std::sort(source_reads.begin(), source_reads.end(),
+        [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
+
+    for (const auto & range : source_reads)
+    {
+        const size_t start = std::max(range.offset, continuity_fed_end);
+        if (start >= range.end())
+            continue;  /// already fed by an earlier (overlapping) plan
+        continuity_tracker.onServe(start, range.end() - start);
+        continuity_fed_end = range.end();
+    }
 }
 
 ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const

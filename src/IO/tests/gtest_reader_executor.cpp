@@ -4360,3 +4360,30 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
     /// a separate unimplemented policy. Pins the current behavior.
     EXPECT_FALSE(slow->hasBlock(0)) << "lower tier not written down from a fully-covering upper hit";
 }
+
+TEST(ReaderExecutor, ContinuityTrackerFedFromSchedule)
+{
+    /// Wiring check: a cold sequential read feeds the schedule's predicted source
+    /// reads into the continuity estimator, so the plan's predicted reach is
+    /// populated (at least the window read so far). Plumbing only - nothing acts on
+    /// it yet; the value lives in `schedule.predicted_reach`.
+    String content(64 * 1024, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", content.size());
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(64 * 1024);   /// cold -> all miss -> one Remote retrieve
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = 8 * 1024;
+    opts.min_bytes_for_seek = 4 * 1024;
+    ReaderExecutor executor(source, objects, caches, opts);
+
+    auto w = executor.readNextWindow();   /// builds the first plan; feeds its source reads
+    ASSERT_FALSE(w.empty());
+    EXPECT_GE(executor.predictedReachForTest(), w.range().size)
+        << "the cold read's predicted source reads were fed to the continuity estimator";
+}

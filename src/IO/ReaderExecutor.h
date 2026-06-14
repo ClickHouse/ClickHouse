@@ -9,6 +9,7 @@
 #include <IO/ReadPlanGeometry.h>
 #include <IO/PlanSchedule.h>
 #include <IO/FetchMachine.h>
+#include <IO/ContinuityTracker.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -176,6 +177,10 @@ public:
     /// Test-only: the current look-ahead plan geometry (null until the first
     /// plan is built), for validating `describePlan` against the live walk.
     std::shared_ptr<const ReadPlanGeometry> planGeometryForTest() const { return read_plan.geometry(); }
+
+    /// Test-only: the continuity estimator's predicted reach after the last plan
+    /// feed, for verifying the wiring.
+    size_t predictedReachForTest() const { return continuity_tracker.predictedReach(); }
 
     /// Merge ranges separated by less than `min_gap`, to reduce request count.
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
@@ -603,6 +608,14 @@ private:
     /// plan.
     void planResidencyWindow(size_t physical_start);
 
+    /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
+    /// retrieves, in offset order, only past `continuity_fed_end`) into
+    /// `continuity_tracker`, then advance the watermark. A Remote retrieve's range
+    /// already spans bridged holes (<= `min_bytes_for_seek`) as over-read, and
+    /// `near_gap == min_bytes_for_seek`, so feeding the range as one read counts
+    /// that over-read exactly as a read-through would.
+    void feedScheduleToContinuity(const PlanSchedule & schedule);
+
     /// TRIM phase of the plan: the look-ahead span starting at
     /// `physical_start`, clamped to the physical file end and the advertised
     /// read extent. Empty when the start sits at/past a bound. The single
@@ -734,6 +747,16 @@ private:
     /// Server-wide live-connection limit handle, kept for the future long-connection
     /// rework (shared with `makeTransientForReadAt`). Dormant for now.
     std::shared_ptr<LiveConnectionLimit> buffer_limit;
+
+    /// Continuous-read pattern estimator, fed each plan's predicted source reads
+    /// and every seek. Constructed with `near_gap == min_bytes_for_seek` so a
+    /// bridged gap counts identically whether modeled as a read-through or a seek.
+    /// Its prediction is snapshotted into `schedule.predicted_reach`; nothing acts
+    /// on it yet.
+    ContinuityTracker continuity_tracker;
+    /// Highest physical offset already fed to `continuity_tracker` from a plan, so
+    /// overlapping re-plans never double-feed. Reset to the target on seek.
+    size_t continuity_fed_end = 0;
 
     /// Logging / transient accounting.
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;

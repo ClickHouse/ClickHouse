@@ -78,6 +78,12 @@ struct PlanSchedule
     VectorWithMemoryTracking<TypedRange> ranges;
     VectorWithMemoryTracking<Retrieve> retrieves;
     VectorWithMemoryTracking<Step> steps;
+
+    /// The `ContinuityTracker`'s predicted contiguous reach (bytes) at plan-build
+    /// time, after feeding it this plan's predicted source reads. Set by the
+    /// executor, NOT by `describePlan`. Unused for now - a later revision sizes
+    /// long source connections from it.
+    size_t predicted_reach = 0;
 };
 
 /// Describe the work of the plan `geometry` for the half-open logical request
