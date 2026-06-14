@@ -840,9 +840,15 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
     /// The worker may own the connection mid-read, so the revoke/release handoff
     /// must complete before any source touch.
     auto m = std::move(machine);
+    /// The foreground holds no long connection while a machine is in flight - it was
+    /// moved into the machine at launch; we reclaim it below.
+    chassert(!long_conn);
 
     if (runner->tryCancelQueued(*m))
     {
+        /// The worker never ran - the carried long connection is pristine; reclaim it
+        /// so the synchronous read can continue it.
+        long_conn = takeLong(m->long_conn);
         /// Still queued: revoke and let the caller read synchronously. Stash the
         /// machine - the pool's no-op pickup attaches a `ThreadGroupSwitcher`
         /// before checking cancellation, so ~ReaderExecutor must join it before
@@ -870,6 +876,11 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         stats += m->stats;
         std::rethrow_exception(m->failure);
     }
+
+    /// The worker released the machine - reclaim the carried long connection (now
+    /// advanced) so the next launch re-carries it (one GET across the run). Safe: the
+    /// release edge has passed, so the worker no longer touches the payload.
+    long_conn = takeLong(m->long_conn);
 
     const bool interrupted = m->state.load() == MachineState::Interrupted;
     /// Reconcile the worker's one-way EOF latch - ONLY here (its bytes are kept); the
@@ -1805,6 +1816,15 @@ void ReaderExecutor::releaseLongAtBound(std::optional<LongConnection> & conn) co
         conn.reset();
 }
 
+std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::optional<LongConnection> & src)
+{
+    /// A plain `std::optional` move leaves the source engaged with a moved-from value,
+    /// so reset it: the connection must be a single owner.
+    std::optional<LongConnection> taken = std::move(src);
+    src.reset();
+    return taken;
+}
+
 void ReaderExecutor::openLongForTest(size_t phys_offset, size_t reach)
 {
     auto ranges = offset_map.map(ByteRange{phys_offset, 1});
@@ -2495,6 +2515,12 @@ void ReaderExecutor::maybeTriggerPrefetch()
     m->geometry = read_plan.geometry();
     m->extent_snapshot = read_extent_end;
 
+    /// Carry the held long connection into the machine so its fetch extends the same
+    /// open GET (the foreground is the sole opener; a machine only RECEIVES one). Moved
+    /// in BEFORE scheduling so the worker sees it from the start; reclaimed below if the
+    /// schedule fails. Moves an empty optional until the open path is wired in.
+    m->long_conn = takeLong(long_conn);
+
     /// The machine's single step: a PURE source fetch of the pre-bounded aligned
     /// gap window into machine-owned state - no shared `this->`, no cache, no
     /// mutable plan. The foreground does the cache backfill + logical shift at
@@ -2531,6 +2557,9 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     if (!runner->schedule(m))
     {
+        /// The worker never started - reclaim the carried connection rather than lose
+        /// it with the dropped machine.
+        long_conn = takeLong(m->long_conn);
         LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
         stats.add(Stats::PrefetchPoolFull);
         return;
@@ -2546,11 +2575,18 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     auto m = std::move(machine);
     if (!m)
         return;
+    /// The foreground holds no long connection while a machine is in flight (moved in
+    /// at launch); a queued machine's pristine one is reclaimed below.
+    chassert(!long_conn);
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})", m->requested_range.offset, m->requested_range.end());
 
     if (runner->tryCancelQueued(*m))
     {
+        /// The worker never ran - reclaim the carried connection (pristine). A seek
+        /// keeps it (the read funnel decides bridge-or-reopen later); the destructor
+        /// accounts it if still held.
+        long_conn = takeLong(m->long_conn);
         /// Revoked before the worker ran - count it like the readNextWindow
         /// revoke path (but not destructor cleanup, which passes `cancelled=false`) so
         /// `ReaderExecutorPrefetchCancelled` / `reader_executor_log.prefetch_cancelled`
@@ -2597,6 +2633,10 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                 stats += m->stats;
                 stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
                 stats.add(Stats::PrefetchWastedCacheBytes, m->stats.get(Stats::PrefetchIssuedCacheBytes));
+                /// A long connection carried by an abandoned machine is lost with it
+                /// (the worker may have drained part of it); account a still-incomplete
+                /// drop before the machine - and its buffer/slot - are destroyed.
+                accountLongDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
                 return true;
             }),
         abandoned_machines.end());

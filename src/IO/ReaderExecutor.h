@@ -195,6 +195,7 @@ public:
     Rope serveFromLongForTest(size_t phys_offset, size_t want);
     void dropLongForTest() { dropLong(long_conn, stats); }
     UInt64 incompleteConnectionsForTest() const { return stats.get(Stats::IncompleteConnections); }
+    bool machineHasLongConnForTest() const { return machine && machine->long_conn.has_value(); }
 
     /// Merge ranges separated by less than `min_gap`, to reduce request count.
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
@@ -415,6 +416,12 @@ private:
         /// connection with THIS, never the live `read_extent_end` member - a
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
+        /// The long source connection CARRIED by this machine: moved in from the
+        /// foreground at launch (a machine never opens one itself - the foreground is
+        /// the sole opener), drained by the worker's fetch step instead of a one-shot
+        /// GET, reclaimed by the foreground at collect, or accounted + released at reap
+        /// if the machine is abandoned. Empty until the open path is wired in.
+        std::optional<LongConnection> long_conn;
         Stats stats;
         bool reached_eof = false;
         /// The fetch step's product: raw PHYSICAL source bytes (short at EOF).
@@ -655,6 +662,12 @@ private:
 
     /// Reset `conn` if it reached its bound (a clean pool return).
     void releaseLongAtBound(std::optional<LongConnection> & conn) const;
+
+    /// Move a long connection out of `src`, leaving `src` EMPTY. A plain `std::optional`
+    /// move leaves the source ENGAGED (with a moved-from value), so every hand-off goes
+    /// through this to keep the connection a single owner (and to stop a moved-from
+    /// husk from being seen as a held connection or counted as an incomplete drop).
+    static std::optional<LongConnection> takeLong(std::optional<LongConnection> & src);
 
     // ─── Deferred puts / promotes ────────────────────────────────────────
 

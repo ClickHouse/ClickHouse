@@ -4557,3 +4557,52 @@ TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
     EXPECT_EQ(ex.clampReachForTest(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
     EXPECT_FALSE(ex.shouldOpenLongForTest(0));            /// open path not wired (Stage 1)
 }
+
+TEST(ReaderExecutor, LongConnectionCarriedIntoPrefetchAndReclaimed)
+{
+    /// W1 ownership transfer: a foreground-held long connection is moved into the
+    /// prefetch machine at launch and reclaimed at collect. The connection is carried
+    /// INERTLY here - the worker still fetches one-shot and never drains it - so this
+    /// exercises only the move-in / reclaim plumbing; the slot rides along.
+    const size_t window = 100;
+    const size_t size = 2 * window;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 0;
+    opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
+    opts.long_connection_limit = limit;
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    ex.openLongForTest(/*phys_offset=*/0, /*reach=*/size);   /// foreground holds it; slot taken
+    EXPECT_TRUE(ex.hasLongConnForTest());
+    EXPECT_EQ(limit->getActiveCount(), 1u);
+
+    /// Window 1: synchronous gap read, then prefetch of window 2 carries the connection.
+    auto r1 = ex.readNextWindow();
+    EXPECT_EQ(r1.range().size, window);
+    EXPECT_TRUE(ex.hasInflightPrefetch());
+    EXPECT_TRUE(ex.machineHasLongConnForTest());             /// moved into the machine
+    EXPECT_FALSE(ex.hasLongConnForTest());                   /// moved out of the foreground
+    EXPECT_EQ(limit->getActiveCount(), 1u);                  /// slot rode along, not double-counted
+
+    /// Window 2: collects the prefetch and reclaims the connection; EOF -> no relaunch.
+    auto r2 = ex.readNextWindow();
+    EXPECT_EQ(r2.range().size, window);
+    EXPECT_FALSE(ex.hasInflightPrefetch());
+    EXPECT_TRUE(ex.hasLongConnForTest());                    /// reclaimed to the foreground
+    EXPECT_FALSE(ex.machineHasLongConnForTest());
+    EXPECT_EQ(limit->getActiveCount(), 1u);
+
+    EXPECT_TRUE(ex.readNextWindow().empty());                /// EOF
+    EXPECT_EQ(ropeBytes(r1) + ropeBytes(r2), content);       /// read correctly despite the inert carry
+}
