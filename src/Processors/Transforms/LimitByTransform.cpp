@@ -1,6 +1,7 @@
 #include <Processors/Transforms/LimitByTransform.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
@@ -149,14 +150,16 @@ UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt
     for (const auto & slice : slices)
         std::fill_n(mask.begin() + slice.start, slice.length, UInt8{1});
 
+    /// Filter every column (constant or not) with this one mask and size them all by its
+    /// popcount, so the output columns always agree on row count.
+    const UInt64 inserted_count = countBytesInFilter(mask);
+
     Columns output_columns;
     output_columns.reserve(source_columns.size());
-    /// For `ColumnConst`, `filter` would work too, but it would scan the mask
-    /// again to count selected rows. We already know `output_row_count`, so use `cut`.
     for (const auto & column : source_columns)
-        output_columns.push_back(isColumnConst(*column) ? column->cut(0, output_row_count) : column->filter(mask, output_row_count));
-    chunk.setColumns(std::move(output_columns), output_row_count);
-    return output_row_count;
+        output_columns.push_back(column->filter(mask, inserted_count));
+    chunk.setColumns(std::move(output_columns), inserted_count);
+    return inserted_count;
 }
 
 }
