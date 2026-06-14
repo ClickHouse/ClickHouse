@@ -10,6 +10,10 @@ CREATE TABLE t_codec_change (s String, INDEX idx s TYPE text(tokenizer = 'splitB
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS text_index_posting_list_codec = 'bitpacking';
 
+-- Keep the two source parts (with their different codecs) stable until the assertion below;
+-- otherwise a background merge could merge them early with the current codec.
+SYSTEM STOP MERGES t_codec_change;
+
 INSERT INTO t_codec_change SELECT 'hello world ' || toString(number) FROM numbers(1000);
 ALTER TABLE t_codec_change MODIFY SETTING text_index_posting_list_codec = 'none';
 INSERT INTO t_codec_change SELECT 'foo bar ' || toString(number) FROM numbers(1000);
@@ -21,6 +25,7 @@ SELECT 'bitpacking part compressed, none part not';
 SELECT has_compressed_postings FROM mergeTreeTextIndex(currentDatabase(), t_codec_change, idx) WHERE token = 'hello';
 SELECT has_compressed_postings FROM mergeTreeTextIndex(currentDatabase(), t_codec_change, idx) WHERE token = 'foo';
 
+SYSTEM START MERGES t_codec_change;
 OPTIMIZE TABLE t_codec_change FINAL;
 
 SELECT 'bitpacking then none';
@@ -36,10 +41,13 @@ CREATE TABLE t_codec_change (s String, INDEX idx s TYPE text(tokenizer = 'splitB
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS text_index_posting_list_codec = 'none';
 
+SYSTEM STOP MERGES t_codec_change;
+
 INSERT INTO t_codec_change SELECT 'hello world ' || toString(number) FROM numbers(1000);
 ALTER TABLE t_codec_change MODIFY SETTING text_index_posting_list_codec = 'bitpacking';
 INSERT INTO t_codec_change SELECT 'foo bar ' || toString(number) FROM numbers(1000);
 
+SYSTEM START MERGES t_codec_change;
 OPTIMIZE TABLE t_codec_change FINAL;
 
 SELECT 'none then bitpacking';
