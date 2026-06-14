@@ -3886,8 +3886,13 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
             writeVarUInt(child_id, out);
         }
 
-        /// Serialize column if it is present
-        const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);
+        /// Serialize column if it is present.
+        /// INPUT nodes can carry a constant column too: lambda capture DAGs reference
+        /// constants from the enclosing DAG as inputs with a pre-set constant column
+        /// (see `addInputConstantColumnIfNecessary`). Without the column, functions that
+        /// require constant arguments (e.g. `tupleElement`) cannot be re-resolved on
+        /// deserialization.
+        const bool has_column = (node.column != nullptr);
         UInt8 column_flags = 0;
         if (has_column)
         {
