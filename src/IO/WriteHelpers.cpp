@@ -379,9 +379,7 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
     /// `inf`/`nan` untouched. The caller guarantees at least
     /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
     if (force_decimal_point && isFinite(x)
-        && !memchr(buffer, '.', result)
-        && !memchr(buffer, 'e', result)
-        && !memchr(buffer, 'E', result))
+        && find_first_symbols<'.', 'e', 'E'>(buffer, buffer + result) == buffer + result)
     {
         buffer[result] = '.';
         ++result;
@@ -422,9 +420,7 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings, boo
     {
         buf.write(data, len);
         if (force_decimal_point
-            && !memchr(data, '.', len)
-            && !memchr(data, 'e', len)
-            && !memchr(data, 'E', len))
+            && find_first_symbols<'.', 'e', 'E'>(data, data + len) == data + len)
             writeChar('.', buf);
     };
 
