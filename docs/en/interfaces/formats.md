@@ -127,8 +127,8 @@ The supported formats are:
 | [XML](./formats/XML.md)                                                                                    | ✗   | ✔     |
 | [CapnProto](./formats/CapnProto.md)                                                                        | ✔   | ✔     |
 | [LineAsString](./formats/LineAsString/LineAsString.md)                                                     | ✔   | ✔     |
-| [LineAsStringWithNames](./formats/LineAsString/LineAsStringWithNames.md)                                   | ✔   | ✔     |
-| [LineAsStringWithNamesAndTypes](./formats/LineAsString/LineAsStringWithNamesAndTypes.md)                   | ✔   | ✔     |
+| [LineAsStringWithNames](./formats/LineAsString/LineAsStringWithNames.md)                                   | ✗   | ✔     |
+| [LineAsStringWithNamesAndTypes](./formats/LineAsString/LineAsStringWithNamesAndTypes.md)                   | ✗   | ✔     |
 | [Regexp](./formats/Regexp.md)                                                                              | ✔   | ✗     |
 | [RawBLOB](./formats/RawBLOB.md)                                                                            | ✔   | ✔     |
 | [MsgPack](./formats/MsgPack.md)                                                                            | ✔   | ✔     |
