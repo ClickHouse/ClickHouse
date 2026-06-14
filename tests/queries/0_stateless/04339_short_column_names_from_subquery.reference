@@ -1,6 +1,9 @@
 -- default-off: canonical (dotted) name still works
 1	5
--- default-off: short name still fails (preserves current behavior)
+-- default-off: short name still fails -- issue #87022
+-- default-off: subquery shape from issue #66133 still fails
+-- default-off: 3-way self-join CTE shape from issue #94858 still fails
+-- default-off: materialized CTE short name still fails
 -- on: issue #87022 reproducer works
 1	5
 -- on: outer reference via dotted name still works (additive)
@@ -16,7 +19,7 @@
 1	1
 -- on: explicit canonical alias shadows the short name
 10
--- on: explicit dotted projection in subquery (issue #94558)
+-- on: explicit dotted projection in subquery (related: #94558)
 \N
 -- on: materialized CTE — same SQL-standard story, even though MATERIALIZED rewrites the CTE reference into a TableNode
 1	5
