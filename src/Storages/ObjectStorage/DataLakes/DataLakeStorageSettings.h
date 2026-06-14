@@ -28,6 +28,7 @@ class SettingsChanges;
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
@@ -55,11 +56,32 @@ Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path 
     DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
 If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
 )", 0) \
+    DECLARE(UInt32, iceberg_metadata_async_prefetch_period_ms, 0, R"(
+The period in milliseconds to asynchronously prefetch the latest metadata snapshot from a remote iceberg catalog. Default is 0 - disabled.
+)", 0) \
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
+)", 0) \
+    DECLARE(Bool, paimon_incremental_read, false, R"(
+Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
+in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
+)", 0) \
+    DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
+Background metadata refresh interval for Paimon tables (seconds).
+0 disables background refresh. When >0, a background task periodically calls
+metadata update to pull latest snapshot/schema. Queries still trigger update
+as usual. Use cautiously on many tables to avoid excessive object storage/Keeper I/O.
+Default: 30
+)", 0) \
+    DECLARE(String, paimon_keeper_path, "", R"(
+Keeper path for Paimon incremental read state. Must be unique per table.
+If empty, incremental read is not allowed.
+)", 0) \
+    DECLARE(String, paimon_replica_name, "", R"(
+Replica name for Paimon incremental read state. Must be set and unique per replica.
 )", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \

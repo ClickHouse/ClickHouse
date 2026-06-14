@@ -21,4 +21,4 @@ $CLICKHOUSE_CLIENT -q "DROP FUNCTION ${TEST_ENCRYPT_FUNC}"
 $CLICKHOUSE_CLIENT -q "DROP FUNCTION ${TEST_DECRYPT_FUNC}"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE (query LIKE '%TOPSECRET%') AND (current_database = currentDatabase())"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (query LIKE '%TOPSECRET%') AND (current_database = currentDatabase())"

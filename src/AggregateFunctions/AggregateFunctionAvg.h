@@ -2,15 +2,11 @@
 
 #include <cmath>
 #include <type_traits>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionsRound.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -71,13 +67,13 @@ struct AvgFraction
     /// Invoked only is either Numerator or Denominator are Decimal.
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
-        Float64 numerator_float;
+        Float64 numerator_float = 0;
         if constexpr (is_decimal<Numerator>)
             numerator_float = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
             numerator_float = numerator;
 
-        Float64 denominator_float;
+        Float64 denominator_float = 0;
         if constexpr (is_decimal<Denominator>)
             denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
@@ -364,7 +360,7 @@ public:
             sum_data.addMany(column.getData().data(), row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin);
         }
-        increment(place, sum_data.sum);
+        increment(place, sum_data.get());
     }
 
     void addBatchSinglePlaceNotNull(
@@ -400,7 +396,7 @@ public:
             sum_data.addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin) - countBytesInFilter(null_map, row_begin, row_end);
         }
-        increment(place, sum_data.sum);
+        increment(place, sum_data.get());
     }
 
     String getName() const override { return "avg"; }

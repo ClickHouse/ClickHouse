@@ -53,7 +53,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
     if (!root)
         return;
 
-    NodeEvaluationRange range;
+    NodeEvaluationRange range{};
 
     if (settings_.use_current_time)
     {
@@ -212,8 +212,7 @@ const NodeEvaluationRange & NodeEvaluationRangeGetter::get(const Node * node) co
     auto it = map.find(node);
     if (it == map.end())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Not found node {} in NodeEvaluationRangeGetter", promql_tree->getQuery(node));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found node {} in NodeEvaluationRangeGetter", node->node_type);
     }
     return it->second;
 }

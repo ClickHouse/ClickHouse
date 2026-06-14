@@ -345,6 +345,8 @@ def get_rmv_info(
                 if wait_status
                 else (lambda r: r.iloc[0]["status"] != "Scheduling")
             ),
+            retry_count=max_attempts,
+            sleep_time=delay,
             parse=True,
         ).to_dict("records")[0]
 
@@ -436,7 +438,9 @@ def test_long_query_cancel(fn_setup_tables):
     get_rmv_info(node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Running")
 
     node.query("SYSTEM CANCEL VIEW test_rmv")
-    rmv = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
+    rmv = get_rmv_info(
+        node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Scheduled"
+    )
     assert rmv["status"] == "Scheduled"
     assert rmv["exception"] == "cancelled"
     assert rmv["last_success_time"] is None

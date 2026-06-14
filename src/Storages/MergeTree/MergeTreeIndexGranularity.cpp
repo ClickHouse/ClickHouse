@@ -83,7 +83,7 @@ size_t computeIndexGranularity(
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity)
 {
-    size_t index_granularity_for_block;
+    size_t index_granularity_for_block = 0;
 
     if (!can_use_adaptive_index_granularity)
     {
@@ -145,6 +145,12 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
         use_adaptive_granularity);
 
     return std::make_shared<MergeTreeIndexGranularityConstant>(computed_granularity);
+}
+
+size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_granularity) const
+{
+    size_t marks_count = getMarksCountWithoutFinal();
+    return (marks_count + skip_index_granularity - 1) / skip_index_granularity;
 }
 
 }

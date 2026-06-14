@@ -22,7 +22,11 @@
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
+#include <base/memcmpSmall.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocJITArena.h>
 #include <Common/formatReadable.h>
 #include <Core/Types.h>
 
@@ -38,9 +42,38 @@ namespace ErrorCodes
     extern const int CANNOT_MPROTECT;
 }
 
+namespace
+{
+
+/// Convenience: scope guard that pins the calling thread's allocations to the dedicated JIT arena.
+/// Use within any block that calls into LLVM, so heap allocations made by LLVM (which uses global
+/// `operator new`) don't pollute the default arena. Frees auto-route via jemalloc's per-extent
+/// metadata, so only allocation-side blocks need scoping.
+class JITAllocationScope : private DB::ScopedJemallocThreadArena
+{
+public:
+    JITAllocationScope() : DB::ScopedJemallocThreadArena(DB::JemallocJITArena::getArenaIndex()) {}
+
+    /// Run a callable inside a `JITAllocationScope` and return its result.
+    template <typename F>
+    static auto run(F && fn)
+    {
+        JITAllocationScope scope;
+        return std::forward<F>(fn)();
+    }
+};
+
+}
+
 
 /// These functions will be provided to the linker of JIT code,
 /// so it can call them to work with big integers on platforms without native support.
+///
+/// IMPORTANT: every libcall is registered as a signed/unsigned pair. LLVM picks the
+/// signed or unsigned variant based on whether the IR uses `fptosi`/`sitofp`/`sdiv`/`srem`
+/// or `fptoui`/`uitofp`/`udiv`/`urem`. Forgetting the unsigned half compiles fine but
+/// fails the JIT link at run time with `Could not find symbol __fixunsdfti` (or similar).
+/// Keep the lists below symmetric.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wbit-int-extension"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -51,9 +84,13 @@ using BitUInt128 = unsigned _BitInt(128);
 /// NOLINTBEGIN
 extern "C" BitInt128 __divti3(BitInt128, BitInt128);
 extern "C" BitInt128 __modti3(BitInt128, BitInt128);
+extern "C" BitUInt128 __udivti3(BitUInt128, BitUInt128);
+extern "C" BitUInt128 __umodti3(BitUInt128, BitUInt128);
 
 extern "C" BitInt128 __fixsfti(float);
 extern "C" BitInt128 __fixdfti(double);
+extern "C" BitUInt128 __fixunssfti(float);
+extern "C" BitUInt128 __fixunsdfti(double);
 
 extern "C" float __floattisf(BitInt128);
 extern "C" float __floatuntisf(BitUInt128);
@@ -136,7 +173,7 @@ public:
         allocateNextPageBlock(size);
         size_t allocated_page_index = page_blocks.size() - 1;
         char * result = tryAllocateFromPageBlockWithIndex(size, alignment, allocated_page_index);
-        assert(result);
+        chassert(result);
 
         return result;
     }
@@ -220,7 +257,7 @@ private:
 
     char * tryAllocateFromPageBlockWithIndex(size_t size, size_t alignment, size_t page_block_index)
     {
-        assert(page_block_index < page_blocks.size());
+        chassert(page_block_index < page_blocks.size());
         auto & pages_block = page_blocks[page_block_index];
 
         size_t block_size = pages_block.blockSize();
@@ -333,6 +370,8 @@ private:
 class JITSymbolResolver : public llvm::LegacyJITSymbolResolver
 {
 public:
+    explicit JITSymbolResolver(const llvm::DataLayout & layout_) : layout(layout_) {}
+
     llvm::JITSymbol findSymbolInLogicalDylib(const std::string &) override { return nullptr; }
 
     llvm::JITSymbol findSymbol(const std::string & Name) override
@@ -347,11 +386,23 @@ public:
         return jit_symbol;
     }
 
-    void registerSymbol(const std::string & symbol_name, void * symbol) { symbol_name_to_symbol_address[symbol_name] = symbol; }
+    /// Store symbols under their target-mangled names so findSymbol, which receives
+    /// names already mangled by LLVM, can look them up directly. On macOS the mangler
+    /// prepends '_' to C symbol names; on ELF targets the mangled form is identical
+    /// to the input. Canonicalizing here means lookup never needs a fallback path.
+    void registerSymbol(const std::string & symbol_name, void * symbol)
+    {
+        std::string mangled_name;
+        llvm::raw_string_ostream mangled_name_stream(mangled_name);
+        llvm::Mangler::getNameWithPrefix(mangled_name_stream, symbol_name, layout);
+        mangled_name_stream.flush();
+        symbol_name_to_symbol_address[mangled_name] = symbol;
+    }
 
     ~JITSymbolResolver() override = default;
 
 private:
+    const llvm::DataLayout & layout;
     std::unordered_map<std::string, void *> symbol_name_to_symbol_address;
 };
 
@@ -381,23 +432,29 @@ private:
 // };
 
 CHJIT::CHJIT()
-    : machine(getTargetMachine())
-, layout(machine->createDataLayout())
-    , compiler(std::make_unique<JITCompiler>(*machine))
-    , symbol_resolver(std::make_unique<JITSymbolResolver>())
+    : machine(JITAllocationScope::run([] { return getTargetMachine(); }))
+    , layout(JITAllocationScope::run([this] { return machine->createDataLayout(); }))
+    , compiler(JITAllocationScope::run([this] { return std::make_unique<JITCompiler>(*machine); }))
+    , symbol_resolver(std::make_unique<JITSymbolResolver>(layout))
 {
     /// Define common symbols that can be generated during compilation
     /// Necessary for valid linker symbol resolution
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+    symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
+    /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));
+    symbol_resolver->registerSymbol("__udivti3", reinterpret_cast<void *>(&__udivti3));
+    symbol_resolver->registerSymbol("__umodti3", reinterpret_cast<void *>(&__umodti3));
 
     symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&__fixsfti));
     symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&__fixdfti));
+    symbol_resolver->registerSymbol("__fixunssfti", reinterpret_cast<void *>(&__fixunssfti));
+    symbol_resolver->registerSymbol("__fixunsdfti", reinterpret_cast<void *>(&__fixunsdfti));
 
     symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&__floattisf));
     symbol_resolver->registerSymbol("__floatuntisf", reinterpret_cast<void *>(&__floatuntisf));
@@ -411,8 +468,21 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
 {
     std::lock_guard lock(jit_lock);
 
-    auto module = createModuleForCompilation();
-    compile_function(*module);
+    /// LLVM-touching work is wrapped in `JITAllocationScope` so its allocations land in the JIT
+    /// arena. Caller-side ClickHouse code that runs between LLVM calls (error handling further
+    /// down, symbol-name strings, result-map population) is intentionally left outside the scopes
+    /// so it stays in the default arena.
+    ///
+    /// Module creation and IR building (`compile_function`, which uses `llvm::IRBuilder` and friends)
+    /// are fused into a single scope: the IR objects they allocate are owned by the module, so they
+    /// belong in the JIT arena alongside the module itself.
+    auto module = JITAllocationScope::run([&]
+    {
+        auto new_module = createModuleForCompilation();
+        compile_function(*new_module);
+        return new_module;
+    });
+
     auto module_info = compileModule(std::move(module));
 
     ++current_module_key;
@@ -430,16 +500,23 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
-    runOptimizationPassesOnModule(*module);
+    /// Single scope around the back-to-back pure-LLVM calls (optimization passes → assembly print
+    /// → codegen → object parsing). `buffer` is declared at function scope because the parsed
+    /// `ObjectFile` keeps a non-owning reference into it, so the buffer must outlive the linker
+    /// step further down.
+    std::unique_ptr<llvm::MemoryBuffer> buffer;
+    auto object = JITAllocationScope::run([&]
+    {
+        runOptimizationPassesOnModule(*module);
 
 #ifdef PRINT_ASSEMBLY
-    AssemblyPrinter assembly_printer(*machine);
-    assembly_printer.print(*module);
+        AssemblyPrinter assembly_printer(*machine);
+        assembly_printer.print(*module);
 #endif
 
-    auto buffer = compiler->compile(*module);
-
-    llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> object = llvm::object::ObjectFile::createObjectFile(*buffer);
+        buffer = compiler->compile(*module);
+        return llvm::object::ObjectFile::createObjectFile(*buffer);
+    });
 
     if (!object)
     {
@@ -449,31 +526,39 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot create object file from compiled buffer: {}", error_message);
     }
 
+    /// `JITModuleMemoryManager`'s constructor itself does no allocations beyond its embedded
+    /// `PageArena` members (which are empty until `loadObject` triggers `allocate*Section`).
+    /// Those PageArenas use `posix_memalign`, which is intercepted into `je_posix_memalign`
+    /// (`Common/malloc.cpp`), so when the linker block below runs inside `JITAllocationScope`, the
+    /// reserved executable/data pages also land in the dedicated JIT arena. They are therefore
+    /// counted inside `jemalloc.jit_arena.active_bytes` (overlap, not in addition to it).
     std::unique_ptr<JITModuleMemoryManager> module_memory_manager = std::make_unique<JITModuleMemoryManager>();
-    llvm::RuntimeDyld dynamic_linker = {*module_memory_manager, *symbol_resolver};
-
-    std::unique_ptr<llvm::RuntimeDyld::LoadedObjectInfo> linked_object = dynamic_linker.loadObject(*object.get());
-
-    dynamic_linker.resolveRelocations();
-    module_memory_manager->finalizeMemory(nullptr);
 
     CompiledModule compiled_module;
-
-    for (const auto & function : *module)
     {
-        if (function.isDeclaration())
-            continue;
+        JITAllocationScope scope;
+        llvm::RuntimeDyld dynamic_linker = {*module_memory_manager, *symbol_resolver};
+        std::unique_ptr<llvm::RuntimeDyld::LoadedObjectInfo> linked_object = dynamic_linker.loadObject(*object.get());
 
-        auto function_name = std::string(function.getName());
+        dynamic_linker.resolveRelocations();
+        module_memory_manager->finalizeMemory(nullptr);
 
-        auto mangled_name = getMangledName(function_name);
-        auto jit_symbol = dynamic_linker.getSymbol(mangled_name);
+        for (const auto & function : *module)
+        {
+            if (function.isDeclaration())
+                continue;
 
-        if (!jit_symbol)
-            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "DynamicLinker could not found symbol {} after compilation", function_name);
+            auto function_name = std::string(function.getName());
 
-        auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
-        compiled_module.function_name_to_symbol.emplace(std::move(function_name), jit_symbol_address);
+            auto mangled_name = getMangledName(function_name);
+            auto jit_symbol = dynamic_linker.getSymbol(mangled_name);
+
+            if (!jit_symbol)
+                throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "DynamicLinker could not find symbol {} after compilation", function_name);
+
+            auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
+            compiled_module.function_name_to_symbol.emplace(std::move(function_name), jit_symbol_address);
+        }
     }
 
     compiled_module.size = module_memory_manager->allocatedSize();
@@ -494,7 +579,12 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
     if (module_it == module_identifier_to_memory_manager.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module.identifier);
 
-    module_identifier_to_memory_manager.erase(module_it);
+    /// `~JITModuleMemoryManager` runs LLVM symbol cleanup, which may briefly allocate transient state.
+    /// Frees auto-route to the right arena via jemalloc's chunk metadata, so only the brief allocs need scoping.
+    {
+        JITAllocationScope scope;
+        module_identifier_to_memory_manager.erase(module_it);
+    }
     compiled_code_size.fetch_sub(module.size, std::memory_order_relaxed);
 }
 
@@ -521,13 +611,12 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
-    auto target_analysis = machine->getTargetIRAnalysis();
-    fam.registerPass([&] { return target_analysis; });
-
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
 
-    llvm::PassBuilder pb(nullptr, pto);
+    /// Pass the actual TargetMachine so that all optimization passes
+    /// (including target-specific ones) have proper target information.
+    llvm::PassBuilder pb(machine.get(), pto);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
@@ -551,10 +640,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    auto triple = llvm::Triple(llvm::sys::getProcessTriple());
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 
     llvm::SubtargetFeatures features;
     for (const auto & f : llvm::sys::getHostCPUFeatures())

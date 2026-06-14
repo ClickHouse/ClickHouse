@@ -110,10 +110,20 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
         kafka_delete_topic(admin_client, topic_name, max_retries)
 
 
-def get_admin_client(kafka_cluster):
-    return KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+def get_admin_client(kafka_cluster, retries=15):
+    # Broker may not be reachable yet; retry like get_kafka_producer() instead of
+    # raising NoBrokersAvailable on the first attempt.
+    errors = []
+    for _ in range(retries):
+        try:
+            return KafkaAdminClient(
+                bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+            )
+        except kafka.errors.NoBrokersAvailable as e:
+            errors += [str(e)]
+            time.sleep(1)
+
+    raise Exception("Admin client connection not established, {}".format(errors))
 
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
@@ -189,6 +199,37 @@ def kafka_consume_with_retry(
     if len(messages) != expected_messages:
         raise Exception(f"Got only {len(messages)} messages")
     return messages
+
+
+def kafka_produce_protobuf_messages_protobuflist(
+    kafka_cluster, topic, start_index, num_messages
+):
+    """Produce Kafka messages in ProtobufList format.
+
+    Each Kafka message is a single ProtobufList envelope containing
+    all num_messages rows. The wire format is:
+      varint(envelope_size) + repeated { varint(field_tag) + varint(msg_size) + msg_bytes }
+    """
+    # Build the envelope body: repeated field 1 (KeyValuePair) entries
+    envelope_body = b""
+    FIELD_TAG = _VarintBytes((1 << 3) | 2)  # field 1, wire type 2 (length-delimited)
+    for i in range(start_index, start_index + num_messages):
+        msg = kafka_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        envelope_body += FIELD_TAG + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    # Wrap with the envelope size prefix
+    data = _VarintBytes(len(envelope_body)) + envelope_body
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
+        value_serializer=producer_serializer,
+    )
+    producer.send(topic=topic, value=data)
+    producer.flush()
+    logging.debug("Produced {} ProtobufList messages for topic {}".format(num_messages, topic))
 
 
 def kafka_produce_protobuf_messages_no_delimiters(

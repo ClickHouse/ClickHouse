@@ -1,7 +1,9 @@
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -10,6 +12,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -75,6 +78,16 @@ void IDisk::copyFile( /// NOLINT
     out->finalize();
 }
 
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    ReadPipeline pipeline;
+    prepareRead(path, settings, read_hint, pipeline);
+    return pipeline.build();
+}
+
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,
@@ -128,7 +141,7 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void asyncCopy(
+static void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,
@@ -203,7 +216,12 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 
 void IDisk::startup(bool skip_access_check)
 {
+    auto component_guard = Coordination::setCurrentComponent("IDisk::startup");
+
+    startupImpl();
+
     if (!skip_access_check)
+    try
     {
         if (isReadOnly())
         {
@@ -214,7 +232,12 @@ void IDisk::startup(bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl();
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        shutdown();
+        throw;
+    }
 }
 
 void IDisk::checkAccess()
@@ -239,17 +262,8 @@ try
     /// write
     {
         auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
-        try
-        {
-            file->write(payload.data(), payload.size());
-            file->finalize();
-        }
-        catch (...)
-        {
-            /// Log current exception, because finalize() can throw a different exception.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        file->write(payload.data(), payload.size());
+        file->finalize();
     }
 
     /// read

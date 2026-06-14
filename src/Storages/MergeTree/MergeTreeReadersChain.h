@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -30,13 +32,18 @@ using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
 class MergeTreeReadersChain
 {
+    using DataflowCacheUpdateCallback
+        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+
 public:
     MergeTreeReadersChain() = default;
     MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_);
     bool isInitialized() const { return is_initialized; }
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
-    ReadResult read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges);
+
+    ReadResult
+    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {});
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;

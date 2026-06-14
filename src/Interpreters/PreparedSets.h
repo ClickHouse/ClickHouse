@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include <future>
+#include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
@@ -102,13 +103,27 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    /// Hash based on actual set element data, computed order-independently so that two IN-clause
+    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
+    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
+    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
+    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
+    /// (see `query_plan_max_set_size_for_projection_match`).
+    Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
-    Columns getKeyColumns();
+    Columns getKeyColumns() const;
 private:
+    void fillSetElementsOnce() const;
+    Columns getUniqueKeyColumns() const;
+    Hash computeContentHash() const;
+
     Hash hash;
+    mutable Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
-    SetKeyColumns set_key_columns;
+    mutable SetKeyColumns set_key_columns;
+    mutable OnceFlag fill_set_elements_once;
+    mutable OnceFlag content_hash_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
@@ -147,6 +162,12 @@ public:
         size_t max_size_for_index);
 
     ~FutureSetFromSubquery() override;
+
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
 
     SetPtr get() const override;
     DataTypes getTypes() const override;

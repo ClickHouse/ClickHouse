@@ -30,6 +30,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
 }
 
 namespace ErrorCodes
@@ -183,7 +184,7 @@ void MergeTreePrefetchedReadPool::startPrefetches()
     [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
     /// Due to the difference in `estimated_memory_usage_for_single_prefetch` for different parts (column sizes might be different), it might happen that for the given thread, task number N won't fit in the prefetch memory limit, but the next task will.
     /// So the top of the queue may have a priority higher than `highest_priority`.
-    assert(prefetch_queue.top().task->priority >= highest_priority);
+    chassert(prefetch_queue.top().task->priority >= highest_priority);
 
     while (!prefetch_queue.empty())
     {
@@ -192,9 +193,9 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 #ifndef NDEBUG
         if (prev.task)
         {
-            assert(top.task->priority >= highest_priority);
+            chassert(top.task->priority >= highest_priority);
             if (prev.thread_id == top.thread_id)
-                assert(prev.task->priority < top.task->priority);
+                chassert(prev.task->priority < top.task->priority);
         }
         prev = top;
 #endif
@@ -222,7 +223,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         return stealTask(task_idx, previous_task);
 
     auto & thread_tasks = it->second;
-    assert(!thread_tasks.empty());
+    chassert(!thread_tasks.empty());
 
     auto thread_task = std::move(thread_tasks.front());
     thread_tasks.pop_front();
@@ -278,13 +279,13 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
     if (prefetched_tasks_to_steal != per_thread_tasks.end())
     {
         auto & thread_tasks = prefetched_tasks_to_steal->second;
-        assert(!thread_tasks.empty());
+        chassert(!thread_tasks.empty());
 
         auto task_it = std::find_if(
             thread_tasks.begin(), thread_tasks.end(),
             [](const auto & task) { return task->isValidReadersFuture(); });
 
-        assert(task_it != thread_tasks.end());
+        chassert(task_it != thread_tasks.end());
         auto thread_task = std::move(*task_it);
         thread_tasks.erase(task_it);
 
@@ -299,13 +300,13 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
     if (non_prefetched_tasks_to_steal != per_thread_tasks.end())
     {
         auto & thread_tasks = non_prefetched_tasks_to_steal->second;
-        assert(!thread_tasks.empty());
+        chassert(!thread_tasks.empty());
 
         /// Get second half of the tasks.
         const size_t total_tasks = thread_tasks.size();
         const size_t half = total_tasks / 2;
         auto half_it = thread_tasks.begin() + half;
-        assert(half_it != thread_tasks.end());
+        chassert(half_it != thread_tasks.end());
 
         /// Give them to current thread, as current thread's tasks list is empty.
         auto & current_thread_tasks = per_thread_tasks[thread];
@@ -355,7 +356,16 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         auto update_stat_for_column = [&](const auto & column_name)
         {
-            size_t column_size = read_info.data_part->getColumnSize(column_name).data_compressed;
+            size_t column_size = 0;
+            auto column = read_info.data_part->tryGetColumn(column_name);
+            if (column)
+            {
+                if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
+                    column_size = read_info.data_part->getSubcolumnSize(column_name).data_compressed;
+                else
+                    column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
+            }
+
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
             ++part_stat.required_readers_num;
         };

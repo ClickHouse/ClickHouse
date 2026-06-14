@@ -1,13 +1,14 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Parsers/IAST_fwd.h>
 #include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
 #include <optional>
-#include <unordered_map>
 
 #include <boost/noncopyable.hpp>
 
@@ -32,8 +33,8 @@ protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
-    using CompressionCodecsDictionary = std::unordered_map<String, CreatorWithType>;
-    using CompressionCodecsCodeDictionary = std::unordered_map<uint8_t, CreatorWithType>;
+    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
+    using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 public:
 
     static CompressionCodecFactory & instance();
@@ -83,6 +84,8 @@ public:
 
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
+
+    Strings getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;

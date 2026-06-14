@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
@@ -12,6 +11,7 @@
 #include <Common/StringWithMemoryTracking.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <future>
 #include <variant>
@@ -19,7 +19,18 @@
 namespace DB
 {
 
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
 struct Settings;
+
+/// Statistics of a successfully flushed async insert entry,
+/// communicated back to the waiting client via the future.
+struct AsyncInsertProgress
+{
+    size_t rows = 0;
+    size_t bytes = 0;
+};
 
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
@@ -27,6 +38,7 @@ class AsynchronousInsertQueue : public WithContext
 {
 public:
     using Milliseconds = std::chrono::milliseconds;
+    using ResultProgress = AsyncInsertProgress;
 
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
     ~AsynchronousInsertQueue();
@@ -42,7 +54,8 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future{};
+        /// On success, returns the number of rows/bytes actually written.
+        std::future<ResultProgress> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
@@ -77,7 +90,7 @@ public:
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
-        UInt128 hash;
+        UInt128 hash{};
 
         InsertQuery(
             const ASTPtr & query_,
@@ -156,13 +169,14 @@ private:
                 MemoryTracker * user_memory_tracker_);
 
             void resetChunk();
-            void finish(std::exception_ptr exception_ = nullptr);
+            void finish(ResultProgress result = {});
+            void finish(std::exception_ptr exception_);
 
-            std::future<void> getFuture() { return promise.get_future(); }
+            std::future<ResultProgress> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
         private:
-            std::promise<void> promise;
+            std::promise<ResultProgress> promise;
             std::atomic_bool finished = false;
         };
 
@@ -225,7 +239,7 @@ private:
         QueueIteratorByKey iterators;
 
         OptionalTimePoint last_insert_time;
-        std::chrono::milliseconds busy_timeout_ms;
+        std::chrono::milliseconds busy_timeout_ms{};
     };
 
     /// Times of the two most recent queue flushes.
@@ -305,6 +319,8 @@ private:
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
+
+    static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
 public:
     auto getQueueLocked(size_t shard_num) const

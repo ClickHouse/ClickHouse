@@ -2,8 +2,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -52,7 +52,7 @@ ColumnPtr ColumnConst::convertToFullColumn() const
     return data->replicate(Offsets(1, s));
 }
 
-ColumnPtr ColumnConst::removeLowCardinality() const
+ColumnPtr ColumnConst::convertToFullColumnIfLowCardinality() const
 {
     return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
@@ -122,19 +122,27 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
             selector.size(), toString(s));
 
-    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
-    MutableColumns res(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         res[i] = cloneResized(counts[i]);
 
     return res;
+}
+
+void ColumnConst::popBack(size_t n)
+{
+    if (n > s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    s -= n;
 }
 
 void ColumnConst::gather(ColumnGathererStream &)
@@ -154,10 +162,16 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 {
 }
 
-WeakHash32 ColumnConst::getWeakHash32() const
+void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 element_hash = data->getWeakHash32();
-    return WeakHash32(s, element_hash.getData()[0]);
+    UInt32 value = 0;
+    data->computeHashInto(0, 1, &value, true);
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
 }
 
 void ColumnConst::compareColumn(
@@ -189,5 +203,14 @@ ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
     return ColumnConst::create(std::move(data), 1);
 }
 
+void intrusive_ptr_add_ref(const ColumnConst * c)
+{
+    intrusive_ptr_add_ref(static_cast<const IColumn *>(c));
+}
+
+void intrusive_ptr_release(const ColumnConst * c)
+{
+    intrusive_ptr_release(static_cast<const IColumn *>(c));
+}
 
 }

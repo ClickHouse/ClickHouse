@@ -45,6 +45,8 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
 
 StatisticsType stringToStatisticsType(String type)
 {
+    type = Poco::toLower(type);
+
     if (type == "tdigest")
         return StatisticsType::TDigest;
     if (type == "uniq")
@@ -53,11 +55,13 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
+    if (type == "basic")
+        return StatisticsType::Basic;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
 }
 
-String SingleStatisticsDescription::getTypeName() const
+String statisticsTypeToString(StatisticsType type)
 {
     switch (type)
     {
@@ -69,9 +73,16 @@ String SingleStatisticsDescription::getTypeName() const
             return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
+        case StatisticsType::Basic:
+            return "basic";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
     }
+}
+
+String SingleStatisticsDescription::getTypeName() const
+{
+    return statisticsTypeToString(type);
 }
 
 SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
@@ -85,7 +96,13 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    return types_to_desc == other.types_to_desc;
+    if (!data_type)
+        return !other.data_type;
+
+    if (!other.data_type)
+        return false;
+
+    return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
 bool ColumnStatisticsDescription::empty() const

@@ -46,6 +46,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -107,7 +108,7 @@ SELECT quantileTiming(response_time) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileTiming::name, {createAggregateFunctionQuantile<FuncQuantileTiming>, {}, documentation});
+    factory.registerFunction(NameQuantileTiming::name, {createAggregateFunctionQuantile<FuncQuantileTiming>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously with determined precision.
@@ -156,7 +157,7 @@ SELECT quantilesTiming(0.25, 0.5, 0.75)(response_time) FROM t;
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesTiming::name, {createAggregateFunctionQuantile<FuncQuantilesTiming>, properties, documentation_quantiles});
+    factory.registerFunction(NameQuantilesTiming::name, {createAggregateFunctionQuantile<FuncQuantilesTiming>, documentation_quantiles, properties});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianTiming", NameQuantileTiming::name);

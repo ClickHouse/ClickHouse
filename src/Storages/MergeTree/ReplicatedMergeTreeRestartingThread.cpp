@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/ServerSettings.h>
@@ -87,6 +88,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     const size_t backoff_ms = 100 * ((consecutive_check_failures + 1) * (consecutive_check_failures + 2)) / 2;
     const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeRestartingThread");
     try
     {
         bool replica_is_active = runImpl();
@@ -132,7 +134,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     if (first_time)
     {
         LOG_DEBUG(log, "Activating replica.");
-        assert(storage.is_readonly);
+        chassert(storage.is_readonly);
     }
     else if (storage.is_readonly)
     {
@@ -156,7 +158,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     {
         /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
         tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
-        assert(storage.is_readonly);
+        chassert(storage.is_readonly);
         return false;
     }
 
@@ -165,7 +167,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     if (!tryStartup())
     {
-        assert(storage.is_readonly);
+        chassert(storage.is_readonly);
         return false;
     }
 
@@ -173,6 +175,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     /// Start queue processing
     storage.background_operations_assignee.start();
+    storage.background_streaming_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
@@ -223,7 +226,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr()->withMetadataVersion(replica_metadata_version));
+            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr(storage.getContext(), false)->withMetadataVersion(replica_metadata_version));
         }
         else
         {

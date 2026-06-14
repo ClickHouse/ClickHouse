@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include <base/getPageSize.h>
-#include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Poco/Unicode.h>
@@ -163,8 +162,11 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
+        if (needle == needle_end)
+            return true;
+
 #ifdef __SSE4_1__
         if (isPageSafe(pos))
         {
@@ -181,7 +183,7 @@ public:
                     pos += N;
                     const auto * needle_pos = needle + N;
 
-                    while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
+                    while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
                     {
                         ++pos;
                         ++needle_pos;
@@ -203,7 +205,7 @@ public:
             ++pos;
             const auto * needle_pos = needle + 1;
 
-            while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
+            while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
             {
                 ++pos;
                 ++needle_pos;
@@ -357,8 +359,14 @@ public:
             /// Invalid UTF-8
             if (!first_u32)
             {
-                /// Process it verbatim as a sequence of bytes.
-                size_t src_len = UTF8::seqLength(*needle);
+                /// Process it verbatim as a sequence of bytes. The clamp
+                /// against `needle_size` matches the inner-loop clamp at
+                /// `src_len = std::min<size_t>(needle_end - needle_pos, UTF8::seqLength(*needle_pos))`
+                /// below: a truncated first sequence (e.g. a 1-byte needle starting
+                /// with `0xE4`, where `seqLength` is 3) must not read past `needle_end`,
+                /// otherwise the `memcpy` propagates MemorySanitizer noise from
+                /// uninitialized memory past the needle into `l_seq` / `u_seq`.
+                size_t src_len = std::min<size_t>(needle_size, UTF8::seqLength(*needle));
 
                 memcpy(l_seq, needle, src_len);
                 memcpy(u_seq, needle, src_len);
@@ -420,6 +428,16 @@ public:
                     return;
                 }
             }
+            else
+            {
+                /// Invalid UTF-8 sequence in the middle of the needle: process bytes verbatim,
+                /// matching the design of the outer if-else above for the first character.
+                /// Without this, the inner loop below would read uninitialized bytes from
+                /// `l_seq` / `u_seq` and insert them into `cachel` / `cacheu`, surfacing later
+                /// as a MemorySanitizer use-of-uninitialized-value in `compare` / `search`.
+                memcpy(l_seq, needle_pos, src_len);
+                memcpy(u_seq, needle_pos, src_len);
+            }
 
             cache_actual_len += src_len;
             if (cache_actual_len < N)
@@ -471,6 +489,9 @@ public:
 
     ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
+        if (needle == needle_end)
+            return true;
+
 #ifdef __SSE4_1__
         if (isPageSafe(pos) && !force_fallback)
         {

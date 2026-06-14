@@ -23,31 +23,79 @@ if __name__ == "__main__":
     digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
     info.store_kv_data("build_digest", digest)
 
+    # store recent master commits (used by bugfix validation to find builds, and by perf tests).
+    # Store unconditionally: synced PRs in the private repo run the same bugfix validation
+    # jobs, and both this query and the build artifacts in `find_master_builds` use the
+    # public upstream namespace regardless of the repo the workflow runs in.
+    raw = Shell.get_output(
+        "gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50' -q '.[].sha'",
+        verbose=True,
+    )
+    master_commits = raw.splitlines()
+    info.store_kv_data("master_commits", master_commits)
+
     if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store previous commits for perf tests
-        raw = Shell.get_output(
-            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
-            verbose=True,
-        )
-        commits = raw.splitlines()
+        commits = list(master_commits)
 
-        for sha in commits:
-            if sha == info.sha:
-                break
+        while commits and commits[0] != info.sha:
             commits.pop(0)
 
-        info.store_kv_data("previous_commits_sha", commits)
+        info.store_kv_data("master_track_commits_sha", commits)
+
+    if info.pr_number > 0:
+        # store merge base between master and current branch
+        try:
+            # Get the merge base commit using git
+            merge_base_commit_sha = Shell.get_output(
+                f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
+                verbose=True,
+            ).strip()
+            info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
+
+        except Exception as e:
+            print(f"Failed to get merge base via git: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
-        file_diff = {}
-        for file in changed_files:
-            if file.startswith("tests/integration/test") and file.endswith(".py"):
-                file_diff[file] = Shell.get_output(
-                    f"git diff $(git merge-base master HEAD)..HEAD -- {file}",
-                    verbose=True,
+        # store master side commits for perf tests comparison
+        # In PR CI, HEAD is a merge commit; HEAD^1 is the master parent (first parent)
+        master_parent = Shell.get_output(
+            "git rev-parse HEAD^1", verbose=True
+        ).strip()
+        if master_parent:
+            master_parent_commits = [
+                s.strip()
+                for s in Shell.get_output(
+                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
+                ).splitlines()
+                if s.strip()
+            ]
+            if master_parent_commits:
+                info.store_kv_data("master_track_commits_sha", master_parent_commits)
+                print(
+                    f"Stored {len(master_parent_commits)} master parent commits for perf test comparison, starting from {master_parent}"
                 )
-        info.store_kv_data("file_diff", file_diff)
+        else:
+            print(
+                "WARNING: Could not find master parent commit (HEAD^1), skipping perf test commit storage"
+            )
+
+        # Record which integration test files changed so a downstream job can
+        # find the changed test cases (TODO). Store only the file paths, never
+        # the raw `git diff` output: that diff is user-authored free text and
+        # ends up serialized into the initial `Config Workflow` job's `data`
+        # output (see Runner.run). The GitHub Actions runner scans job outputs
+        # with built-in secret patterns and silently drops the whole output on
+        # a match (e.g. a test fixture containing `Authorization: Bearer ...`),
+        # which makes every downstream job skip. A consumer can recompute the
+        # diff for these paths on demand.
+        changed_integration_tests = [
+            file
+            for file in changed_files
+            if file.startswith("tests/integration/test") and file.endswith(".py")
+        ]
+        info.store_kv_data("changed_integration_tests", changed_integration_tests)
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later

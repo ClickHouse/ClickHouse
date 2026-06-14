@@ -45,7 +45,7 @@ namespace
 
             if (result)
             {
-                bool value;
+                bool value = false;
                 if (tryGetLiteralBool(result.get(), value) && value)
                     result = nullptr; /// The condition is always true, no need to check it.
             }

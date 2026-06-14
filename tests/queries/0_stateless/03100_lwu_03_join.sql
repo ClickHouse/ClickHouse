@@ -43,5 +43,5 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT mapSort(mapFilter((k, v) -> k IN ('ReadTasksWithAppliedPatches', 'PatchesAppliedInAllReadTasks', 'PatchesMergeAppliedInAllReadTasks', 'PatchesJoinAppliedInAllReadTasks'), ProfileEvents))
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query LIKE '%SELECT * FROM t_shared ORDER BY id%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE '%SELECT * FROM t_shared ORDER BY id%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;

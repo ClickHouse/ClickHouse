@@ -51,7 +51,6 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         else
         {
             auto tuple_func = makeASTOperator("tuple");
-            tuple_func->arguments = make_intrusive<ASTExpressionList>();
 
             for (const auto & order_by_elem : order_list->children)
             {

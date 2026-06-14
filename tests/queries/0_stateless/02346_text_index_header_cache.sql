@@ -4,7 +4,6 @@
 --- These tests verify the caching of a deserialized text index header in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_header_cache = 1;
@@ -36,7 +35,7 @@ CREATE VIEW text_index_cache_stats AS (
   SELECT
     concat('cache_hits = ', toString(ProfileEvents['TextIndexHeaderCacheHits']), ', cache_misses = ', toString(ProfileEvents['TextIndexHeaderCacheMisses']))
   FROM system.query_log
-  WHERE query_kind ='Select'
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind ='Select'
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'

@@ -5,7 +5,6 @@
 DROP TABLE IF EXISTS tab;
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET optimize_rewrite_like_perfect_affix = 1;
@@ -24,9 +23,9 @@ SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;
 
@@ -47,16 +46,16 @@ SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE 'Hello,%' OR s LIKE 'hello,%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1, indexes = 1 SELECT count() FROM tab WHERE s LIKE 'Hello,%' OR s LIKE 'hello,%' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1, indexes = 1 SELECT count() FROM tab WHERE s LIKE 'Hello,%' OR s LIKE 'hello,%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;

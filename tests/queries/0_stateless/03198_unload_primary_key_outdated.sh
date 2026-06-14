@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT "
 
     CREATE TABLE t_unload_primary_key (a UInt64, b UInt64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS old_parts_lifetime = 10000, use_primary_key_cache = 0;
+    SETTINGS old_parts_lifetime = 10000, use_primary_key_cache = 0, merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     INSERT INTO t_unload_primary_key VALUES (1, 1);
 

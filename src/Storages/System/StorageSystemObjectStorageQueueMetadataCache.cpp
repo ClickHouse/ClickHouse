@@ -6,13 +6,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Disks/IDisk.h>
 

@@ -7,8 +7,6 @@ title: 'odbc'
 doc_type: 'reference'
 ---
 
-# odbc Table Function
-
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 ## Syntax {#syntax}
@@ -112,5 +110,5 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## Related {#see-also}
 
-- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
+- [ODBC dictionaries](/sql-reference/statements/create/dictionary/sources/odbc)
 - [ODBC table engine](/engines/table-engines/integrations/odbc).

@@ -3,7 +3,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,7 +14,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -161,7 +162,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         }
 
         WhichDataType type_info{nested_type};
-        Field::Types::Which field_type;
+        Field::Types::Which field_type = {};
 
         /// Promote integers to 64 bit types
         if (type_info.isNativeUInt())
@@ -473,7 +474,7 @@ String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
     return res.str();
 }
 
-size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
+UInt64 ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
                                                                       const LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
                                                                       bool null_as_default,
@@ -492,11 +493,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    const auto res128 = getSipHash128AsPair(hash_state);
-    size_t res = 0;
-    boost::hash_combine(res, res128.low64);
-    boost::hash_combine(res, res128.high64);
-    return res;
+    return hash_state.get64();
 }
 
 
@@ -522,7 +519,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
-    size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
+    UInt64 template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
     auto iter = cache.find(template_hash);
     if (iter == cache.end())
     {
@@ -670,6 +667,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
                 return false;
             nested_types = map_type->getKeyValueTypes();
         }
+
+        if (nested_types.size() != type_info.nested_types.size())
+            return false;
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {

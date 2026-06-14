@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -21,6 +23,7 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -103,13 +106,15 @@ PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
+    auto cloned = expression.clone();
+
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(cloned));
     else
-        dag = expression.clone();
+        dag = std::move(cloned);
 }
 
-const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
+static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
 {
     auto & outputs = dag.getOutputs();
     for (auto it = outputs.begin(); it != outputs.end(); ++it)
@@ -134,11 +139,8 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             }
             else
             {
-                ColumnWithTypeAndName col;
-                col.name = node->result_name;
-                col.type = node->result_type;
-                col.column = col.type->createColumnConst(1, 1);
-                *it = &dag.addColumn(std::move(col));
+                auto column = node->result_type->createColumnConst(0, 1);
+                *it = &dag.addColumn(std::move(column), node->result_type, node->result_name);
             }
 
             return node;
@@ -245,6 +247,17 @@ bool QueryDAG::build(QueryPlan::Node & node)
         auto & outputs = dag->getOutputs();
         outputs.insert(outputs.begin(), filter_node);
     }
+
+    /// Remove materialize() and identity() wrappers from the combined DAG.
+    /// This must happen after all expressions are merged and filter nodes are added
+    /// back to outputs, because:
+    /// 1. Removing wrappers before merging would change output column names (e.g.,
+    ///    "materialize(name)" → "name"), causing subsequent merges to fail when they
+    ///    try to match input names to the modified output names.
+    /// 2. removeTrivialWrappers calls removeUnusedActions, which can invalidate raw
+    ///    pointers (like filter_nodes) to nodes that are no longer reachable from outputs.
+    if (dag)
+        dag->removeTrivialWrappers();
 
     return true;
 }

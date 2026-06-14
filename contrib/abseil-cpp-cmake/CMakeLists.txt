@@ -985,6 +985,25 @@ set(DIR ${ABSL_ROOT_DIR}/absl/debugging)
 
 absl_cc_library(
   NAME
+    borrowed_fixup_buffer
+  SRCS
+    "${DIR}/internal/borrowed_fixup_buffer.cc"
+  HDRS
+    "${DIR}/internal/borrowed_fixup_buffer.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::config
+    absl::core_headers
+    absl::hash
+    absl::malloc_internal
+  PUBLIC
+)
+
+absl_cc_library(
+  NAME
     stacktrace
   HDRS
     "${DIR}/stacktrace.h"
@@ -1005,6 +1024,7 @@ absl_cc_library(
   LINKOPTS
     $<$<BOOL:${EXECINFO_LIBRARY}>:${EXECINFO_LIBRARY}>
   DEPS
+    absl::borrowed_fixup_buffer
     absl::debugging_internal
     absl::config
     absl::core_headers
@@ -1526,7 +1546,6 @@ absl_cc_library(
     absl::optional
     absl::variant
     absl::utility
-    absl::low_level_hash
   PUBLIC
 )
 
@@ -1544,23 +1563,6 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::endian
-)
-
-# Internal-only target, do not depend on directly.
-absl_cc_library(
-  NAME
-    low_level_hash
-  HDRS
-    "${DIR}/internal/low_level_hash.h"
-  SRCS
-    "${DIR}/internal/low_level_hash.cc"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-    absl::endian
-    absl::int128
-    absl::prefetch
 )
 
 set(DIR ${ABSL_ROOT_DIR}/absl/log)
@@ -2500,7 +2502,6 @@ absl_cc_library(
     absl::random_internal_seed_material
     absl::random_seed_gen_exception
     absl::span
-    absl::string_view
 )
 
 # Internal-only target, do not depend on directly.
@@ -2927,16 +2928,12 @@ absl_cc_library(
     string_view
   HDRS
     "${DIR}/string_view.h"
-  SRCS
-    "${DIR}/string_view.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base
     absl::config
     absl::core_headers
     absl::nullability
-    absl::throw_delegate
   PUBLIC
 )
 

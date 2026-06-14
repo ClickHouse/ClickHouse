@@ -84,10 +84,10 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     if (version == 1)
     {
         /// is_replicated and is_remote are not used
-        bool is_replicated;
+        bool is_replicated = false;
         readBoolText(is_replicated, buffer);
         DB::assertChar('\n', buffer);
-        bool is_remote;
+        bool is_remote = false;
         readBoolText(is_remote, buffer);
         DB::assertChar('\n', buffer);
     }
@@ -127,6 +127,7 @@ Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
 
 BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("Unfreezer::systemUnfreeze");
     LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
 
     const auto & config = local_context->getConfigRef();

@@ -11,6 +11,7 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 
@@ -111,7 +112,7 @@ void CrashWriter::sendError(Type type, int sig_or_error, std::string_view error_
             }
         }
 
-        #if defined(__ELF__) && !defined(OS_FREEBSD)
+        #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
             const String & build_id_hex = SymbolIndex::instance().getBuildIDHex();
             writeCString(",\"build_id\":", json);
             writeJSONString(build_id_hex, json, settings);

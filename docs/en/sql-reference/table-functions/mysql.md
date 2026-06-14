@@ -8,8 +8,6 @@ title: 'mysql'
 doc_type: 'reference'
 ---
 
-# mysql Table Function
-
 Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server.
 
 ## Syntax {#syntax}
@@ -104,6 +102,35 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
+### `enable_compression` {#enable-compression}
+
+Enables compression for the MySQL protocol connection.
+
+Default value: `false`.
+
+This setting applies to:
+
+- the `mysql` table function;
+- the `MySQL` table engine;
+- the `MySQL` database engine;
+- named collections used by MySQL integrations.
+
+When enabled, ClickHouse requests compression for the connection.
+
+Example:
+
+```sql
+SELECT *
+FROM mysql(
+    'mysql80:3306',
+    'clickhouse',
+    'test_table',
+    'root',
+    'password',
+    SETTINGS enable_compression = 1
+);
+```
+
 Replacing and inserting:
 
 ```sql
@@ -146,7 +173,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 ## Related {#related}
 
 - [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
 - [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
 - [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)

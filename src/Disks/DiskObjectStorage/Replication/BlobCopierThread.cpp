@@ -204,6 +204,7 @@ BlobCopierThread::BlobCopierThread(
 
 void BlobCopierThread::run()
 {
+    auto component_guard = Coordination::setCurrentComponent("BlobCopierThread::run");
     LOG_TEST(log, "Starting replication");
 
     executeBlobsReplication(metadata_request_batch.load(), replication_tasks_runner, cluster, metadata_storage, object_storages, log);

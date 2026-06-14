@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-parallel-replicas
 # add_minmax_index_for_numeric_columns=0: Would use the index and not the projection
+# use_statistics_for_part_pruning=0: Statistics pruning would filter parts before projection check, causing force_optimize_projection_name to fail
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +19,7 @@ while [[ $i -lt $retries ]]; do
     if [[ $res -eq 0 ]]; then
         ${CLICKHOUSE_CLIENT} --query "select x, y from tbl;"
         ${CLICKHOUSE_CLIENT} --query "select x, y from tbl where x = 0;"
-        ${CLICKHOUSE_CLIENT} --query "select x, y from tbl where y = 2 settings force_optimize_projection_name = 'p';"
+        ${CLICKHOUSE_CLIENT} --query "select x, y from tbl where y = 2 settings force_optimize_projection_name = 'p', use_statistics_for_part_pruning = 0;"
 
         ${CLICKHOUSE_CLIENT} --query "drop table tbl;"
         exit 0

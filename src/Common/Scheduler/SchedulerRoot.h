@@ -80,6 +80,8 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Attach to event queue for graceful shutdown processing
+                EventQueue::SchedulerThread scheduler_thread(&events);
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
@@ -114,7 +116,7 @@ public:
     void attachChild(const SchedulerNodePtr & child) override
     {
         // Take ownership
-        assert(child->parent == nullptr);
+        chassert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
@@ -192,7 +194,7 @@ public:
 private:
     void activate(Resource * value)
     {
-        assert(value->next == nullptr && value->prev == nullptr);
+        chassert(value->next == nullptr && value->prev == nullptr);
         if (current == nullptr) // No active children
         {
             current = value;
@@ -212,7 +214,7 @@ private:
     {
         if (value->next == nullptr)
             return; // Already deactivated
-        assert(current != nullptr);
+        chassert(current != nullptr);
         if (current == value)
         {
             if (current->next == current) // We are going to remove the last active child
@@ -235,6 +237,7 @@ private:
     void schedulerThread(ThreadName name)
     {
         DB::setThreadName(name);
+        EventQueue::SchedulerThread scheduler_thread(&events);
 
         while (!stop_flag.load())
         {

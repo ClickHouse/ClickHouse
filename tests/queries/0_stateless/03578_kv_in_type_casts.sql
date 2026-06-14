@@ -42,7 +42,7 @@ SELECT '-- Rows read:';
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%FROM 03578_rocksdb%'
   AND is_initial_query
@@ -83,7 +83,7 @@ SELECT '-- Rows read:';
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%FROM 03578_rocksdb_nullable%'
   AND is_initial_query
@@ -135,7 +135,7 @@ SELECT '-- Rows read:';
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%FROM 03578_keepermap%'
   AND is_initial_query
@@ -176,7 +176,7 @@ SELECT '-- Rows read:';
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%FROM 03578_keepermap_nullable%'
   AND is_initial_query

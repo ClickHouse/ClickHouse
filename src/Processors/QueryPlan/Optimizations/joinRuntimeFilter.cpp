@@ -1,4 +1,6 @@
 #include <memory>
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -13,8 +15,11 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/tuple.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <fmt/format.h>
 
@@ -30,17 +35,95 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-const ActionsDAG::Node & createRuntimeFilterCondition(
+/// For ANTI JOIN exclusion filters, rows with any NULL key can never match in the join (since NULL = NULL is false in SQL)
+/// and must always pass the runtime filter. This wraps the filter condition with OR isNull(key1) OR isNull(key2) OR ...
+static const ActionsDAG::Node * addNullBypassForAntiJoin(
+    ActionsDAG & dag,
+    const ActionsDAG::Node * filter_condition,
+    const ColumnsWithTypeAndName & keys)
+{
+    ActionsDAG::NodeRawConstPtrs or_conditions;
+    or_conditions.push_back(filter_condition);
+
+    auto is_null_func = FunctionFactory::instance().get("isNull", Context::getGlobalContextInstance());
+    for (const auto & key : keys)
+    {
+        if (isNullableOrLowCardinalityNullable(key.type))
+        {
+            const auto * key_node = &dag.findInOutputs(key.name);
+            or_conditions.push_back(&dag.addFunction(is_null_func, {key_node}, {}));
+        }
+    }
+
+    if (or_conditions.size() == 1)
+        return filter_condition;
+
+    FunctionOverloadResolverPtr or_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+    return &dag.addFunction(or_func, std::move(or_conditions), {});
+}
+
+/// Build a `tuple(key1, key2, ...)` node in the given DAG, casting each key to the corresponding common type if needed.
+static const ActionsDAG::Node & addTupleOfKeys(
+    ActionsDAG & dag,
+    const ColumnsWithTypeAndName & keys,
+    const DataTypes & common_types,
+    const FunctionOverloadResolverPtr & tuple_func)
+{
+    ActionsDAG::NodeRawConstPtrs key_nodes;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        const auto * key_node = &dag.findInOutputs(keys[i].name);
+        if (!keys[i].type->equals(*common_types[i]))
+            key_node = &dag.addCast(*key_node, common_types[i], {}, nullptr);
+        key_nodes.push_back(key_node);
+    }
+    return dag.addFunction(tuple_func, key_nodes, {});
+}
+
+/// Identity of one join runtime filter. `name` is the STABLE structural id (`_runtime_filter_<hash>`),
+/// used as the `__applyFilter` argument's DAG result NAME, the EXPLAIN label, and the plan-step hash
+/// input — it is identical across the two Auto-PR plan builds. `key` is a fresh RANDOM string used
+/// only as the `IRuntimeFilterLookup` lookup key (the build/probe rendezvous), so every plan build —
+/// including recursive-CTE iterations and MV blocks — gets its own RFL slot.
+struct RuntimeFilterId
+{
+    String name;
+    String key;
+};
+
+static String runtimeFilterName(UInt64 structural_hash)
+{
+    return "_runtime_filter_" + std::to_string(structural_hash);
+}
+
+/// Add the const String argument for `__applyFilter`. Its VALUE is the per-plan-build rendezvous
+/// `id.key` (what the build and probe sides agree on, and what `__applyFilter` reads at execution);
+/// its DAG result NAME is the STABLE structural `id.name` — the filter's stable identity and what
+/// EXPLAIN renders (the pretty printer keys on the name via `getRuntimeFilterId`, never on the value).
+///
+/// The value is a fresh random key per plan build, so the const is genuinely non-deterministic and is
+/// marked `is_deterministic_constant=false`. Two existing mechanisms keep that volatile value from
+/// leaking into cached/keyed state:
+///   - Query condition cache: `Node::isDeterministic` reports the filter expression as
+///     non-deterministic (the `__applyFilter` function is non-deterministic, and so is this constant),
+///     so the QCC skips it instead of reusing a per-granule result that a later execution with a
+///     different key would read as stale.
+///   - Hash-table-statistics cache key: it is computed during join-order optimization, before
+///     `tryAddJoinRuntimeFilter` adds the filter, so the volatile value is not in the hashed DAG.
+static const ActionsDAG::Node & addRuntimeFilterLabelColumn(ActionsDAG & actions_dag, const RuntimeFilterId & id)
+{
+    auto string_type = std::make_shared<DataTypeString>();
+    auto id_column = string_type->createColumnConst(0, id.key);
+    return actions_dag.addColumn(std::move(id_column), std::move(string_type), id.name, /*is_deterministic_constant=*/false);
+}
+
+static const ActionsDAG::Node & createRuntimeFilterCondition(
     ActionsDAG & actions_dag,
-    const String & filter_name,
+    const RuntimeFilterId & id,
     const ColumnWithTypeAndName & key_column,
     const DataTypePtr & filter_element_type)
 {
-    const auto & filter_name_node = actions_dag.addColumn(
-        ColumnWithTypeAndName(
-            DataTypeString().createColumnConst(0, filter_name),
-            std::make_shared<DataTypeString>(),
-            filter_name));
+    const auto & filter_label_node = addRuntimeFilterLabelColumn(actions_dag, id);
 
     const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
     const auto * filter_argument = &key_column_node;
@@ -49,10 +132,8 @@ const ActionsDAG::Node & createRuntimeFilterCondition(
     if (!key_column.type->equals(*filter_element_type))
         filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {}, nullptr);
 
-    auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
-    const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
-
-    return condition;
+    auto filter_function = FunctionFactory::instance().get("__applyFilter", /*context*/ nullptr);
+    return actions_dag.addFunction(filter_function, {&filter_label_node, filter_argument}, {});
 }
 
 static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
@@ -62,6 +143,39 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
         join_algorithm == JoinAlgorithm::GRACE_HASH;
+}
+
+/// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
+/// identical across the two Auto-PR plan builds (single-replica and parallel-replicas), so their
+/// plans hash equally with no special-casing.
+static UInt64 calculateJoinFingerprint(
+    const JoinStepLogical & join_step,
+    bool check_left_does_not_contain,
+    size_t total_join_on_predicates_count,
+    const ColumnsWithTypeAndName & join_keys_probe_side,
+    const ColumnsWithTypeAndName & join_keys_build_side)
+{
+    const auto & join_operator = join_step.getJoinOperator();
+
+    SipHash fingerprint_hash;
+    fingerprint_hash.update(join_step.getSerializationName());
+    fingerprint_hash.update(static_cast<uint8_t>(join_operator.kind));
+    fingerprint_hash.update(static_cast<uint8_t>(join_operator.strictness));
+    fingerprint_hash.update(static_cast<uint8_t>(join_operator.locality));
+    fingerprint_hash.update(check_left_does_not_contain);
+    fingerprint_hash.update(total_join_on_predicates_count);
+    auto hash_update_keys = [&](const ColumnsWithTypeAndName & keys)
+    {
+        fingerprint_hash.update(keys.size());
+        for (const auto & key : keys)
+        {
+            fingerprint_hash.update(key.name);
+            fingerprint_hash.update(key.type->getName());
+        }
+    };
+    hash_update_keys(join_keys_probe_side);
+    hash_update_keys(join_keys_build_side);
+    return fingerprint_hash.get64();
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -94,6 +208,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
+            || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
         std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
@@ -153,6 +268,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    // Skip runtime filters if there are no join keys
+    if (join_keys_build_side.empty())
+    {
+        return false;
+    }
+
     /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
     /// between left and right side
     if (check_left_does_not_contain &&
@@ -163,59 +284,150 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             total_join_on_predicates_count, join_keys_probe_side.size(), join_keys_build_side.size());
     }
 
-    const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
+    const UInt64 base_fingerprint = calculateJoinFingerprint(
+        *join_step, check_left_does_not_contain, total_join_on_predicates_count, join_keys_probe_side, join_keys_build_side);
 
+    auto make_id = [&](size_t i) -> RuntimeFilterId
     {
-        /// Pass all columns on probe side
-        ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+        SipHash h;
+        h.update(base_fingerprint);
+        h.update(i);
+        const UInt64 structural_hash = h.get64();
+        const String random_key = fmt::format("_rf_rnd_{:016x}_{:016x}", thread_local_rng(), thread_local_rng());
+        return RuntimeFilterId{.name = runtimeFilterName(structural_hash), .key = random_key};
+    };
 
-        String filter_column_name;
+    /// Compute common types for each key pair
+    DataTypes common_types;
+    common_types.reserve(join_keys_build_side.size());
+    for (size_t i = 0; i < join_keys_build_side.size(); ++i)
+    {
+        const auto & join_key_build_side = join_keys_build_side[i];
+        const auto & join_key_probe_side = join_keys_probe_side[i];
+
+        if (!join_key_build_side.type->equals(*join_key_probe_side.type))
+        {
+            try
+            {
+                common_types.push_back(getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type}));
+            }
+            catch (Exception & ex)
+            {
+                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                    join_key_probe_side.name, join_key_probe_side.type->getName(),
+                    join_key_build_side.name, join_key_build_side.type->getName());
+                throw;
+            }
+        }
+        else
+        {
+            common_types.push_back(join_key_build_side.type);
+        }
+    }
+
+    /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
+    /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
+    /// but the full tuple has no match in the right table.
+    /// Instead, wrap all keys into a single Tuple and build one NOT IN filter on the tuple for exact tuple membership check.
+    const bool use_tuple_filter = check_left_does_not_contain && join_keys_build_side.size() > 1;
+
+    /// Filter that will be applied on the probe side
+    ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+    String filter_column_name;
+
+    if (use_tuple_filter)
+    {
+        auto id = make_id(0);
+        const String filter_name = id.name;
+        auto tuple_type = std::make_shared<DataTypeTuple>(common_types);
+        FunctionOverloadResolverPtr tuple_func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+
+        /// Build side: compute tuple(key1, key2, ...) and build a single runtime filter on the tuple column.
+        /// The tuple column is a temporary column that must be stripped before the join step sees the right-side header.
+        {
+            /// Remember the original header before adding the tuple column
+            auto original_build_header = build_filter_node->step->getOutputHeader();
+
+            ActionsDAG build_tuple_dag(build_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+            const auto & tuple_node = addTupleOfKeys(build_tuple_dag, join_keys_build_side, common_types, tuple_func);
+            const String tuple_column_name = tuple_node.result_name;
+            build_tuple_dag.addOrReplaceInOutputs(tuple_node);
+
+            makeExpressionNodeOnTopOf(*build_filter_node, std::move(build_tuple_dag), nodes, makeDescription("Calculate right join key tuple"));
+
+            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from tuple of right keys and applied to tuple of left keys", filter_name);
+
+            QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
+            new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
+                build_filter_node->step->getOutputHeader(),
+                tuple_column_name,
+                tuple_type,
+                filter_name,
+                id.key,
+                optimization_settings.join_runtime_filter_exact_values_limit,
+                optimization_settings.join_runtime_bloom_filter_bytes,
+                optimization_settings.join_runtime_bloom_filter_hash_functions,
+                optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                /*allow_to_use_not_exact_filter_=*/false);
+            new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
+            new_build_filter_node->children = {build_filter_node};
+            build_filter_node = new_build_filter_node;
+
+            /// Strip the temporary tuple column so the join step sees only the original columns
+            ActionsDAG strip_tuple_dag(build_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+            strip_tuple_dag.removeUnusedActions(original_build_header->getNames(), /*allow_remove_inputs=*/false);
+            makeExpressionNodeOnTopOf(*build_filter_node, std::move(strip_tuple_dag), nodes, makeDescription("Remove temporary tuple column"));
+        }
+
+        /// Apply side: compute tuple(key1, key2, ...) and apply the filter
+        {
+            const auto & tuple_node = addTupleOfKeys(filter_dag, join_keys_probe_side, common_types, tuple_func);
+
+            /// Build __applyFilter(label, tuple_node) condition directly,
+            /// since the tuple node is freshly created and not yet in the DAG outputs
+            const auto & filter_label_node = addRuntimeFilterLabelColumn(filter_dag, id);
+            auto filter_function = FunctionFactory::instance().get("__applyFilter", /*context*/ nullptr);
+            const auto & condition = filter_dag.addFunction(filter_function, {&filter_label_node, &tuple_node}, {});
+
+            const auto * final_condition = addNullBypassForAntiJoin(filter_dag, &condition, join_keys_probe_side);
+            filter_dag.addOrReplaceInOutputs(*final_condition);
+
+            filter_column_name = final_condition->result_name;
+        }
+    }
+    else
+    {
+        /// Standard per-column runtime filters (for INNER, SEMI, RIGHT, and single-key ANTI joins)
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
-            /// Make unique filter name for each of the predicates. If will be used at runtime to "connect" build side and apply side
-            const String filter_name = filter_name_prefix + "_" + toString(i);
+            auto id = make_id(i);
+            const String filter_name = id.name;
 
             const auto & join_key_build_side = join_keys_build_side[i];
             const auto & join_key_probe_side = join_keys_probe_side[i];
-
-            /// If types of left and right columns do not match then we need to deduce common super type for them
-            /// and add CAST-s to this type to build and apply sides
-            DataTypePtr common_type;
-            if (!join_key_build_side.type->equals(*join_key_probe_side.type))
-            {
-                try
-                {
-                    common_type = getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
-                }
-                catch (Exception & ex)
-                {
-                    ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                        join_key_probe_side.name, join_key_probe_side.type->getName(),
-                        join_key_build_side.name, join_key_build_side.type->getName());
-                    throw;
-                }
-            }
-            else
-            {
-                common_type = join_key_build_side.type;
-            }
+            const auto & common_type = common_types[i];
 
             LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
                 filter_name, join_key_build_side.name, join_key_probe_side.name);
 
             /// Add filter lookup to the probe subtree
-            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
+            const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
+            all_filter_conditions.push_back(check_left_does_not_contain
+                ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
+                : &filter_condition);
 
             /// Add building filter to the build subtree of join
             {
-                QueryPlan::Node * new_build_filter_node = nullptr;
-                new_build_filter_node = &nodes.emplace_back();
+                QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
                 new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
                     build_filter_node->step->getOutputHeader(),
                     join_key_build_side.name,
                     common_type,
                     filter_name,
+                    id.key,
                     optimization_settings.join_runtime_filter_exact_values_limit,
                     optimization_settings.join_runtime_bloom_filter_bytes,
                     optimization_settings.join_runtime_bloom_filter_hash_functions,
@@ -227,6 +439,18 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 new_build_filter_node->children = {build_filter_node};
 
                 build_filter_node = new_build_filter_node;
+            }
+
+            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
+            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
+            /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
+            /// NOT the stable display name: the filter is registered in the lookup under that key, so
+            /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key.
+            if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
+                && !check_left_does_not_contain)
+            {
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(
+                    id.key, join_key_build_side.name);
             }
         }
 
@@ -243,14 +467,14 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             filter_dag.addOrReplaceInOutputs(combined_filter_condition);
             filter_column_name = combined_filter_condition.result_name;
         }
-
-        QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
-        new_apply_filter_node->step = std::make_unique<FilterStep>(apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
-        new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
-        new_apply_filter_node->children = {apply_filter_node};
-
-        apply_filter_node = new_apply_filter_node;
     }
+
+    QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
+    new_apply_filter_node->step = std::make_unique<FilterStep>(
+        apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
+    new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
+    new_apply_filter_node->children = {apply_filter_node};
+    apply_filter_node = new_apply_filter_node;
 
     node.children = {apply_filter_node, build_filter_node};
 

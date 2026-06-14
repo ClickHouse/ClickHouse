@@ -69,8 +69,13 @@ namespace
  */
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
-    const auto & [name, type] = constant_node.getValueNameAndType({.optimize_const_name_size = optimize_const_name_size});
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
+    const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
+    bool requires_cast_call = constant_node.hasSourceExpression();
+    if (!requires_cast_call)
+    {
+        auto field_type = applyVisitor(FieldToDataType(), constant_node.getValue());
+        requires_cast_call = ConstantNode::requiresCastCall(field_type, constant_node.getResultType());
+    }
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
@@ -163,8 +168,10 @@ public:
                 }
                 else
                 {
-                    // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                    // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+                    if (constant_node.hasSourceExpression()
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -396,7 +403,7 @@ public:
 
     static String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
     {
-        const auto & [name, type] = constant_node.getValueNameAndType({.optimize_const_name_size = optimize_const_name_size});
+        const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
         return name + "_" + constant_node.getResultType()->getName();
     }
 
@@ -515,6 +522,21 @@ public:
         return node_name_to_node.contains(node_name);
     }
 
+    /// Add a DAG ALIAS node so that `alias_name` resolves to `child`.
+    /// Used when a table column inside a lambda body was given a disambiguated
+    /// name at the lambda scope; other scopes still have the column under its
+    /// original name and need this alias for expression building and capture.
+    const ActionsDAG::Node * addAliasIfNecessary(const std::string & alias_name, const ActionsDAG::Node * child)
+    {
+        auto it = node_name_to_node.find(alias_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag.addAlias(*child, alias_name);
+        node_name_to_node[node->result_name] = node;
+        return node;
+    }
+
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
     {
         const auto * node = tryGetNode(node_name);
@@ -581,14 +603,15 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column, bool is_deterministic)
+    const ActionsDAG::Node * addConstantIfNecessary(
+        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
         {
             /// It is possible that ActionsDAG already has an input with the same name as constant.
             /// In this case, prefer constant to input.
-            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Constants affect function return type, which should be consistent with QueryTree.
             /// Query example:
             /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
             bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
@@ -596,7 +619,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column, is_deterministic);
+        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -771,7 +794,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & column_node = node->as<ColumnNode &>();
 
     const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
-    if (correlated_columns_set.contains(column_node_ptr))
+    if (!correlated_columns_set.empty() && correlated_columns_set.contains(column_node_ptr))
         return visitCorrelatedColumn(column_node_ptr);
 
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
@@ -799,6 +822,75 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return {column_node_name, Levels(i)};
         }
+
+        /// When a table column's name collides with a lambda argument name (possible
+        /// when use_column_identifier_as_action_node_name = false, e.g. in PREWHERE),
+        /// the INPUT "x" added above is indistinguishable from the lambda argument in
+        /// the capture loop, so the table column would never be captured.  Add a second
+        /// INPUT with a disambiguated name at the lambda scope, and register aliases at
+        /// every outer scope so the capture loop can find the node by that name.
+        ///
+        /// We use the column identifier (e.g. `__table1.x`) as the disambiguated name.
+        /// It is deterministic (same for the same query) and guaranteed to differ from
+        /// any lambda argument name because `createUniqueAliasesIfNecessary` assigns
+        /// a unique alias like `__table1` to every table expression before the planner runs.
+        const auto & scope = actions_stack[i].getScopeNode();
+        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            const auto & lambda_node = scope->as<LambdaNode &>();
+            const auto & arg_names = lambda_node.getArgumentNames();
+            if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
+            {
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
+
+                actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+
+                /// Inner scopes (above i) were already visited by the main loop
+                /// and have "x" under its original name.  Add a DAG ALIAS node so
+                /// the expression builder and removeUnusedActions can find a node
+                /// with result_name equal to the disambiguated name.
+                for (Int64 k = actions_stack_size; k > i; --k)
+                    actions_stack[k].addAliasIfNecessary(disambiguated, actions_stack[k].getNodeOrThrow(column_node_name));
+
+                /// Outer scopes (below i) haven't been visited yet.
+                /// Add the column under its original name and register an alias.
+                ///
+                /// However, if an outer scope is also a lambda whose argument has
+                /// the same name, addInputColumnIfNecessary would return the lambda
+                /// argument node (already registered) instead of a new table-column
+                /// INPUT. Aliasing disambiguated to the lambda argument would be
+                /// incorrect: the inner lambda would capture the outer lambda's
+                /// argument instead of the table column. In that case, add
+                /// disambiguated as a direct INPUT so the capture mechanism provides
+                /// its value from the parent scope.
+                for (Int64 j = i - 1; j >= 0; --j)
+                {
+                    bool outer_lambda_shadows = false;
+                    const auto & outer_scope = actions_stack[j].getScopeNode();
+                    if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    {
+                        const auto & outer_lambda = outer_scope->as<LambdaNode &>();
+                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
+                        outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
+                    }
+
+                    if (outer_lambda_shadows)
+                    {
+                        /// This scope has a lambda argument with the same name.
+                        /// Add disambiguated as a direct INPUT; it will be captured
+                        /// from the parent scope where the table column is available.
+                        actions_stack[j].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+                    }
+                    else
+                    {
+                        const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+                        actions_stack[j].addAliasIfNecessary(disambiguated, input_node);
+                    }
+                }
+
+                return {disambiguated, Levels(0)};
+            }
+        }
     }
 
     return {column_node_name, Levels(0)};
@@ -808,8 +900,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    for (auto & action_scope_node : actions_stack)
-        action_scope_node.addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
+    /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
+    /// can properly capture the correlated column value from the outer scope.
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+
+    for (size_t i = 1; i < actions_stack.size(); ++i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
 
     return {column_node_name, Levels(0)};
 }
@@ -852,8 +949,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
         }
 
-        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+        // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression()
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -862,18 +961,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
-    ColumnWithTypeAndName column;
-    column.name = constant_node_name;
-    column.type = constant_type;
-    column.column = constant_node.getColumn();
-
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column, constant_node.isDeterministic());
+    actions_stack[0].addConstantIfNecessary(
+        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic());
 
     size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 1; i < actions_stack_size; ++i)
+    if (actions_stack_size > 1)
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(constant_node_name, column);
+        ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name};
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column);
     }
 
     return {constant_node_name, Levels(0)};
@@ -998,28 +1094,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
 
-    ColumnWithTypeAndName column;
-    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
-    column.type = std::make_shared<DataTypeSet>();
+    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    auto type = std::make_shared<DataTypeSet>();
+    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
-    bool set_is_created = set->get() != nullptr;
-    auto column_set = ColumnSet::create(1, std::move(set));
-
-    if (set_is_created)
-        column.column = ColumnConst::create(std::move(column_set), 1);
-    else
-        column.column = std::move(column_set);
-
-    actions_stack[0].addConstantIfNecessary(column.name, column, in_second_is_deterministic);
+    actions_stack[0].addConstantIfNecessary(name, column, type, name, in_second_is_deterministic);
 
     size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 1; i < actions_stack_size; ++i)
+    if (actions_stack_size > 1)
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
+        ColumnWithTypeAndName column_with_name_and_type{column, type, name};
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(name, column_with_name_and_type);
     }
 
-    return {column.name, Levels(0)};
+    return {name, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)
@@ -1176,7 +1265,31 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        /// When group_by_use_nulls wraps GROUP BY key constants in Nullable after aggregation,
+        /// the ActionsDAG may contain Nullable nodes where the query tree function expects
+        /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
+        /// In this case, rebuild the function via FunctionFactory with the actual argument types
+        /// so that the result type is correct.
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
+        {
+            const auto & expected_types = function_base->getArgumentTypes();
+            for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
+                argument_types_match = children[i]->result_type->equals(*expected_types[i]);
+        }
+
+        if (!argument_types_match)
+        {
+            if (auto resolver = FunctionFactory::instance().tryGet(
+                    function_node.getFunctionName(), planner_context->getQueryContext()))
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, resolver);
+            else
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
+        else
+        {
+            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
     }
 
     size_t actions_stack_size = actions_stack.size();
@@ -1207,6 +1320,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     {
         auto & actions_stack_node = actions_stack[i];
         actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
+    }
+
+    /// The same correlated subquery can be referenced multiple times in the projection,
+    /// for example when `untuple` expands into multiple `tupleElement` calls sharing
+    /// the same argument.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == correlated_subquery_name)
+            return {correlated_subquery_name, levels};
     }
 
     const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();

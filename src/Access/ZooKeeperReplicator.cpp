@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
+#include <Core/UUID.h>
 
 
 namespace
@@ -23,6 +24,11 @@ String makeWatchIdFromId(const DB::UUID & id)
     return "ZooKeeperReplicator::" + toString(id);
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredReplicatedAccessControl;
 }
 
 namespace DB
@@ -66,6 +72,7 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     , changes_notifier(changes_notifier_)
     , throw_on_invalid_entities(throw_on_invalid_entities_)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::ZooKeeperReplicator");
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
 
@@ -136,13 +143,14 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
 
 bool ZooKeeperReplicator::insertEntity(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::insertEntity");
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
+    retryOnZooKeeperUserError(1000, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
 
     if (!ok)
         return false;
@@ -230,7 +238,7 @@ bool ZooKeeperReplicator::insertZooKeeper(
             }
         }
 
-        assert(replace_if_exists);
+        chassert(replace_if_exists);
         Coordination::Requests replace_ops;
         if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
         {
@@ -292,15 +300,17 @@ bool ZooKeeperReplicator::insertZooKeeper(
 
 bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::removeEntity");
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Removing entity {}", toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
+    retryOnZooKeeperUserError(1000, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
 
     if (!ok)
         return false;
 
+    std::lock_guard refresh_lock{refresh_mutex};
     std::lock_guard lock{mutex};
     removeEntityNoLock(id);
     return true;
@@ -342,11 +352,12 @@ bool ZooKeeperReplicator::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
 
 bool ZooKeeperReplicator::updateEntity(const UUID & id, const IAccessStorage::UpdateFunc & update_func, bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::updateEntity");
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Updating entity {}", toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
+    retryOnZooKeeperUserError(1000, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
 
     if (!ok)
         return false;
@@ -419,6 +430,7 @@ void ZooKeeperReplicator::runWatchingThread()
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
     DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
 
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::runWatchingThread");
     while (watching)
     {
         bool refreshed = false;
@@ -518,6 +530,7 @@ void ZooKeeperReplicator::reload(bool force_reload_all)
     if (!force_reload_all)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::reload");
     /// Reinitialize ZooKeeper and reread everything.
     std::lock_guard lock{cached_zookeeper_mutex};
     cached_zookeeper = nullptr;
@@ -557,6 +570,13 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entities list");
 
+    /// Reading from ZooKeeper is one synchronous round trip per entity and must not happen under
+    /// `mutex`: findEntity (authentication, Context::getAccess) blocks on it, so holding it across
+    /// a slow refresh stalls every query on the server. `refresh_mutex` keeps the reads and the
+    /// publication of their results atomic with respect to other read->publish sequences, so this
+    /// snapshot can never overwrite the result of a newer read.
+    std::lock_guard refresh_lock{refresh_mutex};
+
     if (all)
     {
         /// It doesn't make sense to keep the queue because we will reread everything in this function.
@@ -565,14 +585,15 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
     Coordination::Stat stat;
-    const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
+    const auto entity_uuid_strs = zookeeper->getChildrenWatch(
+        zookeeper_uuids_path,
+        &stat,
+        Coordination::WatchCallbackPtrOrEventPtr{watch_entities_list, ProfileEvents::ZooKeeperWatchTriggeredReplicatedAccessControl});
 
     std::vector<UUID> entity_uuids;
     entity_uuids.reserve(entity_uuid_strs.size());
     for (const String & entity_uuid_str : entity_uuid_strs)
         entity_uuids.emplace_back(parseUUID(entity_uuid_str));
-
-    std::lock_guard lock{mutex};
 
     if (all)
     {
@@ -583,17 +604,25 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
             if (auto entity = tryReadEntityFromZooKeeper(zookeeper, uuid))
                 entities.emplace_back(uuid, entity);
         }
+
+        std::lock_guard lock{mutex};
         memory_storage.setAll(entities);
     }
     else
     {
         /// all=false means we read & parse only new access entities from ZooKeeper.
-        memory_storage.removeAllExcept(entity_uuids);
-        for (const auto & uuid : entity_uuids)
+        std::vector<UUID> new_uuids;
         {
-            if (!memory_storage.exists(uuid))
-                refreshEntityNoLock(zookeeper, uuid);
+            std::lock_guard lock{mutex};
+            memory_storage.removeAllExcept(entity_uuids);
+            for (const auto & uuid : entity_uuids)
+            {
+                if (!memory_storage.exists(uuid))
+                    new_uuids.push_back(uuid);
+            }
         }
+        for (const auto & uuid : new_uuids)
+            refreshEntityImpl(zookeeper, uuid);
     }
 
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entities list finished");
@@ -601,23 +630,18 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
 
 void ZooKeeperReplicator::refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
 {
+    std::lock_guard refresh_lock{refresh_mutex};
+    refreshEntityImpl(zookeeper, id);
+}
+
+void ZooKeeperReplicator::refreshEntityImpl(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
+{
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entity {}", toString(id));
 
     auto entity = tryReadEntityFromZooKeeper(zookeeper, id);
 
     std::lock_guard lock{mutex};
 
-    if (entity)
-        setEntityNoLock(id, entity);
-    else
-        removeEntityNoLock(id);
-}
-
-void ZooKeeperReplicator::refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
-{
-    LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entity {}", toString(id));
-
-    auto entity = tryReadEntityFromZooKeeper(zookeeper, id);
     if (entity)
         setEntityNoLock(id, entity);
     else
@@ -634,6 +658,7 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
                 [[maybe_unused]] bool push_result = my_watched_queue->push(id);
         };
     });
+    watch.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredReplicatedAccessControl);
 
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);

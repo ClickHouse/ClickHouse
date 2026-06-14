@@ -120,11 +120,7 @@ Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(St
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN nr AS r USING (lc) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
 Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
-{% if join_algorithm == 'partial_merge' -%}
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
-{% else -%}
-Nullable(String)	Nullable(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
-{% endif -%}
 --
 
 SELECT lc, toTypeName(lc) FROM nl RIGHT JOIN r_lc USING (x) ORDER BY x, lc;

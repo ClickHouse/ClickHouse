@@ -20,7 +20,7 @@ SYSTEM FLUSH LOGS query_log;
 -- Check that q1 was fast, q2 was slow and q3 had timeout
 SELECT log_comment, type = 'QueryFinish', intDiv(query_duration_ms, 2000), exception_code != 0, (position('selectPartsToRead' IN stack_trace) > 0 OR position('filterPartsByPartition' IN stack_trace) > 0) AS has_selectPartsToRead
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment LIKE '03176_q_' AND type IN ('QueryFinish', 'ExceptionBeforeStart')
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment LIKE '03176_q_' AND type IN ('QueryFinish', 'ExceptionBeforeStart')
 ORDER BY log_comment;
 
 DROP TABLE t_03176;

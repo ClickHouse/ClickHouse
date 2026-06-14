@@ -37,6 +37,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString session_token;
@@ -136,6 +139,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             .is_s3express_bucket = S3::isS3ExpressEndpoint(new_uri.endpoint),
         };
 
+        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(new_uri.endpoint, new_uri.bucket);
+
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -150,8 +155,13 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::use_insecure_imds_request],
                 auth_settings[S3AuthSetting::expiration_window_seconds],
                 auth_settings[S3AuthSetting::no_sign_request],
+                auth_settings[S3AuthSetting::role_arn],
+                auth_settings[S3AuthSetting::role_session_name],
+                auth_settings[S3AuthSetting::external_id],
+                /*sts_endpoint_override=*/""
             },
-            credentials.GetSessionToken());
+            credentials.GetSessionToken(),
+            shared_cache);
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
 
@@ -175,7 +185,8 @@ std::shared_ptr<KeeperSnapshotManagerS3::S3Configuration> KeeperSnapshotManagerS
 
 void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info)
 {
-    const auto & [snapshot_path, snapshot_disk, snapshot_size] = snapshot_file_info;
+    const auto & snapshot_path = snapshot_file_info.path;
+    const auto & snapshot_disk = snapshot_file_info.disk;
     try
     {
         auto s3_client = getSnapshotS3Client();

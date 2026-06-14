@@ -2,9 +2,9 @@
 -- by the old analyzer, which has no mechanism to fill them.
 -- This used to cause a logical error due to type mismatch.
 
-SELECT _table SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
-SELECT _table FROM system.one SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT _table SETTINGS enable_analyzer = 0;
+SELECT _table FROM system.one SETTINGS enable_analyzer = 0;
 
--- With the new analyzer, _table should work fine.
+-- With the analyzer, _table should work fine.
 SELECT _table SETTINGS enable_analyzer = 1;
 SELECT _table FROM system.one SETTINGS enable_analyzer = 1;

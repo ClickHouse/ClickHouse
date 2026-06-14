@@ -135,7 +135,7 @@ struct TimeWindowImpl
 };
 
 template <TimeWindowFunctionName type>
-class FunctionTimeWindow : public IFunction
+class FunctionTimeWindow final : public IFunction
 {
 public:
     static constexpr auto name = TimeWindowImpl<type>::name;
@@ -495,7 +495,11 @@ struct TimeWindowImpl<WINDOW_ID>
 
         IntervalKind window_interval_kind = extractIntervalKind(arguments.at(1));
 
-        if (arguments.size() >= 3 && window_interval_kind != extractIntervalKind(arguments.at(2)))
+        /// The 3rd argument may be either an `Interval` (hop) or a `String` (timezone).
+        /// Only compare interval kinds when the 3rd argument is actually an `Interval`,
+        /// otherwise `extractIntervalKind` would dereference a null `DataTypeInterval`.
+        if (arguments.size() >= 3 && isInterval(*arguments.at(2).type)
+            && window_interval_kind != extractIntervalKind(arguments.at(2)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
                 function_name);
 
@@ -805,6 +809,22 @@ Since one record can be assigned to multiple hop windows, the function only retu
     factory.registerFunction<FunctionHop>(documentation_hop);
     factory.registerFunction<FunctionHopStart>(documentation_hop_start);
     factory.registerFunction<FunctionHopEnd>(documentation_hop_end);
-    factory.registerFunction<FunctionWindowId>();
+    FunctionDocumentation::Description description_window_id = R"(
+Returns the window identifier of the corresponding tumbling or hopping window.
+This function can only be used with `WINDOW VIEW`.
+    )";
+    FunctionDocumentation::Syntax syntax_window_id = "windowID(time_attr, interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_window_id = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"interval", "Window interval in Interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_window_id = {"Returns the window identifier of the corresponding window.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_window_id = {{"Window ID", "SELECT windowID(now(), toIntervalDay('1'))", ""}};
+    FunctionDocumentation::IntroducedIn introduced_in_window_id = {22, 1};
+    FunctionDocumentation::Category category_window_id = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_window_id = {description_window_id, syntax_window_id, arguments_window_id, {}, returned_value_window_id, examples_window_id, introduced_in_window_id, category_window_id};
+
+    factory.registerFunction<FunctionWindowId>(documentation_window_id);
 }
 }

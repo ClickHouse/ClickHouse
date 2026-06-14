@@ -1,17 +1,23 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -64,6 +70,9 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int BACKUP_ENTRY_NOT_FOUND;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -71,7 +80,7 @@ namespace FailPoints
     extern const char backup_add_empty_memory_table[];
 }
 
-class MemorySink : public SinkToStorage
+class MemorySink final : public SinkToStorage
 {
 public:
     MemorySink(
@@ -160,7 +169,7 @@ StorageMemory::StorageMemory(
     ConstraintsDescription constraints_,
     const String & comment,
     const MemorySettings & memory_settings_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , data(std::make_unique<const Blocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
@@ -169,7 +178,16 @@ StorageMemory::StorageMemory(
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageMemory::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 StorageMemory::~StorageMemory() = default;
@@ -184,7 +202,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
-void StorageMemory::read(
+void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -230,7 +248,45 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
+    /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
+    /// indices, projections, statistics, patch parts, the `_row_exists` deletion mask,
+    /// or rewritten parts. Reaching `MutationsInterpreter` with such a command set
+    /// produces a pipeline that returns one zero-row block per input block, after which
+    /// the partial-column path below fails the per-block row-count invariant with
+    /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    /// A real `UPDATE` / `DELETE` / `MATERIALIZE COLUMN` mixed into the same `ALTER` still
+    /// executes normally.
+    ///
+    /// Only the kinds that can actually reach this method are filtered:
+    ///   - `DROP INDEX` / `DROP PROJECTION` / `DROP STATISTICS` are rejected earlier by
+    ///     `StorageMemory::checkAlterIsPossible`, never reach `mutate`.
+    ///   - `MATERIALIZE TTL` is rejected by `MutationsInterpreter::prepare` during
+    ///     pre-mutation validation when there is no TTL on the table, never reaches `mutate`.
+    MutationCommands commands_to_run;
+    commands_to_run.reserve(commands.size());
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            case MutationCommand::APPLY_PATCHES:
+            case MutationCommand::APPLY_DELETED_MASK:
+            case MutationCommand::MATERIALIZE_INDEX:
+            case MutationCommand::MATERIALIZE_PROJECTION:
+            case MutationCommand::MATERIALIZE_STATISTICS:
+            case MutationCommand::REWRITE_PARTS:
+                continue;
+            default:
+                commands_to_run.push_back(command);
+                break;
+        }
+    }
+
+    if (commands_to_run.empty())
+        return;
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
@@ -241,7 +297,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     MutationsInterpreter::Settings settings(true);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands_to_run, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
@@ -256,31 +312,79 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
+    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
+    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
+    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
+    const auto final_status = executor.getExecutionStatus();
+    const bool cancelled
+        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
+
+    auto throw_on_cancellation = [&]
+    {
+        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+    };
+
     std::unique_ptr<Blocks> new_data;
 
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
+        /// Replacing the entire data set: we cannot validate completeness precisely (some mutations
+        /// legitimately change the block count). Fail-close on cancellation rather than silently
+        /// swap in a possibly-truncated result.
+        if (cancelled)
+            throw_on_cancellation();
         new_data = std::make_unique<Blocks>(out);
     }
     else
     {
         /// just some of the column affected, we need update it with new column
-        new_data = std::make_unique<Blocks>(*(data.get()));
+        const auto & old_data = *(data.get());
+        /// Partial-column mutations preserve the input block count *and* per-block row counts.
+        /// Both shape checks are required before suppressing a late cancellation flag, because
+        /// `PullingPipelineExecutor::pull(Block)` can return `true` with an empty block on
+        /// timeout. A block-count match alone would let that empty trailing block slip past:
+        /// `updateBlockData` no-ops on a block with no columns, silently keeping the
+        /// un-mutated old block.
+        auto reject_incomplete = [&](const String & reason)
+        {
+            if (cancelled)
+                throw_on_cancellation();
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mutation of `Memory` table produced incomplete output: {}",
+                reason);
+        };
+
+        if (out.size() != old_data.size())
+            reject_incomplete(fmt::format(
+                "got {} blocks, expected {}", out.size(), old_data.size()));
+
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            if (out[i].rows() != old_data[i].rows())
+                reject_incomplete(fmt::format(
+                    "block {} has {} rows, expected {}", i, out[i].rows(), old_data[i].rows()));
+        }
+
+        new_data = std::make_unique<Blocks>(old_data);
         auto data_it = new_data->begin();
         auto out_it = out.begin();
 
         while (data_it != new_data->end())
         {
             /// Mutation does not change the number of blocks
-            assert(out_it != out.end());
+            chassert(out_it != out.end());
 
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
 
-        assert(out_it == out.end());
+        chassert(out_it == out.end());
     }
 
     size_t rows = 0;
@@ -307,7 +411,7 @@ void StorageMemory::truncate(
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
     if (params.isSettingsAlter())
@@ -490,7 +594,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
 
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(),
+        getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false),
         data.get(),
         data_path_in_backup,
         tmp_data,
@@ -617,6 +721,7 @@ std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
     return total_size_bytes.load(std::memory_order_relaxed);
 }
 
+void registerStorageMemory(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory)
 {
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)

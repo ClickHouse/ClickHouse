@@ -89,6 +89,11 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
     return true;
 }
 
+} /// end anonymous namespace
+
+namespace DB
+{
+
 bool isSafePrimaryKey(const KeyDescription & primary_key)
 {
     for (const auto & type : primary_key.data_types)
@@ -99,6 +104,11 @@ bool isSafePrimaryKey(const KeyDescription & primary_key)
 
     return true;
 }
+
+}
+
+namespace
+{
 
 int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
 {
@@ -245,7 +255,8 @@ public:
                 initial_ranges_in_data_parts[part_index].parent_part,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
-                MarkRanges{mark_range});
+                MarkRanges{mark_range},
+                initial_ranges_in_data_parts[part_index].read_hints);
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
         }
@@ -344,11 +355,11 @@ struct PartsRangesIterator
     }
 
     Values value;
-    bool in_reverse_order;
-    MarkRange range;
-    size_t part_index;
-    EventType event;
-    bool selected; /// Whether this range was selected or rejected in skip index filtering
+    bool in_reverse_order{};
+    MarkRange range{};
+    size_t part_index{};
+    EventType event{};
+    bool selected{}; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex
@@ -386,11 +397,6 @@ struct PartRangeIndexHash
     }
 };
 
-struct SplitPartsRangesResult
-{
-    RangesInDataParts non_intersecting_parts_ranges;
-    RangesInDataParts intersecting_parts_ranges;
-};
 
 void dump(const std::vector<PartsRangesIterator> & ranges_iterators, WriteBuffer & buffer)
 {
@@ -405,7 +411,7 @@ String toString(const std::vector<PartsRangesIterator> & ranges_iterators)
     return buffer.str();
 }
 
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -682,6 +688,12 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
 namespace DB
 {
 
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+{
+    return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
+}
+
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -917,7 +929,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
     return filters;
 }
 
-RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
+static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;
@@ -1131,6 +1143,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     bool split_parts_ranges_into_intersecting_and_non_intersecting_final,
     bool split_intersecting_parts_ranges_into_layers)
 {
+    if (!max_layers)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layers should be greater than 0");
+
     auto logger = getLogger("PartsSplitter");
 
     SplitPartsWithRangesByPrimaryKeyResult result;
@@ -1176,20 +1191,17 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
-        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, in_reverse_order, logger);
+        SplitPartsRangesResult split_result = splitPartsRangesImpl(intersecting_parts_ranges, in_reverse_order, logger);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
 
-    if (!split_intersecting_parts_ranges_into_layers)
+    if (!split_intersecting_parts_ranges_into_layers || max_layers == 1)
     {
         if (!intersecting_parts_ranges.empty())
             result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
         return result;
     }
-
-    if (max_layers <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);

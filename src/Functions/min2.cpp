@@ -33,8 +33,8 @@ REGISTER_FUNCTION(Min2)
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT min2(-1, 2)", "-1"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMin2>(documentation, FunctionFactory::Case::Insensitive);
 }

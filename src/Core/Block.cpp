@@ -558,6 +558,14 @@ MutableColumns Block::mutateColumns()
     return columns;
 }
 
+Columns Block::detachColumns()
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? std::move(data[i].column) : data[i].type->createColumn();
+    return columns;
+}
 
 void Block::setColumns(MutableColumns && columns)
 {
@@ -1024,7 +1032,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
     {
         if (column.column)
         {
-            assert(column.column->size() == num_rows);
+            chassert(column.column->size() == num_rows);
             has_columns = true;
             break;
         }

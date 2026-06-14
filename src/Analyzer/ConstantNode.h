@@ -32,10 +32,10 @@ public:
       *
       * Throws exception if value cannot be converted to value data type.
       */
-    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_);
+    explicit ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_);
 
     /// Construct constant query tree node from column, data type will be derived from field value
-    explicit ConstantNode(ColumnPtr constant_column_);
+    explicit ConstantNode(ColumnConstPtr constant_column_);
 
     /** Construct constant query tree node from field and data type.
       *
@@ -47,7 +47,7 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const ColumnPtr & getColumn() const
+    const ColumnConstPtr & getColumn() const
     {
         return constant_value.getColumn();
     }
@@ -106,9 +106,9 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    std::pair<String, DataTypePtr> getValueNameAndType(const IColumn::Options & options) const
+    String getValueName(const IColumn::Options & options) const
     {
-        return constant_value.getValueNameAndType(options);
+        return constant_value.getValueName(options);
     }
 
     bool isDeterministic() const { return is_deterministic; }

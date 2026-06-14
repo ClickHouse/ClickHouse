@@ -1,14 +1,18 @@
 #include <Common/ThreadPool.h>
 
+#include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
+#include <base/scope_guard.h>
 
 #include <type_traits>
+#include <vector>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -197,7 +201,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
-    jobs.reserve(queue_size);
+    jobs.reserve(std::min(queue_size, MAX_JOBS_TO_RESERVE));
 
     if (need_start_threads)
     {
@@ -206,8 +210,11 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     }
     else if (need_finish_free_threads)
     {
-        /// Wake up free threads so they can finish themselves.
-        new_job_or_shutdown.notify_all();
+        /// Wake exactly the excess idle threads so they can observe the new limit
+        /// and exit. We do not call `wakeUpAllIdleThreadsNoLock` here because that
+        /// would wipe the LIFO stack on every limit adjustment, defeating the
+        /// purpose of LIFO scheduling.
+        wakeUpExcessIdleThreadsNoLock();
     }
 }
 
@@ -243,8 +250,11 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 
     if (need_finish_free_threads)
     {
-        /// Wake up free threads so they can finish themselves.
-        new_job_or_shutdown.notify_all();
+        /// Wake exactly the excess idle threads so they can observe the new limit
+        /// and exit. We do not call `wakeUpAllIdleThreadsNoLock` here because that
+        /// would wipe the LIFO stack on every limit adjustment, defeating the
+        /// purpose of LIFO scheduling.
+        wakeUpExcessIdleThreadsNoLock();
     }
 }
 
@@ -254,7 +264,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
     std::lock_guard lock(mutex);
     queue_size = value ? std::max(value, max_threads) : 0;
     /// Reserve memory to get rid of allocations
-    jobs.reserve(queue_size);
+    jobs.reserve(std::min(queue_size, MAX_JOBS_TO_RESERVE));
 }
 
 template <typename Thread>
@@ -285,7 +295,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
-
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -304,7 +313,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 // Failed to create the thread, restore capacity
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 std::lock_guard lock(mutex); // needed to change first_exception.
-                return on_error("failed to start the thread");
+                return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
             }
         }
         // capacity gets reloaded by (unsuccessful) compare_exchange_weak
@@ -315,7 +324,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         Stopwatch watch;
         std::unique_lock lock(mutex);
         ProfileEvents::increment(
-            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+            std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
             watch.elapsedMicroseconds());
 
         if (CannotAllocateThreadFaultInjector::injectFault())
@@ -372,7 +381,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             {
                 // If thread creation fails, restore the pool capacity and return an error.
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                return on_error("failed to start the thread");
+                return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
             }
             adding_new_thread = true;
         }
@@ -384,9 +393,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 threads.emplace_front(std::move(new_thread));
                 thread_slot = threads.begin();
             }
-            catch (...)
+            catch (const std::exception &)
             {
-                /// Most likely this is a std::bad_alloc exception
                 return on_error("cannot emplace the thread in the pool");
             }
         }
@@ -412,19 +420,30 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 (*thread_slot)->start(thread_slot);
 
         }
-        catch (...)
+        catch (const std::exception &)
         {
             if (adding_new_thread)
                 threads.pop_front();
 
             return on_error("cannot start the job or thread");
         }
+
+        /// Select the most recently idle thread (LIFO order) and wake only that one
+        /// via its per-thread CV. Concentrating work on fewer threads improves cache
+        /// locality and lets excess threads exit naturally, freeing their allocator
+        /// caches. Notifying a single thread (instead of `notify_all` on a shared CV)
+        /// avoids a thundering herd where every idle thread wakes, contends for the
+        /// mutex, and goes back to sleep on every job schedule.
+        ///
+        /// Notify while still holding `mutex`: once `idle_wakeup_flag` is set, a
+        /// spurious wakeup is enough for the worker to run and remove itself from
+        /// the pool, so the raw `ThreadFromThreadPool` pointer must not be used
+        /// after the lock is released.
+        if (ThreadFromThreadPool * thread_to_wake = popNewestIdleThreadNoLock())
+            wakeIdleThreadNoLock(thread_to_wake);
     }
 
-    /// Wake up a free thread to run the new job.
-    new_job_or_shutdown.notify_one();
-
-    ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
+    ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
     return static_cast<ReturnType>(true);
 }
@@ -451,9 +470,8 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
                     // Successfully decremented, attempt to create a new thread
                     new_thread = std::make_unique<ThreadFromThreadPool>(*this);
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
-                    // Failed to create the thread, restore capacity
                     remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 }
                 break;  // Exit loop whether thread creation succeeded or not
@@ -470,7 +488,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
             threads.emplace_front(std::move(new_thread));
             thread_slot = threads.begin();
         }
-        catch (...)
+        catch (const std::exception &)
         {
             break;
         }
@@ -479,7 +497,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         {
             (*thread_slot)->start(thread_slot);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             threads.pop_front();
             break;
@@ -511,12 +529,14 @@ void ThreadPoolImpl<Thread>::wait()
     Stopwatch watch;
     std::unique_lock lock(mutex);
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
-    /// Signal here just in case.
-    /// If threads are waiting on condition variables, but there are some jobs in the queue
-    /// then it will prevent us from deadlock.
-    new_job_or_shutdown.notify_all();
+    /// Do NOT wake idle threads here. The LIFO scheduling guarantees that every
+    /// queued job has an associated wake-up (either a notified thread popped from
+    /// the idle stack, or a newly-created thread that will see the job in its
+    /// first worker-loop iteration, or a busy thread that will see the queued
+    /// job when it finishes its current one). Waking all idle threads would
+    /// destroy LIFO ordering — the whole point of this pool design.
     job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
@@ -554,10 +574,10 @@ void ThreadPoolImpl<Thread>::finalize()
         /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
         /// the thread.join() operation will fail later in this function.
         threads_remove_themselves = false;
-    }
 
-    /// Notify all threads to wake them up, so they can complete their work and exit gracefully.
-    new_job_or_shutdown.notify_all();
+        /// Wake up all idle threads so they can see shutdown and exit gracefully.
+        wakeUpAllIdleThreadsNoLock();
+    }
 
     /// Join all threads before clearing the list
     for (auto& thread_ptr : threads)
@@ -589,6 +609,102 @@ void ThreadPoolImpl<Thread>::onDestroy()
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::pushIdleThreadNoLock(ThreadFromThreadPool * thread)
+{
+    chassert(!thread->in_idle_stack);
+    chassert(!thread->idle_prev);
+    chassert(!thread->idle_next);
+
+    thread->idle_prev = idle_thread_tail;
+    thread->idle_next = nullptr;
+    thread->in_idle_stack = true;
+
+    if (idle_thread_tail)
+        idle_thread_tail->idle_next = thread;
+    else
+        idle_thread_head = thread;
+
+    idle_thread_tail = thread;
+    ++idle_thread_count;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::removeIdleThreadNoLock(ThreadFromThreadPool * thread)
+{
+    if (!thread->in_idle_stack)
+        return;
+
+    if (thread->idle_prev)
+        thread->idle_prev->idle_next = thread->idle_next;
+    else
+        idle_thread_head = thread->idle_next;
+
+    if (thread->idle_next)
+        thread->idle_next->idle_prev = thread->idle_prev;
+    else
+        idle_thread_tail = thread->idle_prev;
+
+    thread->idle_prev = nullptr;
+    thread->idle_next = nullptr;
+    thread->in_idle_stack = false;
+
+    chassert(idle_thread_count > 0);
+    --idle_thread_count;
+}
+
+template <typename Thread>
+typename ThreadPoolImpl<Thread>::ThreadFromThreadPool * ThreadPoolImpl<Thread>::popNewestIdleThreadNoLock()
+{
+    ThreadFromThreadPool * thread = idle_thread_tail;
+    if (thread)
+        removeIdleThreadNoLock(thread);
+    return thread;
+}
+
+template <typename Thread>
+typename ThreadPoolImpl<Thread>::ThreadFromThreadPool * ThreadPoolImpl<Thread>::popOldestIdleThreadNoLock()
+{
+    ThreadFromThreadPool * thread = idle_thread_head;
+    if (thread)
+        removeIdleThreadNoLock(thread);
+    return thread;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
+{
+    thread->idle_wakeup_flag = true;
+    thread->cv.notify_one();
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
+{
+    while (ThreadFromThreadPool * thread = popOldestIdleThreadNoLock())
+        wakeIdleThreadNoLock(thread);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wakeUpExcessIdleThreadsNoLock()
+{
+    const size_t target = std::min(max_threads, scheduled_jobs + max_free_threads);
+    if (threads.size() <= target)
+        return;
+    const size_t excess = threads.size() - target;
+    const size_t to_wake = std::min(excess, idle_thread_count);
+
+    /// Wake the oldest-idle threads first (front of the stack), keeping the
+    /// recently-idle threads (back of the stack) intact for LIFO scheduling
+    /// of the next incoming jobs.
+    for (size_t i = 0; i < to_wake; ++i)
+    {
+        ThreadFromThreadPool * thread = popOldestIdleThreadNoLock();
+        chassert(thread);
+        wakeIdleThreadNoLock(thread);
+    }
+}
+
+template <typename Thread>
 size_t ThreadPoolImpl<Thread>::active() const
 {
     std::lock_guard lock(mutex);
@@ -613,10 +729,10 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
     thread = Thread(&ThreadFromThreadPool::worker, this);
 
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
         watch2.elapsedMicroseconds());
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
 
     parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
 }
@@ -664,7 +780,7 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
     join();
 
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
 }
 
 
@@ -707,7 +823,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             Stopwatch watch;
             std::unique_lock lock(parent_pool.mutex);
             ProfileEvents::increment(
-                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+                std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
                 watch.elapsedMicroseconds());
 
             // Finish with previous job if any
@@ -732,15 +848,47 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
                 parent_pool.job_finished.notify_all();
                 if (parent_pool.shutdown)
-                    parent_pool.new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                    parent_pool.wakeUpAllIdleThreadsNoLock(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
-            parent_pool.new_job_or_shutdown.wait(lock, [this] {
-                return !parent_pool.jobs.empty()
-                    || parent_pool.shutdown
-                    || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
-            });
+            /// LIFO idle thread scheduling: link this thread into the intrusive
+            /// idle stack and wait on its own per-thread CV until selected. The
+            /// scheduler pops the most recently idle thread from the stack, sets
+            /// its `idle_wakeup_flag`, and notifies only that thread's CV.
+            ///
+            /// The wait predicate also re-checks the real pool state. This is a
+            /// required safety net: a previous attempt to drop it
+            /// (commit `9322e66151ea`) deadlocked the
+            /// `SchedulerWorkloadResourceManager.DropNotEmptyQueueLong` unit test
+            /// under TSan. Even though every notifier
+            /// (`popNewestIdleThreadNoLock`, `wakeUpAllIdleThreadsNoLock`,
+            /// `wakeUpExcessIdleThreadsNoLock`) sets `idle_wakeup_flag` before
+            /// notifying the per-thread CV, there are interleavings where a
+            /// queued job becomes visible to this worker without a paired
+            /// notification. Re-checking the pool state in the predicate lets a
+            /// notified or spuriously-woken worker pick up such jobs (or observe
+            /// shutdown / a reduced thread limit) instead of sleeping forever.
+            ///
+            /// If the worker wakes through this fallback predicate it is still
+            /// linked in the idle stack, so we explicitly remove it after the
+            /// wait. When the worker wakes via the LIFO path the notifier has
+            /// already popped it and `removeIdleThreadNoLock` is a no-op.
+            while (parent_pool.jobs.empty()
+                && !parent_pool.shutdown
+                && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
+            {
+                idle_wakeup_flag = false;
+                parent_pool.pushIdleThreadNoLock(this);
+                cv.wait(lock, [this]
+                {
+                    return idle_wakeup_flag
+                        || !parent_pool.jobs.empty()
+                        || parent_pool.shutdown
+                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
+                });
 
+                parent_pool.removeIdleThreadNoLock(this);
+            }
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
@@ -760,7 +908,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             parent_pool.jobs.pop();
 
             ProfileEvents::increment(
-                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
                 job_data->elapsedMicroseconds());
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
@@ -795,7 +943,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             DB::ThreadGroupPtr initial_thread_group = DB::CurrentThread::getGroup();
 #endif
 
-            if constexpr (!std::is_same_v<Thread, std::thread>)
+            if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
             {
                 Stopwatch watch;
                 job_data->job();
@@ -862,7 +1010,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     }
 }
 
-template class ThreadPoolImpl<std::thread>;
+template class ThreadPoolImpl<GlobalThreadType>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
@@ -920,6 +1068,48 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
+}
+
+void startThreadFromGlobalPool(
+    std::shared_ptr<ThreadFromGlobalPoolState> state,
+    std::function<void()> func,
+    UInt64 global_profiler_real_time_period_ns,
+    UInt64 global_profiler_cpu_time_period_ns,
+    bool global_trace_collector_allowed,
+    bool propagate_opentelemetry_context)
+{
+    /// NOTE:
+    /// - If scheduleOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
+    /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
+    GlobalThreadPool::instance().scheduleOrThrow(
+        [my_state = std::move(state),
+         my_func = std::move(func),
+         global_profiler_real_time_period_ns,
+         global_profiler_cpu_time_period_ns,
+         global_trace_collector_allowed]() mutable
+        {
+            SCOPE_EXIT(
+                my_state->thread_id = std::thread::id();
+                my_state->event.set();
+            );
+
+            my_state->thread_id = std::this_thread::get_id();
+
+            /// Move out so captured callable is destroyed before join() is signalled.
+            auto function = std::move(my_func);
+
+            /// ThreadStatus holds a raw pointer to the query context, so it must be
+            /// destroyed before the signal that allows join() to return.
+            DB::ThreadStatus thread_status;
+            if (global_trace_collector_allowed
+                && unlikely(global_profiler_real_time_period_ns != 0 || global_profiler_cpu_time_period_ns != 0))
+                thread_status.initGlobalProfiler(global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns);
+
+            function();
+        },
+        {},
+        0,
+        propagate_opentelemetry_context);
 }
 
 CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()

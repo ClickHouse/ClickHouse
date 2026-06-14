@@ -90,7 +90,7 @@ struct AggregateFunctionDistinctJSONPathsData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
         if (size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, size);
@@ -200,8 +200,8 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t paths_size;
-        size_t types_size;
+        size_t paths_size = 0;
+        size_t types_size = 0;
         readVarUInt(paths_size, buf);
         if (paths_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size for paths (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, paths_size);
@@ -346,6 +346,7 @@ static AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
     return std::make_shared<AggregateFunctionDistinctJSONPathsAndTypes<Data>>(argument_types);
 }
 
+void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory)
 {
     /// distinctJSONPaths documentation
@@ -446,8 +447,8 @@ SELECT distinctJSONPathsAndTypes(json) FROM test_json;
     FunctionDocumentation::Category category_distinctJSONPathsAndTypes = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_distinctJSONPathsAndTypes = {description_distinctJSONPathsAndTypes, syntax_distinctJSONPathsAndTypes, arguments_distinctJSONPathsAndTypes, {}, returned_value_distinctJSONPathsAndTypes, examples_distinctJSONPathsAndTypes, introduced_in_distinctJSONPathsAndTypes, category_distinctJSONPathsAndTypes};
 
-    factory.registerFunction("distinctJSONPaths", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>, {}, documentation_distinctJSONPaths});
-    factory.registerFunction("distinctJSONPathsAndTypes", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>, {}, documentation_distinctJSONPathsAndTypes});
+    factory.registerFunction("distinctJSONPaths", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>, documentation_distinctJSONPaths, {}});
+    factory.registerFunction("distinctJSONPathsAndTypes", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>, documentation_distinctJSONPathsAndTypes, {}});
 }
 
 }

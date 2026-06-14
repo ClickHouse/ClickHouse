@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -28,11 +27,11 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 template <typename T>
 inline uint32_t getLeadingZeroBitsUnsafe(T x)
 {
-    assert(x != 0);
+    chassert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
-        return __builtin_clz(x);
+        return __builtin_clz(x); // NOLINT(readability-redundant-casting)
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
@@ -40,7 +39,7 @@ inline uint32_t getLeadingZeroBitsUnsafe(T x)
     }
     else
     {
-        return __builtin_clzll(x);
+        return __builtin_clzll(x); // NOLINT(readability-redundant-casting)
     }
 }
 
@@ -68,7 +67,7 @@ inline uint32_t bitScanReverse(T x)
 template <typename T>
 inline size_t getTrailingZeroBitsUnsafe(T x)
 {
-    assert(x != 0);
+    chassert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {

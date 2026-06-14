@@ -8,9 +8,13 @@
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
+#endif
 
 namespace DB
 {
@@ -42,6 +46,12 @@ void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t l
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
+    /// Inserting zero copies is a no-op regardless of `position`. Returning early avoids
+    /// eagerly reading `offsets[position - 1]` below, which would go out of bounds on
+    /// a caller-side garbage `position` (e.g. from a `size_t` underflow).
+    if (length == 0)
+        return;
+
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
     const size_t src_buf_size
@@ -95,26 +105,25 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-WeakHash32 ColumnString::getWeakHash32() const
+void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = offsets.size();
-    WeakHash32 hash(s);
+    /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
+    /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
+    /// plain scalar loop is used. See IColumn::computeHashInto.
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    const UInt8 * pos = chars.data() + prev_offset;
 
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-    Offset prev_offset = 0;
-
-    for (const auto & offset : offsets)
+    for (size_t i = row_begin; i < row_end; ++i)
     {
-        auto str_size = offset - prev_offset;
-        *hash_data = ::updateWeakHash32(pos, str_size, *hash_data);
+        const auto offset = offsets[i];
+        const auto str_size = offset - prev_offset;
+        const UInt32 h = ::updateWeakHash32(pos, str_size, WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? h : combineWeakHash32(h, out);
 
         pos += str_size;
         prev_offset = offset;
-        ++hash_data;
     }
-
-    return hash;
 }
 
 
@@ -300,7 +309,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -320,7 +329,7 @@ void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories,
 
 void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -335,7 +344,7 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 
 void ColumnString::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
     in.ignore(string_size);
 }
@@ -348,7 +357,7 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnString::create();
 
@@ -538,6 +547,10 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     size_t res_chars_size = 0;
+    /// This is a dependent prefix-sum where each iteration depends on the
+    /// previous one.  Auto-vectorization adds horizontal-reduction overhead
+    /// without improving throughput for dependent chains.
+#pragma clang loop vectorize(disable)
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
@@ -577,7 +590,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
@@ -598,22 +611,20 @@ void ColumnString::shrinkToFit()
     offsets.shrink_to_fit();
 }
 
-void ColumnString::getExtremes(Field & min, Field & max) const
+void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;
@@ -691,6 +702,63 @@ ColumnPtr ColumnString::compress(bool force_compression) const
         });
 }
 
+#if USE_EMBEDDED_COMPILER
+bool ColumnString::isComparatorCompilable() const
+{
+    return true;
+}
+
+llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_offset_ptr = b.CreateExtractValue(lhs, {1});
+    llvm::Value * lhs_index = b.CreateExtractValue(lhs, {2});
+
+    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_offset_ptr = b.CreateExtractValue(rhs, {1});
+    llvm::Value * rhs_index = b.CreateExtractValue(rhs, {2});
+
+    auto * size_type = b.getInt64Ty();
+
+    llvm::Value * const_one = llvm::ConstantInt::get(size_type, 1);
+
+    auto load_offset = [&](llvm::Value * offset_array, llvm::Value * index)
+    {
+        /// Not inbounds: for row 0 the index is -1 (wrapped unsigned), accessing
+        /// the PaddedPODArray padding element before the start of the array.
+        auto * element_ptr = b.CreateGEP(size_type, offset_array, index);
+        return b.CreateLoad(size_type, element_ptr);
+    };
+    auto * lhs_prev_index = b.CreateSub(lhs_index, const_one);
+    auto * lhs_current_start_offset = load_offset(lhs_offset_ptr, lhs_prev_index);
+    auto * lhs_current_end_offset = load_offset(lhs_offset_ptr, lhs_index);
+    auto * lhs_current_size = b.CreateSub(lhs_current_end_offset, lhs_current_start_offset);
+    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, lhs_current_start_offset);
+
+    auto * rhs_prev_index = b.CreateSub(rhs_index, const_one);
+    auto * rhs_current_start_offset = load_offset(rhs_offset_ptr, rhs_prev_index);
+    auto * rhs_current_end_offset = load_offset(rhs_offset_ptr, rhs_index);
+    auto * rhs_current_size = b.CreateSub(rhs_current_end_offset, rhs_current_start_offset);
+    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, rhs_current_start_offset);
+
+    // Call memcmpSmallAllowOverflow15, same as in ColumnString::compareAt
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    llvm::FunctionType * memcmp_func_type = llvm::FunctionType::get(
+        b.getInt32Ty(),
+        {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()},
+        false
+    );
+
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
+
+    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, lhs_current_size, rhs_current_ptr, rhs_current_size});
+
+    /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
+    return b.CreateTrunc(compare_result, b.getInt8Ty());
+}
+#endif
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {
@@ -727,6 +795,14 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t chars_begin = offsetAt(begin);
+    size_t chars_end = offsetAt(end);
+    hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
+    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

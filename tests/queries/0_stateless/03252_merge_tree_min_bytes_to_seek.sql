@@ -20,7 +20,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedRanges']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query LIKE 'SELECT count() FROM t_min_bytes_to_seek%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE 'SELECT count() FROM t_min_bytes_to_seek%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_min_bytes_to_seek;

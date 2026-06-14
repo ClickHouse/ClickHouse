@@ -125,7 +125,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 template<typename T>
 Chunk PostgreSQLSource<T>::generate()
 {
-    LOG_TEST(getLogger("PostgreSQLSource"), "Generate a chuck from stream");
+    LOG_TEST(getLogger("PostgreSQLSource"), "Generate a chunk from stream");
 
     /// Check if source was cancelled or completed
     if (is_completed.load() || isCancelled())
@@ -138,7 +138,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (!isCancelled()  && !is_completed.load())
+    while (!isCancelled() && !is_completed.load())
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
@@ -200,7 +200,15 @@ void PostgreSQLSource<T>::onCancel() noexcept
     /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
     if (!started.load() && tx && tx->conn().is_open())
     {
-        tx->conn().cancel_query();
+        try
+        {
+            tx->conn().cancel_query();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         if (connection_holder)
             connection_holder->setBroken();
     }

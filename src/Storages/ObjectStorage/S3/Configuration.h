@@ -4,10 +4,13 @@
 
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/ObjectStorage/S3/Serde.h>
+#endif
+#include <Parsers/IAST_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -97,7 +100,15 @@ public:
 
     StorageS3Configuration() = default;
 
+    void setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_)
+    {
+        biglake_adc_client_id = client_id_;
+        biglake_adc_client_secret = client_secret_;
+        biglake_adc_refresh_token = refresh_token_;
+    }
+
     ObjectStorageType getType() const override { return type; }
+
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
@@ -105,6 +116,7 @@ public:
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
+    void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
     const Paths & getPaths() const override { return keys; }
@@ -147,6 +159,10 @@ public:
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.
     bool static_configuration = true;
+
+    String biglake_adc_client_id;
+    String biglake_adc_client_secret;
+    String biglake_adc_refresh_token;
 
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;

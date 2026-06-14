@@ -47,6 +47,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -87,8 +88,8 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileDD::name, {createAggregateFunctionQuantile<FuncQuantileDD>, {}, documentation});
-    factory.registerFunction(NameQuantilesDD::name, { createAggregateFunctionQuantile<FuncQuantilesDD>, properties });
+    factory.registerFunction(NameQuantileDD::name, {createAggregateFunctionQuantile<FuncQuantileDD>, documentation});
+    factory.registerFunction(NameQuantilesDD::name, { createAggregateFunctionQuantile<FuncQuantilesDD>, {}, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianDD", NameQuantileDD::name);

@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -182,7 +180,6 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -194,9 +191,10 @@ try
     delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = getClientConfiguration().getBool("echo", false);
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
+
+    setupEchoAndHighlightSettings();
 
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
@@ -261,5 +259,3 @@ catch (...)
 }
 
 }
-
-#endif

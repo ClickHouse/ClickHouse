@@ -7,6 +7,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/types.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB

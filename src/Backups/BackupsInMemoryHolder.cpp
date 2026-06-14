@@ -24,7 +24,7 @@ std::shared_ptr<BackupInMemory> BackupsInMemoryHolder::createBackup(const String
     auto it = backups.find(backup_name);
     if (it != backups.end())
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
-    auto new_backup = std::make_shared<BackupInMemory>(backup_name, *this);
+    auto new_backup = std::make_shared<BackupInMemory>(backup_name, weak_from_this());
     backups.emplace(backup_name, new_backup);
     return new_backup;
 }

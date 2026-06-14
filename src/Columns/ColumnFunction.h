@@ -3,8 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
-#include <Common/WeakHash.h>
-
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -48,23 +47,23 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
-    std::vector<MutableColumnPtr> scatter(size_t num_columns,
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns,
                                           const IColumn::Selector & selector) const override;
 
-    void getExtremes(Field &, Field &) const override {}
+    void getExtremes(Field &, Field &, size_t, size_t) const override {}
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce() const;
+    ColumnWithTypeAndName reduce(bool dry_run = false) const;
 
     Field operator[](size_t n) const override;
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     std::string_view getDataAt(size_t) const override
     {
@@ -123,7 +122,7 @@ public:
     }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 
     void popBack(size_t) override

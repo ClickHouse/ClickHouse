@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
@@ -176,6 +176,33 @@ TEST(SchedulerRoot, Budget)
 
     EXPECT_EQ(total_requests, a.queue->dequeued_requests);
     EXPECT_EQ(total_real_cost, a.queue->dequeued_cost - a.queue->getBudget());
+}
+
+TEST(SchedulerRoot, BudgetAfterFailedEnqueue)
+{
+    ResourceTest t;
+
+    ResourceHolder r1(t);
+    r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
+    r1.add<PriorityPolicy>("/prio");
+    auto a = r1.addQueue("/prio/A", "");
+    r1.registerResource();
+
+    // Create a negative budget (overconsumption debt) so that `ResourceBudget::ask` raises the next
+    // request's cost above its estimation, making a leaked budget transaction observable.
+    {
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a, 1);
+        rg.consume(10);
+    }
+    ResourceCost budget_before = a.queue->getBudget();
+    EXPECT_LT(budget_before, 0);
+
+    // Make `enqueueRequest` throw. The budget transaction made by `enqueueRequestUsingBudget` for the
+    // failed request must be rolled back: the request never entered the scheduler and will never be
+    // finished, so otherwise the debt would be lost and subsequent requests would ask for too little.
+    a.queue->purgeQueue();
+    EXPECT_THROW(ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a, 1), Exception);
+    EXPECT_EQ(a.queue->getBudget(), budget_before);
 }
 
 TEST(SchedulerRoot, Cancel)

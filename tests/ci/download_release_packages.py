@@ -20,11 +20,19 @@ def download_packages(
 
     logging.info("Will download %s", release)
 
+    failed = []
     for pkg, url in release.assets.items():
         if not pkg.endswith("_amd64.deb") or (not debug and "-dbg_" in pkg):
             continue
         pkg_name = dest_path / pkg
-        download_build_with_progress(url, pkg_name)
+        try:
+            download_build_with_progress(url, pkg_name)
+        except DownloadException:
+            failed.append(pkg)
+            logging.warning("Failed to download %s, will skip", pkg)
+
+    if failed:
+        logging.warning("Some packages failed to download: %s", ", ".join(failed))
 
 
 def download_last_release(dest_path: Path, debug: bool = False) -> None:

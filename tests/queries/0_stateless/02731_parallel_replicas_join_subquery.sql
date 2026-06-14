@@ -21,6 +21,7 @@ SELECT
     * FROM generateRandom('number Int64, value1 String, value2 String, time Int64', 1, 10, 2)
 LIMIT 100;
 
+SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET joined_subquery_requires_alias = 0;
@@ -57,7 +58,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (
@@ -89,7 +90,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (
@@ -191,7 +192,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (
@@ -240,7 +241,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (

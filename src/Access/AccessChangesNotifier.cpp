@@ -1,4 +1,5 @@
 #include <Access/AccessChangesNotifier.h>
+#include <Common/Exception.h>
 #include <boost/range/algorithm/copy.hpp>
 
 

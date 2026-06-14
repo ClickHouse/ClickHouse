@@ -54,9 +54,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<std::size_t> & requested_rows) override;
 
     bool isModified() const override;
 

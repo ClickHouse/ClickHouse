@@ -13,6 +13,7 @@ env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
 
+
 jobs:
 
   config_workflow:
@@ -47,10 +48,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci --timestamp
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -85,10 +83,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci --timestamp
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -123,10 +118,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci --timestamp
 
   build_amd_binary:
     runs-on: [self-hosted, arm-large]
@@ -161,14 +153,11 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci --timestamp
 
   clickhouse_keeper_jepsen:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary]
+    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q2xpY2tIb3VzZSBLZWVwZXIgSmVwc2Vu') }}
     name: "ClickHouse Keeper Jepsen"
     outputs:
@@ -199,14 +188,11 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci --timestamp
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary, clickhouse_keeper_jepsen]
+    needs: [build_amd_binary, clickhouse_keeper_jepsen, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
@@ -237,7 +223,4 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "NightlyJepsen" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "NightlyJepsen" --ci --timestamp

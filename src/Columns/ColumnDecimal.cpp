@@ -4,7 +4,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 
@@ -21,7 +20,6 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 
-#include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -79,6 +77,55 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
+[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
+{
+    auto & other = assert_cast<const Self &>(rhs);
+    const T * pa = &data[n];
+    const T * pb = &other.data[m];
+
+    if (scale == other.scale)
+    {
+        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && (*pa) < (*pb); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && (*pb) < (*pa); ++pb)
+                ++res;
+        }
+        return res;
+    }
+    else
+    {
+        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
+                ++res;
+        }
+        return res;
+    }
+}
+
+template <is_decimal T>
 Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 {
     return DecimalUtils::convertTo<Float64>(data[n], scale);
@@ -87,7 +134,7 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 template <is_decimal T>
 void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    T dec;
+    T dec{};
     readBinaryLittleEndian(dec, in);
     data.push_back(std::move(dec));
 }
@@ -114,23 +161,33 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <is_decimal T>
-WeakHash32 ColumnDecimal<T>::getWeakHash32() const
+void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+}
 
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
+/// Finalized per-row CRC32C hash of a decimal value (seeded with `WEAK_HASH32_INITIAL_VALUE`).
+/// Accesses `.value` directly to avoid `wide::integer` implicit-conversion constraints; `intHashCRC32`
+/// consumes the whole native word (folding 64-bit words for 128/256-bit decimals).
+template <is_decimal T>
+static inline UInt32 weakHashDecimalValue32(const T & v) noexcept
+{
+    return static_cast<UInt32>(intHashCRC32(v.value, WEAK_HASH32_INITIAL_VALUE));
+}
 
-    while (begin < end)
-    {
-        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
-    }
-
-    return hash;
+template <is_decimal T>
+void ColumnDecimal<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
+    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+    if (initial)
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = weakHashDecimalValue32(src[i]);
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(weakHashDecimalValue32(src[i]), hash_out[i]);
 }
 
 template <is_decimal T>
@@ -324,11 +381,10 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
-DataTypePtr ColumnDecimal<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
 {
     if (options.notFull(name_buf))
         name_buf << FieldVisitorToString()(data[n], scale);
-    return FieldToDataType()(data[n], scale);
 }
 
 template <is_decimal T>
@@ -374,7 +430,7 @@ bool ColumnDecimal<T>::tryInsert(const Field & x)
 template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    T tmp;
+    T tmp{};
     memcpy(&tmp, src, sizeof(T));
     data.emplace_back(tmp);
 }
@@ -591,24 +647,24 @@ ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
+void ColumnDecimal<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (data.empty())
+    if (start >= end)
     {
         min = NearestFieldType<T>(T(0), scale);
         max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
-    T cur_min = data[0];
-    T cur_max = data[0];
+    T cur_min = data[start];
+    T cur_max = data[start];
 
-    for (const T & x : data)
+    for (size_t i = start + 1; i < end; ++i)
     {
-        if (x < cur_min)
-            cur_min = x;
-        else if (x > cur_max)
-            cur_max = x;
+        if (data[i] < cur_min)
+            cur_min = data[i];
+        else if (data[i] > cur_max)
+            cur_max = data[i];
     }
 
     min = NearestFieldType<T>(cur_min, scale);

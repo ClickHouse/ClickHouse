@@ -65,12 +65,19 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
             const auto & token = op.original_tokens[0];
             po::variable_value value(boost::any(op.value), false);
 
-            const char * option;
+            const char * option = nullptr;
             std::error_code ec;
             if (token.contains(' '))
                 option = "query";
             else if (std::filesystem::is_regular_file(std::filesystem::path{token}, ec))
                 option = "queries-file";
+            else if (token.contains('/') || token.contains('.'))
+                /// The argument looks like a file path (contains `/` or `.`) but doesn't exist on disk.
+                /// Give a clear "no such file" error rather than the generic "positional option is not supported"
+                /// which is confusing when the user meant to pass a file, e.g.:
+                ///     $ clickhouse local /tmp/aaa.rep
+                ///     Positional option `/tmp/aaa.rep` is not supported.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such file: {}", token);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
 

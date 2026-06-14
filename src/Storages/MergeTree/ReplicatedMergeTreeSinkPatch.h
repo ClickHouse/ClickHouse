@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class ReplicatedMergeTreeSinkPatch : public ReplicatedMergeTreeSink
+class ReplicatedMergeTreeSinkPatch final : public ReplicatedMergeTreeSink
 {
 public:
     ReplicatedMergeTreeSinkPatch(
@@ -13,6 +13,8 @@ public:
         StorageMetadataPtr metadata_snapshot_,
         LightweightUpdateHolderInKeeper update_holder_,
         ContextPtr context_);
+
+    ~ReplicatedMergeTreeSinkPatch() override;
 
     String getName() const override { return "ReplicatedMergeTreeSinkPatch"; }
 

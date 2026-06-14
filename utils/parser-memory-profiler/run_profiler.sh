@@ -12,8 +12,8 @@ CLICKHOUSE_ROOT="${SCRIPT_DIR}/../.."
 
 # Default paths - can be overridden with arguments
 BUILD_DIR="${CLICKHOUSE_ROOT}/build"
-# The profiler binary is built from src/Parsers/examples/parser_memory_profiler.cpp
-PROFILER="${BUILD_DIR}/src/Parsers/examples/parser_memory_profiler"
+# The profiler binary is part of the clickhouse-examples multi-call binary (src/Examples/)
+PROFILER="${BUILD_DIR}/src/Examples/clickhouse-examples"
 JEPROF="${HOME}/github/jemalloc/bin/jeprof"
 FLAMEGRAPH="${HOME}/FlameGraph/flamegraph.pl"
 
@@ -38,14 +38,14 @@ usage() {
     echo "  -q, --queries FILE    Input queries file (default: test_queries.txt)"
     echo "  -o, --output DIR      Output directory name (default: profiler_output)"
     echo "  -b, --build DIR       ClickHouse build directory (default: ../../build)"
-    echo "  -p, --profiler PATH   Path to parser_memory_profiler binary"
+    echo "  -p, --profiler PATH   Path to clickhouse-examples binary"
     echo "  -j, --jeprof PATH     Path to jeprof binary"
     echo "  -f, --flamegraph PATH Path to flamegraph.pl"
     echo "  -h, --help            Show this help"
     echo ""
     echo "Prerequisites:"
-    echo "  1. Build parser_memory_profiler:"
-    echo "     cd build && ninja parser_memory_profiler"
+    echo "  1. Build clickhouse-examples:"
+    echo "     cd build && ninja clickhouse-examples"
     echo ""
     echo "  2. Install jeprof (for detailed profiling):"
     echo "     git clone https://github.com/jemalloc/jemalloc ~/github/jemalloc"
@@ -87,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -b|--build)
             BUILD_DIR="$2"
-            PROFILER="${BUILD_DIR}/src/Parsers/examples/parser_memory_profiler"
+            PROFILER="${BUILD_DIR}/src/Examples/clickhouse-examples"
             shift 2
             ;;
         -p|--profiler)
@@ -119,8 +119,8 @@ check_prerequisites() {
     local missing=0
     
     if [[ ! -x "$PROFILER" ]]; then
-        echo -e "${RED}Error: parser_memory_profiler not found at: $PROFILER${NC}"
-        echo "Build it with: cd ${BUILD_DIR} && ninja parser_memory_profiler"
+        echo -e "${RED}Error: clickhouse-examples not found at: $PROFILER${NC}"
+        echo "Build it with: cd ${BUILD_DIR} && ninja clickhouse-examples"
         missing=1
     fi
     
@@ -171,11 +171,9 @@ process_query() {
     echo -e "${GREEN}Processing query $id...${NC}" >&2
     
     # Run profiler with jemalloc profiling
-    # JE_MALLOC_CONF is used on macOS, MALLOC_CONF on Linux
     local output
-    output=$(JE_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
-        MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
-        "$PROFILER" --profile "$profile_prefix" <<< "$query" 2>/dev/null)
+    output=$(MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
+        "$PROFILER" parser_memory_profiler --profile "$profile_prefix" <<< "$query" 2>/dev/null)
     
     # Parse the output (format: length \t before \t after \t diff)
     local query_length allocated_before allocated_after allocated_diff

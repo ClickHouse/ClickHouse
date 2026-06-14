@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-shared-merge-tree
 
+SET parallel_replicas_local_plan = 1;
+
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;
 
@@ -67,7 +69,7 @@ SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = curre
 SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['LoadedPrimaryIndexFiles'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache%'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache%'
 ORDER BY event_time_microseconds;
 
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;

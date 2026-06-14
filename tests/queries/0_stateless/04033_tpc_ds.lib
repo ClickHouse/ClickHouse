@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Shared settings for TPC-DS tests, derived from tests/benchmarks/tpc-ds/settings.json.
+# See tests/benchmarks/tpc-ds/README.md for known issues and workaround details.
+
+TPCDS_SETTINGS_JSON="$CURDIR/../../benchmarks/tpc-ds/settings.json"
+
+# 1. --max_rows_to_read 0 because of https://github.com/ClickHouse/ClickHouse/issues/99937. Can be removed after the issue is closed.
+# 2. TPC-DS tables use S3 web disk. Increase HTTP retries to avoid transient `No message received` errors (default is 10).
+SETTINGS=(-m --max_rows_to_read 0 --http_max_tries 100)
+_tpcds_output=$(jq -e -r '
+    "--format", .format,
+    (.settings | to_entries[] | "--\(.key)", (.value | tostring))
+' "$TPCDS_SETTINGS_JSON")
+readarray -t _tpcds_lines <<< "$_tpcds_output"
+SETTINGS+=("${_tpcds_lines[@]}")

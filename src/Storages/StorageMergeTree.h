@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeCleanupThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -51,6 +52,7 @@ public:
         std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
+    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     ~StorageMergeTree() override;
@@ -58,6 +60,10 @@ public:
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
     bool supportsParallelInsert() const override { return true; }
+
+    bool supportsStreaming() const override { return true; }
+
+    CursorPromotersMap buildPromoters() override;
 
     bool supportsTransactions() const override { return support_transaction; }
 
@@ -94,8 +100,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
 
-    bool hasLightweightDeletedMask() const override;
-
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
@@ -130,16 +134,13 @@ private:
 
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
+    MergeTreeCleanupThread cleanup_thread;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;
 
-    /// For clearOldParts
-    AtomicStopwatch time_after_previous_cleanup_parts;
-    /// For clearOldTemporaryDirectories.
-    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
     /// For clearOldBrokenDetachedParts
     AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
@@ -267,7 +268,7 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr context);
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
@@ -298,7 +299,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
@@ -311,6 +312,7 @@ private:
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
+    friend class MergeTreeCleanupThread;
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

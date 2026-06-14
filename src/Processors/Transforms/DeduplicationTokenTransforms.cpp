@@ -130,7 +130,8 @@ AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(
 
 void AddDeduplicationInfoTransform::transform(Chunk & chunk)
 {
-    if (!chunk.getChunkInfos().has<DeduplicationInfo>())
+    const bool has_deduplication_info = chunk.getChunkInfos().has<DeduplicationInfo>();
+    if (!has_deduplication_info)
     {
         auto info = DeduplicationInfo::create(false, unification_stage);
         info->setUserToken(user_token, chunk.getNumRows());
@@ -139,8 +140,11 @@ void AddDeduplicationInfoTransform::transform(Chunk & chunk)
 
     auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     info->setInsertDependencies(insert_dependencies);
-    info->setRootViewID(root_view_id);
-    info->setSourceBlockNumber(block_number++);
+    if (info->getVisitedViews().empty())
+    {
+        info->setRootViewID(root_view_id);
+        info->setSourceBlockNumber(block_number++);
+    }
     info->updateOriginalBlock(chunk, getInputPort().getSharedHeader());
 }
 
@@ -152,8 +156,6 @@ RedefineDeduplicationInfoWithDataHashTransform::RedefineDeduplicationInfoWithDat
 void RedefineDeduplicationInfoWithDataHashTransform::transform(Chunk & chunk)
 {
     auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-
-    // part hash is used only for the deduplication for one part in the target table partition
-    info->redefineTokensWithDataHash();
+    info->redefineTokensWithDataHash(getOutputPort().getSharedHeader()->cloneWithColumns(chunk.getColumns()));
 }
 }

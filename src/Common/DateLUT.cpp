@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
@@ -61,7 +62,12 @@ std::string determineDefaultTimeZone()
             ++tz_env_var;
 
         tz_file_path = tz_env_var;
-        tz_name = tz_env_var;
+
+        /// If TZ points to a file path (e.g. TZ=:/etc/localtime per POSIX),
+        /// don't use the path as the timezone name — let it be resolved from
+        /// the file's location relative to the timezone database. See #86495.
+        if (tz_env_var[0] != '/')
+            tz_name = tz_env_var;
     }
     else
     {
@@ -158,7 +164,7 @@ const DateLUTImpl & DateLUT::instance()
     std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
-        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+        const DB::ContextPtr query_context = DB::CurrentThread::get().tryGetQueryContext();
         if (query_context)
             timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
@@ -200,8 +206,10 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 
 DateLUT & DateLUT::getInstance()
 {
-    static DateLUT ret;
-    return ret;
+    /// Intentionally leaked: must outlive the asynchronous logger threads that may still
+    /// be formatting `LocalDateTime` values when other static destructors run.
+    static DateLUT * ret = new DateLUT;
+    return *ret;
 }
 
 ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num)

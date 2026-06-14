@@ -88,6 +88,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 }
 }
 
+void registerAggregateFunctionAvg(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_avg = R"(
@@ -131,6 +132,6 @@ SELECT avg(t) FROM test;
     FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, parameters_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
 
-    factory.registerFunction("avg", {createAggregateFunctionAvg, {}, documentation_avg}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("avg", {createAggregateFunctionAvg, documentation_avg}, AggregateFunctionFactory::Case::Insensitive);
 }
 }

@@ -1,6 +1,6 @@
 services:
   azurite1:
-    image: mcr.microsoft.com/azure-storage/azurite
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
     ports:
       - "${AZURITE_PORT}:${AZURITE_PORT}"
     volumes:

@@ -604,21 +604,25 @@ def test_ordered_mode_with_regex_partitioning_large_num_files(started_cluster, e
 
     assert actual_sum == expected_sum, f"Expected sum {expected_sum}, got {actual_sum}"
 
-    # Verify all partitions were created in ZooKeeper
+    # Verify all partitions were created in ZooKeeper.
+    # Note: ZooKeeper metadata is committed after data insertion,
+    # so we need to retry to allow the last batch's ZK commit to complete.
     zk = started_cluster.get_kazoo_client("zoo1")
-    processed_nodes = []
-    for i in range(buckets):
-        if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
-            continue
-        bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
-        for node in bucket_nodes:
-            if node not in processed_nodes:
-                processed_nodes.append(node)
+    expected_partition_keys = sorted([f"server-{i}" for i in range(1, num_hosts + 1)])
 
-    processed_nodes.sort()
-    expected_partition_keys = [f"server-{i}" for i in range(1, num_hosts + 1)]
-    expected_partition_keys.sort()  # Sort lexicographically to match processed_nodes sorting
-    assert processed_nodes == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {processed_nodes}"
+    for attempt in range(30):
+        processed_nodes = set()
+        for i in range(buckets):
+            if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
+                continue
+            bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
+            processed_nodes.update(bucket_nodes)
+
+        if sorted(processed_nodes) == expected_partition_keys:
+            break
+        time.sleep(1)
+
+    assert sorted(processed_nodes) == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {sorted(processed_nodes)}"
 
 
 @pytest.mark.parametrize("bucketing_mode", ["path", "partition"])

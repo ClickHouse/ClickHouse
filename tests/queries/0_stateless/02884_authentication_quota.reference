@@ -11,9 +11,9 @@ QUOTA_EXCEEDED
 2	1
 > Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4
 > Try to login to the user account with correct password
-> Successfull login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+> Successful login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 0	4
-> Login to the user account using the wrong password before exeeding the quota.
+> Login to the user account using the wrong password before exceeding the quota.
 password is incorrect
 password is incorrect
 password is incorrect
@@ -23,7 +23,7 @@ QUOTA_EXCEEDED
 QUOTA_EXCEEDED
 > Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 6	4
-> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and succesfull login
+> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and successful login
 > and check failed_sequential_authentications, max_failed_sequential_authentications.
 0	7
  ---------------------------------------------------------------------------
@@ -37,9 +37,9 @@ QUOTA_EXCEEDED
 2	1
 > Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4
 > Try to login to the user account with correct password
-> Successfull login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+> Successful login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 0	4
-> Login to the user account using the wrong password before exeeding the quota.
+> Login to the user account using the wrong password before exceeding the quota.
 password is incorrect
 password is incorrect
 password is incorrect
@@ -49,6 +49,6 @@ QUOTA_EXCEEDED
 QUOTA_EXCEEDED
 > Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 6	4
-> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and succesfull login
+> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and successful login
 > and check failed_sequential_authentications, max_failed_sequential_authentications.
 0	7

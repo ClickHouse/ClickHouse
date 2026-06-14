@@ -26,6 +26,8 @@ struct IsFiniteImpl
             return (std::bit_cast<uint64_t>(t)
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
+        else if constexpr (std::is_same_v<T, BFloat16>)
+            return t.isFinite();
         else
         {
             (void)t;
@@ -41,19 +43,19 @@ using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
 REGISTER_FUNCTION(IsFinite)
 {
     FunctionDocumentation::Description description = R"(
-Returns `1` if the Float32 or Float64 argument not infinite and not a `NaN`,
+Returns `1` if the Float32 or Float64, or BFloat16 argument not infinite and not a `NaN`,
 otherwise this function returns `0`.
     )";
     FunctionDocumentation::Syntax syntax = "isFinite(x)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"x", "Number to check for finiteness.", {"Float*"}}
+        {"x", "Number to check for finiteness.", {"Float*","BFloat16"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"`1` if x is not infinite and not `NaN`, otherwise `0`."};
     FunctionDocumentation::Examples examples = {{"Test if a number is finite", "SELECT isFinite(inf)", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsFinite>(documentation);
 }

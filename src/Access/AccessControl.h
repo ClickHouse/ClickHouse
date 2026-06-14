@@ -179,6 +179,11 @@ public:
     void setEnableReadWriteGrants(bool enable_read_write_grants_);
     bool isEnabledReadWriteGrants() const;
 
+    /// Sets whether reading from a table should throw an exception if the table has row policies,
+    /// but none of them are for the current user.
+    void setThrowOnUnmatchedRowPolicies(bool enable) { throw_on_unmatched_row_policies = enable; }
+    bool shouldThrowOnUnmatchedRowPolicies() const { return throw_on_unmatched_row_policies; }
+
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there are two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
@@ -287,6 +292,7 @@ private:
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
     std::atomic_bool allow_implicit_no_password = true;
+    std::atomic_bool throw_on_unmatched_row_policies = false;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;

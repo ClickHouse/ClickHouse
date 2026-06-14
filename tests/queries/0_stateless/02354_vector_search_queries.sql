@@ -4,6 +4,10 @@
 
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
+SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 10000; -- CI may inject 1; LIMIT 3 > 1 disables lazy materialization
+
+DROP TABLE IF EXISTS tab;
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 
@@ -74,7 +78,7 @@ SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3
-SETTINGS max_limit_for_vector_search_queries = 2; -- LIMIT 3 > 2 --> don't use the ann index
+SETTINGS max_limit_for_vector_search_queries = 2, query_plan_max_limit_for_lazy_materialization = 10000; -- LIMIT 3 > 2 --> don't use the ann index; CI may inject query_plan_max_limit_for_lazy_materialization=1, disabling lazy mat
 
 DROP TABLE tab;
 
@@ -90,6 +94,11 @@ DROP TABLE IF EXISTS tab_cos_f32;
 DROP TABLE IF EXISTS tab_cos_f16;
 DROP TABLE IF EXISTS tab_cos_bf16;
 DROP TABLE IF EXISTS tab_cos_i8;
+DROP TABLE IF EXISTS tab_dot_f64;
+DROP TABLE IF EXISTS tab_dot_f32;
+DROP TABLE IF EXISTS tab_dot_f16;
+DROP TABLE IF EXISTS tab_dot_bf16;
+DROP TABLE IF EXISTS tab_dot_i8;
 
 CREATE TABLE tab_l2_f64(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2, 'f64', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 CREATE TABLE tab_l2_f32(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2, 'f32', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
@@ -101,6 +110,11 @@ CREATE TABLE tab_cos_f32(id Int32, vec Array(Float32), INDEX idx vec TYPE vector
 CREATE TABLE tab_cos_f16(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2, 'f16', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 CREATE TABLE tab_cos_bf16(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2, 'bf16', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 CREATE TABLE tab_cos_i8(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2, 'i8', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+CREATE TABLE tab_dot_f64(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2, 'f64', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+CREATE TABLE tab_dot_f32(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2, 'f32', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+CREATE TABLE tab_dot_f16(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2, 'f16', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+CREATE TABLE tab_dot_bf16(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2, 'bf16', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+CREATE TABLE tab_dot_i8(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2, 'i8', 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 
 INSERT INTO tab_l2_f64 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 INSERT INTO tab_l2_f32 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
@@ -112,6 +126,11 @@ INSERT INTO tab_cos_f32 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4])
 INSERT INTO tab_cos_f16 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 INSERT INTO tab_cos_bf16 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 INSERT INTO tab_cos_i8 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_dot_f64 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_dot_f32 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_dot_f16 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_dot_bf16 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_dot_i8 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
@@ -241,6 +260,71 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_cos_i8
 ORDER BY cosineDistance(vec, reference_vec)
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_f64
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_f64
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_f32
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_f32
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_f16
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_f16
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_bf16
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_bf16
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_i8
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab_dot_i8
+ORDER BY dotProduct(vec, reference_vec) DESC
 LIMIT 3;
 
 DROP TABLE tab_l2_f64;
@@ -253,6 +337,11 @@ DROP TABLE tab_cos_f32;
 DROP TABLE tab_cos_f16;
 DROP TABLE tab_cos_bf16;
 DROP TABLE tab_cos_i8;
+DROP TABLE tab_dot_f64;
+DROP TABLE tab_dot_f32;
+DROP TABLE tab_dot_f16;
+DROP TABLE tab_dot_bf16;
+DROP TABLE tab_dot_i8;
 
 SELECT '-- Index on Array(Float64) column';
 CREATE TABLE tab(id Int32, vec Array(Float64), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
@@ -274,6 +363,64 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3;
+
+DROP TABLE tab;
+
+SELECT '-- dotProduct distance function';
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab
+ORDER BY dotProduct(vec, reference_vec) DESC
+LIMIT 3;
+
+DROP TABLE tab;
+
+SELECT '-- Wrong sort direction (DESC for L2Distance), doesnt use the index';
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) DESC
+LIMIT 3;
+
+DROP TABLE tab;
+
+SELECT '-- Wrong sort direction, (DESC for cosineDistance) doesnt use the index';
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, cosineDistance(vec, reference_vec)
+FROM tab
+ORDER BY cosineDistance(vec, reference_vec) DESC
+LIMIT 3;
+
+DROP TABLE tab;
+
+SELECT '-- Wrong sort direction (ASC for dotProduct), doesnt use the index';
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'dotProduct', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, dotProduct(vec, reference_vec)
+FROM tab
+ORDER BY dotProduct(vec, reference_vec) ASC
 LIMIT 3;
 
 DROP TABLE tab;

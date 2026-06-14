@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemKeywords.h>
 #include "config.h"
 
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
@@ -19,11 +20,15 @@
 #include <Storages/System/StorageSystemCompletions.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+#include <Storages/System/StorageSystemDataSkippingIndexTypes.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
+#include <Storages/System/StorageSystemDictionaryLayouts.h>
+#include <Storages/System/StorageSystemDictionarySources.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDetachedTables.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/System/StorageSystemEvents.h>
+#include <Storages/System/StorageSystemFailPoints.h>
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Storages/System/StorageSystemUserDefinedFunctions.h>
@@ -62,6 +67,7 @@
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemProjections.h>
+#include <Storages/System/StorageSystemConstraints.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
 #include <Storages/System/StorageSystemContributors.h>
@@ -71,6 +77,7 @@
 #include <Storages/System/StorageSystemLicenses.h>
 #include <Storages/System/StorageSystemTimeZones.h>
 #include <Storages/System/StorageSystemDisks.h>
+#include <Storages/System/StorageSystemDiskTypes.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
 #include <Storages/System/StorageSystemUsers.h>
@@ -97,26 +104,40 @@
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
+#include <Storages/System/StorageSystemTokenizers.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
+#include <Storages/System/StorageSystemZooKeeperWatches.h>
+#if USE_NURAFT
+#include <Storages/System/StorageSystemKeeperChangelogs.h>
+#include <Storages/System/StorageSystemKeeperSnapshots.h>
+#endif
 #include <Storages/System/StorageSystemJemalloc.h>
+#include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/System/StorageSystemJemallocStats.h>
+#if USE_NURAFT
+#include <Storages/System/StorageSystemKeeperCluster.h>
+#endif
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
+#include <Storages/System/StorageSystemIcebergFiles.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
+#include <Storages/System/StorageSystemWasmModules.h>
+
 #include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 #include <Storages/System/StorageSystemSymbols.h>
 #endif
 
@@ -124,7 +145,7 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #endif
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Storages/System/StorageSystemStackTrace.h>
 #endif
 
@@ -136,8 +157,9 @@
 namespace DB
 {
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
+    auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
@@ -164,6 +186,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
+    attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts along with their embedded documentation.");
+    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
+    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
+    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
@@ -187,6 +213,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWarnings>(context, system_database, "warnings", "Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.");
     attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
     attachNoDescription<StorageSystemProjections>(context, system_database, "projections", "Contains all the information about all the projections in tables, similar to system.data_skipping_indices.");
+    attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", "Contains all the information about all the constraints in tables, similar to system.data_skipping_indices.");
     attach<StorageSystemLicenses>(context, system_database, "licenses", "Contains licenses of third-party libraries that are located in the contrib directory of ClickHouse sources.");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones", "Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.");
     attach<StorageSystemBackups>(context, system_database, "backups", "Contains a list of all BACKUP or RESTORE operations with their current states and other properties. Note, that table is not persistent and it shows only operations executed after the last server restart.");
@@ -195,13 +222,13 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemDroppedTablesParts>(context, system_database, "dropped_tables_parts", "Contains parts of system.dropped_tables tables ");
     attach<StorageSystemScheduler>(context, system_database, "scheduler", "Contains information and status for scheduling nodes residing on the local server.");
     attach<StorageSystemDNSCache>(context, system_database, "dns_cache", "Contains information about cached DNS records.");
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", "Contains information for introspection of ClickHouse binary. This table is only useful for C++ experts and ClickHouse engineers.");
 #endif
 #if USE_RDKAFKA
     attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers", "Contains information about Kafka consumers. Applicable for Kafka table engine (native ClickHouse integration).");
 #endif
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     attachNoDescription<StorageSystemStackTrace>(context, system_database, "stack_trace", "Allows to obtain an unsymbolized stacktrace from all the threads of the server process.");
 #endif
 #if USE_ROCKSDB
@@ -241,12 +268,15 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", "Contains information about all entries inside query condition cache in server's memory.");
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
+    attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
     attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
+    attachNoDescription<StorageSystemJemallocProfileText>(context, system_database, "jemalloc_profile_text", "Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.");
+    attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>>(context, system_database, "s3_queue_settings", "Contains a list of settings of S3Queue tables.");
@@ -256,6 +286,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
     attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
+    attachNoDescription<StorageSystemIcebergFiles>(context, system_database, "iceberg_files", "Lists data and delete files of currently loaded Iceberg tables.");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
@@ -265,14 +296,33 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attachNoDescription<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
         attach<StorageSystemZooKeeperInfo>(context, system_database, "zookeeper_info", "Exposes data from the [Zoo]Keeper cluster defined in the config.");
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
+        attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", "Shows all active watches across all [Zoo]Keeper connections.");
     }
+
+#if USE_NURAFT
+    if (has_keeper_server)
+    {
+        attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", "Contains information about Keeper snapshots stored on this Keeper node. The table includes finalized snapshots and at most one in-flight snapshot currently being received from the leader.");
+        attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", "Contains one row per Raft cluster member as seen by this Keeper.");
+        attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
+    }
+#endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
     }
+
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
     attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
+
+    attach<StorageSystemFailPoints>(context, system_database, "fail_points", "Contains a list of all available failpoints with their type and enabled status. Only available in debug builds.");
+
+    if (context->hasWasmModuleManager())
+    {
+        attach<StorageSystemWasmModules>(context, system_database, "webassembly_modules", "Allows to load Webassembly modules into ClickHouse to create User Defined Functions from them.",
+            context->getWasmModuleManager());
+    }
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

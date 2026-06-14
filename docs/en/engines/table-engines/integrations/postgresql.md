@@ -8,8 +8,6 @@ title: 'PostgreSQL table Engine'
 doc_type: 'guide'
 ---
 
-# PostgreSQL table engine
-
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
@@ -222,7 +220,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
 
 ## Related content {#related-content}
 

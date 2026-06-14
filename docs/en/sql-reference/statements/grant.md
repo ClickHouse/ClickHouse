@@ -200,6 +200,7 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER MODIFY STATISTICS`
       - `ALTER TTL`
       - `ALTER UPDATE`
+      - `ALTER TABLE EXECUTE`
     - `ALTER VIEW`
       - `ALTER VIEW MODIFY QUERY`
       - `ALTER VIEW REFRESH`
@@ -438,6 +439,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
+  - `ALTER EXECUTE`. Level: `TABLE`. Aliases: `ALTER TABLE EXECUTE`
   - `ALTER VIEW`. Level: `GROUP`
   - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
@@ -773,6 +775,12 @@ By default, for backward compatibility reasons, creating a table with a specific
 however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
 in config.xml.
 :::
+
+Some table engines with external sources may require `READ`/`WRITE` permissions on the corresponding source. See [Sources](#sources).
+
+For example, for the AzureBlobStorage table engine, following grant may be required.
+
+- `GRANT READ, WRITE ON AZURE TO john`
 
 ### ALL {#all}
 

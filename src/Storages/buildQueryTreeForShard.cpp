@@ -12,17 +12,20 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
@@ -36,12 +39,16 @@ namespace DB
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
     extern const SettingsInt64 optimize_const_name_size;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -338,7 +345,7 @@ public:
         {
             WriteBufferFromOwnString name_buf;
             IColumn::Options options {.optimize_const_name_size = max_size};
-            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
+            col_const->getValueNameImpl(name_buf, 0, options);
             if (options.notFull(name_buf))
                 return;
         }
@@ -416,6 +423,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     }
 
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
+    /// Force materialization of CTEs in subqueries, if they used in the subquery.
+    subquery_options.forceMaterializeCTE();
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 
@@ -441,7 +450,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription(columns, false),
+        ColumnsDescription(columns),
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);
@@ -449,8 +458,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
-
-    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
@@ -463,10 +470,39 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     builder->resize(1);
     builder->addTransform(std::move(squashing));
 
+    /// Fill the temporary table for the `GLOBAL IN` / `GLOBAL JOIN` subquery and at the
+    /// same time enforce `max_rows_to_transfer` / `max_bytes_to_transfer` — see Issue
+    /// #103333. We reuse `CreatingSetsTransform` (the same transform the old analyzer
+    /// uses inside `DelayedCreatingSetsStep`): with `set_and_key->set` left null it
+    /// only writes the materialized rows into `external_table` and applies
+    /// `network_transfer_limits` after `materializeBlock`, raising
+    /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
+    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
+    /// behaviour in lockstep with the old analyzer.
+    const auto & subquery_settings = mutable_context->getSettingsRef();
+    SizeLimits network_transfer_limits(
+        subquery_settings[Setting::max_rows_to_transfer],
+        subquery_settings[Setting::max_bytes_to_transfer],
+        subquery_settings[Setting::transfer_overflow_mode]);
+
+    auto set_and_key = std::make_shared<SetAndKey>();
+    set_and_key->external_table = external_storage;
+
+    builder->addCreatingSetsTransform(
+        std::make_shared<const Block>(Block{}),
+        std::move(set_and_key),
+        network_transfer_limits,
+        /* prepared_sets_cache = */ nullptr);
+
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    pipeline.complete(std::move(table_out));
+    pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
     CompletedPipelineExecutor executor(pipeline);
+    if (mutable_context->hasQueryContext())
+    {
+        if (auto cancel_callback = mutable_context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), mutable_context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 
@@ -490,6 +526,57 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
+    }
+    else if (join_table_expression_node_type == QueryTreeNodeType::ARRAY_JOIN)
+    {
+        /// ARRAY_JOIN columns have multiple sources: the ARRAY_JOIN itself provides
+        /// the array-joined columns, while the inner table provides pass-through columns.
+        /// We must preserve per-source attribution for correct resolution.
+        QueryTreeNodes subquery_projection_nodes;
+        NamesAndTypes projection_columns;
+        NameSet seen_column_names;
+
+        std::vector<QueryTreeNodePtr> nodes_to_visit = {join_table_expression};
+        while (!nodes_to_visit.empty())
+        {
+            auto current = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            auto columns_it = column_source_to_columns.find(current);
+            if (columns_it != column_source_to_columns.end())
+            {
+                for (const auto & col : columns_it->second.columns)
+                {
+                    if (seen_column_names.insert(col.name).second)
+                    {
+                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
+                        projection_columns.push_back(col);
+                    }
+                }
+            }
+
+            for (const auto & child : current->getChildren())
+                if (child)
+                    nodes_to_visit.push_back(child);
+        }
+
+        if (subquery_projection_nodes.empty())
+        {
+            auto constant_data_type = std::make_shared<DataTypeUInt64>();
+            subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+            projection_columns.push_back({"1", std::move(constant_data_type)});
+        }
+
+        auto context_copy = Context::createCopy(context);
+        updateContextForSubqueryExecution(context_copy);
+
+        auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
+        query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+        query_node->resolveProjectionColumns(std::move(projection_columns));
+        query_node->getJoinTree() = join_table_expression;
+        query_node->setIsSubquery(true);
+
+        subquery_node = query_node;
     }
     else
     {
@@ -547,6 +634,29 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_table_expression->getAlias());
 
+            /** When a compound node like ARRAY_JOIN is replaced, its descendants (e.g., the inner TABLE)
+              * are not traversed by cloneAndReplace. Column nodes that reference these descendants
+              * as their source would get dangling weak pointers when the original tree is released.
+              * Map all descendants of the replaced node to the temporary table so that
+              * weak pointer updates in cloneAndReplace can find them.
+              */
+            std::vector<const IQueryTreeNode *> descendants_to_map;
+            for (const auto & child : join_table_expression->getChildren())
+                if (child)
+                    descendants_to_map.push_back(child.get());
+
+            while (!descendants_to_map.empty())
+            {
+                const auto * descendant = descendants_to_map.back();
+                descendants_to_map.pop_back();
+
+                replacement_map.emplace(descendant, temporary_table_expression_node);
+
+                for (const auto & child : descendant->getChildren())
+                    if (child)
+                        descendants_to_map.push_back(child.get());
+            }
+
             replacement_map.emplace(join_table_expression.get(), std::move(temporary_table_expression_node));
             continue;
         }
@@ -596,8 +706,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
-
-    removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 

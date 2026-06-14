@@ -26,12 +26,8 @@
 #include <bit>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -80,15 +76,12 @@ namespace impl
     {
         ColumnPtr key0;
         ColumnPtr key1;
-        bool is_const;
-        const ColumnArray::Offsets * offsets = nullptr;
+        bool is_const = false;
 
         size_t size() const
         {
-            assert(key0 && key1);
-            assert(key0->size() == key1->size());
-            if (offsets != nullptr && !offsets->empty())
-                return offsets->back();
+            chassert(key0 && key1);
+            chassert(key0->size() == key1->size());
             return key0->size();
         }
 
@@ -96,18 +89,18 @@ namespace impl
         {
             if (is_const)
                 i = 0;
-            assert(key0->size() == key1->size());
-            if (offsets != nullptr && i > 0)
-            {
-                const auto * const begin = std::upper_bound(offsets->begin(), offsets->end(), i - 1);
-                const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper != offsets->end())
-                    i = upper - begin;
-            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
-            assert(key0->size() > i);
+            chassert(key0->size() > i);
             return {key0data[i], key1data[i]};
+        }
+
+        /// Replicate key columns so that each array element gets the key of its parent row.
+        SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
+        {
+            if (is_const)
+                return *this;
+            return {.key0 = key0->replicate(offsets), .key1 = key1->replicate(offsets), .is_const = false};
         }
     };
 
@@ -115,8 +108,8 @@ namespace impl
     {
         const auto * col_key = key.column.get();
 
-        bool is_const;
-        const ColumnTuple * col_key_tuple;
+        bool is_const = false;
+        const ColumnTuple * col_key_tuple = nullptr;
         if (isColumnConst(*col_key))
         {
             is_const = true;
@@ -133,8 +126,8 @@ namespace impl
 
         SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        assert(result.key0);
-        assert(result.key1);
+        chassert(result.key0);
+        chassert(result.key1);
 
         if (!checkColumn<ColumnUInt64>(*result.key0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
@@ -245,20 +238,43 @@ struct HalfMD5Impl
 
     static UInt64 apply(const char * begin, size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             unsigned char char_data[16];
             uint64_t uint64_data;
         } buf;
 
         using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+
+        /// A context is initialized with the MD5 digest once, then only copied on each call
+        /// (the same approach as in FunctionsStringHashFixedString.cpp). Copying an already
+        /// initialized context with `EVP_MD_CTX_copy_ex` is faster than re-initializing with
+        /// `EVP_md5` every time: in OpenSSL 3.x the latter re-fetches the digest from the
+        /// provider method store under a read lock, and with this function called once per row
+        /// all hashing threads serialize on it (with musl's `pthread_rwlock` on aarch64 this
+        /// doubled `cryptographic_hashes` times in CI, `__pthread_rwlock_tryrdlock` dominating
+        /// the profile).
+        static const EVP_MD_CTX_ptr ctx_template = []
+        {
+            EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+            if (!new_ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+            if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+            return new_ctx;
+        }();
+
+        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
         if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        {
+            ctx.reset(EVP_MD_CTX_new());
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        }
 
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
@@ -464,7 +480,7 @@ struct MurmurHash3Impl32
 
     static UInt32 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt32 h;
             char bytes[sizeof(h)];
@@ -489,7 +505,7 @@ struct MurmurHash3Impl64
 
     static UInt64 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 h[2];
             char bytes[16];
@@ -676,7 +692,7 @@ struct ImplMetroHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 u64;
             uint8_t u8[sizeof(u64)];
@@ -885,10 +901,14 @@ public:
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
+        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
+        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
+        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
+        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v4,
+            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
     #endif
     }
 
@@ -943,10 +963,8 @@ private:
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
-                    if constexpr (std::is_same_v<ToType, UInt64>)
-                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
-                    else
-                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                    static_assert(std::is_same_v<ToType, UInt64>, "");
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                 }
                 else
                 {
@@ -976,15 +994,18 @@ private:
                     return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
-            auto value = col_from_const->template getValue<FromType>();
+            FromType value;
+            if constexpr (std::is_same_v<FromType, float>)
+                /// Float32 doesn't reliably roundtrip through Field (which only has Float64) in practice.
+                value = assert_cast<const ColumnFloat32 &>(col_from_const->getDataColumn()).getData()[0];
+            else
+                value = col_from_const->template getValue<FromType>();
 
             ToType hash;
             if constexpr (Impl::use_int_hash_for_pods)
             {
-                if constexpr (std::is_same_v<ToType, UInt64>)
-                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
-                else
-                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+                static_assert(std::is_same_v<ToType, UInt64>, "");
+                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             }
             else
             {
@@ -1228,9 +1249,14 @@ private:
 
             if constexpr (Keyed)
             {
-                KeyColumnsType key_cols_tmp{key_cols};
-                key_cols_tmp.offsets = &offsets;
-                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
+                /// When every array is empty the nested column is empty too. There is nothing to
+                /// hash, but replicating the key columns would produce empty key columns, and the
+                /// recursive call would then read a key for a row that doesn't exist. Skip it.
+                if (nested_size != 0)
+                {
+                    auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                    executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                }
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1571,9 +1597,10 @@ public:
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector
-            .registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
+        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
+        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 #endif
     }
 
@@ -1665,7 +1692,7 @@ struct URLHierarchyHashImpl
 };
 
 
-class FunctionURLHash : public IFunction
+class FunctionURLHash final : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";

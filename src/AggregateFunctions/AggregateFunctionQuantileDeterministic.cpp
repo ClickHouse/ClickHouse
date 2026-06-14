@@ -141,6 +141,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -187,8 +188,8 @@ SELECT quantileDeterministic(val, 1) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileDeterministic::name, {createAggregateFunctionQuantile<FuncQuantileDeterministic>, {}, documentation});
-    factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, properties });
+    factory.registerFunction(NameQuantileDeterministic::name, {createAggregateFunctionQuantile<FuncQuantileDeterministic>, documentation});
+    factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, {}, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianDeterministic", NameQuantileDeterministic::name);

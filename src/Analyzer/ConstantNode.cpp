@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -14,7 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -37,11 +37,11 @@ ConstantNode::ConstantNode(ConstantValue constant_value_)
     : ConstantNode(constant_value_, nullptr /*source_expression*/)
 {}
 
-ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
-    : ConstantNode(ConstantValue{std::move(constant_column_), value_data_type_})
+ConstantNode::ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_)
+    : ConstantNode(ConstantValue{constant_column_, value_data_type_})
 {}
 
-ConstantNode::ConstantNode(ColumnPtr constant_column_)
+ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
     : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
 {}
 
@@ -180,6 +180,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
 
+    if (options.use_source_expression_for_constants && source_expression)
+        return source_expression->toAST(options);
+
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
 
@@ -191,8 +194,17 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
-        const auto & [_, type] = getValueNameAndType({});
-        return requiresCastCall(type, getResultType());
+        try
+        {
+            auto field_type = applyVisitor(FieldToDataType(), getValue());
+            return requiresCastCall(field_type, getResultType());
+        }
+        catch (...)
+        {
+            /// FieldToDataType may throw for complex cases like mixed-type arrays.
+            /// If we can't determine the natural type, a cast is needed.
+            return true;
+        }
     };
 
     if (source_expression != nullptr || requires_cast())
