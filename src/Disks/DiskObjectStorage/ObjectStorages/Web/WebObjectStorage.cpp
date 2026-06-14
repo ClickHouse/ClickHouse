@@ -329,10 +329,17 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
 
         auto create_probe_buffer = [&](const String & method)
         {
+            auto read_settings = request_context->getReadSettings();
+            /// On the `GET` fallback path we already know `HEAD` is unavailable for this origin. A chunked
+            /// `GET` response carries no `Content-Length`, so the buffer would otherwise lazily call
+            /// `getFileInfo` and re-issue a `HEAD` (which can fail, e.g. `501 Not Implemented`) before the
+            /// object is ever read. Disable it so the metadata probe relies solely on the `GET` response.
+            if (method == Poco::Net::HTTPRequest::HTTP_GET)
+                read_settings.http_settings.make_head_request = false;
             return BuilderRWBufferFromHTTP(uri)
                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
                 .withMethod(method)
-                .withSettings(request_context->getReadSettings())
+                .withSettings(read_settings)
                 .withTimeouts(timeouts)
                 .withRedirects(max_redirects)
                 .withEnableUrlEncoding(enable_url_encoding)
@@ -395,6 +402,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         metadata.is_size_known = file_info.file_size.has_value();
         if (file_info.file_size)
             metadata.size_bytes = *file_info.file_size;
+        /// A missing `Last-Modified` header means the modification time is unknown. Keep that distinct from a
+        /// real epoch-`0` timestamp so the schema/count caches (which compare `last_modified` against their
+        /// registration time) skip the cache instead of reusing a value that may be stale after the remote
+        /// file changes.
+        metadata.is_last_modified_known = file_info.last_modified.has_value();
         if (file_info.last_modified)
             metadata.last_modified = Poco::Timestamp::fromEpochTime(*file_info.last_modified);
         for (const auto & header : response_buf->getResponseHeaders())

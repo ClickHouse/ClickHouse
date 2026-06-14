@@ -830,8 +830,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            return object_info->getObjectMetadata() ? std::optional<size_t>(object_info->getObjectMetadata()->last_modified.epochTime())
-                                                    : std::nullopt;
+            const auto metadata = object_info->getObjectMetadata();
+            /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
+            /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
+            /// it as unavailable makes the count cache re-read the file instead.
+            if (!metadata || !metadata->is_last_modified_known)
+                return std::nullopt;
+            return std::optional<time_t>(metadata->last_modified.epochTime());
         };
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };

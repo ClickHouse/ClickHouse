@@ -107,6 +107,11 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     bool is_size_known = true;
     Poco::Timestamp last_modified;
+    /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
+    /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
+    /// default epoch would make the schema/count caches treat the object as older than any cached entry and
+    /// silently reuse a stale value. Cache validators must skip the cache when this is `false`.
+    bool is_last_modified_known = true;
     std::string etag;
     ObjectAttributes tags;
     ObjectAttributes attributes;

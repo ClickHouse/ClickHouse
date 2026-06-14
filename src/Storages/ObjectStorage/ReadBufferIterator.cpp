@@ -81,8 +81,14 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
                     object_info->setObjectMetadata(*meta);
             }
 
-            return object_info->getObjectMetadata() ? std::optional<time_t>(object_info->getObjectMetadata()->last_modified.epochTime())
-                                                    : std::nullopt;
+            const auto metadata = object_info->getObjectMetadata();
+            /// An unknown modification time (e.g. a web object whose HTTP response has no `Last-Modified`
+            /// header) must be reported as unavailable, not as the epoch: the schema cache reuses a cached
+            /// entry whenever the modification time is older than the registration time, so a fake epoch-`0`
+            /// would keep a stale schema valid forever. Returning `nullopt` makes the cache skip the entry.
+            if (!metadata || !metadata->is_last_modified_known)
+                return std::nullopt;
+            return std::optional<time_t>(metadata->last_modified.epochTime());
         };
 
         if (format)
