@@ -867,7 +867,7 @@ def test_aggregating_materialized_view(started_cluster):
     # Replication must keep working and the materialized view must keep receiving updates.
     pg_manager.execute("DROP TABLE IF EXISTS test_mv_agg")
     pg_manager.execute(
-        "CREATE TABLE test_mv_agg (key integer PRIMARY KEY, name text, num integer)"
+        "CREATE TABLE test_mv_agg (key integer PRIMARY KEY, name text NOT NULL, num integer)"
     )
     pg_manager.execute(
         "INSERT INTO test_mv_agg VALUES (1, 'a', 1), (2, 'b', 2), (3, 'a', 3)"
