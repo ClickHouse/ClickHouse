@@ -115,7 +115,8 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        if (row_begin >= row_end)
+        chassert(row_begin <= row_end);
+        if (row_begin == row_end)
             return;
 
         auto & state = data(place);
