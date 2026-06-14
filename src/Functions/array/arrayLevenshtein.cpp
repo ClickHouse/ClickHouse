@@ -528,14 +528,21 @@ private:
                 res_values[row] = 1.0;
                 continue;
             }
-            W weights_sum = std::accumulate(from_weights.begin(), from_weights.end(), W{}) +
-                            std::accumulate(to_weights.begin(), to_weights.end(), W{});
+            // Sum the weights in a wide accumulator (exact for integral weights, no overflow/UB), then
+            // convert once to Float64 to match the distance domain. Mirrors levenshteinDistanceWeighted.
+            using Acc = LevenshteinWeightAccumulator<W>;
+            Acc weights_acc = 0;
+            for (const auto & weight : from_weights)
+                weights_acc += static_cast<Acc>(weight);
+            for (const auto & weight : to_weights)
+                weights_acc += static_cast<Acc>(weight);
+            const Float64 weights_sum = static_cast<Float64>(weights_acc);
             if (weights_sum == 0)
             {
                 res_values[row] = 1.0;
                 continue;
             }
-            res_values[row] = 1.0 - (distance->getFloat64(row) / static_cast<Float64>(weights_sum));
+            res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
         }
         return true;
     }
