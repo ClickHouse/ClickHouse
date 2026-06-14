@@ -18,6 +18,14 @@ set (SRCS
     "${LIBRARY_DIR}/decoder.cpp"
 )
 
+# AVX-512 accelerated kernels are x86-64 only. They are dispatched at runtime via cpu_has_avx512(),
+# so a binary built with them still runs on CPUs without AVX-512 (it uses the portable kernels).
+if (ARCH_AMD64)
+    list (APPEND SRCS "${LIBRARY_DIR}/ans32_avx512.cpp")
+    set_source_files_properties ("${LIBRARY_DIR}/ans32_avx512.cpp"
+        PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512bw -mavx512vl -mavx512dq")
+endif ()
+
 add_library (_iguana ${SRCS})
 
 # Linked statically into ClickHouse, so no shared-object visibility/dllexport attributes.
