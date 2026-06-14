@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Bloom vs binary_fuse skip index: same target FPR, same rows, same PREWHERE semantics.
 
 SET allow_experimental_binary_fuse_filter_index = 1;

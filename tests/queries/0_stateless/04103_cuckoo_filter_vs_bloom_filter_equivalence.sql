@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Bloom vs cuckoo skip index: same target FPR (0.01), same rows — PREWHERE counts must match.
 -- This file checks semantic equivalence between index types, not relative performance or size.
 

@@ -27,6 +27,7 @@ namespace
 {
 constexpr UInt8 BINARY_FUSE_VERSION = 1;
 constexpr size_t MAX_SERIALIZED_FUSE_PAYLOAD_BYTES = 1ULL << 26; /// 64 MiB — skip index payloads beyond this are pathological
+constexpr size_t MAX_FUSE_BUILD_SCRATCH_BYTES = 1ULL << 30; /// 1 GiB peak transient memory per granule build attempt
 
 size_t fastRange64(UInt64 x, size_t range)
 {
@@ -67,6 +68,23 @@ struct PeelEntry
     UInt64 key;
     size_t selected;
 };
+
+bool fuseBuildScratchWithinLimit(size_t array_size, size_t payload_bytes, size_t keys_count)
+{
+    const size_t array_vectors_bytes = array_size * (sizeof(UInt32) + sizeof(UInt64) + sizeof(size_t));
+    const size_t stack_bytes = keys_count * sizeof(PeelEntry);
+
+    size_t total = 0;
+    auto add = [&](size_t bytes) -> bool
+    {
+        if (bytes > std::numeric_limits<size_t>::max() - total)
+            return false;
+        total += bytes;
+        return true;
+    };
+
+    return add(payload_bytes) && add(array_vectors_bytes) && add(stack_bytes) && total <= MAX_FUSE_BUILD_SCRATCH_BYTES;
+}
 
 }
 
@@ -493,6 +511,8 @@ bool BinaryFuseFilter::tryBuildFuse3(const std::vector<UInt64> & keys, UInt64 se
     const size_t payload_bytes = array_size * bytesPerFingerprint();
     if (payload_bytes > MAX_SERIALIZED_FUSE_PAYLOAD_BYTES)
         return false;
+    if (!fuseBuildScratchWithinLimit(array_size, payload_bytes, n))
+        return false;
     packed_fingerprints.assign(payload_bytes, 0);
 
     std::vector<UInt32> count(array_size, 0);
@@ -573,6 +593,8 @@ bool BinaryFuseFilter::tryBuildFuse4(const std::vector<UInt64> & keys, UInt64 se
         return false;
     const size_t payload_bytes = array_size * bytesPerFingerprint();
     if (payload_bytes > MAX_SERIALIZED_FUSE_PAYLOAD_BYTES)
+        return false;
+    if (!fuseBuildScratchWithinLimit(array_size, payload_bytes, n))
         return false;
     packed_fingerprints.assign(payload_bytes, 0);
 
