@@ -672,7 +672,8 @@ Poco::JSON::Object::Ptr StorageElasticsearchQueue::makeSearchBody(size_t max_row
         body->set("query", match_all);
     }
 
-    /// The engine owns cursor and PIT state. Values supplied by a user query would bypass checkpoints.
+    /// The engine owns pagination and PIT state. Values supplied by a user query would bypass checkpoints.
+    body->remove("from");
     body->remove("pit");
     body->remove("search_after");
 
@@ -763,6 +764,19 @@ StorageElasticsearchQueue::Batch StorageElasticsearchQueue::pollBatch(size_t max
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch response must be a JSON object");
 
     const auto & root = parsed.extract<Poco::JSON::Object::Ptr>();
+    if (root->optValue<bool>("timed_out", false))
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch search response timed out");
+
+    if (const auto shards = root->getObject("_shards"))
+    {
+        const auto failed_shards = shards->optValue<UInt64>("failed", 0);
+        if (failed_shards != 0)
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Elasticsearch search response contains {} failed shards",
+                failed_shards);
+    }
+
     auto hits_object = root->getObject("hits");
     if (!hits_object)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch response does not contain 'hits' object");

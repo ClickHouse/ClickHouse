@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import time
 
@@ -7,11 +8,13 @@ import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import assert_eq_with_retry
 
 
 pytestmark = pytest.mark.timeout(600)
 
+MOCK_ELASTICSEARCH_PORT = 18080
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -35,6 +38,11 @@ node2 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
+        start_mock_servers(
+            cluster,
+            os.path.dirname(__file__),
+            [("mock_elasticsearch.py", "node1", MOCK_ELASTICSEARCH_PORT)],
+        )
         yield
     finally:
         cluster.shutdown()
@@ -115,7 +123,8 @@ def wait_combined_sequences(database_name, expected):
     pytest.fail(f"Expected combined ElasticsearchQueue rows {expected}, got {sorted(last_value)}")
 
 
-def create_target_and_queue(node, database_name, index, extra_settings):
+def create_target_and_queue(node, database_name, index, extra_settings, url=None):
+    url = url or clickhouse_elasticsearch_url()
     node.query(
         f"""
         CREATE TABLE {database_name}.dst
@@ -134,7 +143,7 @@ def create_target_and_queue(node, database_name, index, extra_settings):
             seq UInt64,
             message String
         )
-        ENGINE = ElasticsearchQueue('{clickhouse_elasticsearch_url()}', '{index}', 'seq')
+        ENGINE = ElasticsearchQueue('{url}', '{index}', 'seq')
         SETTINGS
             elasticsearch_poll_max_batch_size = 2,
             elasticsearch_consumer_reschedule_ms = 100
@@ -188,6 +197,7 @@ def test_user_query_cannot_override_internal_cursor_or_pit(started_cluster, data
         {
             "query": {"term": {"message": "keep"}},
             "pit": {"id": "stale-pit", "keep_alive": "1m"},
+            "from": 1,
             "search_after": [999],
             "size": 1,
             "sort": [{"seq": "desc"}],
@@ -207,6 +217,24 @@ def test_user_query_cannot_override_internal_cursor_or_pit(started_cluster, data
         node1,
         f"SELECT seq FROM {database}.dst ORDER BY seq",
         "1\n3\n",
+        retry_count=80,
+        sleep_time=0.5,
+    )
+
+
+def test_partial_search_response_does_not_advance_checkpoint(started_cluster, database):
+    create_target_and_queue(
+        node1,
+        database,
+        "partial-response",
+        "",
+        url=f"http://localhost:{MOCK_ELASTICSEARCH_PORT}",
+    )
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT seq FROM {database}.dst ORDER BY seq",
+        "1\n2\n",
         retry_count=80,
         sleep_time=0.5,
     )

@@ -308,7 +308,7 @@ FROM events_queue;
 | `elasticsearch_index` | `''` | Index or index pattern. |
 | `elasticsearch_cursor_field` | `''` | First ascending field used for `search_after`. |
 | `elasticsearch_tiebreaker_field` | `''` | Optional second ascending sort field used to make the `search_after` tuple unique. |
-| `elasticsearch_query` | `''` | Optional Elasticsearch JSON request body. The engine overwrites `size`, `sort`, `pit`, and `search_after`. |
+| `elasticsearch_query` | `''` | Optional Elasticsearch JSON request body. The engine overwrites `from`, `size`, `sort`, `pit`, and `search_after`. |
 | `elasticsearch_auth_type` | `'auto'` | Authentication mode. Supported values are `auto`, `none`, `basic`, `api_key`, and `bearer`. |
 | `elasticsearch_user` | `''` | User for HTTP basic authentication. |
 | `elasticsearch_password` | `''` | Password for HTTP basic authentication. |

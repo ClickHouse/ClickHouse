@@ -8,6 +8,7 @@
 #include <Storages/Elasticsearch/ElasticsearchQueueSettings.h>
 #include <Storages/Elasticsearch/ElasticsearchQueue_fwd.h>
 #include <Storages/Elasticsearch/StorageElasticsearchQueue.h>
+#include <Storages/Elasticsearch/registerStorageElasticsearchQueue.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
