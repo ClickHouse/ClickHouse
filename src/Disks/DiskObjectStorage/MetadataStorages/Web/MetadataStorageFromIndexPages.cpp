@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 namespace ServerSetting
@@ -282,13 +283,18 @@ bool MetadataStorageFromIndexPages::existsFileOrDirectory(const std::string & pa
 uint64_t MetadataStorageFromIndexPages::getFileSize(const String & path) const
 {
     auto metadata = object_storage.getObjectMetadata(path, /* with_tags */ false);
+    if (!metadata.is_size_known)
+        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot determine size of object {}", path);
     return metadata.size_bytes;
 }
 
 std::optional<uint64_t> MetadataStorageFromIndexPages::getFileSizeIfExists(const String & path) const
 {
     if (auto metadata = object_storage.tryGetObjectMetadata(path, /* with_tags */ false))
-        return metadata->size_bytes;
+    {
+        if (metadata->is_size_known)
+            return metadata->size_bytes;
+    }
     return std::nullopt;
 }
 

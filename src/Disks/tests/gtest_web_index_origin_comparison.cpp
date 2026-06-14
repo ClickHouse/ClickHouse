@@ -1,8 +1,47 @@
 #include <gtest/gtest.h>
 
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
+#include <Common/Exception.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <Poco/URI.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int UNKNOWN_FILE_SIZE;
+}
+
+namespace
+{
+class WebObjectStorageWithUnknownSizeMetadata final : public DB::WebObjectStorage
+{
+public:
+    WebObjectStorageWithUnknownSizeMetadata()
+        : DB::WebObjectStorage("http://example.com/", "", ::getContext().context)
+    {
+    }
+
+    DB::ObjectMetadata getObjectMetadata(const std::string &, bool) const override
+    {
+        return makeMetadata();
+    }
+
+    std::optional<DB::ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override
+    {
+        return makeMetadata();
+    }
+
+private:
+    static DB::ObjectMetadata makeMetadata()
+    {
+        DB::ObjectMetadata metadata;
+        metadata.is_size_known = false;
+        metadata.size_bytes = 0;
+        return metadata;
+    }
+};
+}
 
 
 TEST(WebIndexOriginComparison, TreatsDefaultHttpPortAsEquivalent)
@@ -77,4 +116,22 @@ TEST(WebIndexOriginComparison, AcceptsPercentEncodedOrdinaryPathSegmentInListing
     Poco::URI candidate("http://example.com/data/2025/partition%3D1/data.tsv", false);
 
     ASSERT_TRUE(DB::WebIndexPage::hasPathPrefix(candidate, listing));
+}
+
+TEST(WebIndexMetadataStorage, DoesNotReportUnknownObjectSizeAsZero)
+{
+    WebObjectStorageWithUnknownSizeMetadata object_storage;
+    DB::MetadataStorageFromIndexPages metadata_storage(object_storage);
+
+    EXPECT_EQ(metadata_storage.getFileSizeIfExists("data/part.tsv"), std::nullopt);
+
+    try
+    {
+        (void)metadata_storage.getFileSize("data/part.tsv");
+        FAIL() << "Expected UNKNOWN_FILE_SIZE";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FILE_SIZE);
+    }
 }
