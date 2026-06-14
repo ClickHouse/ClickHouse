@@ -242,6 +242,15 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'window_name', 'window_definition' or 'kind' = 'WINDOW_FUNCTION' require 'is_window_function' to be true during AST JSON deserialization");
 
+    /// The parser only assigns `kind = LAMBDA_FUNCTION` together with `is_lambda_function`
+    /// (`makeASTFunction` for the lambda operator). Reject a `clickhouse_json` payload that marks a
+    /// function as the lambda kind without the flag, which the parser could not have produced.
+    /// Note the reverse does not hold: `APPLY (x -> ...)` sets `is_lambda_function` while leaving
+    /// `kind` ordinary, so only this single direction is a parser invariant.
+    if (getKind() == Kind::LAMBDA_FUNCTION && !isLambdaFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'kind' = 'LAMBDA_FUNCTION' requires 'is_lambda_function' to be true during AST JSON deserialization");
+
     if (isWindowFunction() && window_name.empty() && !window_definition)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
