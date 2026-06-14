@@ -1604,10 +1604,26 @@ void StorageMergeTree::loadMutations(bool reloading)
                 UInt64 block_number = entry.block_number;
 
                 /// On a leadership-takeover reload, entries created by the previous leader while
-                /// this node was a follower are already in memory. Skip them so we neither
-                /// double-count mutation counters nor hit the "already exists" bug check below.
-                if (reloading && current_mutations_by_version.contains(block_number))
-                    continue;
+                /// this node was a follower are already in memory. Don't re-emplace or re-count
+                /// them (avoids the "already exists" bug check and double counting), but DO
+                /// reconcile their transaction state: a follower that saw the mutation file before
+                /// the old leader appended `csn:` left the in-memory CSN unresolved (it could not
+                /// write the file). Now that we are the leader, resolve it so `selectPartsToMutate`
+                /// does not hit an `UnknownCSN` logical error for a committed mutation.
+                if (reloading)
+                {
+                    auto existing = current_mutations_by_version.find(block_number);
+                    if (existing != current_mutations_by_version.end())
+                    {
+                        auto & loaded = existing->second;
+                        if (may_mutate && !loaded.tid.isNonTransactional() && !loaded.csn)
+                        {
+                            if (auto csn = TransactionLog::getCSN(loaded.tid))
+                                loaded.writeCSN(csn);
+                        }
+                        continue;
+                    }
+                }
 
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
