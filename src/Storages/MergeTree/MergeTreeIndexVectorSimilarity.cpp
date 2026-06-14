@@ -1336,6 +1336,9 @@ inline void encodeE8(const E8Codebook & cb, const float * rhat, size_t dimension
 struct E8Query
 {
     std::vector<float> lut;     /// M * num_points inner products, subspace m at offset m * num_points
+    std::vector<Int8> lut_i8;   /// M * 16 int8-quantized LUT for the vpshufb fast scan (populated when num_points <= 16)
+    float lut_inv_scale = 0.0f; /// converts an accumulated int sum back to a float inner product
+    bool fast = false;          /// lut_i8 is populated -> the AVX-512 fast scan can be used
     size_t M = 0;
     size_t num_points = 0;
     size_t code_bytes = 0;
@@ -1367,6 +1370,26 @@ E8Query buildE8Query(const E8Codebook & cb, const float * rqhat, size_t dimensio
             lut_m[k] = d;
         }
     }
+
+    /// For 4-bit codebooks (num_points <= 16) also build an int8-quantized LUT for the AVX-512 `vpshufb` fast scan.
+    /// A single global scale maps inner products to int8; the per-vector sum of M <= 258 such values stays within int16.
+    if (q.num_points <= 16)
+    {
+        float maxabs = 0.0f;
+        for (float x : q.lut)
+            maxabs = std::max(maxabs, std::abs(x));
+        const float clamp_max = std::min(127.0f, 32767.0f / static_cast<float>(std::max<size_t>(q.M, 1)));
+        const float scale = (maxabs > 0.0f) ? (clamp_max / maxabs) : 0.0f;
+        q.lut_inv_scale = (scale > 0.0f) ? (1.0f / scale) : 0.0f;
+        q.lut_i8.assign(q.M * 16, 0);
+        for (size_t m = 0; m < q.M; ++m)
+            for (size_t k = 0; k < q.num_points; ++k)
+            {
+                int v = static_cast<int>(std::lround(q.lut[m * q.num_points + k] * scale));
+                q.lut_i8[m * 16 + k] = static_cast<Int8>(std::clamp(v, -127, 127));
+            }
+        q.fast = true;
+    }
     return q;
 }
 
@@ -1397,6 +1420,77 @@ inline float e8Distance(const E8Query & q, const char * code)
         return q.q_norm_sq + norm_x * norm_x - 2.0f * q.q_norm * norm_x * ip;
     return 1.0f - ip;
 }
+
+#if USE_MULTITARGET_CODE
+/// AVX-512 "fast scan" for the 4-bit e8 path (num_points <= 16, 1-byte codes). The per-vector ADC gather doesn't
+/// vectorize; instead we process 64 vectors at once: `_mm512_shuffle_epi8` performs 64 16-entry LUT lookups for one
+/// sub-quantizer in a single instruction, accumulated across sub-quantizers in int16. This is the same idea as
+/// FAISS/ScaNN PQ fast scan and brings the scan into the popcount kernels' regime. `scored[i]` is filled for i in
+/// [begin, end). Codes are transposed into sub-quantizer-major tiles of 64 in a scratch buffer (no on-disk change).
+X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE
+void e8FastScanICELAKE(const E8Query & q, const char * base, size_t bytes_per_vector, size_t begin, size_t end,
+                       std::pair<float, UInt32> * scored)
+{
+    const size_t M = q.M;
+    const float inv_scale = q.lut_inv_scale;
+
+    std::vector<UInt8> idxbuf(M * 64);
+    alignas(64) Int16 sums[64];
+
+    auto emit = [&](size_t idx, float ip)
+    {
+        float dist = NAN;
+        if (q.is_l2)
+        {
+            float norm_x = 0.0f;
+            std::memcpy(&norm_x, base + idx * bytes_per_vector + M, sizeof(float));
+            dist = q.q_norm_sq + norm_x * norm_x - 2.0f * q.q_norm * norm_x * ip;
+        }
+        else
+            dist = 1.0f - ip;
+        scored[idx] = {dist, static_cast<UInt32>(idx)};
+    };
+
+    size_t i = begin;
+    for (; i + 64 <= end; i += 64)
+    {
+        /// Transpose 64 vectors' codes into sub-quantizer-major order: idxbuf[m*64 + v] = code_v[m].
+        for (size_t v = 0; v < 64; ++v)
+        {
+            const UInt8 * code = reinterpret_cast<const UInt8 *>(base + (i + v) * bytes_per_vector);
+            for (size_t m = 0; m < M; ++m)
+                idxbuf[m * 64 + v] = code[m];
+        }
+
+        __m512i acc0 = _mm512_setzero_si512(); /// int16 sums for vectors 0..31 of the block
+        __m512i acc1 = _mm512_setzero_si512(); /// int16 sums for vectors 32..63
+        for (size_t m = 0; m < M; ++m)
+        {
+            /// Broadcast this sub-quantizer's 16-byte LUT to all four 128-bit lanes (vpshufb looks up per lane).
+            const __m512i lutm = _mm512_broadcast_i32x4(_mm_loadu_si128(reinterpret_cast<const __m128i *>(q.lut_i8.data() + m * 16)));
+            const __m512i idx = _mm512_loadu_si512(reinterpret_cast<const void *>(idxbuf.data() + m * 64));
+            const __m512i res = _mm512_shuffle_epi8(lutm, idx); /// 64 int8 = LUT_m[code]
+            acc0 = _mm512_add_epi16(acc0, _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(res, 0)));
+            acc1 = _mm512_add_epi16(acc1, _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(res, 1)));
+        }
+        _mm512_storeu_si512(reinterpret_cast<void *>(sums), acc0);
+        _mm512_storeu_si512(reinterpret_cast<void *>(sums + 32), acc1);
+
+        for (size_t v = 0; v < 64; ++v)
+            emit(i + v, static_cast<float>(sums[v]) * inv_scale);
+    }
+
+    /// Tail (< 64 vectors): scalar int8 sum.
+    for (; i < end; ++i)
+    {
+        const UInt8 * code = reinterpret_cast<const UInt8 *>(base + i * bytes_per_vector);
+        int s = 0;
+        for (size_t m = 0; m < M; ++m)
+            s += q.lut_i8[m * 16 + code[m]];
+        emit(i, static_cast<float>(s) * inv_scale);
+    }
+}
+#endif
 
 }
 
@@ -1779,9 +1873,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// need VPOPCNTDQ -> Ice Lake).
     bool use_icelake_turboquant = false;
     bool use_icelake_rabitq = false;
+    [[maybe_unused]] bool use_icelake_e8 = false; /// only read under USE_MULTITARGET_CODE (the fast-scan path)
 #if USE_MULTITARGET_CODE
     use_icelake_turboquant = turboquant && isArchSupported(TargetArch::x86_64_icelake);
     use_icelake_rabitq = rabitq && isArchSupported(TargetArch::x86_64_icelake);
+    /// 4-bit e8 (num_points <= 16) can use the `vpshufb` fast scan; larger codebooks fall back to the float ADC.
+    use_icelake_e8 = e8 && e8_query.fast && isArchSupported(TargetArch::x86_64_icelake);
 #endif
 
     /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
@@ -1800,6 +1897,14 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
 
     auto scan_range = [&](size_t begin, size_t end)
     {
+#if USE_MULTITARGET_CODE
+        if (use_icelake_e8)
+        {
+            throw_if_killed();
+            e8FastScanICELAKE(e8_query, base, bytes_per_vector, begin, end, scored.data());
+            return;
+        }
+#endif
         for (size_t i = begin; i < end; ++i)
         {
             /// Check cancellation periodically (not per vector - that lookup would itself dominate the cheap Hamming).
