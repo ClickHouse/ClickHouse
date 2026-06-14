@@ -479,6 +479,18 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
     if (const auto * subquery = dynamic_cast<const ASTSubquery *>(&node); subquery && subquery->alias.empty())
         return false;
 
+    /// In function-call form (`allow_operators = false`, set by `EXPLAIN SYNTAX`), an operator
+    /// AST is rendered as `funcname(arg1, arg2, ...)` — the function call's own `(...)` parens
+    /// already group the expression. Emitting the `parenthesized` flag's outer parens on top
+    /// produces redundant grouping like `(multiply(a, b))` at the top level of e.g. a `GROUP BY`
+    /// item or a subquery argument. This mirrors the per-argument suppression done inside
+    /// `ASTFunction::formatImplWithoutAlias` (where each function-call argument carries
+    /// `wrapped_in_parens = true`), extending it to the call sites where the `ASTFunction` is not
+    /// itself a function-call argument. The normal formatting path (`allow_operators = true`)
+    /// is unchanged so non-`EXPLAIN SYNTAX` callers still round-trip the user's parens.
+    if (!frame.allow_operators && dynamic_cast<const ASTFunction *>(&node))
+        return false;
+
     frame.need_parens = false;
     frame.current_function = nullptr;
     frame.list_element_index = 0;

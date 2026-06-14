@@ -2406,7 +2406,12 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     auto partition_id = actual_part_info.getPartitionId();
     std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & detached_part_info)
     {
-        return !detached_part_info.valid_name || !detached_part_info.prefix.empty() || (!partition_id.empty() && detached_part_info.getPartitionId() != partition_id);
+        /// Parts with a "_tryN" suffix are leftover copies of failed detach renames. Their on-disk name
+        /// is not a parsable part name, so they must not be considered as ATTACH candidates here either
+        /// (otherwise such a leftover could pass the checksum comparison below and get committed under
+        /// `entry.new_part_name`). They can still be listed and dropped.
+        return !detached_part_info.valid_name || !detached_part_info.prefix.empty() || detached_part_info.has_try_suffix
+            || (!partition_id.empty() && detached_part_info.getPartitionId() != partition_id);
     });
 
     std::erase_if(detached_parts, [&](const DetachedPartInfo & detached_part_info)
