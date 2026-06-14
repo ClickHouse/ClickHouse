@@ -60,7 +60,7 @@ Optional parameters:
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient for NATS core only.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
 - `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
-- `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
+- `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `2000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).

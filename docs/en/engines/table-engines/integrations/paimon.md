@@ -20,7 +20,7 @@ Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine`
 SET allow_experimental_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
 
 CREATE TABLE paimon_table_azure
     ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])

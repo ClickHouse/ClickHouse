@@ -633,7 +633,7 @@ CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
 ```
 
 ```sql
-INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
 ```
 
 Creating the right-side `Join` table:
@@ -643,7 +643,7 @@ CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
 ```
 
 ```sql
-INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23);
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
 ```
 
 Joining the tables:

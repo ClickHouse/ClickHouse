@@ -260,11 +260,11 @@ But this limits the parallelism, so for better throughput use `parallel_inserts=
 
 Default value: `false`.
 
-### `enable_logging_to_s3queue_log` {#enable_logging_to_s3queue_log}
+### `enable_logging_to_queue_log` {#enable_logging_to_queue_log}
 
 Enable logging to `system.s3queue_log`.
 
-Default value: `0`.
+Default value: `1`.
 
 ### `polling_min_timeout_ms` {#polling_min_timeout_ms}
 
