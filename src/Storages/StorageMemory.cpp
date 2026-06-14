@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
@@ -247,6 +248,44 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
+
+    /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
+    /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
+    /// indices, projections, statistics, patch parts, the `_row_exists` deletion mask,
+    /// or rewritten parts. Reaching `MutationsInterpreter` with such a command set
+    /// produces a pipeline that returns one zero-row block per input block, after which
+    /// the partial-column path below fails the per-block row-count invariant with
+    /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    /// A real `UPDATE` / `DELETE` / `MATERIALIZE COLUMN` mixed into the same `ALTER` still
+    /// executes normally.
+    ///
+    /// Only the kinds that can actually reach this method are filtered:
+    ///   - `DROP INDEX` / `DROP PROJECTION` / `DROP STATISTICS` are rejected earlier by
+    ///     `StorageMemory::checkAlterIsPossible`, never reach `mutate`.
+    ///   - `MATERIALIZE TTL` is rejected by `MutationsInterpreter::prepare` during
+    ///     pre-mutation validation when there is no TTL on the table, never reaches `mutate`.
+    MutationCommands commands_to_run;
+    commands_to_run.reserve(commands.size());
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            case MutationCommand::APPLY_PATCHES:
+            case MutationCommand::APPLY_DELETED_MASK:
+            case MutationCommand::MATERIALIZE_INDEX:
+            case MutationCommand::MATERIALIZE_PROJECTION:
+            case MutationCommand::MATERIALIZE_STATISTICS:
+            case MutationCommand::REWRITE_PARTS:
+                continue;
+            default:
+                commands_to_run.push_back(command);
+                break;
+        }
+    }
+
+    if (commands_to_run.empty())
+        return;
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
@@ -258,7 +297,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     MutationsInterpreter::Settings settings(true);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands_to_run, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
