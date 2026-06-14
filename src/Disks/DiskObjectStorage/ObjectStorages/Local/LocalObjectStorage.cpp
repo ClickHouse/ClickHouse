@@ -426,6 +426,18 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
+    /// A path with an embedded NUL is malformed: libc truncates every syscall
+    /// argument at the NUL while our `std::string`/`fs::path` keep the full
+    /// value, so the traversal below would re-open the same truncated directory
+    /// and queue ever-longer NUL-bearing child paths that never converge (an
+    /// unbounded loop for a directory that holds only subdirectories). A
+    /// `readdir` entry name never contains a NUL, so this single up-front check
+    /// guarantees no path derived during traversal can reintroduce one.
+    if (path.find('\0') != std::string::npos)
+        throw fs::filesystem_error(
+            "Path contains an embedded NUL byte", path,
+            std::make_error_code(std::errc::invalid_argument));
+
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 

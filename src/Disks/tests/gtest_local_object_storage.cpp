@@ -6,8 +6,12 @@
 
 #include <algorithm> /// for std::sort
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -187,6 +191,80 @@ TEST(LocalObjectStorage, ListObjectsHandlesPathWithEmbeddedNul)
 
     /// Sanity: the test finished (no crash / no infinite loop).
     SUCCEED();
+}
+
+/// Regression test for the fifth clickhouse-gh[bot] review on PR #107432.
+/// The explicit-stack traversal can loop forever on an embedded-NUL root when
+/// the real directory contains ONLY subdirectories (no regular file to trip the
+/// per-entry stat). Trace: `path = <root>\0tail`, `<root>` contains only `d1/`.
+/// `directory_iterator(path)` opens `<root>` (truncated at the NUL), yields
+/// `<root>\0tail/d1`; that child path is queued; the next
+/// `directory_iterator(<root>\0tail/d1)` is truncated by libc back to `<root>`,
+/// re-yields `d1`, queues `<root>\0tail/d1/d1`, ... unbounded. The earlier
+/// `ListObjectsHandlesPathWithEmbeddedNul` test escapes only because its
+/// top-level `top.txt` reaches `tryGetObjectMetadata`, whose truncated stat
+/// targets the `<root>` directory and throws before the phantom directory is
+/// drained. A directory-only root never reaches that stat, so the loop never
+/// terminates. The fix rejects embedded-NUL input up front, so the call throws
+/// immediately regardless of the directory contents. The listing runs on a
+/// worker thread guarded by a deadline so a regression manifests as a fast FAIL
+/// rather than hanging the whole test binary.
+TEST(LocalObjectStorage, ListObjectsRejectsEmbeddedNulRootWithOnlySubdirectories)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_nul_dirs_only");
+    const auto & root = tmp.path;
+
+    /// Only subdirectories, NO regular file at any level: nothing trips the
+    /// per-entry metadata stat, so the pre-fix loop has no escape hatch.
+    fs::create_directories(root / "d1" / "d2");
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    /// `<root>\0tail` - every syscall sees just `<root>` (truncated at the NUL).
+    std::string nul_injected = root.string();
+    nul_injected.push_back('\0');
+    nul_injected.append("this_part_is_never_seen_by_the_kernel");
+
+    auto state = std::make_shared<std::mutex>();
+    auto cv = std::make_shared<std::condition_variable>();
+    auto done = std::make_shared<bool>(false);
+    auto threw_filesystem_error = std::make_shared<bool>(false);
+
+    /// Detached so a (regressed) infinite loop cannot wedge `join()`.
+    std::thread([storage, nul_injected, state, cv, done, threw_filesystem_error]()
+    {
+        bool local_threw = false;
+        try
+        {
+            DB::RelativePathsWithMetadata children;
+            storage->listObjects(nul_injected, children, /* max_keys */ 0);
+        }
+        catch (const fs::filesystem_error &)
+        {
+            local_threw = true; /// expected: embedded NUL rejected up front
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: any other exception type leaves `local_threw` false, so the
+            /// EXPECT below fails informatively; swallowing here only keeps an
+            /// unexpected type from terminating the detached thread.
+        }
+        {
+            std::lock_guard lock(*state);
+            *threw_filesystem_error = local_threw;
+            *done = true;
+        }
+        cv->notify_one();
+    }).detach();
+
+    {
+        std::unique_lock lock(*state);
+        const bool finished = cv->wait_for(lock, std::chrono::seconds(20), [&] { return *done; });
+        ASSERT_TRUE(finished) << "listObjects did not return on an embedded-NUL directory-only root "
+                                 "(unbounded traversal loop regressed)";
+        EXPECT_TRUE(*threw_filesystem_error)
+            << "embedded-NUL input must be rejected with a filesystem_error";
+    }
 }
 
 /// Regression test for the Iceberg `test_format_version_upgrade_concurrent_reads`
