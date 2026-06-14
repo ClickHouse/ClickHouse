@@ -35,6 +35,13 @@ void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
     if (partition)
         children.push_back(partition);
     part_name = r.getString("part_name");
+    /// The parser produces either `PARTITION <expr>` or `PART '<name>'`, never both
+    /// (`getPartitionOrPartitionID` returns only `partition` and ignores `part_name`). A JSON AST
+    /// carrying both would format as two clauses while executing against the partition only, so
+    /// reject this parser-impossible shape at the boundary.
+    if (partition && !part_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CheckTableQuery` cannot carry both 'partition' and 'part_name' during AST JSON deserialization");
     readOutputOptionsJSON(r);
 }
 

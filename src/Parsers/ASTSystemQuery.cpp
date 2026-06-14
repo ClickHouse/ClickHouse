@@ -5,6 +5,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
@@ -830,6 +831,24 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     zk_name = r.getString("zk_name");
     full_replica_zk_path = r.getString("full_replica_zk_path");
     replica_zk_path = r.getString("replica_zk_path");
+    /// For `SYSTEM DROP REPLICA ... FROM ZKPATH` the parser derives `zk_name` and `replica_zk_path`
+    /// from `full_replica_zk_path`; they are a single invariant, not three independent inputs.
+    /// `formatImpl` prints `full_replica_zk_path`, while `InterpreterSystemQuery::dropReplica` /
+    /// `dropDatabaseReplica` operate on `replica_zk_path`/`zk_name`. Restoring them independently
+    /// would let `clickhouse_json` display one ZooKeeper path and execute against another, so
+    /// reject payloads where the derived fields disagree with (or appear without)
+    /// `full_replica_zk_path`.
+    if (!full_replica_zk_path.empty())
+    {
+        if (zk_name != zkutil::extractZooKeeperName(full_replica_zk_path)
+            || replica_zk_path != zkutil::extractZooKeeperPath(full_replica_zk_path, /*check_starts_with_slash*/ false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Inconsistent ZooKeeper path fields in `SystemQuery` during AST JSON deserialization: "
+                "'zk_name' and 'replica_zk_path' must be derived from 'full_replica_zk_path'");
+    }
+    else if (!zk_name.empty() || !replica_zk_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SystemQuery` carries 'zk_name'/'replica_zk_path' without 'full_replica_zk_path' during AST JSON deserialization");
     is_drop_whole_replica = r.getBool("is_drop_whole_replica");
     with_tables = r.getBool("with_tables");
     storage_policy = r.getString("storage_policy");

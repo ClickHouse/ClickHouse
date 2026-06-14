@@ -79,6 +79,13 @@ void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
     children.push_back(where_expression);
     sync = r.getBool("sync");
     test = r.getBool("test");
+    /// `SYNC`, `ASYNC` and `TEST` are mutually exclusive parser modes, so `sync` and `test`
+    /// cannot both be set. For `KILL PART_MOVE_TO_SHARD` such a JSON AST would display as `TEST`
+    /// (printed by `formatQueryImpl`) while `InterpreterKillQueryQuery` checks `sync` first and
+    /// executes the unsupported sync variant. Reject this parser-impossible combination here.
+    if (sync && test)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`KillQueryQuery` cannot set both 'sync' and 'test' during AST JSON deserialization");
     cluster = r.getString("cluster");
     readOutputOptionsJSON(r);
 }
