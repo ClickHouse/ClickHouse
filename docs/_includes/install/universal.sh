@@ -71,21 +71,18 @@ fi
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
-if [ -f "$clickhouse" ]
-then
-    read -p "ClickHouse binary ${clickhouse} already exists. Overwrite? [y/N] " answer
-    if [ "$answer" = "y" -o "$answer" = "Y" ]
-    then
-        rm -f "$clickhouse"
-    else
-        i=0
-        while [ -f "$clickhouse" ]
-        do
-            clickhouse="${clickhouse_download_filename_prefix}.${i}"
-            i=$(($i+1))
-        done
-    fi
-fi
+# If something already exists at this path, pick a non-clashing name (clickhouse.0, clickhouse.1, ...).
+# Do not prompt interactively here: this script is commonly run as `curl https://clickhouse.com/ | sh`,
+# where the script itself is delivered on stdin. A `read` would consume bytes from that same pipe,
+# desyncing the shell parser and producing spurious syntax errors.
+# Use `-e` together with `-L` so that directories and broken symlinks are also treated as occupied
+# (a dangling symlink is invisible to `-e` alone, and `curl -o` would then fail on it).
+i=0
+while [ -e "$clickhouse" ] || [ -L "$clickhouse" ]
+do
+    clickhouse="${clickhouse_download_filename_prefix}.${i}"
+    i=$(($i+1))
+done
 
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo

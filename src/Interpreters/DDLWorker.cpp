@@ -610,6 +610,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// However, for the majority of exceptions there is no sense to retry, because most likely we will just
         /// get the same exception again. So we return false only for several special exception codes,
         /// and consider query as executed with status "failed" and return true in other cases.
+        /// `TABLE_IS_READ_ONLY` is retriable: it usually comes from a temporary ZooKeeper disconnect
+        /// on `ReplicatedMergeTree`. `TABLE_IS_PERMANENTLY_READ_ONLY` is not retriable: it is raised
+        /// by the `table_readonly` setting or static storage, where retrying would loop forever.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
                                  e.code() != ErrorCodes::UNFINISHED &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
@@ -827,12 +830,17 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
-        // Setting alters should be executed on all replicas
+        // Setting/comment alters should be executed on all replicas, including
+        // mixed batches (e.g. MODIFY COMMENT ..., MODIFY SETTING ...) that match
+        // neither single-type predicate. The storage layer applies such commands
+        // as local metadata without a replicated log entry, so leader-only routing
+        // would leave the followers diverged.
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
             alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
-            alter->isCommentAlter())
+            alter->isCommentAlter() ||
+            alter->isSettingsOrCommentAlter())
             return false;
     }
 
