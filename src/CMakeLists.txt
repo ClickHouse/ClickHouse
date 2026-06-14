@@ -576,6 +576,10 @@ if (TARGET ch_contrib::fastpfor)
     target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
 endif()
 
+if (TARGET ch_contrib::libpng)
+    target_link_libraries(dbms PUBLIC ch_contrib::libpng)
+endif()
+
 if (TARGET ch_contrib::rdkafka)
     target_link_libraries(dbms PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
