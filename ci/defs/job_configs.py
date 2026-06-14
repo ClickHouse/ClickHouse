@@ -549,13 +549,16 @@ class JobConfigs:
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
     bugfix_validation_ft_pr_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_FT,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
         run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
+                "./ci/jobs/scripts/bugfix_validation.py",
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/functional_tests_results.py",
                 "./tests/queries",
                 "./tests/clickhouse-test",
                 "./tests/config",
@@ -743,6 +746,12 @@ class JobConfigs:
         .set_command(
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
+    )
+    # The shared bugfix-validation helper is only used by this job, so add it to
+    # this job's digest (not the common integration config) to avoid leaving the
+    # job cached with stale behavior after the helper changes.
+    bugfix_validation_it_job.digest_config.include_paths.append(
+        "./ci/jobs/scripts/bugfix_validation.py"
     )
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
