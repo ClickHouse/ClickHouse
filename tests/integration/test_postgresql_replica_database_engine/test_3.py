@@ -917,6 +917,51 @@ def test_uppercase_database_name(started_cluster):
     pg_manager3.clear()
 
 
+def test_uppercase_table_name_single_storage(started_cluster):
+    # Companion to `test_uppercase_database_name` for the single-table `MaterializedPostgreSQL`
+    # storage path (not the database engine). That path sets `materialized_postgresql_tables_list`
+    # to the raw remote table name and never goes through the quoting pass of `fetchRequiredTables`,
+    # so `CREATE PUBLICATION ... FOR TABLE ONLY <name>` referenced an unquoted, upper-case table.
+    # PostgreSQL folds the unquoted identifier to lower case, the relation is not found, and the
+    # `CREATE TABLE` fails before replication can start. The remote table name must be quoted.
+    table = "Test_Uppercase_Table"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.`{table}` SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS `{table}` SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE `{table}` (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    # Also verify ongoing replication after the initial snapshot.
+    instance.query(
+        f"INSERT INTO postgres_database.`{table}` SELECT number, number from numbers(50, 50)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS `{table}` SYNC")
+    pg_manager.execute(f'DROP TABLE "{table}"')
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

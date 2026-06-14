@@ -640,6 +640,15 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             tables_list = buf.str();
             tables_list.resize(tables_list.size() - 1);
         }
+        else if (!is_materialized_postgresql_database)
+        {
+            /// Single `MaterializedPostgreSQL` storage: `tables_list` is the raw remote table name
+            /// (see the `StorageMaterializedPostgreSQL` constructor) and is never passed through the
+            /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
+            /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
+            /// to lower case and fails with `relation "..." does not exist`.
+            tables_list = doubleQuoteWithSchema(tables_list);
+        }
 
         if (tables_list.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
