@@ -3957,6 +3957,78 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 }
 
 /// Initialize table expression data for table expression node
+namespace
+{
+
+/** Populate the hybrid SQL-standard short-name index on `table_expression_data` from
+  * the projection-derived `column_names_and_types` and the resolved `node_map`.
+  *
+  * Closes issues #87022, #66133, #94858, #94558 by allowing the outer query to refer
+  * to a subquery / CTE / materialized-CTE projection column whose canonical name is
+  * an unaliased qualified identifier (`b.f1`) by its short name (`f1`).
+  *
+  * Strictly additive: every entry's canonical (dotted) name keeps resolving via
+  * `node_map`; the short-name map is consulted only after canonical lookup misses.
+  *
+  * Rules for registering a short name `<short>` for canonical projection `<x>.<short>`:
+  *   - the short name is unique among sibling projections (no two columns share it),
+  *   - the short name does not collide with any other column's canonical name
+  *     (an explicit alias of `<short>` wins canonical resolution and we don't shadow it).
+  *
+  * Side note: we don't try to distinguish "analyzer-synthesized dotted projection name"
+  * (the issue case) from "user-written dotted alias" or "storage column literally named
+  * `b.f1`" — all three are treated the same. The user opted into the setting; the
+  * canonical name is unchanged in every case; and exposing the rightmost component as
+  * an addressable short name is consistent with how PostgreSQL / MySQL / Oracle name
+  * the output column of a `b.f1` reference in the first place.
+  */
+void populateShortNameIndexForSubquery(AnalysisTableExpressionData & table_expression_data, const ColumnNameToColumnNodeMap & node_map)
+{
+    std::unordered_set<std::string_view> canonical_names;
+    canonical_names.reserve(table_expression_data.column_names_and_types.size());
+    for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+        canonical_names.emplace(column_name_and_type.name);
+
+    const auto get_short_name = [](const std::string & canonical_name) -> std::string_view
+    {
+        auto dot = canonical_name.rfind('.');
+        if (dot == std::string::npos || dot + 1 >= canonical_name.size())
+            return {};
+        return std::string_view(canonical_name).substr(dot + 1);
+    };
+
+    /// First pass: count short-name occurrences across the projection list so we
+    /// can drop ambiguous entries on the second pass.
+    std::unordered_map<std::string_view, size_t> short_name_counts;
+    short_name_counts.reserve(table_expression_data.column_names_and_types.size());
+    for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+    {
+        auto short_name = get_short_name(column_name_and_type.name);
+        if (short_name.empty() || canonical_names.contains(short_name))
+            continue;
+        ++short_name_counts[short_name];
+    }
+
+    table_expression_data.short_name_to_column_node.reserve(short_name_counts.size());
+    for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+    {
+        auto short_name = get_short_name(column_name_and_type.name);
+        if (short_name.empty() || canonical_names.contains(short_name))
+            continue;
+        auto count_it = short_name_counts.find(short_name);
+        if (count_it == short_name_counts.end() || count_it->second != 1)
+            continue;
+
+        auto node_it = node_map.find(column_name_and_type.name);
+        if (node_it == node_map.end())
+            continue;
+
+        table_expression_data.short_name_to_column_node.emplace(std::string(short_name), node_it->second);
+    }
+}
+
+}
+
 void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
@@ -4046,67 +4118,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         }
 
         /// Hybrid short-name index for SQL-standard compatibility (issue #87022 and friends).
-        /// Only populated when the opt-in setting is on; otherwise the map stays empty and
-        /// `tryGetShortNameColumnNode` short-circuits to nullptr — no behavior change.
-        ///
-        /// Strictly additive: every entry's canonical (dotted) name keeps resolving via
-        /// `node_map`; the short-name map is consulted only after canonical lookup misses.
-        ///
-        /// Rules for registering a short name `<short>` for canonical projection `<x>.<short>`:
-        ///   - the short name is unique among sibling projections (no two columns share it),
-        ///   - the short name does not collide with any other column's canonical name
-        ///     (an explicit alias of `<short>` wins canonical resolution and we don't shadow it).
-        ///
-        /// Side note: we don't try to distinguish "analyzer-synthesized dotted projection name"
-        /// (the issue case) from "user-written dotted alias" or "storage column literally named
-        /// `b.f1`" — all three are treated the same. The user opted into the setting; the
-        /// canonical name is unchanged in every case; and exposing the rightmost component as
-        /// an addressable short name is consistent with how PostgreSQL / MySQL / Oracle name
-        /// the output column of a `b.f1` reference in the first place.
+        /// See `populateShortNameIndexForSubquery` below.
         if (scope.context->getSettingsRef()[Setting::analyzer_enable_short_column_names_from_subquery])
-        {
-            std::unordered_set<std::string_view> canonical_names;
-            canonical_names.reserve(table_expression_data.column_names_and_types.size());
-            for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
-                canonical_names.emplace(column_name_and_type.name);
-
-            const auto get_short_name = [](const std::string & canonical_name) -> std::string_view
-            {
-                auto dot = canonical_name.rfind('.');
-                if (dot == std::string::npos || dot + 1 >= canonical_name.size())
-                    return {};
-                return std::string_view(canonical_name).substr(dot + 1);
-            };
-
-            /// First pass: count short-name occurrences across the projection list so we
-            /// can drop ambiguous entries on the second pass.
-            std::unordered_map<std::string_view, size_t> short_name_counts;
-            short_name_counts.reserve(table_expression_data.column_names_and_types.size());
-            for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
-            {
-                auto short_name = get_short_name(column_name_and_type.name);
-                if (short_name.empty() || canonical_names.contains(short_name))
-                    continue;
-                ++short_name_counts[short_name];
-            }
-
-            table_expression_data.short_name_to_column_node.reserve(short_name_counts.size());
-            for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
-            {
-                auto short_name = get_short_name(column_name_and_type.name);
-                if (short_name.empty() || canonical_names.contains(short_name))
-                    continue;
-                auto count_it = short_name_counts.find(short_name);
-                if (count_it == short_name_counts.end() || count_it->second != 1)
-                    continue;
-
-                auto node_it = node_map.find(column_name_and_type.name);
-                if (node_it == node_map.end())
-                    continue;
-
-                table_expression_data.short_name_to_column_node.emplace(std::string(short_name), node_it->second);
-            }
-        }
+            populateShortNameIndexForSubquery(table_expression_data, node_map);
     }
 
     /// `column_names` and `column_identifier_first_parts` are populated lazily by
@@ -4131,9 +4145,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     /// `unordered_map` rehashes) and a kept-alive `storage_snapshot`.
     if (table_node || table_function_node)
     {
-        auto & data = data_it->second;
-        data.setColumnNodeMapPopulator(
-            [this, &data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), &scope]
+        auto & inserted_data = data_it->second;
+        inserted_data.setColumnNodeMapPopulator(
+            [this, &inserted_data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), &scope]
             (ColumnNameToColumnNodeMap & node_map) mutable
         {
             const auto & columns_description = captured_storage_snapshot->metadata->getColumns();
@@ -4152,8 +4166,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               * move at the end) so that any recursive `getColumnNodeMap()` triggered by
               * alias-expression resolution below finds the placeholder ColumnNodes.
               */
-            node_map.reserve(data.column_names_and_types.size());
-            for (const auto & column_name_and_type : data.column_names_and_types)
+            node_map.reserve(inserted_data.column_names_and_types.size());
+            for (const auto & column_name_and_type : inserted_data.column_names_and_types)
             {
                 const auto & column_default = columns_description.getDefault(column_name_and_type.name);
                 if (column_default && column_default->kind == ColumnDefaultKind::Alias)
@@ -4180,7 +4194,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 alias_column_to_resolve = node_map[alias_column_to_resolve_name];
 
                 IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
-                alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
+                alias_column_resolve_scope.table_expression_data_for_alias_resolution = &inserted_data;
                 alias_column_resolve_scope.context = scope.context;
 
                 /// Initialize aliases in alias column scope
@@ -4197,6 +4211,22 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 node_map[alias_column_to_resolve_name] = alias_column_to_resolve;
             }
         });
+
+        /// Hybrid short-name index for materialized CTEs (issue #87022 and friends).
+        /// A `WITH ... AS MATERIALIZED (...)` reference is rewritten into a `TableNode`
+        /// backed by a `TemporaryTableHolder` whose column names are the original
+        /// subquery's projection names — including dotted names like `b.f1`. To keep the
+        /// same SQL-standard short-name fallback story for materialized CTEs, populate
+        /// the index here. We trigger the lazy column-node-map populator above to get
+        /// `ColumnNode`s pointing at this `TableNode`; the cost is small because
+        /// materialized CTE storages typically have few columns (the projection list).
+        /// Regular `MergeTree` / `TableFunction` tables are intentionally excluded —
+        /// the setting's contract is "from subquery", not "rewrite every storage column".
+        if (table_node && table_node->isMaterializedCTE()
+            && scope.context->getSettingsRef()[Setting::analyzer_enable_short_column_names_from_subquery])
+        {
+            populateShortNameIndexForSubquery(inserted_data, inserted_data.getColumnNodeMap());
+        }
     }
 }
 

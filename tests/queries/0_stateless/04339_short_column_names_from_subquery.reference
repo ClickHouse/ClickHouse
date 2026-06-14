@@ -18,6 +18,12 @@
 10
 -- on: explicit dotted projection in subquery (issue #94558)
 \N
+-- on: materialized CTE — same SQL-standard story, even though MATERIALIZED rewrites the CTE reference into a TableNode
+1	5
+-- on: materialized CTE — outer alias + short name
+1	5
+-- on: materialized CTE — canonical dotted name still works (additive)
+1	5
 -- on: DESCRIBE shows canonical names (not short names)
 b.f1	UInt8					
 b.f2	UInt8					

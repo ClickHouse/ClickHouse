@@ -106,6 +106,31 @@ FROM (
     CROSS JOIN (SELECT NULL AS FIELD) AS B
 );
 
+SELECT '-- on: materialized CTE — same SQL-standard story, even though MATERIALIZED rewrites the CTE reference into a TableNode';
+
+SET enable_materialized_cte = 1;
+
+WITH t1 AS (SELECT 1 AS f1, 2 AS f2),
+     t2 AS (SELECT 1 AS f1, 5 AS f2),
+     t3 AS MATERIALIZED (SELECT b.f1, b.f2 FROM t1 AS a JOIN t2 AS b ON a.f1 = b.f1)
+SELECT * FROM t3 WHERE f1 = 1;
+
+SELECT '-- on: materialized CTE — outer alias + short name';
+
+WITH t1 AS (SELECT 1 AS f1, 2 AS f2),
+     t2 AS (SELECT 1 AS f1, 5 AS f2),
+     t3 AS MATERIALIZED (SELECT b.f1, b.f2 FROM t1 AS a JOIN t2 AS b ON a.f1 = b.f1)
+SELECT t3.f1, t3.f2 FROM t3 WHERE t3.f1 = 1;
+
+SELECT '-- on: materialized CTE — canonical dotted name still works (additive)';
+
+WITH t1 AS (SELECT 1 AS f1, 2 AS f2),
+     t2 AS (SELECT 1 AS f1, 5 AS f2),
+     t3 AS MATERIALIZED (SELECT b.f1, b.f2 FROM t1 AS a JOIN t2 AS b ON a.f1 = b.f1)
+SELECT `b.f1`, `b.f2` FROM t3 WHERE `b.f1` = 1;
+
+SET enable_materialized_cte = 0;
+
 SELECT '-- on: DESCRIBE shows canonical names (not short names)';
 
 DESCRIBE (
