@@ -65,9 +65,9 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsUInt64 text_index_dictionary_block_size;
+    extern const MergeTreeSettingsNonZeroUInt64 text_index_dictionary_block_size;
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
-    extern const MergeTreeSettingsUInt64 text_index_posting_list_block_size;
+    extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
 }
 
