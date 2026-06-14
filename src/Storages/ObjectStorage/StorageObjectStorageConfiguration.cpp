@@ -131,11 +131,16 @@ void StorageObjectStorageConfiguration::initialize(
     {
         if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
         {
-            // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+            /// Only promote to WILDCARD when the effective default strategy is WILDCARD (backwards compatibility).
+            /// When the default is HIVE (e.g. via `SET compatibility = '26.6'`), leave the strategy as NONE
+            /// so that initPartitionStrategy() sets HIVE and its validation correctly rejects {_partition_id} paths.
+            if (local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
+                == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
+            {
+                configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+            }
         }
     }
-
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())
