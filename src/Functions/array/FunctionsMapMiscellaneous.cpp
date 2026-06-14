@@ -1,7 +1,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -12,6 +14,7 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/like.h>
 #include <Functions/array/arrayConcat.h>
 #include <Functions/array/arrayFilter.h>
@@ -170,6 +173,18 @@ public:
         }
         else
             return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
+    }
+
+    ColumnPtr executeWithLowCardinalityColumns(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run) const override
+    {
+        if constexpr (requires { Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run); })
+            return Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+        else
+            return nullptr;
     }
 
 private:
@@ -409,7 +424,7 @@ struct MapLikeAdapter
         if (!isStringOrFixedString(types[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be String or FixedString", Name::name);
 
-        auto subcolumn_type = position == 0 ? map_type->getKeyType() : map_type->getValueType();
+        auto subcolumn_type = removeLowCardinality(position == 0 ? map_type->getKeyType() : map_type->getValueType());
 
         if (!isStringOrFixedString(subcolumn_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} type of map for function {} must be String or FixedString", position == 0 ? "Key" : "Value", Name::name);
@@ -469,6 +484,81 @@ struct MapLikeAdapter
         ColumnWithTypeAndName function_arg{function_column, function_type, position == 0 ? "__function_map_key_like" :  "__function_map_value_like"};
         arguments = {function_arg, arguments[0]};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypesAndColumns(arguments);
+    }
+
+    static ColumnPtr executeWithLowCardinalityColumns(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        size_t input_rows_count,
+        bool dry_run)
+    {
+        /// This fast path builds one dictionary-match bitmap for the whole block, so the LIKE pattern must be constant.
+        /// Non-constant patterns remain supported by falling back to the generic LowCardinality handling below.
+        if (dry_run || arguments.size() != 2 || !arguments[0].column || !arguments[1].column || !isColumnConst(*arguments[1].column))
+            return nullptr;
+
+        if (getNullPresense(arguments).has_nullable)
+            return nullptr;
+
+        /// The generic LowCardinality handling already supports LowCardinality(String) patterns.
+        /// Keep this specialized path to ordinary constant patterns, which can be cloned directly for dictionary evaluation.
+        if (typeid_cast<const DataTypeLowCardinality *>(arguments[1].type.get()))
+            return nullptr;
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        checkTypes(types);
+
+        const auto * map_column = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+        if (!map_column)
+            return nullptr;
+
+        const auto & map = *map_column;
+        const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(&map.getNestedData().getColumn(position));
+        if (!low_cardinality_column)
+            return nullptr;
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
+        DataTypePtr selected_type = position == 0 ? map_type.getKeyType() : map_type.getValueType();
+        DataTypePtr selected_dictionary_type = removeLowCardinality(selected_type);
+
+        auto run_like_on_dictionary_values = [&](ColumnPtr dictionary_values)
+        {
+            auto pattern_column = arguments[1].column->cloneResized(dictionary_values->size());
+            ColumnsWithTypeAndName like_arguments{
+                {dictionary_values, selected_dictionary_type, ""},
+                {std::move(pattern_column), arguments[1].type, ""},
+            };
+
+            FunctionLike like(/*context*/ nullptr);
+            auto like_result_type = like.getReturnTypeImpl(DataTypes{selected_dictionary_type, arguments[1].type});
+            return like.executeImpl(like_arguments, like_result_type, like_arguments[0].column->size());
+        };
+
+        auto dictionary_matches_column = LowCardinalityExecutionHelpers::dictionaryMatchesForSelectedIndexes(
+            *low_cardinality_column, run_like_on_dictionary_values);
+        const auto & dictionary_matches = assert_cast<const ColumnUInt8 &>(*dictionary_matches_column).getData();
+
+        auto low_cardinality_view = LowCardinalityExecutionHelpers::LowCardinalityArrayView{
+            .elements = *low_cardinality_column,
+            .offsets = map.getNestedColumn().getOffsets(),
+            .rows = input_rows_count,
+        };
+        if constexpr (returns_map)
+        {
+            auto filter_and_offsets = low_cardinality_view.filterByDictionaryMatches(dictionary_matches);
+            auto filtered_nested_data = map.getNestedData().filter(filter_and_offsets.filter, filter_and_offsets.result_size);
+            ColumnPtr filtered_map = ColumnMap::create(
+                ColumnArray::create(std::move(filtered_nested_data), std::move(filter_and_offsets.offsets)));
+            filtered_map = recursiveRemoveLowCardinality(filtered_map);
+            return filtered_map;
+        }
+        else
+        {
+            return low_cardinality_view.existsByDictionaryMatches(dictionary_matches);
+        }
     }
 
     static DataTypePtr extractResultType(const DataTypePtr & result_type)

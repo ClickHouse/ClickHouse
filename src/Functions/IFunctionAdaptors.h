@@ -25,6 +25,17 @@ protected:
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
+
+    /// Companion hook for useDefaultImplementationForLowCardinalityColumns.
+    ColumnPtr executeWithLowCardinalityColumns(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run) const final
+    {
+        return function->executeWithLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
     /// TODO: replace isSuitableForShortCircuitArgumentsExecution with a dedicated canThrow interface on functions.
