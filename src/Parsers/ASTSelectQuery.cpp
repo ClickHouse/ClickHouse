@@ -686,7 +686,14 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     setExpr("with", Expression::WITH);
     setExpr("select", Expression::SELECT);
-    setExpr("tables", Expression::TABLES);
+
+    /// `tables` is a parser-owned `ASTTablesInSelectQuery`. SELECT analysis and helpers
+    /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast
+    /// `tables()` unconditionally, so a different node type from malformed `clickhouse_json` must be
+    /// rejected here with `BAD_ARGUMENTS` instead of reaching an internal downcast path later.
+    if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
+        this->setExpression(Expression::TABLES, std::move(tables_child));
+
     setExpr("aliases", Expression::ALIASES);
     setExpr("cte_aliases", Expression::CTE_ALIASES);
     setExpr("prewhere", Expression::PREWHERE);
