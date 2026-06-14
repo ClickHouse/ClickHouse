@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Fetch cppjieba hmm_model.utf8 and produce a C++ header with:
+Read the vendored cppjieba `hmm_model.utf8` and produce a C++ header with:
  - constexpr double Z = -3.14e+100;
  - start_prob as single-line std::array<double,4>
  - trans_prob as single-line std::array<std::array<double,4>,4>
  - emit_probs as single-line std::array<std::array<double,65536>,4> where
    entries not present in the source are output as Z (the symbol), and
    present entries use the original numeric literal from the file.
+
+The input file `hmm_model.utf8` is a snapshot of
+https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/hmm_model.utf8
+vendored alongside this script so the build is reproducible without network access
+and independent of the (archived) upstream cppjieba repository.
 """
-import requests
+import os
 import sys
 
-URL = "https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/hmm_model.utf8"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_PATH = os.path.join(SCRIPT_DIR, "hmm_model.utf8")
 
 STATE_ORDER = ["B", "E", "M", "S"]
 STATE_COUNT = 4
@@ -21,11 +27,10 @@ Z_LITERAL = "Z"  # symbol to output for missing values
 Z_VALUE = "-3.14e+100"  # numeric value used in original model (kept as comment)
 
 
-def fetch_lines(url):
-    r = requests.get(url)
-    r.raise_for_status()
-    # preserve original lines without altering spacing
-    return r.text.splitlines()
+def read_lines(path):
+    with open(path, "r", encoding="utf-8") as f:
+        # preserve original lines without altering spacing
+        return f.read().splitlines()
 
 
 def parse_model(lines):
@@ -159,9 +164,9 @@ def format_cpp(start_prob, trans_prob, emit_maps, out_path):
 
 def main():
     try:
-        lines = fetch_lines(URL)
+        lines = read_lines(INPUT_PATH)
         start_prob, trans_prob, emit_maps = parse_model(lines)
-        out_path = "jieba_hmm_model.dat"
+        out_path = os.path.join(SCRIPT_DIR, "jieba_hmm_model.dat")
         format_cpp(start_prob, trans_prob, emit_maps, out_path)
         print(f"Wrote {out_path}")
     except Exception as e:

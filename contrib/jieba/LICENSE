@@ -4,9 +4,10 @@ derived from the cppjieba project by Yanyi Wu:
 
     https://github.com/yanyiwu/cppjieba
 
-The dictionary and model inputs are generated from the upstream
-`dict/jieba.dict.utf8` and HMM probability tables (see `generate_dict.py` and
-`generate_hmm_model.py` for the reproduction procedure). cppjieba is
+The dictionary and model inputs (`jieba.dict.utf8` and `hmm_model.utf8`) are
+vendored snapshots of `dict/jieba.dict.utf8` and `dict/hmm_model.utf8` from
+the upstream cppjieba repository. See `generate_dict.py` and
+`generate_hmm_model.py` for the reproduction procedure. cppjieba is
 distributed under the MIT License, reproduced verbatim below.
 
 The MIT License (MIT)

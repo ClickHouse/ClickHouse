@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-This script downloads the Jieba dictionary from GitHub, processes it, and serializes it into
+This script reads the vendored Jieba dictionary, processes it, and serializes it into
 a binary file suitable for use with a Double-Array Trie (darts-clone), then zstd-compresses it.
 
+The input file `jieba.dict.utf8` is a snapshot of
+https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/jieba.dict.utf8
+vendored alongside this script so the build is reproducible without network access
+and independent of the (archived) upstream cppjieba repository.
+
 Processing steps:
-1. Read the dictionary lines from the online source.
+1. Read the dictionary lines from the vendored file.
 2. Parse each line into a word and its optional weight (default 1.0).
 3. Keep only BMP characters (codepoints <= 0xFFFF) to ensure each UTF-16 code unit is 2 bytes.
 4. Encode each word into UTF-16-LE and replace any null bytes (0x00) with 0xF0 to avoid
@@ -35,17 +40,18 @@ Notes:
   encoding lookup keys; see `decodeUTF8Rune` in `jieba_common.h`.
 """
 
-import urllib.request
 import numpy as np
 import struct
 import math
+import os
 import sys
 import zstandard
 from dartsclone import DoubleArray
 
-url = "https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/jieba.dict.utf8"
-with urllib.request.urlopen(url) as f:
-    lines = f.read().decode("utf-8").splitlines()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_PATH = os.path.join(SCRIPT_DIR, "jieba.dict.utf8")
+with open(INPUT_PATH, "r", encoding="utf-8") as f:
+    lines = f.read().splitlines()
 
 keys_bytes = []
 lengths = []
@@ -93,11 +99,11 @@ header = struct.pack(
 )
 payload = header + weights.tobytes() + arr.tobytes()
 
-with open("dict_le.dat", "wb") as f:
+with open(os.path.join(SCRIPT_DIR, "dict_le.dat"), "wb") as f:
     f.write(payload)
 
 # Use the highest zstd level so the compressed dict (~3.5 MiB) stays under the 5 MiB
 # in-tree size limit enforced by `ci/jobs/scripts/check_style/various_checks.sh`.
 compressor = zstandard.ZstdCompressor(level=22)
-with open("dict_le.dat.zst", "wb") as f:
+with open(os.path.join(SCRIPT_DIR, "dict_le.dat.zst"), "wb") as f:
     f.write(compressor.compress(payload))
