@@ -554,6 +554,12 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
         return true;
 
+    /// Hybrid short-name fallback (issue #87022 and friends): the short-name map is empty
+    /// unless `analyzer_enable_short_column_names_from_subquery` is on for the scope's
+    /// context, so this check is free in the default-off case.
+    if (table_expression_data.canBindShortName(IdentifierView(identifier)))
+        return true;
+
     if (identifier.getPartsSize() == 1)
         return false;
 
@@ -653,6 +659,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             else
                 result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
         }
+    }
+
+    /// Hybrid short-name fallback (issue #87022 and friends): when canonical lookup
+    /// missed and we're resolving a single-part identifier against a subquery / CTE
+    /// whose projection has a column whose canonical name is `<source>.<short>` and
+    /// whose underlying `ColumnNode` carries just `<short>`, resolve to that node.
+    /// The map is empty unless `analyzer_enable_short_column_names_from_subquery` is on,
+    /// so there is no extra cost in the default-off case.
+    if (!result_expression && identifier_without_column_qualifier.getPartsSize() == 1)
+    {
+        if (auto short_name_node = table_expression_data.tryGetShortNameColumnNode(identifier_full_name))
+            result_expression = short_name_node;
     }
 
     bool clone_is_needed = true;
@@ -813,6 +831,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
           * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
+        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+        if (lookup_result.resolved_identifier)
+            return lookup_result;
+    }
+
+    /** Hybrid short-name fallback for single-part identifiers (issue #87022 and friends).
+      * Triggers only when `analyzer_enable_short_column_names_from_subquery` is on AND the
+      * subquery/CTE has an unambiguous short-name entry for this identifier; otherwise the
+      * short-name map is empty and `canBindShortName` is a constant false. The actual
+      * lookup happens inside `tryResolveIdentifierFromStorage` after the canonical miss.
+      */
+    if (table_expression_data.canBindShortName(IdentifierView(identifier)))
+    {
         auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
         if (lookup_result.resolved_identifier)
             return lookup_result;

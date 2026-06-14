@@ -7542,6 +7542,9 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the new analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
     )", 0) \
+    DECLARE(Bool, analyzer_enable_short_column_names_from_subquery, false, R"(
+When a subquery or CTE projects an unaliased qualified column reference such as `b.f1`, ClickHouse keeps the dotted form `b.f1` as the output column name. Other SQL engines (PostgreSQL, MySQL, Oracle, SQL Server) and the SQL standard implicitly drop the table-alias prefix and expose the column as `f1`. When enabled, the outer query may refer to such a column either by its canonical dotted name (existing behavior) or by its short name (the rightmost component). The short-name fallback is consulted only after canonical name resolution fails, and only if the short name is unambiguous within the subquery's projection list and does not collide with any other canonical projection name. Disabled by default to preserve existing behavior; turn on for SQL-standard compatibility.
+    )", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.

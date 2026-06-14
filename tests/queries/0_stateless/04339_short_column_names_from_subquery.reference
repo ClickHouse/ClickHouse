@@ -1,0 +1,26 @@
+-- default-off: canonical (dotted) name still works
+1	5
+-- default-off: short name still fails (preserves current behavior)
+-- on: issue #87022 reproducer works
+1	5
+-- on: outer reference via dotted name still works (additive)
+1	5
+-- on: reference via outer alias + short name
+1	5
+-- on: short name in subquery (not just CTE) -- issue #66133
+1
+-- on: 3-way self-join inside CTE -- issue #94858
+1
+-- on: ambiguous short name (collision among siblings) still errors
+-- on: dotted form still works in the ambiguous case
+1	1
+-- on: explicit canonical alias shadows the short name
+10
+-- on: explicit dotted projection in subquery (issue #94558)
+\N
+-- on: DESCRIBE shows canonical names (not short names)
+b.f1	UInt8					
+b.f2	UInt8					
+-- on: SELECT * exposes canonical names
+b.f1	b.f2
+1	5

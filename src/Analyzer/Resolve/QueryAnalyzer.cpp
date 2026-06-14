@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
+    extern const SettingsBool analyzer_enable_short_column_names_from_subquery;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
@@ -4042,6 +4043,69 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         {
             auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
             node_map.emplace(column_name_and_type.name, column_node);
+        }
+
+        /// Hybrid short-name index for SQL-standard compatibility (issue #87022 and friends).
+        /// Only populated when the opt-in setting is on; otherwise the map stays empty and
+        /// `tryGetShortNameColumnNode` short-circuits to nullptr — no behavior change.
+        ///
+        /// Strictly additive: every entry's canonical (dotted) name keeps resolving via
+        /// `node_map`; the short-name map is consulted only after canonical lookup misses.
+        ///
+        /// Rules for registering a short name `<short>` for canonical projection `<x>.<short>`:
+        ///   - the short name is unique among sibling projections (no two columns share it),
+        ///   - the short name does not collide with any other column's canonical name
+        ///     (an explicit alias of `<short>` wins canonical resolution and we don't shadow it).
+        ///
+        /// Side note: we don't try to distinguish "analyzer-synthesized dotted projection name"
+        /// (the issue case) from "user-written dotted alias" or "storage column literally named
+        /// `b.f1`" — all three are treated the same. The user opted into the setting; the
+        /// canonical name is unchanged in every case; and exposing the rightmost component as
+        /// an addressable short name is consistent with how PostgreSQL / MySQL / Oracle name
+        /// the output column of a `b.f1` reference in the first place.
+        if (scope.context->getSettingsRef()[Setting::analyzer_enable_short_column_names_from_subquery])
+        {
+            std::unordered_set<std::string_view> canonical_names;
+            canonical_names.reserve(table_expression_data.column_names_and_types.size());
+            for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+                canonical_names.emplace(column_name_and_type.name);
+
+            const auto get_short_name = [](const std::string & canonical_name) -> std::string_view
+            {
+                auto dot = canonical_name.rfind('.');
+                if (dot == std::string::npos || dot + 1 >= canonical_name.size())
+                    return {};
+                return std::string_view(canonical_name).substr(dot + 1);
+            };
+
+            /// First pass: count short-name occurrences across the projection list so we
+            /// can drop ambiguous entries on the second pass.
+            std::unordered_map<std::string_view, size_t> short_name_counts;
+            short_name_counts.reserve(table_expression_data.column_names_and_types.size());
+            for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+            {
+                auto short_name = get_short_name(column_name_and_type.name);
+                if (short_name.empty() || canonical_names.contains(short_name))
+                    continue;
+                ++short_name_counts[short_name];
+            }
+
+            table_expression_data.short_name_to_column_node.reserve(short_name_counts.size());
+            for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+            {
+                auto short_name = get_short_name(column_name_and_type.name);
+                if (short_name.empty() || canonical_names.contains(short_name))
+                    continue;
+                auto count_it = short_name_counts.find(short_name);
+                if (count_it == short_name_counts.end() || count_it->second != 1)
+                    continue;
+
+                auto node_it = node_map.find(column_name_and_type.name);
+                if (node_it == node_map.end())
+                    continue;
+
+                table_expression_data.short_name_to_column_node.emplace(std::string(short_name), node_it->second);
+            }
         }
     }
 
