@@ -1,4 +1,5 @@
 -- Tags: global, no-parallel
+SET enable_analyzer = 1;
 CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
