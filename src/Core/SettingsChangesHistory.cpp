@@ -1239,6 +1239,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
+            {"text_index_dictionary_block_size", 512, 512, "New setting"},
+            {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
+            {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
+            {"text_index_posting_list_codec", "none", "none", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
@@ -1254,10 +1258,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
-            {"text_index_dictionary_block_size", 512, 512, "New setting"},
-            {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
-            {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
-            {"text_index_posting_list_codec", "none", "none", "New setting"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
