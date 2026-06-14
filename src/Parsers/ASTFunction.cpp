@@ -218,11 +218,14 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     else if (!kind_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'kind' value '{}' during AST JSON deserialization", kind_str);
 
-    arguments = r.readChild("arguments");
+    /// `arguments` and `parameters` are parser-produced `ASTExpressionList` children. The formatter
+    /// iterates their `children`, so a scalar node here would silently rewrite the function (e.g.
+    /// `f(x)` becoming `f()`). Reject any other node type at the JSON boundary with `BAD_ARGUMENTS`.
+    arguments = r.readChildOfType<ASTExpressionList>("arguments");
     if (arguments)
         children.push_back(arguments);
 
-    parameters = r.readChild("parameters");
+    parameters = r.readChildOfType<ASTExpressionList>("parameters");
     if (parameters)
         children.push_back(parameters);
 
