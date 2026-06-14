@@ -1077,7 +1077,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     && table_node && typeid_cast<const StorageView *>(storage.get());
 
                 if (expand_view_in_logical_plan)
+                {
                     table_expression_query_info.build_logical_plan = true;
+                    table_expression_query_info.cacheable_logical_plan = true;
+                }
 
                 if (!select_query_options.build_logical_plan || expand_view_in_logical_plan)
                     till_stage = storage->getQueryProcessingStage(

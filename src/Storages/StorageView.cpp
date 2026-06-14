@@ -336,7 +336,7 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
     options.build_logical_plan = query_info.build_logical_plan;
-    options.cacheable_logical_plan = query_info.build_logical_plan;
+    options.cacheable_logical_plan = query_info.cacheable_logical_plan;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
