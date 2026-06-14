@@ -36,12 +36,12 @@ Column names in the formatted output are generated as `c1`, `c2`, ... in the ord
 
 The particular order of formatted rows is not guaranteed.
 
-Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied. The settings are taken from the query that produces the final string: when a stored `AggregateFunction(groupFormat(...), ...)` state is finalized later (for example with `finalizeAggregation` or the `Merge` combinator), the format settings of the finalizing query are used.
+Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied.
 :::
 
 ## NULL handling {#null-handling}
 
-Like `groupArray` and `groupConcat`, `groupFormat` skips a row when any of its arguments is `NULL`; such rows do not appear in the formatted output. When an argument is nullable, the result type is `Nullable(String)`, and a group whose every row is skipped — as well as a literal untyped `NULL` argument of type `Nullable(Nothing)` — returns `NULL` through the generic `Null` combinator. A genuinely empty group with non-nullable arguments formats to an empty string.
+Like `groupArray` and `groupConcat`, `groupFormat` skips a row when any of its arguments is `NULL`; such rows do not appear in the formatted output. When an argument is nullable, the result type is `Nullable(String)`, and a group whose every row is skipped — as well as a literal untyped `NULL` argument of type `Nullable(Nothing)` — returns `NULL` through the generic `Null` combinator.
 
 ```sql
 SELECT groupFormat('JSONEachRow')(if(number = 0, NULL, number))

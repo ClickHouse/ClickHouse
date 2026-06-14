@@ -20,7 +20,8 @@ from (select number, number % 2 as key from numbers(4) order by number)
 group by key
 order by key;
 
--- An empty group formats to an empty string.
+-- An empty group is formatted as a zero-row block; the exact output is format-specific
+-- and left unspecified - `JSONEachRow` happens to produce an empty string.
 select groupFormat('JSONEachRow')(number) from numbers(0);
 
 -- NULL handling: like `groupArray` and `groupConcat`, a row is skipped when any argument is NULL.
@@ -66,15 +67,9 @@ select
     direct = via_state as equal
 from numbers(3);
 
--- Stored `groupFormatState` values must be finalized with the format settings of the
--- finalizing query, not with settings captured when the column's data type was created
--- (the session-level `format_csv_delimiter = ';'` set above is overridden per query here).
-drop table if exists t_group_format_state;
-create table t_group_format_state (st AggregateFunction(groupFormat('CSV'), UInt64, String)) engine = Memory;
-insert into t_group_format_state select groupFormatState('CSV')(number, toString(number)) from numbers(2);
-select finalizeAggregation(st) from t_group_format_state settings format_csv_delimiter = '|';
-select finalizeAggregation(st) from t_group_format_state settings format_csv_delimiter = '#';
-drop table t_group_format_state;
+-- The nested formatter must not leak the enclosing query's `statistics` section into the
+-- formatted output, even when `output_format_write_statistics` is enabled for the query.
+select position(groupFormat('JSON')(number), 'statistics') = 0 from numbers(2) settings output_format_write_statistics = 1;
 
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

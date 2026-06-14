@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/VarInt.h>
@@ -49,11 +50,11 @@ UInt64 getSerializationProtocolVersion(const ContextPtr & context)
 }
 
 /// The context of the query this thread currently executes, or the global context.
-/// The function object must not capture a context itself: it is embedded into
+/// The function object must not capture the context itself: it is embedded into
 /// `DataTypeAggregateFunction` for `AggregateFunction(groupFormat(...), ...)` columns,
-/// and the data type (with the captured context and its settings) would outlive the
-/// query that created it - states stored in a table would then be finalized with
-/// stale format settings.
+/// and the data type would outlive the query that created it, so a captured `ContextPtr`
+/// would keep that query's context alive. The format settings are captured separately as
+/// a plain value (see the factory function).
 ContextPtr resolveFormatContext()
 {
     ContextPtr context;
@@ -73,10 +74,12 @@ public:
         const DataTypes & argument_types_,
         const Array & parameters_,
         String format_name_,
-        UInt64 serialization_protocol_version_)
+        UInt64 serialization_protocol_version_,
+        FormatSettings format_settings_)
         : IAggregateFunctionDataHelper<GroupFormatData, AggregateFunctionGroupFormat>(
               argument_types_, parameters_, std::make_shared<DataTypeString>())
         , format_name(std::move(format_name_))
+        , format_settings(std::move(format_settings_))
         , serialization_protocol_version(serialization_protocol_version_)
     {
         size_t num_columns = argument_types.size();
@@ -225,16 +228,10 @@ public:
 
         WriteBufferFromVector<ColumnString::Chars> buffer(chars, AppendModeTag{});
 
-        /// Format settings are derived from the query that finalizes the state, so that
-        /// stored `AggregateFunction(groupFormat(...), ...)` states (whose function object
-        /// was created together with the column's data type, possibly long ago) are
-        /// formatted with the settings of the current query.
-        auto format_context = resolveFormatContext();
-        auto format_settings = getFormatSettings(format_context);
-        format_settings.json.valid_output_on_exception = false;
-        format_settings.xml.valid_output_on_exception = false;
-
-        auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, format_context, format_settings);
+        /// The format settings were captured once at creation time (see the factory
+        /// function). The context is resolved on demand only because `getOutputFormat`
+        /// requires one - it must not be stored in the function object.
+        auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, resolveFormatContext(), format_settings);
 
         if (!state.columns.empty())
         {
@@ -255,6 +252,7 @@ public:
 private:
     String format_name;
     Block header;
+    FormatSettings format_settings;
     UInt64 serialization_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 };
 
@@ -275,15 +273,27 @@ AggregateFunctionPtr createAggregateFunctionGroupFormat(
     auto format_name = parameters[0].safeGet<String>();
     FormatFactory::instance().checkFormatName(format_name);
 
-    /// The serialization protocol version is a plain number captured at creation time:
-    /// states are serialized within the query that creates them (e.g. when partial
-    /// aggregation states are sent between servers of a cluster with different versions).
-    /// Format settings, in contrast, are intentionally not captured here - they are
-    /// derived at finalization time in `insertResultInto`.
-    UInt64 serialization_protocol_version = getSerializationProtocolVersion(resolveFormatContext());
+    /// The serialization protocol version and the format settings are captured at creation
+    /// time. States are serialized within the query that creates them (e.g. when partial
+    /// aggregation states are sent between servers of a cluster with different versions),
+    /// and the format settings are taken from that query as well. The context itself is not
+    /// captured: the function object is embedded into `DataTypeAggregateFunction` and can
+    /// outlive the query that created it, so holding a `ContextPtr` would keep that query's
+    /// context alive.
+    auto context = resolveFormatContext();
+    UInt64 serialization_protocol_version = getSerializationProtocolVersion(context);
+
+    auto format_settings = getFormatSettings(context);
+    format_settings.json.valid_output_on_exception = false;
+    format_settings.xml.valid_output_on_exception = false;
+    /// The nested formatter runs inside the live query context. Without this, formats such
+    /// as `JSON` and `XML` would emit a `statistics` section whose `rows_read` / `bytes_read`
+    /// come from the enclosing query rather than from the group being formatted, putting
+    /// misleading metadata into the resulting string.
+    format_settings.write_statistics = false;
 
     return std::make_shared<AggregateFunctionGroupFormat>(
-        argument_types, parameters, std::move(format_name), serialization_protocol_version);
+        argument_types, parameters, std::move(format_name), serialization_protocol_version, std::move(format_settings));
 }
 
 }
