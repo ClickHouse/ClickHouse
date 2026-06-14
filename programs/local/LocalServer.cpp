@@ -563,6 +563,28 @@ void LocalServer::startServers(const ServerType & server_type)
     const auto & config = getClientConfiguration();
     const Settings & settings = global_context->getSettingsRef();
 
+    /// The configured `tcp_port` / `http_port` is the port that the listener binds, and `createServer`
+    /// casts it to `UInt16`, so a value outside `0..65535` would silently wrap (`-1` -> `65535`,
+    /// `70000` -> `4464`) and bring the listener up on an unexpected port. `--tcp_port` / `--http_port`
+    /// are already range-checked when parsed, but a value coming from a loaded config file reaches this
+    /// path unchecked, so validate the effective value here for every protocol being started. `0` means
+    /// an OS-assigned port and is allowed.
+    auto validate_port_range = [&](const char * port_name)
+    {
+        if (!config.has(port_name))
+            return;
+        Int64 port = config.getInt64(port_name);
+        if (port < 0 || port > 65535)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} for {}: a port number must be in the range 0..65535 (use 0 for an OS-assigned port)",
+                port, port_name);
+    };
+    if (server_type.shouldStart(ServerType::Type::TCP))
+        validate_port_range("tcp_port");
+    if (server_type.shouldStart(ServerType::Type::HTTP))
+        validate_port_range("http_port");
+
     /// An explicit `--listen_host` on the command line is a hard override: bind only that single host
     /// and ignore any `listen_host` entries from a loaded config file. This matters because
     /// `getMultipleValuesFromConfig` returns the union of repeated `listen_host[...]` keys across all
