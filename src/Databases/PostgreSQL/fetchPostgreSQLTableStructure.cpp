@@ -113,9 +113,21 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
         UInt32 scale = 0;
         if (type.ends_with(")"))
         {
-            res = DataTypeFactory::instance().get(type);
-            precision = getDecimalPrecision(*res);
-            scale = getDecimalScale(*res);
+            /// Parse precision and scale directly from e.g. "numeric(78,0)" instead of going
+            /// through DataTypeFactory, because Decimal rejects a precision above 76 before we
+            /// get a chance to map it to Int256.
+            auto open_bracket_pos = type.find('(');
+            std::string args = type.substr(open_bracket_pos + 1, type.size() - open_bracket_pos - 2);
+            auto comma_pos = args.find(',');
+            std::string precision_str = args.substr(0, comma_pos);
+            boost::trim(precision_str);
+            precision = parse<UInt32>(precision_str);
+            if (comma_pos != std::string::npos)
+            {
+                std::string scale_str = args.substr(comma_pos + 1);
+                boost::trim(scale_str);
+                scale = parse<UInt32>(scale_str);
+            }
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);

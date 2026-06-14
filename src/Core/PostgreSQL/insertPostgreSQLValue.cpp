@@ -229,6 +229,16 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint64_t>(field); };
     else if (which.isInt64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int64_t>(field); };
+    else if (which.isInt256())
+        parser = [](std::string & field) -> Field
+        {
+            /// Used for PostgreSQL `numeric` wider than Decimal256 can hold. Wide-integer text
+            /// parsing does not detect overflow, so verify by round-tripping the parsed value.
+            Int256 v = parse<Int256>(field.data(), field.size());
+            if (toString(v) != field)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of Int256", field);
+            return v;
+        };
     else if (which.isFloat32())
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())

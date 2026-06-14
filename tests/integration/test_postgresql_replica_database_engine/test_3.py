@@ -867,12 +867,14 @@ def test_numeric_to_int256(started_cluster):
     cursor = pg_manager.get_db_cursor()
     cursor.execute("DROP TABLE IF EXISTS test_int256")
     cursor.execute(
-        "CREATE TABLE test_int256 (key integer PRIMARY KEY, v numeric(78, 0) NOT NULL)"
+        "CREATE TABLE test_int256 "
+        "(key integer PRIMARY KEY, v numeric(78, 0) NOT NULL, varr numeric(78, 0)[] NOT NULL)"
     )
     # Int256 max value (77 digits), a negative value and zero.
     int256_max = "57896044618658097711785492504343953926634992332820282019728792003956564819967"
     cursor.execute(
-        f"INSERT INTO test_int256 VALUES (1, {int256_max}), (2, -12345678901234567890123456789), (3, 0)"
+        f"INSERT INTO test_int256 VALUES "
+        f"(1, {int256_max}, '{{{int256_max},-1}}'), (2, -12345678901234567890123456789, '{{0}}'), (3, 0, '{{1,2}}')"
     )
 
     pg_manager.create_materialized_db(
@@ -892,15 +894,22 @@ def test_numeric_to_int256(started_cluster):
         "SELECT type FROM system.columns WHERE database='test_database' "
         "AND table='test_int256' AND name='v'"
     ).strip()
+    assert "Array(Int256)" == instance.query(
+        "SELECT type FROM system.columns WHERE database='test_database' "
+        "AND table='test_int256' AND name='varr'"
+    ).strip()
     assert int256_max == instance.query(
         "SELECT v FROM test_database.test_int256 WHERE key = 1"
     ).strip()
     assert "-12345678901234567890123456789" == instance.query(
         "SELECT v FROM test_database.test_int256 WHERE key = 2"
     ).strip()
+    assert f"[{int256_max},-1]" == instance.query(
+        "SELECT varr FROM test_database.test_int256 WHERE key = 1"
+    ).strip()
 
     # Ongoing replication must work too.
-    cursor.execute(f"INSERT INTO test_int256 VALUES (4, {int256_max})")
+    cursor.execute(f"INSERT INTO test_int256 VALUES (4, {int256_max}, '{{7,8}}')")
     assert_eq_with_retry(
         instance, "SELECT count() FROM test_database.test_int256", "4"
     )
