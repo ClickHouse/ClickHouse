@@ -1693,6 +1693,17 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
     else
     {
+        /// If the storage object could not be materialized (`table.table` is null after a failed
+        /// dropped-metadata recovery, e.g. the metadata file is unparsable), we cannot read its
+        /// settings to learn whether its data lives on shared object storage owned by another
+        /// node. Be conservative without broadening behavior for the common local case: still
+        /// clean up node-local disks (so an ordinary corrupted-metadata drop does not leak
+        /// `/store/<uuid>`), but skip disks whose metadata is shared across nodes
+        /// (`plain_rewritable` / `keeper` — the backends `leader_election` requires), where
+        /// `removeRecursive` could destroy data a live leader still owns. Leaking on a shared
+        /// disk is preferable to deleting shared data on a transient/permanent load failure.
+        const bool data_ownership_unknown = !table.table;
+
         /// Even if table is not loaded, try remove its data from disks.
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
@@ -1700,6 +1711,20 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
             auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
             if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
                 continue;
+
+            if (data_ownership_unknown)
+            {
+                auto metadata_type = disk->getDataSourceDescription().metadata_type;
+                if (metadata_type == MetadataStorageType::PlainRewritable || metadata_type == MetadataStorageType::Keeper)
+                {
+                    LOG_WARNING(log,
+                        "Not removing data directory {} of dropped table {} from disk {}: the table could not be "
+                        "loaded and the disk uses shared metadata, so its data may belong to another node. Skipping "
+                        "to avoid destroying shared data; the directory may need manual cleanup.",
+                        data_path, table.table_id.getNameForLogs(), disk_name);
+                    continue;
+                }
+            }
 
             LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
             disk->removeRecursive(data_path);
