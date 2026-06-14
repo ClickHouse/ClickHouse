@@ -1,5 +1,6 @@
 -- Tags: global, no-parallel, no-random-detach
 -- no-random-detach: test uses Distributed tables with local tables
+SET enable_analyzer = 1;
 CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
