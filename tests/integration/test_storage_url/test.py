@@ -144,6 +144,25 @@ def test_url_wildcard_schema_inference():
     assert result.strip() == "12"
 
 
+def test_url_wildcard_schema_inference_checks_headers_before_reading():
+    reset_index_page_server_stats()
+
+    error = node1.query_and_get_error(
+        with_url_wildcard_setting(
+            "DESCRIBE TABLE url("
+            "'http://resolver:8087/data/**/part*.tsv', "
+            "'TSV', "
+            "headers('X-Forbidden-Url-Wildcard'='1'))"
+        )
+    )
+    assert "HTTP header" in error
+    assert "X-Forbidden-Url-Wildcard" in error
+    assert "http_forbid_headers" in error
+
+    stats = get_index_page_server_stats()
+    assert stats == {}
+
+
 def test_url_wildcard_size_virtual_column():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(size) FROM ("
