@@ -1082,10 +1082,8 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
     serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
 }
 
-TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
+TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & istr)
 {
-    ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
-
     UInt64 version = 0;
     readVarUInt(version, istr);
 
@@ -1105,6 +1103,15 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
 
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
     }
+
+    return header;
+}
+
+TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
+
+    TextIndexHeader header = deserializeHeaderPrefix(istr);
 
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);

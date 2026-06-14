@@ -222,7 +222,8 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
 static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
 {
     header_stream.seekToStart();
-    auto header = TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer());
+    /// Only the version and codec are needed here, so skip deserializing the sparse index.
+    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
     return PostingsSerialization(
         PostingListCodecFactory::createPostingListCodec(header.codec_type),
         header.version);
