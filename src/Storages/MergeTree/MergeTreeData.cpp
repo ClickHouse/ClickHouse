@@ -931,13 +931,26 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
+static bool getAllowMinmaxIndexForJSON(const StorageInMemoryMetadata & metadata, bool default_value)
+{
+    if (metadata.settings_changes)
+    {
+        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        if (const auto * value = changes.tryGet("allow_minmax_index_for_json"))
+            return value->safeGet<bool>();
+    }
+
+    return default_value;
+}
+
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    std::optional<bool> allow_minmax_index_for_json_default) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -955,23 +968,10 @@ void MergeTreeData::checkProperties(
     if (local_context)
         allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
-    /// Start from the server-level default (not the current storage value) so that
-    /// ALTER TABLE ... RESET SETTING allow_minmax_index_for_json correctly evaluates to the
-    /// post-alter effective value (= default false) rather than the stale pre-alter value (= true).
-    /// Then overlay with new_metadata.settings_changes which represents the post-alter state.
-    bool allow_minmax_index_for_json = getContext()->getMergeTreeSettings()[MergeTreeSetting::allow_minmax_index_for_json];
-    if (new_metadata.settings_changes)
-    {
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        for (const auto & change : new_changes)
-        {
-            if (change.name == "allow_minmax_index_for_json")
-            {
-                allow_minmax_index_for_json = change.value.safeGet<bool>();
-                break;
-            }
-        }
-    }
+    bool allow_minmax_index_for_json = allow_minmax_index_for_json_default
+        ? *allow_minmax_index_for_json_default
+        : static_cast<bool>((*getSettings())[MergeTreeSetting::allow_minmax_index_for_json]);
+    allow_minmax_index_for_json = getAllowMinmaxIndexForJSON(new_metadata, allow_minmax_index_for_json);
 
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
@@ -1146,7 +1146,8 @@ void MergeTreeData::checkProperties(
                 attach,
                 is_aggregate,
                 true /* allow_nullable_key */,
-                local_context);
+                local_context,
+                allow_minmax_index_for_json);
 
             if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
             {
@@ -4913,7 +4914,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+    auto default_settings = getDefaultSettings();
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        false,
+        false,
+        allow_nullable_key,
+        local_context,
+        (*default_settings)[MergeTreeSetting::allow_minmax_index_for_json]);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())

@@ -57,6 +57,33 @@ ALTER TABLE t_json_minmax_forbidden RESET SETTING allow_minmax_index_for_json; -
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
+-- Should succeed: a mixed ALTER is validated against the post-alter effective settings.
+CREATE TABLE t_json_minmax_forbidden (
+    id Int32,
+    col1 JSON
+) ENGINE = MergeTree() ORDER BY id;
+
+ALTER TABLE t_json_minmax_forbidden
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
+    MODIFY SETTING allow_minmax_index_for_json = 1;
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden;
+
+-- Should succeed: dropping the JSON minmax index and resetting the escape hatch in one ALTER
+-- leaves a valid final metadata state.
+CREATE TABLE t_json_minmax_forbidden (
+    id Int32,
+    col1 JSON,
+    INDEX col_idx col1 TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS allow_minmax_index_for_json = 1;
+
+ALTER TABLE t_json_minmax_forbidden
+    DROP INDEX col_idx,
+    RESET SETTING allow_minmax_index_for_json;
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden;
+
 -- Should succeed: ALTER TABLE MODIFY SETTING on a legacy table.
 -- Simulates the upgrade/recovery path: DETACH/ATTACH skips validation (attach=true),
 -- then ALTER TABLE MODIFY SETTING allow_minmax_index_for_json = 1 makes it durable.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
@@ -1658,7 +1659,8 @@ protected:
         bool attach,
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
-        ContextPtr local_context) const;
+        ContextPtr local_context,
+        std::optional<bool> allow_minmax_index_for_json_default = std::nullopt) const;
 
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
