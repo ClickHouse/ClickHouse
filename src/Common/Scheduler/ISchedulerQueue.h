@@ -31,7 +31,20 @@ public:
     {
         ResourceCost estimated_cost = request->cost;
         request->cost = budget.ask(estimated_cost);
-        enqueueRequest(request);
+        try
+        {
+            enqueueRequest(request);
+        }
+        catch (...)
+        {
+            // The request did not enter the scheduler (e.g. the queue is full or is being destructed),
+            // so the budget transaction made by `ask` (which assumes the request is granted `request->cost`
+            // and consumes `estimated_cost`) must be rolled back, or the queue budget would diverge with
+            // every failed enqueue and skew costs of subsequent requests.
+            budget.adjust(estimated_cost, request->cost);
+            request->cost = estimated_cost;
+            throw;
+        }
         return estimated_cost;
     }
 
