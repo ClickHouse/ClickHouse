@@ -1,3 +1,4 @@
+--- per-table forms (db.table and bare table) ---
 SYSTEM STOP db.t
 SYSTEM START db.t
 SYSTEM PAUSE db.t
@@ -8,11 +9,13 @@ SYSTEM START t
 SYSTEM PAUSE t
 SYSTEM CANCEL t
 SYSTEM REFRESH t
+--- ALL BACKGROUND forms ---
 SYSTEM STOP ALL BACKGROUND
 SYSTEM START ALL BACKGROUND
 SYSTEM PAUSE ALL BACKGROUND
 SYSTEM CANCEL ALL BACKGROUND
 SYSTEM REFRESH ALL BACKGROUND
+--- the bare verbs must not shadow the existing keyword forms ---
 SYSTEM STOP MERGES db.t
 SYSTEM START MERGES db.t
 SYSTEM STOP VIEW db.v
@@ -23,5 +26,8 @@ SYSTEM REFRESH VIEW db.v
 SYSTEM STOP VIEWS
 SYSTEM START VIEWS
 SYSTEM PAUSE VIEWS
+--- table names that collide with command keywords need backticks ---
 SYSTEM STOP db.background
 SYSTEM STOP `all`
+--- ON CLUSTER is not supported (matches the SYSTEM ... VIEW aliases) ---
+--- only tables with controllable background activity are accepted ---

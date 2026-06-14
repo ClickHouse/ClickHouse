@@ -65,6 +65,7 @@ Optional parameters:
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
+- `nats_wait_for_flush_interval` - If `true`, a background streaming cycle stays open for the whole flush interval (`nats_flush_interval_ms`, or `stream_flush_interval_ms` otherwise) instead of finishing as soon as the consumer queue drains, letting more messages accumulate into a single block at the cost of up to one flush interval of extra ingestion latency. Default: `false` (low-latency drain-and-go behaviour).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
@@ -303,4 +304,4 @@ CREATE TABLE nats_jet_stream (
               nats_format = 'JSONEachRow';
 ```
 
-For JetStream tables, messages are acknowledged only after they have been successfully inserted into the dependent materialized views (at-least-once delivery): a message whose insert fails — or which is interrupted by `SYSTEM STOP` or `SYSTEM CANCEL` — is left unacknowledged and redelivered by the server. Core NATS has no acknowledgement or replay, so an interrupted in-flight message is lost. When `nats_flush_interval_ms` is set explicitly, a consumption cycle stays open for the whole interval rather than flushing as soon as the queue drains.
+For JetStream tables, messages are acknowledged only after they have been successfully inserted into the dependent materialized views (at-least-once delivery): a message whose insert fails — or which is interrupted by `SYSTEM STOP` or `SYSTEM CANCEL` — is left unacknowledged and redelivered by the server. Core NATS has no acknowledgement or replay, so an interrupted in-flight message is lost. By default a consumption cycle flushes as soon as the consumer queue drains; set `nats_wait_for_flush_interval = true` to instead keep the cycle open for the whole flush interval.

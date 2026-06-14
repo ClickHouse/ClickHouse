@@ -2437,13 +2437,16 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
         switch (type)
         {
             case Type::STOP:
+                /// privilege check is done in startStopAction
                 startStopAction(ActionLocks::StreamConsume, false);
                 storage->cancelBackgroundActivity();
                 break;
             case Type::PAUSE:
+                /// privilege check is done in startStopAction
                 startStopAction(ActionLocks::StreamConsume, false);
                 break;
             case Type::START:
+                /// privilege check is done in startStopAction
                 startStopAction(ActionLocks::StreamConsume, true);
                 break;
             case Type::CANCEL:
@@ -2465,7 +2468,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table {} has no controllable background activity", table_id.getNameForLogs());
 
-        /// Refreshable materialized view, alias the existing SYSTEM ... VIEW
+        /// Refreshable materialized view, alias for SYSTEM ... VIEW
         switch (type)
         {
             case Type::STOP:

@@ -91,10 +91,10 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
     }
 
     if (!nats_consumer->needsAck())
-        natsMsg_Destroy(msg);                 /// core NATS: we own the message and never ack it
+        natsMsg_Destroy(msg);                 /// core NATS
     else if (msg_length == 0)
         natsMsg_Ack(owned_msg.get(), nullptr); /// empty JetStream message: ack so it is not redelivered
-    /// else (JetStream with payload): ownership moved into the queue, acked after insertion
+    /// else JetStream with payload: ownership moved into the queue, acked after insertion
 }
 
 }

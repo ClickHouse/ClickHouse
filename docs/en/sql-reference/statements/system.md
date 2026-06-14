@@ -783,7 +783,9 @@ Engine-agnostic commands to control the background activity of a single table, o
 - [Refreshable materialized views](../../sql-reference/statements/create/view.md#refreshable-materialized-view) (the periodic refresh), and
 - the streaming table engines that continuously consume from an external source: [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md), [NATS](../../engines/table-engines/integrations/nats.md), [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md).
 
-For a refreshable materialized view each verb is an alias of the corresponding `SYSTEM ... VIEW` command from [Managing Refreshable Materialized Views](#managing-refreshable-materialized-views), so `SYSTEM STOP [db.]name` behaves exactly like `SYSTEM STOP VIEW [db.]name`, and so on. Tables that have no background activity are ignored, so `SYSTEM ... ALL BACKGROUND` is always safe to run.
+For a refreshable materialized view each verb is an alias of the corresponding `SYSTEM ... VIEW` command from [Managing Refreshable Materialized Views](#managing-refreshable-materialized-views), so `SYSTEM STOP [db.]name` behaves exactly like `SYSTEM STOP VIEW [db.]name`, and so on.
+
+The per-table and wildcard forms differ in how they treat tables without a background activity. The per-table form (`SYSTEM STOP [db.]table`) throws an error if the named table is neither a streaming engine nor a refreshable materialized view. The wildcard form silently skips such tables, so it is always safe to run.
 
 The unit of streaming background work is one consumption cycle: read a block from the source, insert it into the dependent materialized views, then reach the engine's durable boundary (Kafka offset commit, RabbitMQ/NATS ack, S3Queue/AzureQueue file marked as processed). `STOP` and `CANCEL` abort the in-flight cycle *before* that boundary, so its uncommitted data is redelivered and reprocessed later (except for core NATS, which has no replay).
 

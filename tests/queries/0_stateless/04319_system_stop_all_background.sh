@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tags: atomic-database, memory-engine, no-parallel
-# The test uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable
-# views on the server, so it must not run concurrently with other tests that create
-# refreshable materialized views.
+
+# Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
+# on the server, so it cannot run concurrently with other tests that create RMV
+# https://github.com/ClickHouse/ClickHouse/issues/102707
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,12 +35,6 @@ wait_running_with_progress() {
         sleep 0.1
     done
 }
-
-# The commands tested here are the engine-agnostic SYSTEM controls from
-# https://github.com/ClickHouse/ClickHouse/issues/102707:
-#   SYSTEM {STOP|START|PAUSE|CANCEL|REFRESH} <table>
-#   SYSTEM {STOP|START|PAUSE|CANCEL|REFRESH} ALL BACKGROUND
-# For a refreshable materialized view they alias the corresponding SYSTEM ... VIEW commands.
 
 # ---------------------------------------------------------------------------
 # Test 1: SYSTEM PAUSE <view> does NOT interrupt the current refresh.
