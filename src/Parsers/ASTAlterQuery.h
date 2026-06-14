@@ -178,6 +178,9 @@ public:
     /// Target column name
     IAST * rename_to = nullptr;
 
+    /// For MODIFY COLUMN ADD ENUM VALUES
+    ASTPtr add_enum_values;
+
     /// For MODIFY REFRESH
     IAST * refresh = nullptr;
 
