@@ -14,8 +14,11 @@ SELECT toTypeName(LOCALTIME);
 -- so two separate now()-family expressions may straddle a one-second boundary.
 SELECT abs(toInt64(LOCALTIMESTAMP) - toInt64(now())) <= 1;
 
--- The LOCALTIME value matches CAST(now() AS Time) within a tolerance.
-SELECT abs(toInt64(LOCALTIME) - toInt64(CAST(now() AS Time))) <= 1;
+-- The LOCALTIME value matches CAST(now() AS Time) within a tolerance. Both are time-of-day
+-- values in [0, 86400), and LOCALTIME and now() read the clock independently, so near midnight
+-- one may have wrapped past 00:00:00 while the other has not. Compare the circular distance
+-- modulo 86400 (the difference is computed once in the subquery, so both terms see the same value).
+SELECT least(d, 86400 - d) <= 1 FROM (SELECT abs(toInt64(LOCALTIME) - toInt64(CAST(now() AS Time))) AS d);
 
 -- The functions are case-insensitive, like current_timestamp.
 SELECT toTypeName(localtimestamp) = toTypeName(now());
