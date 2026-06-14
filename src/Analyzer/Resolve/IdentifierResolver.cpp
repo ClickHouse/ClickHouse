@@ -33,6 +33,7 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
+#include <base/scope_guard.h>
 #include <ranges>
 
 
@@ -1093,13 +1094,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
+        /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
+        /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
+        /// statically-dead if/multiIf branch is caught and swallowed during resolution, and a
+        /// leftover pointer would dangle once this frame unwinds.
+        bool pushed = false;
         if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
+        {
             scope.join_using_columns.push_back(&join_using_column_name_to_column_node);
+            pushed = true;
+        }
+        SCOPE_EXIT({ if (pushed) scope.join_using_columns.pop_back(); });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
-
-        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
-            scope.join_using_columns.pop_back();
 
         return std::move(res.resolved_identifier);
     };
