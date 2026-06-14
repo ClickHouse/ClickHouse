@@ -29,6 +29,16 @@ SELECT first_value_respect_nullsOrDefault(if(number % 2 = 0, NULL, number)) FROM
 SELECT anyRespectNulls(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);
 SELECT anyRespectNulls(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
 
+-- Even NULL-skipping aggregates (count/any) must NOT be rewritten when the if result is Variant/Dynamic:
+-- the NULL branch becomes a discriminator-NULL payload row that the aggregate still processes, so the
+-- -If form (which skips it) changes the result (count goes 4 -> 3, any goes \N -> 1).
+SELECT count(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);
+SELECT count(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
+SELECT any(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);
+SELECT any(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
+SELECT sum(countSubstrings(explain, 'function_name: countIf')) = 0
+FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4));
+
 -- respect_nulls aggregates are NOT rewritten to the -If form (the function name stays).
 SELECT sum(countSubstrings(explain, 'function_name: any_respect_nulls')) > 0
 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT anyRespectNulls(if(number % 2 = 0, NULL, number)) FROM numbers(4));

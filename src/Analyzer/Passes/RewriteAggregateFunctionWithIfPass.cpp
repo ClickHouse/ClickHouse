@@ -94,6 +94,17 @@ public:
         if (!if_node || if_node->getFunctionName() != "if")
             return;
 
+        /// The rewrite f(if(cond, x, NULL)) -> fIf(x, cond) turns the NULL branch into rows the -If
+        /// condition skips, which is only valid when that NULL is a Nullable NULL the aggregate's null
+        /// handling discards. Variant and Dynamic absorb the NULL as a discriminator value (a real
+        /// payload row), so even NULL-skipping aggregates like count and any still process it; dropping
+        /// it via the condition changes the result (count(if(number = 0, NULL, number::Variant(...)))
+        /// goes from 4 to 3). Skip the rewrite whenever the if result can contain NULL but is not
+        /// Nullable, regardless of the aggregate.
+        auto if_result_type = if_node->getResultType();
+        if (canContainNull(*if_result_type) && !isNullableOrLowCardinalityNullable(if_result_type))
+            return;
+
         /// Do not rewrite aggregates that preserve NULL payload rows (the *_respect_nulls family,
         /// directly or wrapped in a combinator): the -If form drops those rows and changes the result.
         if (aggregateFunctionPreservesNullPayload(function_node->getAggregateFunction()))
