@@ -219,7 +219,22 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
 Poco::Net::IPAddress HostResolver::selectBest()
 {
     chassert(!records.empty());
-    auto random_weight_picker = std::uniform_int_distribution<size_t>(0, getTotalWeight() - 1);
+
+    /// Every address can be banned at once, giving a zero total weight. This happens
+    /// transiently and without holding the lock continuously: `setFail` zeroes the
+    /// just-failed address's weight via `updateWeightsImpl` under the lock and then
+    /// releases it to run the DNS refresh in `update`, which only re-adds weight
+    /// afterwards (or the "all addresses banned" fallback in `updateWeights` does).
+    /// A concurrent `resolve` can therefore observe a zero total weight here. Hand out
+    /// a uniformly chosen address in that case instead of computing
+    /// `getTotalWeight() - 1`, which would underflow to `SIZE_MAX` and make
+    /// `partition_point` return `records.end()` - tripping the assertion below in debug
+    /// builds and dereferencing the end iterator in release builds.
+    const size_t total_weight = getTotalWeight();
+    if (total_weight == 0)
+        return records[std::uniform_int_distribution<size_t>(0, records.size() - 1)(thread_local_rng)].address;
+
+    auto random_weight_picker = std::uniform_int_distribution<size_t>(0, total_weight - 1);
     size_t weight = random_weight_picker(thread_local_rng);
     auto it = std::partition_point(records.begin(), records.end(), [&](const Record & rec) { return rec.weight_prefix_sum <= weight; });
     chassert(it != records.end());

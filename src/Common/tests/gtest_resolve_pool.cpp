@@ -352,6 +352,55 @@ TEST_F(ResolvePoolTest, FailedAddressStaysBannedWhenRefreshAddsHealthyOne)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 }
 
+TEST_F(ResolvePoolTest, SelectBestSurvivesTransientZeroTotalWeight)
+{
+    /// Regression for a logical error (`it != records.end()`) / out-of-bounds read in
+    /// `selectBest`: when the single resolved address fails, `setFail` zeroes its weight
+    /// under the lock and then releases the lock to run a DNS refresh (`update`), which
+    /// restores a usable weight only afterwards. While the lock is free the selection
+    /// table has a zero total weight, so a concurrent `resolve` reaches `selectBest` with
+    /// `getTotalWeight() == 0`; `getTotalWeight() - 1` then underflows to `SIZE_MAX` and
+    /// `partition_point` returns `records.end()`.
+    ///
+    /// Reproduce that window deterministically without threads: `update` calls
+    /// `resolve_function` without holding the lock and exactly at the point where the
+    /// weights are still zeroed, so re-entering `resolve` from inside `resolve_function`
+    /// exercises `selectBest` in the all-banned state.
+    std::vector<Poco::Net::IPAddress> current{Poco::Net::IPAddress("127.0.0.1")};
+    DB::HostResolver * resolver_raw = nullptr;
+    bool reenter = false;
+    std::optional<String> reentered_address;
+
+    auto resolve_func = [&] (const String &)
+    {
+        if (reenter)
+        {
+            /// Reset first so the nested resolve cannot recurse here again even if it
+            /// were to trigger its own refresh.
+            reenter = false;
+            auto nested = resolver_raw->resolve();
+            reentered_address = *nested;
+            nested.setUnused();
+        }
+        return current;
+    };
+
+    /// Large history so `resolve_interval` (history / 3) keeps `isUpdateNeeded` false for the
+    /// nested resolve - it must reach `selectBest` directly rather than refreshing first.
+    auto resolver = std::make_shared<ResolvePoolMock>("some_host", Poco::Timespan(10 * 1000 * 1000), resolve_func);
+    resolver_raw = resolver.get();
+
+    auto addr = resolver->resolve();
+    ASSERT_EQ(*addr, "127.0.0.1");
+
+    reenter = true;
+    /// Must not abort with a logical error; the nested resolve must return the only address.
+    addr.setFail();
+
+    ASSERT_TRUE(reentered_address.has_value());
+    ASSERT_EQ(*reentered_address, "127.0.0.1");
+}
+
 TEST_F(ResolvePoolTest, SetUnusedHasNoSideEffects)
 {
     auto resolver = make_resolver();
