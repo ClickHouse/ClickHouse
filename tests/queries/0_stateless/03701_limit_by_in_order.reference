@@ -1,6 +1,3 @@
-Unsorted ORDER BY key LIMIT BY key: LimitBySortedStreamTransform
-Unsorted ORDER BY key DESC LIMIT BY key: LimitBySortedStreamTransform
-Unsorted ORDER BY key, val LIMIT BY key: LimitBySortedStreamTransform
 Unsorted ORDER BY val LIMIT BY key: LimitByTransform
 Unsorted ORDER BY val, key LIMIT BY key: LimitByTransform
 Unsorted ORDER BY key LIMIT BY key, val: LimitByTransform
@@ -36,9 +33,6 @@ Unsorted w/o ORDER BY: LimitByTransform
 12
 12
 
-Sorted ORDER BY key LIMIT BY key: LimitBySortedStreamTransform
-Sorted ORDER BY key DESC LIMIT BY key: LimitBySortedStreamTransform
-Sorted ORDER BY key, val LIMIT BY key: LimitBySortedStreamTransform
 Sorted ORDER BY val LIMIT BY key: LimitByTransform
 Sorted ORDER BY val, key LIMIT BY key: LimitByTransform
 Sorted ORDER BY key LIMIT BY key, val: LimitByTransform
