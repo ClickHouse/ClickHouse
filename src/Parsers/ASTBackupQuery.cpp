@@ -578,14 +578,18 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     if (!kind_opt || static_cast<Int64>(*kind_opt) != kind_value)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: {}", kind_value);
     kind = *kind_opt;
-    auto backup_name_child = r.readChild("backup_name");
+    /// `backup_name`, `base_backup_name` and `base_snapshot_name` are parser-owned `ASTFunction`
+    /// children (`ParserBackupQuery::parseBackupName` marks them as `BACKUP_NAME`). Restoring them
+    /// with the generic child path would let a wrong node type reach `IAST::set` as an internal cast
+    /// error; validate by type so malformed `clickhouse_json` is rejected with `BAD_ARGUMENTS`.
+    auto backup_name_child = r.readChildOfType<ASTFunction>("backup_name");
     if (!backup_name_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'backup_name' for `BackupQuery` during AST JSON deserialization");
     set(backup_name, backup_name_child);
-    auto base_backup_name_child = r.readChild("base_backup_name");
+    auto base_backup_name_child = r.readChildOfType<ASTFunction>("base_backup_name");
     if (base_backup_name_child)
         set(base_backup_name, base_backup_name_child);
-    auto base_snapshot_name_child = r.readChild("base_snapshot_name");
+    auto base_snapshot_name_child = r.readChildOfType<ASTFunction>("base_snapshot_name");
     if (base_snapshot_name_child)
         set(base_snapshot_name, base_snapshot_name_child);
     settings = r.readChild("settings");
@@ -596,20 +600,35 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(cluster_host_ids);
     cluster = r.getString("cluster");
 
-    if (!r.has("elements"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' for `BackupQuery` during AST JSON deserialization");
+    /// `elements` is empty precisely for `BACKUP/RESTORE FROM SNAPSHOT ... TO ...`: `ParserBackupQuery`
+    /// skips `parseElements` in that branch (`base_snapshot_name` set) and `formatQueryImpl` formats
+    /// the snapshot form without touching `elements`. Every other shape carries at least one element.
+    /// `writeJSON` mirrors this by omitting the `elements` key when the vector is empty, so the reader
+    /// must accept its own output: require a non-empty `elements` array only when there is no
+    /// `base_snapshot_name`, and reject elements alongside a snapshot as a parser-impossible shape.
     auto arr = r.getArray("elements");
-    if (!arr)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'elements' is not a JSON array during AST JSON deserialization");
-    if (arr->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'elements' array for `BackupQuery` during AST JSON deserialization");
-    elements.reserve(arr->size());
-    for (unsigned int i = 0; i < arr->size(); ++i)
+    if (base_snapshot_name)
     {
-        auto elem_obj = arr->getObject(i);
-        if (!elem_obj)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
-        elements.push_back(readElementJSON(*elem_obj, i));
+        if (arr && arr->size() != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BACKUP/RESTORE FROM SNAPSHOT` must not carry 'elements' during AST JSON deserialization");
+    }
+    else
+    {
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' for `BackupQuery` during AST JSON deserialization");
+        if (arr->size() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'elements' array for `BackupQuery` during AST JSON deserialization");
+    }
+    if (arr)
+    {
+        elements.reserve(arr->size());
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto elem_obj = arr->getObject(i);
+            if (!elem_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
+            elements.push_back(readElementJSON(*elem_obj, i));
+        }
     }
     readOutputOptionsJSON(r);
 }
