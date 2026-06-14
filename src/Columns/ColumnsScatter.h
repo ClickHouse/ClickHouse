@@ -41,8 +41,8 @@ void countRowsPerShard(std::span<const std::span<const UInt32>> pids_per_source,
 /// Dispatch is O(1): a static function-pointer table indexed by
 /// `IColumn::getDataType()` (one virtual call + one indexed indirect call,
 /// independent of the number of supported types). Transparent wrappers
-/// (`ColumnConst` / `ColumnSparse` / `ColumnReplicated`), which report their
-/// nested type's index, are routed to the fallback before the table lookup.
+/// (`ColumnConst` / `ColumnSparse` / `ColumnReplicated`) are normalized away
+/// recursively before dispatch (preserving `ColumnLowCardinality`).
 ///
 /// Fast paths:
 ///   ColumnVector<T>   for the full integer / float / UUID / IPv4 / IPv6 set

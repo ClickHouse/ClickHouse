@@ -825,7 +825,7 @@ TEST(ColumnsScatter, FallbackMapMixedNestedRepresentation)
     // ColumnArray(Tuple(key, value)); ColumnMap::scatter preserves that nested representation.
     // When one chunk's value element is a full ColumnUInt64 and another's is a ColumnSparse(UInt64)
     // with the same logical values, the cross-chunk insertRangeFrom in scatterFallback must not
-    // fail. Without the Map branch in deepNormalizeForFallback, ColumnUInt64::insertRangeFrom
+    // fail. Without recursive normalizeRepresentation covering Map, ColumnUInt64::insertRangeFrom
     // assert-casts on the sparse source and fails in sanitized builds.
     constexpr size_t NUM_SHARDS = 3;
     const size_t N = 8;
@@ -902,7 +902,7 @@ TEST(ColumnsScatter, FallbackVariantMixedNestedRepresentation)
     // each alternative's physical representation, and ColumnVariant::insertRangeFrom appends via the
     // nested alternative's insertRangeFrom. A batch where one chunk's UInt64 alternative is a full
     // ColumnUInt64 and another's is a ColumnSparse(UInt64) must not fail: the generic
-    // deepNormalizeForFallback recursion normalizes each alternative before the cross-source append.
+    // normalizeRepresentation recursion normalizes each alternative before the cross-source append.
     constexpr size_t NUM_SHARDS = 3;
     const size_t N = 8;
 
@@ -1020,7 +1020,7 @@ TEST(ColumnsScatter, ConstColumnStaysCompact)
     // A homogeneous batch of equal-valued ColumnConst sources must not be
     // materialized into full columns: scatter() must return ColumnConst per shard,
     // preserving O(1)-memory behavior for constant-key workloads like GROUP BY
-    // toUInt64(1). Before the fix, the batch was expanded via materializeTransparentWrappers
+    // toUInt64(1). Before the fix, the batch was expanded by the boundary normalization
     // before the all-const check existed.
     constexpr size_t NUM_SHARDS = 4;
     constexpr UInt64 kValue = 99;
@@ -1058,4 +1058,139 @@ TEST(ColumnsScatter, ConstColumnStaysCompact)
         total_rows += got[s]->size();
     }
     ASSERT_EQ(total_rows, 100u + 200u + 150u);
+}
+
+TEST(ColumnsScatter, AllConstHeavyConcentrationExactSizes)
+{
+    // The all-const compact path sizes each shard from UInt32 counts. The overflow guard in scatter()
+    // runs BEFORE this path and diverts any batch with > UINT32_MAX total rows to the size_t-safe
+    // fallback, so a single shard's count can never wrap here. That > 2^32-row trigger cannot be
+    // allocated in a unit test (~17 GB of pids), so this instead pins the compact path's per-shard
+    // sizing when nearly all rows concentrate on one shard at a feasible scale.
+    constexpr size_t NUM_SHARDS = 4;
+    constexpr UInt64 kValue = 12345;
+    const size_t n = 3'000'000;
+
+    auto one = ColumnUInt64::create();
+    one->insertValue(kValue);
+    ColumnPtr c = ColumnConst::create(std::move(one), n);
+
+    std::vector<UInt32> pids(n, 0); // route every row to shard 0
+    std::vector<const IColumn *> col_ptrs = {c.get()};
+    std::vector<std::span<const UInt32>> pid_spans = {pids};
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, NUM_SHARDS);
+
+    ASSERT_EQ(got.size(), NUM_SHARDS);
+    ASSERT_TRUE(got[0]->isConst()) << "compact path must keep ColumnConst";
+    EXPECT_EQ(got[0]->size(), n) << "shard 0 size must be exact, not wrapped";
+    EXPECT_EQ((*got[0])[0], Field(UInt64(kValue)));
+    for (size_t s = 1; s < NUM_SHARDS; ++s)
+        EXPECT_EQ(got[s]->size(), 0u);
+}
+
+TEST(ColumnsScatter, NullableMixedConstAndFull)
+{
+    // A Nullable batch can mix a full Nullable(String) with a ColumnConst(Nullable(String)) (e.g.
+    // after constant folding). scatter() strips the outer Const recursively at the boundary, so
+    // scatterNullable sees full nested columns from every chunk and needs no per-subcolumn
+    // normalization of its own. (A sparse nested column is impossible here: ColumnNullable rejects
+    // any nested whose canBeInsideNullable() is false, which includes ColumnSparse.)
+    constexpr size_t num_shards = 5;
+    const size_t n0 = 200;
+    const size_t n1 = 150;
+    const size_t n2 = 220;
+
+    auto make_const_nullable_string = [](const std::string & value, size_t rows) -> ColumnPtr
+    {
+        auto nested = ColumnString::create();
+        nested->insertData(value.data(), value.size());
+        auto null_map = ColumnUInt8::create();
+        null_map->insertValue(0);
+        auto one = ColumnNullable::create(std::move(nested), std::move(null_map));
+        return ColumnConst::create(std::move(one), rows);
+    };
+
+    std::vector<ColumnPtr> cols
+        = {makeNullableStringCol(n0), make_const_nullable_string("knull", n1), makeNullableStringCol(n2)};
+    std::vector<std::vector<UInt32>> pids = {randomPids(n0, num_shards), randomPids(n1, num_shards), randomPids(n2, num_shards)};
+    checkScatterAgainstMaterialized(cols, pids, num_shards);
+}
+
+TEST(ColumnsScatter, ConstLowCardinalityFirstPreservesType)
+{
+    // Mirror of LowCardinalityPreservesType with the ColumnConst(LowCardinality) chunk FIRST, so the
+    // dispatch probe is the const wrapper. After normalization (outer Const stripped, LowCardinality
+    // preserved as a leaf), every scattered shard must remain LowCardinality.
+    constexpr size_t num_shards = 4;
+    const size_t n0 = 180;
+    const size_t n1 = 260;
+
+    std::vector<ColumnPtr> cols = {makeConstLowCardinalityString("konst_lc", n0), makeLowCardinalityStringCol(n1)};
+    std::vector<std::vector<UInt32>> pids = {randomPids(n0, num_shards), randomPids(n1, num_shards)};
+
+    std::vector<const IColumn *> col_ptrs(cols.size());
+    std::vector<std::span<const UInt32>> pid_spans(cols.size());
+    for (size_t b = 0; b < cols.size(); ++b)
+    {
+        col_ptrs[b] = cols[b].get();
+        pid_spans[b] = pids[b];
+    }
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, num_shards);
+
+    ASSERT_EQ(got.size(), num_shards);
+    for (size_t s = 0; s < num_shards; ++s)
+        ASSERT_EQ(got[s]->getDataType(), TypeIndex::LowCardinality) << "shard " << s << " lost LowCardinality";
+
+    std::vector<ColumnPtr> full(cols.size());
+    std::vector<const IColumn *> full_ptrs(cols.size());
+    for (size_t b = 0; b < cols.size(); ++b)
+    {
+        full[b] = cols[b]->convertToFullIfNeeded();
+        full_ptrs[b] = full[b].get();
+    }
+    auto ref = referenceScatter(full_ptrs, pids, num_shards);
+    for (size_t s = 0; s < num_shards; ++s)
+    {
+        auto got_full = got[s]->convertToFullIfNeeded();
+        assertColumnsEqual(*got_full, *ref[s]);
+    }
+}
+
+TEST(ColumnsScatter, TupleWithSparseElementFirst)
+{
+    // Mirror of TupleWithSparseElement with the ColumnSparse-element chunk FIRST, so the dispatch
+    // probe is the tuple carrying the sparse element. probeMayHaveSubcolumns keys on the Tuple TYPE
+    // (not on top-level wrapper flags), so the boundary normalization still recurses and strips the
+    // sparse element before scatterTuple runs — regardless of which chunk carries it.
+    constexpr size_t num_shards = 4;
+    const size_t n0 = 250;
+    const size_t n1 = 300;
+
+    auto build_full_tuple = [](size_t rows) -> ColumnPtr
+    {
+        auto u = ColumnUInt64::create();
+        for (size_t i = 0; i < rows; ++i)
+            u->insertValue(i * 3 + 1);
+        MutableColumns elems;
+        elems.push_back(std::move(u));
+        return ColumnTuple::create(std::move(elems));
+    };
+
+    auto build_sparse_tuple = [](size_t rows) -> ColumnPtr
+    {
+        auto vals = ColumnUInt64::create();
+        vals->insertValue(0); // index 0 is the sparse default
+        vals->insertValue(7);
+        vals->insertValue(9);
+        auto offs = ColumnUInt64::create();
+        offs->insertValue(5);
+        offs->insertValue(100);
+        MutableColumns elems;
+        elems.push_back(ColumnSparse::create(std::move(vals), std::move(offs), rows));
+        return ColumnTuple::create(std::move(elems));
+    };
+
+    std::vector<ColumnPtr> cols = {build_sparse_tuple(n0), build_full_tuple(n1)};
+    std::vector<std::vector<UInt32>> pids = {randomPids(n0, num_shards), randomPids(n1, num_shards)};
+    checkScatterAgainstMaterialized(cols, pids, num_shards);
 }
