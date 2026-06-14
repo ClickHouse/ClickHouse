@@ -310,6 +310,11 @@ void MergeTreeLeaderElection::run()
 
         if (became_leader && !was_leader)
         {
+            /// New leadership epoch. Incremented before publishing `is_leader`/`writes_enabled`
+            /// and before the takeover callback, so any write admitted under a previous lease
+            /// observes a different epoch at commit time and is rejected (see `leadershipEpoch`).
+            leadership_epoch.fetch_add(1, std::memory_order_acq_rel);
+
             LOG_INFO(log, "Acquired leadership for lease at '{}'", lease_path);
             ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionAcquired);
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);

@@ -156,6 +156,11 @@ void MergePlainMergeTreeTask::finish()
     new_part = merge_task->getFuture().get();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
+    /// Under `leader_election`, enforce the writable-leader check BEFORE the rename inside
+    /// `renameMergedTemporaryPart` publishes the covering part on shared storage. `transaction.commit`
+    /// re-checks leadership, but by then the rename has already happened, so a node that lost
+    /// leadership during the merge could leave a covering part a new leader then activates.
+    storage.assertWritableLeaderAtEpoch(storage.currentLeadershipEpoch());
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();
 

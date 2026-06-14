@@ -90,6 +90,14 @@ public:
     /// progress. Used by user-facing write entry points (`assertNotReadonly`).
     void assertIsLeaderAndWritable() const;
 
+    /// A monotonically increasing counter incremented on every leadership acquisition (each
+    /// follower -> leader transition). A write path captures this value when it is admitted /
+    /// allocates block numbers and re-checks it before publishing the part: if leadership was
+    /// lost and reacquired in between, the epoch differs and the stale write must be rejected.
+    /// This is what distinguishes "we are the leader now" from "we are the same leader that
+    /// admitted this write" — `isLeader` alone cannot, because a reacquired lease looks fresh.
+    UInt64 leadershipEpoch() const { return leadership_epoch.load(std::memory_order_acquire); }
+
     using CallbackOnLeadershipChange = std::function<void(bool /* is_leader */)>;
 
     /// Set a callback to be invoked when leadership status changes.
@@ -155,6 +163,10 @@ private:
 
     std::atomic<bool> is_leader{false};
     std::atomic<bool> stopped{false};
+
+    /// Incremented under `leadership_change_mutex` on every follower -> leader transition.
+    /// See `leadershipEpoch`.
+    std::atomic<UInt64> leadership_epoch{0};
 
     /// True after the takeover-sync callback has finished and external user writes
     /// can be served. Distinct from `is_leader`: `is_leader` is published as soon

@@ -70,6 +70,7 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
+    , commit_epoch(storage_.currentLeadershipEpoch())
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }
@@ -376,6 +377,13 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
         ///
         /// Hence, for now rename_in_transaction is false.
+        ///
+        /// Under `leader_election`, enforce the leader/epoch check BEFORE this rename, which
+        /// publishes the part on shared storage. `transaction.commit` re-checks leadership, but by
+        /// then the rename has already happened, so a node that lost (or lost and reacquired)
+        /// leadership could leave a part a new leader then activates. Checking here also rejects an
+        /// `INSERT` admitted under a previous lease epoch (stale block numbers).
+        storage.assertWritableLeaderAtEpoch(commit_epoch);
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
     }

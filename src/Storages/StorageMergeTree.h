@@ -228,6 +228,20 @@ private:
 
     void assertCanCommitTransaction() const override;
 
+    /// The current leadership epoch (0 when `leader_election` is disabled). A write path captures
+    /// this at admission / block-number allocation and passes it back to `assertWritableLeaderAtEpoch`
+    /// before publishing the part.
+    UInt64 currentLeadershipEpoch() const;
+
+    /// Guard called by write paths immediately BEFORE the first irreversible rename that publishes
+    /// a part on (possibly shared) storage (`MergeTreeSink::commitPart`, the merge finalize). For a
+    /// non-`leader_election` table it is a no-op. Otherwise it requires that this node still holds a
+    /// fresh, writable lease AND is in the same leadership epoch as `admission_epoch`. Enforcing the
+    /// check before the rename (rather than only inside `commit`) prevents a node that lost — or lost
+    /// and reacquired — leadership from publishing a part prepared under a stale lease, which a new
+    /// leader could otherwise activate via `loadNewlyAppearedParts`.
+    void assertWritableLeaderAtEpoch(UInt64 admission_epoch) const;
+
     /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
     /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove
     /// parts, persist removal TIDs). During construction and while a follower the lease is not

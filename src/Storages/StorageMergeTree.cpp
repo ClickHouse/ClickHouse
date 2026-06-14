@@ -3578,6 +3578,31 @@ bool StorageMergeTree::canRunDestructiveCleanup() const
     return !leader_election_ptr || leader_election_ptr->isLeader();
 }
 
+UInt64 StorageMergeTree::currentLeadershipEpoch() const
+{
+    return leader_election_ptr ? leader_election_ptr->leadershipEpoch() : 0;
+}
+
+void StorageMergeTree::assertWritableLeaderAtEpoch(UInt64 admission_epoch) const
+{
+    if (!leader_election_ptr)
+        return;
+
+    /// Must still be the writable leader (not merely hold the lease): user/background writes are
+    /// only valid once the post-failover takeover sync has completed (`writes_enabled`).
+    leader_election_ptr->assertIsLeaderAndWritable();
+
+    /// And must be the SAME leadership epoch that admitted this write. If leadership was lost and
+    /// reacquired in between, the block numbers / dedup state were prepared under the previous
+    /// lease; publishing the part now would race the new leadership's own writes.
+    const UInt64 current_epoch = leader_election_ptr->leadershipEpoch();
+    if (current_epoch != admission_epoch)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Leadership epoch changed ({} -> {}) between this write's admission and its commit; "
+            "rejecting before publishing a part prepared under a stale lease (leader_election)",
+            admission_epoch, current_epoch);
+}
+
 bool StorageMergeTree::mayMutateSharedStorage() const
 {
     /// Without `leader_election` this is a standalone writer that owns its data outright.
