@@ -401,6 +401,34 @@ LIMIT 1;
 
 DROP TABLE conv_edges;
 
+-- The conversion the planner applies to the injected RHS can throw outright,
+-- not just narrow the value set, and that must also fail closed. A recursive
+-- `String` key joined against an `Enum` storage column with
+-- `validate_enum_literals_in_operators = 1` is the canonical case: a frontier
+-- value that is not a valid enum literal (`'z'`) makes `CollectSets` raise
+-- `UNKNOWN_ELEMENT_OF_ENUM` when converting the generated `enum_col IN (...)`,
+-- whereas the original `enum_col = cte_string` comparison treats it as a plain
+-- no-match. The set-limit / conversion preflight runs even when the set-size
+-- limits are unlimited (the default), so the optimization must skip injection
+-- for that step and scan plainly, leaving the result unchanged.
+DROP TABLE IF EXISTS enum_edges;
+CREATE TABLE enum_edges (e Enum8('a' = 1, 'b' = 2, 'c' = 3), nxt String)
+ENGINE = MergeTree ORDER BY e;
+INSERT INTO enum_edges VALUES ('a', 'b'), ('b', 'z');
+
+WITH RECURSIVE enum_walk AS
+(
+    SELECT CAST('a' AS String) AS cur
+  UNION ALL
+    SELECT e.nxt AS cur
+    FROM enum_edges AS e
+    INNER JOIN enum_walk AS w ON e.e = w.cur
+)
+SELECT cur FROM enum_walk ORDER BY cur
+SETTINGS validate_enum_literals_in_operators = 1;
+
+DROP TABLE enum_edges;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;

@@ -329,28 +329,43 @@ QueryTreeNodePtr buildInFilterNode(
     return in_function_node;
 }
 
-/// Returns true if the set the planner will build for `real_column IN (rhs...)`
-/// would stay within the user's configured set-size limits
-/// (`max_rows_in_set` / `max_bytes_in_set`).
+/// Returns true if the planner can safely build and inject the set for
+/// `real_column IN (rhs...)`: the conversion `CollectSets` will apply does not
+/// throw, and the resulting set stays within the user's configured set-size
+/// limits (`max_rows_in_set` / `max_bytes_in_set`). When it returns false the
+/// caller skips injection for this step and the physical table is scanned
+/// without the generated predicate, exactly as if the optimization were
+/// disabled.
 ///
-/// The planner lowers the injected `IN` through `FutureSetFromTuple`, which
-/// enforces these limits via `PreparedSets::getSizeLimitsForSet`: under
-/// `set_overflow_mode = 'throw'` an oversized set raises
-/// `SET_SIZE_LIMIT_EXCEEDED`, and under `'break'` it is silently truncated.
-/// Either outcome would make the recursive join behave differently from the
-/// unoptimized scan (fail, or return incomplete results). So we fail closed:
-/// when the generated set would not fit, the caller skips injection for this
-/// step and the physical table is scanned without the generated predicate.
+/// The injected predicate is only an optimization, so it must never change the
+/// observable behaviour of the recursive query. There are two ways it could,
+/// and both are guarded here by failing closed:
 ///
-/// The set is measured exactly the way the planner would build it. `CollectSets`
-/// converts the RHS constant to the `IN` left-hand side's type — the joined real
-/// column's type, not the CTE column's type the tuple elements carry — via
-/// `getSetElementsForConstantValue`, and that conversion changes both the row
-/// count (non-representable values are dropped as no-match) and the per-row byte
-/// size (e.g. a `UInt8` CTE key joined against a `UInt64` storage key). So the
-/// preflight replays exactly that: the same conversion of the same constant,
-/// then a `Set` built the way `FutureSetFromTuple` builds it.
-bool generatedInSetFitsLimits(
+///  - Size limits. The planner lowers the injected `IN` through
+///    `FutureSetFromTuple`, which enforces these limits via
+///    `PreparedSets::getSizeLimitsForSet`: under `set_overflow_mode = 'throw'`
+///    an oversized set raises `SET_SIZE_LIMIT_EXCEEDED`, and under `'break'` it
+///    is silently truncated. Either outcome diverges from the unoptimized scan
+///    (fail, or return incomplete results).
+///
+///  - Conversion failure. `CollectSets` converts the RHS constant to the `IN`
+///    left-hand side's type — the joined real column's type, not the CTE column
+///    type the tuple elements carry — via `getSetElementsForConstantValue`, and
+///    that conversion can itself throw. For example a recursive `String` key
+///    joined against an `Enum` column with `validate_enum_literals_in_operators
+///    = 1` raises `UNKNOWN_ELEMENT_OF_ENUM` for a frontier value that the
+///    original `enum_col = cte_string` comparison would simply treat as a
+///    no-match. The conversion must therefore be attempted here unconditionally
+///    (not only when size limits are set) and any exception from it treated as
+///    "do not inject".
+///
+/// The set is measured exactly the way the planner would build it: the same
+/// conversion of the same constant, then a `Set` built the way
+/// `FutureSetFromTuple` builds it. The conversion changes both the row count
+/// (non-representable values are dropped as no-match) and the per-row byte size
+/// (e.g. a `UInt8` CTE key joined against a `UInt64` storage key), so measuring
+/// after conversion is what makes the size decision exact.
+bool generatedInSetIsSafeToInject(
     const DataTypePtr & real_column_type,
     const std::shared_ptr<ConstantNode> & rhs_node,
     const ContextPtr & context)
@@ -359,18 +374,30 @@ bool generatedInSetFitsLimits(
     const size_t max_rows = settings[Setting::max_rows_in_set];
     const size_t max_bytes = settings[Setting::max_bytes_in_set];
 
-    /// `0` means unlimited for both — the common case, nothing to check.
+    ColumnsWithTypeAndName set_columns;
+    try
+    {
+        set_columns = getSetElementsForConstantValue(
+            real_column_type,
+            rhs_node->getValue(),
+            rhs_node->getResultType(),
+            GetSetElementParams{
+                .transform_null_in = settings[Setting::transform_null_in],
+                .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+            });
+    }
+    catch (...)
+    {
+        /// The planner's own conversion in `CollectSets` would throw the same
+        /// way, failing the whole recursive query. Fail closed: skip injection
+        /// and let the step fall back to a plain scan.
+        return false;
+    }
+
+    /// `0` means unlimited for both — the conversion above already succeeded, so
+    /// there is nothing left to check.
     if (max_rows == 0 && max_bytes == 0)
         return true;
-
-    auto set_columns = getSetElementsForConstantValue(
-        real_column_type,
-        rhs_node->getValue(),
-        rhs_node->getResultType(),
-        GetSetElementParams{
-            .transform_null_in = settings[Setting::transform_null_in],
-            .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-        });
 
     ColumnsWithTypeAndName header = set_columns;
     for (auto & elem : header)
@@ -636,11 +663,14 @@ private:
 
             auto rhs_node = buildInRhsConstantNode(key.cte_column_type, *values);
 
-            /// Fail closed if the generated `IN` set would exceed the user's
-            /// `max_rows_in_set` / `max_bytes_in_set` limits: injecting it would
-            /// either throw `SET_SIZE_LIMIT_EXCEEDED` or silently truncate the
-            /// set, neither of which can happen on the unoptimized scan path.
-            if (!generatedInSetFitsLimits(key.real_column_node->getColumnType(), rhs_node, containing_query_context))
+            /// Fail closed if the planner could not build the generated `IN`
+            /// set without changing the query's behaviour: the set could exceed
+            /// the user's `max_rows_in_set` / `max_bytes_in_set` limits (throwing
+            /// `SET_SIZE_LIMIT_EXCEEDED` or silently truncating), or the
+            /// conversion to the storage column type could throw (e.g.
+            /// `UNKNOWN_ELEMENT_OF_ENUM`). Neither can happen on the unoptimized
+            /// scan path, so in both cases we skip injection for this step.
+            if (!generatedInSetIsSafeToInject(key.real_column_node->getColumnType(), rhs_node, containing_query_context))
                 return false;
 
             predicates_by_query[key.containing_query_node]
