@@ -1048,12 +1048,13 @@ public:
     void commit(const ContextMutablePtr & query_context)
     {
         chassert(transaction_running);
+        SCOPE_EXIT({ transaction_running = false; });
 
         auto txn = query_context->getCurrentTransaction();
-        chassert(txn);
+        /// The current transaction may have been finalized out of band, so there is nothing to commit.
+        if (!txn)
+            return;
         LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Commit implicit transaction {}", txn->tid);
-
-        SCOPE_EXIT({ transaction_running = false; });
 
         ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::COMMIT);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
@@ -1063,12 +1064,13 @@ public:
     void rollback(const ContextMutablePtr & query_context)
     {
         chassert(transaction_running);
+        SCOPE_EXIT({ transaction_running = false; });
 
         auto txn = query_context->getCurrentTransaction();
-        chassert(txn);
+        /// The current transaction may have been finalized out of band, so there is nothing to roll back.
+        if (!txn)
+            return;
         LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Rollback implicit transaction {}", txn->tid);
-
-        SCOPE_EXIT({ transaction_running = false; });
 
         ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
