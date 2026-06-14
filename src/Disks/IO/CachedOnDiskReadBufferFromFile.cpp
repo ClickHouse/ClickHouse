@@ -270,11 +270,14 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
-    auto path = file_segment.getPath();
     if (info.cache_file_reader)
     {
-        chassert(info.cache_file_reader->getFileName() == path);
-        if (info.cache_file_reader->getFileName() == path)
+        /// A fully downloaded regular segment's file is renamed from `<offset>` to `<offset>_<size>`
+        /// (see `FileSegment::renameToIncludeSizeInNameUnlocked`), so a reader opened while the segment
+        /// was still downloading carries the old name. Reopen it under the current name in that case;
+        /// the caller (`prepareReadFromFileSegmentState`) seeks the returned buffer, so this is safe.
+        /// The already opened descriptor stays valid across the rename, so reusing it is also fine.
+        if (info.cache_file_reader->getFileName() == file_segment.getPath())
             return info.cache_file_reader;
 
         info.cache_file_reader.reset();
@@ -305,8 +308,19 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     local_read_settings.local_fs_settings.buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
     local_read_settings.local_throttler = info.local_throttler;
 
-    info.cache_file_reader
-        = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    String path;
+    {
+        /// Read the path and open the file under the segment lock. A concurrent downloader that
+        /// finishes the segment renames its file `<offset>` -> `<offset>_<size>` and flips the
+        /// `hasSizeInFileName` flag (which `getPath` reads) under this same lock. Without the lock we
+        /// could read the path in the tiny window after the on-disk rename but before the flag flip
+        /// (or vice versa) and try to open a name that no longer exists. Opening a local cache file
+        /// under the lock is consistent with the other filesystem operations the cache does under it.
+        auto segment_lock = file_segment.lock();
+        path = file_segment.getPath();
+        info.cache_file_reader = createReadBufferFromFileBase(
+            path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    }
 
     if (getFileSizeFromReadBuffer(*info.cache_file_reader) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
