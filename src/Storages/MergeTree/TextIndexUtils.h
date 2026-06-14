@@ -135,7 +135,13 @@ private:
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
+    /// Deserializer for the merged output part, using the destination codec resolved from the index definition.
     PostingsSerialization postings_serialization;
+    /// Per-source deserializers, each using the codec read from that source part's own header.
+    /// Source parts may have been written with different codecs (e.g. after `ALTER ... MODIFY SETTING
+    /// text_index_posting_list_codec`), so decoding every source with the destination codec would
+    /// otherwise fail with `CORRUPTED_DATA`.
+    std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
 };
