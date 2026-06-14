@@ -1,0 +1,28 @@
+name	String
+type	Enum8(\'Function\' = 1, \'Aggregate Function\' = 2, \'Table Function\' = 3, \'Table Engine\' = 4, \'Database Engine\' = 5, \'Data Type\' = 6, \'Dictionary Layout\' = 7, \'Dictionary Source\' = 8, \'Aggregate Function Combinator\' = 9, \'Data Skipping Index\' = 10, \'Disk Type\' = 11)
+description	String
+Aggregate Function
+Aggregate Function Combinator
+Data Skipping Index
+Data Type
+Database Engine
+Dictionary Layout
+Dictionary Source
+Disk Type
+Function
+Table Engine
+Table Function
+Aggregate Function	count
+Aggregate Function Combinator	If
+Data Skipping Index	minmax
+Data Type	String
+Database Engine	Atomic
+Dictionary Layout	flat
+Dictionary Source	file
+Disk Type	local
+Function	plus
+Table Engine	MergeTree
+Table Function	numbers
+1
+1
+1
