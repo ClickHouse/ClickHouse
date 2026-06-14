@@ -14,6 +14,13 @@ INSERT INTO t_codec_change SELECT 'hello world ' || toString(number) FROM number
 ALTER TABLE t_codec_change MODIFY SETTING text_index_posting_list_codec = 'none';
 INSERT INTO t_codec_change SELECT 'foo bar ' || toString(number) FROM numbers(1000);
 
+-- Confirm the table-level setting actually fed the index creator and the two parts really use
+-- different codecs before the merge: a high-cardinality token in the bitpacking part has compressed
+-- postings, while one in the none part does not. (Without this, none+none parts would also pass below.)
+SELECT 'bitpacking part compressed, none part not';
+SELECT has_compressed_postings FROM mergeTreeTextIndex(currentDatabase(), t_codec_change, idx) WHERE token = 'hello';
+SELECT has_compressed_postings FROM mergeTreeTextIndex(currentDatabase(), t_codec_change, idx) WHERE token = 'foo';
+
 OPTIMIZE TABLE t_codec_change FINAL;
 
 SELECT 'bitpacking then none';
