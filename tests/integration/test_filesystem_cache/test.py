@@ -271,8 +271,11 @@ def test_cache_file_size_in_name(cluster, node_name):
     wait_for_cache_initialized(node, "size_in_name_test")
     assert cache_state <= cache_segments()
 
-    # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix),
-    # restart, and make sure they are still loaded (the size is obtained with a stat).
+    # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix)
+    # and make sure they are still loaded on the next startup (the size is obtained with a stat).
+    # The server must be stopped while we rewrite the file names: a running server keeps the
+    # in-memory `<offset>_<size>` name (`hasSizeInFileName`) and would not find the renamed file.
+    node.stop_clickhouse()
     node.exec_in_container(
         [
             "bash",
@@ -284,7 +287,7 @@ def test_cache_file_size_in_name(cluster, node_name):
     # No file should carry a size suffix anymore.
     assert all("_" not in name for name, _ in list_segment_files())
 
-    node.restart_clickhouse()
+    node.start_clickhouse()
     wait_for_cache_initialized(node, "size_in_name_test")
     assert cache_state <= cache_segments()
     node.query("SELECT * FROM test_size_in_name FORMAT Null")
