@@ -55,30 +55,35 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
             /// Prefer the full identifier ASTs when present (they preserve parameterized
             /// names like `{tbl:Identifier}` that the string fields above cannot represent),
             /// and fall back to building plain identifiers from the strings otherwise.
+            /// The `*_ast` fields are parser-produced as `ASTIdentifier` (`parseDatabaseAndTableAsAST`
+            /// and the `RENAME DATABASE` path both use `ParserIdentifier`). `getDatabase`/`getTable`
+            /// extract a name only through `tryGetIdentifierNameInto`, so a non-identifier node from
+            /// malformed `clickhouse_json` would format one rename target while access checks and the
+            /// `RenameDescription` operate on an empty/current name. Reject wrong node types here.
             JSONObjectReader elem_reader(*elem_obj);
 
-            if (auto ast = elem_reader.readChild("from_database_ast"))
+            if (auto ast = elem_reader.readChildOfType<ASTIdentifier>("from_database_ast"))
                 elem.from.database = ast;
             else if (!from_db.empty())
                 elem.from.database = make_intrusive<ASTIdentifier>(from_db);
             if (elem.from.database)
                 children.push_back(elem.from.database);
 
-            if (auto ast = elem_reader.readChild("from_table_ast"))
+            if (auto ast = elem_reader.readChildOfType<ASTIdentifier>("from_table_ast"))
                 elem.from.table = ast;
             else if (!from_tbl.empty())
                 elem.from.table = make_intrusive<ASTIdentifier>(from_tbl);
             if (elem.from.table)
                 children.push_back(elem.from.table);
 
-            if (auto ast = elem_reader.readChild("to_database_ast"))
+            if (auto ast = elem_reader.readChildOfType<ASTIdentifier>("to_database_ast"))
                 elem.to.database = ast;
             else if (!to_db.empty())
                 elem.to.database = make_intrusive<ASTIdentifier>(to_db);
             if (elem.to.database)
                 children.push_back(elem.to.database);
 
-            if (auto ast = elem_reader.readChild("to_table_ast"))
+            if (auto ast = elem_reader.readChildOfType<ASTIdentifier>("to_table_ast"))
                 elem.to.table = ast;
             else if (!to_tbl.empty())
                 elem.to.table = make_intrusive<ASTIdentifier>(to_tbl);

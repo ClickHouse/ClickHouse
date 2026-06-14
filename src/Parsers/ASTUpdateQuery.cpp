@@ -1,5 +1,7 @@
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -101,10 +103,20 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`Update` AST requires 'table' during AST JSON deserialization");
     children.push_back(table);
-    assignments = r.readChild("assignments");
-    if (!assignments)
+    /// `assignments` is parser-produced as an `ASTExpressionList` whose children are all
+    /// `ASTAssignment` (`ParserUpdateQuery` builds it with a `ParserList` of `ParserAssignment`).
+    /// `MutationCommand::parse` downcasts every child with `->as<ASTAssignment &>()`, so a foreign
+    /// node type or child type from malformed `clickhouse_json` must be rejected here instead of
+    /// reaching that downcast.
+    auto assignments_list = r.readChildOfType<ASTExpressionList>("assignments");
+    if (!assignments_list)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`Update` AST requires 'assignments' during AST JSON deserialization");
+            "`Update` AST requires 'assignments' (as an expression list) during AST JSON deserialization");
+    for (const auto & assignment : assignments_list->children)
+        if (!assignment || !assignment->as<ASTAssignment>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Every child of 'assignments' must be an `ASTAssignment` during AST JSON deserialization");
+    assignments = assignments_list;
     children.push_back(assignments);
     partition = r.readChild("partition");
     if (partition)

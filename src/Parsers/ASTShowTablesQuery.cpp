@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -183,7 +184,11 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     like = r.getString("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
-    auto from_child = r.readChild("from");
+    /// `from` is parser-produced as an `ASTIdentifier` (`ParserShowTablesQuery` uses
+    /// `ParserIdentifier`). `getFrom` only extracts a name through `tryGetIdentifierNameInto`,
+    /// so a non-identifier node from malformed `clickhouse_json` would format as
+    /// `SHOW TABLES FROM <expr>` while execution resolves an empty/current database. Reject it.
+    auto from_child = r.readChildOfType<ASTIdentifier>("from");
     if (from_child)
         set(from, from_child);
     where_expression = r.readChild("where_expression");

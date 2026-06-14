@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
@@ -448,8 +449,14 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     func_name = r.getString("func_name");
-    parameters = r.readChild("parameters");
-    lambda = r.readChild("lambda");
+    /// `parameters` is parser-produced as an `ASTExpressionList` (it is assigned to
+    /// `ASTFunction::parameters`, which `QueryTreeBuilder` downcasts to `ASTExpressionList`),
+    /// and `lambda` is an `ASTFunction` (the lambda execution path does
+    /// `lambda->as<const ASTFunction &>()`). Restoring them through the generic child path
+    /// would let a wrong node type reach those downcasts as an internal cast error instead of
+    /// a user-facing `BAD_ARGUMENTS`.
+    parameters = r.readChildOfType<ASTExpressionList>("parameters");
+    lambda = r.readChildOfType<ASTFunction>("lambda");
     lambda_arg = r.getString("lambda_arg");
     column_name_prefix = r.getString("column_name_prefix");
 

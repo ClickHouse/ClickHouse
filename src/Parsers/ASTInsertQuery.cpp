@@ -6,6 +6,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -108,7 +110,11 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     format = r.getString("format");
     async_insert_flush = r.getBool("async_insert_flush");
 
-    auto child = r.readChild("columns");
+    /// `columns` is parser-produced as an `ASTExpressionList` (the INSERT column list).
+    /// `formatImpl` prints it and `processColumnTransformers` iterates `columns->children`,
+    /// so a non-`ASTExpressionList` from malformed `clickhouse_json` (e.g. a bare identifier)
+    /// would format as a column list while exposing an empty child list to execution. Reject it.
+    auto child = r.readChildOfType<ASTExpressionList>("columns");
     if (child)
     {
         columns = child;
@@ -132,7 +138,11 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(partition_by);
     }
 
-    child = r.readChild("settings_ast");
+    /// Query-local `SETTINGS` clauses are parsed as `ASTSetQuery`. `InterpreterSetQuery`,
+    /// `InsertQuerySettingsPushDownVisitor`, and `DDLTask` downcast `settings_ast` with
+    /// `as<ASTSetQuery>()`, so a non-`ASTSetQuery` from malformed `clickhouse_json` must be
+    /// rejected here instead of reaching those downcasts.
+    child = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (child)
     {
         settings_ast = child;
