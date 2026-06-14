@@ -128,6 +128,13 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
     register_function("JSONL", false, false);
     register_function("JSONStringsEachRow", true, false);
 
+    /// `registerOutputFormat` auto-registers a file extension equal to the (lower-cased) format name,
+    /// so registering `JSONL` for output above re-points the `jsonl` extension to the `JSONL` format,
+    /// undoing the explicit `jsonl` -> `JSONEachRow` mapping from `registerInputFormatJSONEachRow`.
+    /// Re-assert it here (this function runs after the input one) so that files with a `.jsonl`
+    /// extension are still resolved to the canonical `JSONEachRow` format.
+    factory.registerFileExtension("jsonl", "JSONEachRow");
+
     factory.setDocumentation("PrettyJSONEachRow", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias                             |

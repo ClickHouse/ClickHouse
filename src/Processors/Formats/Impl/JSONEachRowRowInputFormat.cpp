@@ -707,6 +707,7 @@ void registerJSONEachRowSchemaReader(FormatFactory & factory)
     register_schema_reader("JSONEachRow");
     register_schema_reader("JSONLines");
     register_schema_reader("NDJSON");
+    register_schema_reader("JSONL");
     register_schema_reader("JSONStringsEachRow");
 }
 
