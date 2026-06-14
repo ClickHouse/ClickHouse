@@ -37,6 +37,7 @@
 #include <map>
 #include <mutex>
 #include <numbers>
+#include <queue>
 #include <ranges>
 #include <string_view>
 #include <unordered_map>
@@ -334,7 +335,8 @@ void checkVectorIsSane(
     size_t dimension,
     unum::usearch::scalar_kind_t scalar_kind,
     int error_code,
-    std::string_view context)
+    std::string_view context,
+    bool require_float32_representable = false)
 {
     double magnitude_squared = 0.0;
     for (size_t i = 0; i != dimension; ++i)
@@ -351,6 +353,12 @@ void checkVectorIsSane(
             if (!std::isfinite(casted))
                 throw Exception(error_code,
                     "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
+            /// The projection-based quantizations ('b1_projected'/'turboquant'/'rabitq'/'e8') narrow the (possibly
+            /// Float64) input to Float32 before any arithmetic. A finite Float64 such as 1e39 overflows to +/-Inf as
+            /// Float32 and would feed non-finite values into the projection and the e8 integer casts; reject it here.
+            if (require_float32_representable && !std::isfinite(static_cast<float>(casted)))
+                throw Exception(error_code,
+                    "Vector for vector similarity index ({}) has a value that is not representable as a finite Float32", context);
         }
 
         if (scalar_kind == unum::usearch::scalar_kind_t::i8_k)
@@ -628,6 +636,7 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::serializeBinary(WriteBuffer & os
     writeIntBinary(static_cast<UInt64>(dimensions), ostr);
     writeIntBinary(static_cast<UInt64>(bytes_per_vector), ostr);
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
+    writeIntBinary(static_cast<UInt64>(e8_bits), ostr);
     if (!codes.empty())
         ostr.write(reinterpret_cast<const char *>(codes.data()), codes.size());
 }
@@ -642,11 +651,35 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::deserializeBinary(ReadBuffer & i
     UInt64 dims = 0;
     UInt64 bpv = 0;
     UInt64 count = 0;
+    UInt64 bits = 0;
     readIntBinary(dims, istr);
     readIntBinary(bpv, istr);
     readIntBinary(count, istr);
+    readIntBinary(bits, istr);
+
+    /// Validate the persisted layout against what this index expects, so a stale/corrupt/foreign part fails the granule
+    /// instead of mis-sizing buffers and reading past packed-code boundaries later.
+    if (dims != dimensions)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Flat vector similarity index has {} dimensions on disk but the index expects {}", dims, dimensions);
+    if (bpv == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has zero bytes per vector");
+    if (count != 0 && bpv > std::numeric_limits<UInt64>::max() / count)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index size ({} x {}) overflows", count, bpv);
+    if (bits != 0)
+    {
+        /// 'e8': the expected layout is M = dim/8 sub-quantizer codes (1 byte for bits <= 8, else 2) plus a 4-byte norm.
+        if (bits > 16 || (dimensions % 8) != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has an invalid 'e8' layout (bits {}, dimensions {})", bits, dimensions);
+        const UInt64 expected_bpv = (dimensions / 8) * (bits <= 8 ? 1 : 2) + sizeof(float);
+        if (bpv != expected_bpv)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Flat 'e8' vector similarity index expects {} bytes per vector for bits={} but the file has {}", expected_bpv, bits, bpv);
+    }
+
     bytes_per_vector = bpv;
     num_vectors = count;
+    e8_bits = bits;
     codes.resize(num_vectors * bytes_per_vector);
     if (!codes.empty())
         istr.readStrict(reinterpret_cast<char *>(codes.data()), codes.size());
@@ -1249,9 +1282,12 @@ std::shared_ptr<const E8Codebook> buildE8Codebook(size_t dimensions, size_t bits
 }
 
 /// Process-wide cache of E8 codebooks keyed by (dimensions, bits). The codebook depends only on these two values (it is
-/// not data-dependent), so build and query threads share one immutable instance.
+/// not data-dependent), so build and query threads share one immutable instance. Both keys come from user DDL, so the
+/// cache is bounded: once it is full, it is cleared before inserting a new entry (codebooks are cheap to rebuild, and
+/// existing `shared_ptr` holders keep their instance alive until done). This caps the resident codebook memory.
 std::shared_ptr<const E8Codebook> getE8Codebook(size_t dimensions, size_t bits)
 {
+    static constexpr size_t max_cached_codebooks = 32;
     static std::mutex mutex;
     static std::map<std::pair<size_t, size_t>, std::shared_ptr<const E8Codebook>> cache;
     std::lock_guard lock(mutex);
@@ -1259,6 +1295,8 @@ std::shared_ptr<const E8Codebook> getE8Codebook(size_t dimensions, size_t bits)
     auto it = cache.find(key);
     if (it != cache.end())
         return it->second;
+    if (cache.size() >= max_cached_codebooks)
+        cache.clear();
     auto cb = buildE8Codebook(dimensions, bits);
     cache.emplace(key, cb);
     return cb;
@@ -1396,12 +1434,15 @@ E8Query buildE8Query(const E8Codebook & cb, const float * rqhat, size_t dimensio
 /// ADC scan: sum the per-subspace inner products for this vector's codes, then map to the requested distance.
 inline float e8Distance(const E8Query & q, const char * code)
 {
+    /// Codes are produced by the encoder against the same codebook, so they are always < num_points; the `min` only
+    /// guards against a corrupt/foreign codes blob so a bad byte reads a valid LUT slot instead of past the end.
+    const size_t last = q.num_points - 1;
     float ip = 0.0f;
     if (q.code_bytes == 1)
     {
         const UInt8 * c = reinterpret_cast<const UInt8 *>(code);
         for (size_t m = 0; m < q.M; ++m)
-            ip += q.lut[m * q.num_points + c[m]];
+            ip += q.lut[m * q.num_points + std::min(static_cast<size_t>(c[m]), last)];
     }
     else
     {
@@ -1409,27 +1450,52 @@ inline float e8Distance(const E8Query & q, const char * code)
         {
             UInt16 idx = 0;
             std::memcpy(&idx, code + m * 2, sizeof(UInt16));
-            ip += q.lut[m * q.num_points + idx];
+            ip += q.lut[m * q.num_points + std::min(static_cast<size_t>(idx), last)];
         }
     }
 
     float norm_x = 0.0f;
     std::memcpy(&norm_x, code + q.M * q.code_bytes, sizeof(float));
 
+    /// The codebook reconstruction is not unit-normalized, so the raw ADC inner product can fall outside [-1, 1].
+    /// Clamp it to a valid cosine so cosineDistance stays in [0, 2] and L2Distance stays >= 0 (the optimized plan
+    /// later passes the L2 value to sqrt; a negative value would produce NaN).
+    ip = std::clamp(ip, -1.0f, 1.0f);
+
     if (q.is_l2)
         return q.q_norm_sq + norm_x * norm_x - 2.0f * q.q_norm * norm_x * ip;
     return 1.0f - ip;
 }
 
+/// Bounded max-heap keeping the `capacity` smallest (distance, row) pairs seen. A flat scan then needs only
+/// O(num_threads * limit) scratch instead of one (distance, row) entry per vector.
+struct TopKHeap
+{
+    size_t capacity = 0;
+    std::priority_queue<std::pair<float, UInt32>> heap; /// top() is the current worst (largest) kept pair
+
+    void push(float dist, UInt32 row)
+    {
+        const std::pair<float, UInt32> entry(dist, row);
+        if (heap.size() < capacity)
+            heap.push(entry);
+        else if (!heap.empty() && entry < heap.top())
+        {
+            heap.pop();
+            heap.push(entry);
+        }
+    }
+};
+
 #if USE_MULTITARGET_CODE
 /// AVX-512 "fast scan" for the 4-bit e8 path (num_points <= 16, 1-byte codes). The per-vector ADC gather doesn't
 /// vectorize; instead we process 64 vectors at once: `_mm512_shuffle_epi8` performs 64 16-entry LUT lookups for one
 /// sub-quantizer in a single instruction, accumulated across sub-quantizers in int16. This is the same idea as
-/// FAISS/ScaNN PQ fast scan and brings the scan into the popcount kernels' regime. `scored[i]` is filled for i in
-/// [begin, end). Codes are transposed into sub-quantizer-major tiles of 64 in a scratch buffer (no on-disk change).
+/// FAISS/ScaNN PQ fast scan and brings the scan into the popcount kernels' regime. Distances for i in [begin, end)
+/// are pushed into `topk`. Codes are transposed into sub-quantizer-major tiles of 64 in a scratch buffer (no on-disk change).
 X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE
 void e8FastScanICELAKE(const E8Query & q, const char * base, size_t bytes_per_vector, size_t begin, size_t end,
-                       std::pair<float, UInt32> * scored)
+                       TopKHeap & topk)
 {
     const size_t M = q.M;
     const float inv_scale = q.lut_inv_scale;
@@ -1439,6 +1505,8 @@ void e8FastScanICELAKE(const E8Query & q, const char * base, size_t bytes_per_ve
 
     auto emit = [&](size_t idx, float ip)
     {
+        /// Clamp to a valid cosine (the reconstruction is not unit-normalized) - see e8Distance.
+        ip = std::clamp(ip, -1.0f, 1.0f);
         float dist = NAN;
         if (q.is_l2)
         {
@@ -1448,7 +1516,7 @@ void e8FastScanICELAKE(const E8Query & q, const char * base, size_t bytes_per_ve
         }
         else
             dist = 1.0f - ip;
-        scored[idx] = {dist, static_cast<UInt32>(idx)};
+        topk.push(dist, static_cast<UInt32>(idx));
     };
 
     size_t i = begin;
@@ -1528,6 +1596,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarityFlat::getGranul
     auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarityFlat>(index_name, metric_kind, scalar_kind, dimensions);
     granule->bytes_per_vector = bytes_per_vector;
     granule->num_vectors = num_vectors;
+    granule->e8_bits = e8 ? e8_bits : 0;
     granule->codes = std::move(codes);
     codes.clear();
     num_vectors = 0;
@@ -1554,6 +1623,11 @@ void quantizeRowsToBinary(
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     const size_t base = num_vectors;
+    /// Row offsets are returned to the query as UInt32, so a granule must not hold more than UINT32_MAX vectors
+    /// (mirrors the limit the 'hnsw' builder enforces); otherwise offsets would wrap and read the wrong rows.
+    if (base + rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "A 'fastknn' vector similarity index granule cannot hold more than {} vectors", std::numeric_limits<UInt32>::max());
     codes.resize((base + rows) * bytes_per_vector);
     num_vectors = base + rows;
 
@@ -1567,7 +1641,10 @@ void quantizeRowsToBinary(
     {
         const size_t start = (row == 0) ? 0 : offsets[row - 1];
         const typename Column::ValueType * src = &data[start];
-        checkVectorIsSane(src, dimensions, unum::usearch::scalar_kind_t::b1x8_k, ErrorCodes::INCORRECT_DATA, "indexed vector");
+        /// All projection-based paths (b1_projected/turboquant/rabitq/e8) narrow to Float32 first, so require the input
+        /// to be representable as a finite Float32. Plain 'b1' only takes the sign, so Inf is harmless there.
+        checkVectorIsSane(src, dimensions, unum::usearch::scalar_kind_t::b1x8_k, ErrorCodes::INCORRECT_DATA, "indexed vector",
+            /* require_float32_representable = */ projected || turboquant || rabitq || e8);
 
         char * dst = reinterpret_cast<char *>(codes.data() + (base + row) * bytes_per_vector);
         if (turboquant)
@@ -1634,9 +1711,12 @@ void quantizeRowsToBinary(
     if (num_threads <= 1)
     {
         std::vector<float> work(2 * padded); /// two scratch buffers (turboquant QJL needs both)
-        throw_if_killed();
         for (size_t row = 0; row < rows; ++row)
+        {
+            if ((row & 0xFFFFu) == 0)
+                throw_if_killed();
             encode_row(row, work.data(), work.data() + padded);
+        }
     }
     else
     {
@@ -1651,10 +1731,13 @@ void quantizeRowsToBinary(
             const size_t end = std::min(rows, begin + per_thread);
             runner.enqueueAndKeepTrack([&encode_row, &throw_if_killed, padded, begin, end]
             {
-                throw_if_killed();
                 std::vector<float> work(2 * padded);
                 for (size_t row = begin; row < end; ++row)
+                {
+                    if (((row - begin) & 0xFFFFu) == 0)
+                        throw_if_killed();
                     encode_row(row, work.data(), work.data() + padded);
+                }
             });
         }
         runner.waitForAllToFinishAndRethrowFirstError();
@@ -1781,11 +1864,20 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
+    /// The codebook (and the decode) depend on `e8_bits`; a granule persisted with a different bits value (e.g. a part
+    /// attached from an index defined with other parameters) would be decoded against the wrong codebook.
+    if (e8 && granule->e8_bits != e8_bits)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Flat 'e8' vector similarity index granule was built with {} bits per sub-quantizer but the index specifies {}",
+            granule->e8_bits, e8_bits);
+
     if (parameters->reference_vector.size() != granule->dimensions)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
             parameters->reference_vector.size(), granule->dimensions);
 
-    checkVectorIsSane(parameters->reference_vector.data(), granule->dimensions, granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
+    /// Projection-based quantizations narrow the reference vector to Float32 too, so apply the same finiteness guard.
+    checkVectorIsSane(parameters->reference_vector.data(), granule->dimensions, granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query",
+        /* require_float32_representable = */ projected || turboquant || rabitq || e8);
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
@@ -1883,11 +1975,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
 
     /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
     /// index-analysis phase only parallelizes across parts, so a single large part would otherwise scan single-threaded.
-    /// We compute distances in parallel into disjoint slices of `scored` and then partial-sort to the top `limit`.
+    /// Each worker keeps a bounded top-`limit` heap (instead of one (distance, row) entry per vector); the heaps are
+    /// merged at the end. Query scratch is therefore O(num_threads * limit), not O(num_vectors).
     /// Note: we deliberately do NOT use usearch's `exact_search_t` here - it increments a single shared atomic counter
     /// once per vector, and for the single-query case that contention dominates (~99% of runtime) over the tiny Hamming.
-    std::vector<std::pair<float, UInt32>> scored(num_vectors);
-
     auto throw_if_killed = []
     {
         if (auto query_context = CurrentThread::tryGetQueryContext())
@@ -1895,13 +1986,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
                 query_status->throwIfKilled();
     };
 
-    auto scan_range = [&](size_t begin, size_t end)
+    auto scan_range = [&](size_t begin, size_t end, TopKHeap & topk)
     {
 #if USE_MULTITARGET_CODE
         if (use_icelake_e8)
         {
             throw_if_killed();
-            e8FastScanICELAKE(e8_query, base, bytes_per_vector, begin, end, scored.data());
+            e8FastScanICELAKE(e8_query, base, bytes_per_vector, begin, end, topk);
             return;
         }
 #endif
@@ -1919,7 +2010,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
                 dist = raBitQDistanceFast(rabitq_query, base + i * bytes_per_vector, use_icelake_rabitq);
             else
                 dist = static_cast<float>(metric(base + i * bytes_per_vector, query));
-            scored[i] = {dist, static_cast<UInt32>(i)};
+            topk.push(dist, static_cast<UInt32>(i));
         }
     };
 
@@ -1929,12 +2020,29 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
         threads_count = getNumberOfCPUCoresToUse();
     const size_t num_threads = std::min(threads_count, num_vectors);
 
+    std::vector<std::pair<float, UInt32>> merged;
+    auto drain = [&merged](TopKHeap & topk)
+    {
+        while (!topk.heap.empty())
+        {
+            merged.push_back(topk.heap.top());
+            topk.heap.pop();
+        }
+    };
+
     if (num_threads <= 1)
     {
-        scan_range(0, num_vectors);
+        TopKHeap topk;
+        topk.capacity = limit;
+        scan_range(0, num_vectors, topk);
+        merged.reserve(topk.heap.size());
+        drain(topk);
     }
     else
     {
+        std::vector<TopKHeap> heaps(num_threads);
+        for (auto & h : heaps)
+            h.capacity = limit;
         const size_t per_thread = (num_vectors + num_threads - 1) / num_threads;
         auto & pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
@@ -1944,25 +2052,27 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             if (begin >= num_vectors)
                 break;
             const size_t end = std::min(num_vectors, begin + per_thread);
-            runner.enqueueAndKeepTrack([&scan_range, begin, end] { scan_range(begin, end); });
+            TopKHeap & topk = heaps[t];
+            runner.enqueueAndKeepTrack([&scan_range, &topk, begin, end] { scan_range(begin, end, topk); });
         }
         runner.waitForAllToFinishAndRethrowFirstError();
+        for (auto & h : heaps)
+            drain(h);
     }
 
-    if (limit < num_vectors)
-        std::partial_sort(scored.begin(), scored.begin() + limit, scored.end());
-    else
-        std::sort(scored.begin(), scored.end());
+    /// `merged` holds each worker's top-`limit`; the global top-`limit` is a subset, so sort the head and return it.
+    const size_t result_count = std::min(limit, merged.size());
+    std::partial_sort(merged.begin(), merged.begin() + result_count, merged.end());
 
     NearestNeighbours result;
-    result.rows.resize(limit);
+    result.rows.resize(result_count);
     if (parameters->return_distances)
-        result.distances = std::vector<float>(limit);
-    for (size_t i = 0; i < limit; ++i)
+        result.distances = std::vector<float>(result_count);
+    for (size_t i = 0; i < result_count; ++i)
     {
-        result.rows[i] = scored[i].second;
+        result.rows[i] = merged[i].second;
         if (parameters->return_distances)
-            result.distances.value()[i] = scored[i].first;
+            result.distances.value()[i] = merged[i].first;
     }
 
     return result;
@@ -2146,6 +2256,14 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             const UInt64 e8_bits = args[4].safeGet<UInt64>();
             if (e8_bits < 1 || e8_bits > 16)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "'e8' quantization requires that the fifth argument (bits per sub-quantizer) is between 1 and 16");
+            /// Bound the per-query ADC table (M = dim/8 sub-quantizers x 2^bits floats). Without a cap, large
+            /// (dimension, bits) combinations allocate hundreds of MiB to >1 GiB of transient memory per analyzed granule.
+            static constexpr UInt64 max_e8_lut_entries = 1ULL << 24; /// 16M entries -> 64 MiB float ADC table
+            const UInt64 lut_entries = (args[2].safeGet<UInt64>() / 8) * (1ULL << e8_bits);
+            if (lut_entries > max_e8_lut_entries)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "'e8' quantization with dimension {} and {} bits would need a {}-entry lookup table, which exceeds the limit of {}; reduce the bits per sub-quantizer",
+                    args[2].safeGet<UInt64>(), e8_bits, lut_entries, max_e8_lut_entries);
         }
         else if (is_turboquant)
         {
@@ -2170,7 +2288,12 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         else
         {
             if (is_fastknn && quantizationToScalarKind.at(quantization) != unum::usearch::scalar_kind_t::b1x8_k)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1', 'b1_projected', 'turboquant', and 'rabitq' quantization");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1', 'b1_projected', 'turboquant', 'rabitq', and 'e8' quantization");
+
+            /// 'b1_projected' applies a random projection that only the flat ('fastknn') build/search path implements; the
+            /// 'hnsw' path would silently ignore the projection and build/search raw 'b1' codes, so reject that combination.
+            if (quantization == "b1_projected" && !is_fastknn)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'b1_projected' quantization is only supported by the 'fastknn' method");
 
             /// More checks for binary quantization
             if (quantizationToScalarKind.at(quantization) == unum::usearch::scalar_kind_t::b1x8_k)

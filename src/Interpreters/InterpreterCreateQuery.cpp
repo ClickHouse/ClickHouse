@@ -121,6 +121,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_fastknn_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
@@ -777,6 +778,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+
+                /// The 'fastknn' method of the vector similarity index is experimental; gate it behind a setting.
+                if (index_desc.type == "vector_similarity" && !settings[Setting::allow_experimental_fastknn_index])
+                {
+                    const FieldVector vs_args = getFieldsFromIndexArgumentsAST(index_desc.arguments);
+                    if (!vs_args.empty() && vs_args[0].getType() == Field::Types::String
+                        && vs_args[0].safeGet<String>() == "fastknn")
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "The 'fastknn' method of the vector similarity index is experimental. "
+                            "Set 'allow_experimental_fastknn_index = 1' to enable it");
+                }
 
                 properties.indices.push_back(index_desc);
             }

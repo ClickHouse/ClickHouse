@@ -209,6 +209,7 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_fastknn_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
@@ -4427,6 +4428,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
+
+    /// The 'fastknn' method of the vector similarity index is experimental; gate it behind a setting.
+    if (!settings[Setting::allow_experimental_fastknn_index])
+        for (const auto & index : new_metadata.secondary_indices)
+            if (index.type == "vector_similarity")
+            {
+                const FieldVector index_args = getFieldsFromIndexArgumentsAST(index.arguments);
+                if (!index_args.empty() && index_args[0].getType() == Field::Types::String
+                    && index_args[0].safeGet<String>() == "fastknn")
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The 'fastknn' method of the vector similarity index is experimental. "
+                        "Set 'allow_experimental_fastknn_index = 1' to enable it");
+            }
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;

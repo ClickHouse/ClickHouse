@@ -199,12 +199,14 @@ struct MergeTreeIndexGranuleVectorSimilarityFlat final : public IMergeTreeIndexG
     const size_t dimensions;
     size_t bytes_per_vector = 0;       /// dim/8 for b1; dim/4 for turboquant; dim/8 + sizeof(float) for rabitq (1-bit code + per-vector correction factor)
     size_t num_vectors = 0;
+    size_t e8_bits = 0;                /// 'e8' only: bits per 8-dim sub-quantizer; persisted so the layout can be validated on load
     std::vector<UInt8> codes;          /// num_vectors * bytes_per_vector packed quantized codes
 
     LoggerPtr logger = getLogger("VectorSimilarityIndexFlat");
 
 private:
-    static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+    /// Bump whenever the on-disk flat format changes. v2 persists `e8_bits` and validates the layout.
+    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
 };
 
 

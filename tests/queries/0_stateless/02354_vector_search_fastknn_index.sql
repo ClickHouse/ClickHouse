@@ -7,6 +7,7 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_vector_similarity_index = 1;
+SET allow_experimental_fastknn_index = 1;
 
 DROP TABLE IF EXISTS tab_b1;
 DROP TABLE IF EXISTS tab_proj;

@@ -1,0 +1,7 @@
+-- e8 cosineDistance: nearest neighbour of a row is itself
+7
+-- e8 L2Distance: nearest neighbour of a row is itself
+7
+-- e8 returns the requested number of rows and uses the index
+5
+1
