@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 }
 
@@ -81,8 +82,11 @@ void MessageReader::readBody(int64_t body_length, PODArray<char> & body)
 
 void MessageReader::skipBody(int64_t body_length)
 {
-    if (body_length > 0)
-        in.ignore(body_length);
+    /// Report a truncated body the same way `readBody` (via `readStrict`) does — as `CANNOT_READ_ALL_DATA`,
+    /// not the bare `ATTEMPT_TO_READ_AFTER_EOF` that `ignore` would throw — so the error code does not depend
+    /// on whether the count-only optimisation skipped the body or actually read it.
+    if (body_length > 0 && in.tryIgnore(body_length) != static_cast<size_t>(body_length))
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from the Arrow IPC message body");
 }
 
 }
