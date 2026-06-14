@@ -268,7 +268,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
     bool keep_data_in_keeper_)
-    : StreamingBackgroundControlOwner(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
@@ -755,7 +755,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     const auto storage_id = getStorageID();
 
-    if (!stream_control.shouldRunCycle())
+    if (!stream_control.claimCycle())
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
         /// via `onActionLockRemove`; meanwhile reschedule with a moderate period to avoid busy-looping.

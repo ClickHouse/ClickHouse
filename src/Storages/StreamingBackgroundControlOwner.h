@@ -12,7 +12,7 @@ namespace ActionLocks
 }
 
 /// Shared implementation of background task controls for streaming storages
-class StreamingBackgroundControlOwner : public IStorage
+class IStreamingStorage : public IStorage
 {
 public:
     using IStorage::IStorage;

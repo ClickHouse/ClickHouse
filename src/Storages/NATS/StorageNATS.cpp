@@ -95,7 +95,7 @@ StorageNATS::StorageNATS(
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode)
-    : StreamingBackgroundControlOwner(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
     , subjects(parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_subjects]), ','))
@@ -624,7 +624,7 @@ void StorageNATS::threadFunc()
     {
         /// SYSTEM STOP/PAUSE blocks consumption: skip streaming to views. The streaming task keeps
         /// rescheduling; SYSTEM START wakes it via `onActionLockRemove`.
-        if (consumers_connection && consumers_connection->isConnected() && stream_control.shouldRunCycle())
+        if (consumers_connection && consumers_connection->isConnected() && stream_control.claimCycle())
         {
             auto start_time = std::chrono::steady_clock::now();
 

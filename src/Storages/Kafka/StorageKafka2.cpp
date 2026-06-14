@@ -148,7 +148,7 @@ StorageKafka2::StorageKafka2(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : StreamingBackgroundControlOwner(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
@@ -1179,7 +1179,7 @@ void StorageKafka2::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        const bool run_cycle = stream_control.shouldRunCycle();
+        const bool run_cycle = stream_control.claimCycle();
         if (num_views && run_cycle)
         {
             /// Atomically check that no direct readers are active and register this MV streamer.

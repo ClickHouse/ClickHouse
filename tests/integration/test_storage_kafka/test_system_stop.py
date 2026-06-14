@@ -219,7 +219,7 @@ def test_system_refresh_consuming(kafka_cluster, keeper):
 def test_refresh_on_viewless_table_is_not_leaked(kafka_cluster, keeper):
     # Regression: a SYSTEM REFRESH issued while no view is attached must consume the one-shot right
     # away. Otherwise it leaks until a view is attached and then fires one extra cycle even though
-    # the table is STOPped — i.e. the loop must not gate shouldRunCycle() behind num_views.
+    # the table is STOPped — i.e. the loop must not gate claimCycle() behind num_views.
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_refresh_leak_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):

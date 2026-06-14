@@ -58,7 +58,7 @@ public:
     /// Decide whether the background task should run a streaming cycle on this scheduler wake-up:
     /// true when consumption is not blocked, or a SYSTEM REFRESH has requested one out-of-order cycle.
     /// Consumes the one-shot REFRESH request, so call it exactly once per wake-up.
-    bool shouldRunCycle()
+    bool claimCycle()
     {
         const bool one_shot = refresh_once.exchange(false);
         return one_shot || !isBlocked();

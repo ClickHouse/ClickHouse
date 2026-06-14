@@ -153,7 +153,7 @@ def test_system_refresh_consuming(rabbitmq_cluster):
 def test_refresh_on_viewless_table_is_not_leaked(rabbitmq_cluster):
     # Regression: a SYSTEM REFRESH issued while no view is attached must consume the one-shot right
     # away. Otherwise it leaks until a view is attached and then fires one extra cycle even though
-    # the table is STOPped — i.e. the loop must not gate shouldRunCycle() behind num_views.
+    # the table is STOPped — i.e. the loop must not gate claimCycle() behind num_views.
     table = "rabbitmq_refresh_leak"
     exchange = "refresh_leak_exchange"
     setup_consuming_table(table, exchange)

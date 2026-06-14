@@ -13,7 +13,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StreamingBackgroundControlOwner.h>
+#include <Storages/IStreamingStorage.h>
 #include <base/defines.h>
 
 
@@ -22,7 +22,7 @@ namespace DB
 class ObjectStorageQueueMetadata;
 struct ObjectStorageQueueSettings;
 
-class StorageObjectStorageQueue : public StreamingBackgroundControlOwner, WithContext
+class StorageObjectStorageQueue : public IStreamingStorage, WithContext
 {
 public:
     StorageObjectStorageQueue(

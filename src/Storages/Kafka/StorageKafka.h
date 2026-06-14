@@ -5,7 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/Kafka_fwd.h>
-#include <Storages/StreamingBackgroundControlOwner.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -34,7 +34,7 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public StreamingBackgroundControlOwner, WithContext
+class StorageKafka final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
     friend KafkaInterceptors;

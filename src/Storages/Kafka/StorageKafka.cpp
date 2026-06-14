@@ -174,7 +174,7 @@ StorageKafka::StorageKafka(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : StreamingBackgroundControlOwner(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
@@ -615,7 +615,7 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        const bool run_cycle = stream_control.shouldRunCycle();
+        const bool run_cycle = stream_control.claimCycle();
         if (num_views && run_cycle)
         {
             auto start_time = std::chrono::steady_clock::now();

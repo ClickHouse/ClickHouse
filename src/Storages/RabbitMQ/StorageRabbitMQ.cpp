@@ -120,7 +120,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & comment,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
         LoadingStrictnessLevel mode)
-        : StreamingBackgroundControlOwner(table_id_)
+        : IStreamingStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_exchange_name]))
@@ -1078,7 +1078,7 @@ void StorageRabbitMQ::threadFunc()
             size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
-            const bool run_cycle = rabbit_connected && stream_control.shouldRunCycle();
+            const bool run_cycle = rabbit_connected && stream_control.claimCycle();
             if (num_views && run_cycle)
             {
                 auto start_time = std::chrono::steady_clock::now();

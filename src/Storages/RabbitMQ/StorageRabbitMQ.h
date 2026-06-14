@@ -9,7 +9,7 @@
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Storages/StreamingBackgroundControlOwner.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -21,7 +21,7 @@ namespace DB
 struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
-class StorageRabbitMQ final: public StreamingBackgroundControlOwner, WithContext
+class StorageRabbitMQ final: public IStreamingStorage, WithContext
 {
 public:
     StorageRabbitMQ(

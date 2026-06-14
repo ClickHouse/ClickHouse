@@ -9,7 +9,7 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
-#include <Storages/StreamingBackgroundControlOwner.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -55,7 +55,7 @@ class ThreadStatus;
 ///
 /// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
-class StorageKafka2 final : public StreamingBackgroundControlOwner, WithContext
+class StorageKafka2 final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;

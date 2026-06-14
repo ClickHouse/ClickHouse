@@ -11,7 +11,7 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
-#include <Storages/StreamingBackgroundControlOwner.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 
 namespace DB
@@ -25,7 +25,7 @@ using INATSProducerPtr = std::unique_ptr<INATSProducer>;
 
 struct NATSSettings;
 
-class StorageNATS final : public StreamingBackgroundControlOwner, WithContext
+class StorageNATS final : public IStreamingStorage, WithContext
 {
 public:
     StorageNATS(
