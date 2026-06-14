@@ -272,6 +272,8 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `URL`
   - [`SYSTEM`](#system)
     - `SYSTEM BACKGROUND`
+      - `SYSTEM STREAMING ENGINES`
+      - `SYSTEM VIEWS`
     - `SYSTEM CLEANUP`
     - `SYSTEM DROP CACHE`
       - `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -330,7 +332,6 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM TTL MERGES`
     - `SYSTEM UNFREEZE`
     - `SYSTEM UNLOAD PRIMARY KEY`
-    - `SYSTEM VIEWS`
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)

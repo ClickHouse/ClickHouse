@@ -840,7 +840,7 @@ SYSTEM REFRESH ALL BACKGROUND
 
 ### Privileges {#background-privileges}
 
-Each command requires the privilege of the targeted engine: [`SYSTEM VIEWS`](../../sql-reference/statements/grant.md#system) for a refreshable materialized view (the same privilege as the `SYSTEM ... VIEW` aliases) and [`SYSTEM BACKGROUND`](../../sql-reference/statements/grant.md#system) for a streaming table. The `ALL BACKGROUND` forms apply only to the tables the user is allowed to control and silently skip the rest.
+Each command requires the privilege of the targeted engine: `SYSTEM VIEWS` for a refreshable materialized view and `SYSTEM STREAMING ENGINES` for a streaming table. Both are children of `SYSTEM BACKGROUND`, so granting `SYSTEM BACKGROUND` allows controlling the background activity of every such table. The `ALL BACKGROUND` forms apply only to the tables the user is allowed to control and silently skip the rest.
 
 ## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
 

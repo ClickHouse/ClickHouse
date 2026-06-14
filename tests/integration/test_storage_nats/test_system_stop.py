@@ -442,15 +442,15 @@ def test_system_stop_requires_grant(nats_cluster):
         )
 
     # SYSTEM VIEWS (the privilege behind the refreshable-view path) is deliberately not enough:
-    # streaming engines are guarded by SYSTEM BACKGROUND specifically.
+    # streaming engines are guarded by SYSTEM STREAMING ENGINES specifically.
     instance.query(f"GRANT SYSTEM VIEWS ON test.{table} TO {user}")
     for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
         assert "ACCESS_DENIED" in instance.query_and_get_error(
             f"SYSTEM {verb} test.{table}", user=user
         )
 
-    # SYSTEM BACKGROUND on the table is exactly the required privilege; every verb now succeeds.
-    instance.query(f"GRANT SYSTEM BACKGROUND ON test.{table} TO {user}")
+    # SYSTEM STREAMING ENGINES on the table is exactly the required privilege; every verb now succeeds.
+    instance.query(f"GRANT SYSTEM STREAMING ENGINES ON test.{table} TO {user}")
     for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
         instance.query(f"SYSTEM {verb} test.{table}", user=user)
 

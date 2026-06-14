@@ -261,7 +261,7 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
     if (action_type == ActionLocks::ViewRefreshPause)
         return AccessType::SYSTEM_VIEWS;
     if (action_type == ActionLocks::StreamConsume)
-        return AccessType::SYSTEM_BACKGROUND;
+        return AccessType::SYSTEM_STREAMING_ENGINES;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
@@ -2408,7 +2408,7 @@ std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
         {
             StoragePtr table = iterator->table();
             if (table && table->isStreamingStorage()
-                && access->isGranted(AccessType::SYSTEM_BACKGROUND, database_name, iterator->name()))
+                && access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, database_name, iterator->name()))
                 result.push_back(table);
         }
     }
@@ -2424,16 +2424,16 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     /// ACCESS_DENIED rather than being able to tell UNKNOWN_TABLE apart and probe table existence.
     auto access = getContext()->getAccess();
     if (!access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name)
-        && !access->isGranted(AccessType::SYSTEM_BACKGROUND, table_id.database_name, table_id.table_name))
+        && !access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name))
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Not enough privileges. To execute this query, it's necessary to have the grant "
-            "SYSTEM VIEWS or SYSTEM BACKGROUND on {}", table_id.getNameForLogs());
+            "SYSTEM VIEWS or SYSTEM STREAMING ENGINES on {}", table_id.getNameForLogs());
 
     auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     if (storage->isStreamingStorage())
     {
-        /// Streaming engines, guarded by SYSTEM BACKGROUND
+        /// Streaming engines, guarded by SYSTEM STREAMING ENGINES
         switch (type)
         {
             case Type::STOP:
@@ -2450,11 +2450,11 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
                 startStopAction(ActionLocks::StreamConsume, true);
                 break;
             case Type::CANCEL:
-                getContext()->checkAccess(AccessType::SYSTEM_BACKGROUND, table_id);
+                getContext()->checkAccess(AccessType::SYSTEM_STREAMING_ENGINES, table_id);
                 storage->cancelBackgroundActivity();
                 break;
             case Type::REFRESH:
-                getContext()->checkAccess(AccessType::SYSTEM_BACKGROUND, table_id);
+                getContext()->checkAccess(AccessType::SYSTEM_STREAMING_ENGINES, table_id);
                 storage->refreshBackgroundActivity();
                 break;
             default:

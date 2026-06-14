@@ -319,15 +319,15 @@ def test_system_stop_requires_grant(started_cluster):
         )
 
     # SYSTEM VIEWS (the privilege behind the refreshable-view path) is deliberately not enough:
-    # streaming engines are guarded by SYSTEM BACKGROUND specifically.
+    # streaming engines are guarded by SYSTEM STREAMING ENGINES specifically.
     node.query(f"GRANT SYSTEM VIEWS ON default.{table} TO {user}")
     for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
         assert "ACCESS_DENIED" in node.query_and_get_error(
             f"SYSTEM {verb} {table}", user=user
         )
 
-    # SYSTEM BACKGROUND on the table is exactly the required privilege; every verb now succeeds.
-    node.query(f"GRANT SYSTEM BACKGROUND ON default.{table} TO {user}")
+    # SYSTEM STREAMING ENGINES on the table is exactly the required privilege; every verb now succeeds.
+    node.query(f"GRANT SYSTEM STREAMING ENGINES ON default.{table} TO {user}")
     for verb in ["STOP", "START", "PAUSE", "CANCEL", "REFRESH"]:
         node.query(f"SYSTEM {verb} {table}", user=user)
 
