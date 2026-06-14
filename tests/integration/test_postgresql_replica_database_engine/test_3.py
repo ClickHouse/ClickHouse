@@ -863,14 +863,19 @@ def test_quoting_publication(started_cluster):
 def test_use_extended_date_and_time_types_setting(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/43153
     # By default PostgreSQL `date`/`timestamp` map to ClickHouse Date32/DateTime64 (wider range).
-    # materialized_postgresql_use_extended_date_and_time_types = 0 falls back to Date/DateTime.
+    # materialized_postgresql_use_extended_date_and_time_types = 0 falls back to Date/DateTime,
+    # recursing through Nullable and Array.
     cursor = pg_manager.get_db_cursor()
     cursor.execute("DROP TABLE IF EXISTS test_date_types")
     cursor.execute(
-        "CREATE TABLE test_date_types (key integer PRIMARY KEY, d date, t timestamp)"
+        "CREATE TABLE test_date_types ("
+        "key integer PRIMARY KEY, d date, t timestamp, "
+        "arr_d date[] NOT NULL, arr_t timestamp[] NOT NULL)"
     )
     cursor.execute(
-        "INSERT INTO test_date_types VALUES (1, '2000-05-12', '2000-05-12 12:12:12.012345')"
+        "INSERT INTO test_date_types VALUES "
+        "(1, '2000-05-12', '2000-05-12 12:12:12.012345', "
+        "'{2000-05-12,2001-01-01}', '{2000-05-12 12:12:12}')"
     )
 
     pg_manager.create_materialized_db(
@@ -887,21 +892,30 @@ def test_use_extended_date_and_time_types_setting(started_cluster):
         instance, "SELECT count() FROM test_database.test_date_types", "1"
     )
 
-    assert "Date" == instance.query(
-        "SELECT type FROM system.columns WHERE database='test_database' "
-        "AND table='test_date_types' AND name='d'"
-    ).strip()
-    assert "DateTime" == instance.query(
-        "SELECT type FROM system.columns WHERE database='test_database' "
-        "AND table='test_date_types' AND name='t'"
-    ).strip()
+    def col_type(name):
+        return instance.query(
+            "SELECT type FROM system.columns WHERE database='test_database' "
+            f"AND table='test_date_types' AND name='{name}'"
+        ).strip()
+
+    # Narrowing must have happened for every column (scalar, nullable and array).
+    for name in ("d", "t", "arr_d", "arr_t"):
+        typ = col_type(name)
+        assert "Date32" not in typ and "DateTime64" not in typ, f"{name}: {typ}"
+
+    assert "Nullable(Date)" == col_type("d")
+    assert "Nullable(DateTime)" == col_type("t")
+    assert col_type("arr_d").startswith("Array(") and "Date" in col_type("arr_d")
+    assert col_type("arr_t").startswith("Array(") and "DateTime" in col_type("arr_t")
+
     assert "2000-05-12\t2000-05-12 12:12:12" == instance.query(
         "SELECT d, t FROM test_database.test_date_types WHERE key = 1"
     ).strip()
 
     # Ongoing replication must keep working with the narrower types.
     cursor.execute(
-        "INSERT INTO test_date_types VALUES (2, '2020-01-01', '2020-01-01 01:02:03')"
+        "INSERT INTO test_date_types VALUES "
+        "(2, '2020-01-01', '2020-01-01 01:02:03', '{2020-01-01}', '{2020-01-01 01:02:03}')"
     )
     assert_eq_with_retry(
         instance, "SELECT count() FROM test_database.test_date_types", "2"
