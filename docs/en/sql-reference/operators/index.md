@@ -199,6 +199,8 @@ In addition to the subquery form described above, the right-hand side of `SOME` 
 
 `SOME` is the existential quantifier (the SQL synonym for `ANY`). `=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
 
+The array form is recognised only for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, and `>=`. Other operators that accept an array on the right — for example `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, and `IN` — are **not** rewritten to the array quantifier and keep their ordinary meaning. For instance, `'abc' LIKE SOME(['a%', 'b%'])` is not the array quantifier syntax; use `arrayExists` / `arrayAll` directly for those cases.
+
 :::note `ANY` is not supported for the array form
 Only `SOME` and `ALL` accept an array right-hand side. `ANY` is excluded because `any` is also an aggregate function, so an expression of the shape `expr = any(x)` keeps its function-call meaning. Use `SOME` for the array quantifier.
 :::
