@@ -4840,12 +4840,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
                 }
 
-                /// Explicit skip indexes that depend on this column have on-disk bytes
-                /// (skp_idx_*.idx) serialized with the old Tuple shape. Metadata-only
-                /// ALTER does not produce a `MutationCommand::READ_COLUMN`, so the
-                /// rebuild/drop logic in `MutationsInterpreter` cannot refresh them.
-                /// Reject unconditionally — independent of `alter_column_secondary_index_mode` —
-                /// because no mode can recover the stale index bytes for this code path.
+                /// Explicit skip indexes that depend on this column or any of its tuple
+                /// subcolumns have on-disk bytes (skp_idx_*.idx) serialized with the old
+                /// Tuple shape. Metadata-only ALTER does not produce a
+                /// `MutationCommand::READ_COLUMN`, so the rebuild/drop logic in
+                /// `MutationsInterpreter` cannot refresh them. Reject unconditionally —
+                /// independent of `alter_column_secondary_index_mode` — because no mode can
+                /// recover the stale index bytes for this code path.
+                ///
+                /// The match must include `column_name + "."` prefixes so that an index
+                /// keyed on a tuple subcolumn (e.g. `INDEX idx t.sub TYPE set(0)`) is still
+                /// caught when the storage column `t` is altered.
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
                     throw Exception(
@@ -4854,6 +4859,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         "Drop the index first, then re-create it after the ALTER",
                         backQuoteIfNeed(command.column_name),
                         it->second);
+                }
+                const String subcol_prefix = command.column_name + ".";
+                for (const auto & [indexed_col, index_name] : columns_in_explicit_indices)
+                {
+                    if (indexed_col.starts_with(subcol_prefix))
+                    {
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Adding new Tuple subfields to column '{}' is forbidden because its subcolumn '{}' is used by the explicit skip index '{}'. "
+                            "Drop the index first, then re-create it after the ALTER",
+                            backQuoteIfNeed(command.column_name),
+                            indexed_col,
+                            index_name);
+                    }
                 }
             }
         }

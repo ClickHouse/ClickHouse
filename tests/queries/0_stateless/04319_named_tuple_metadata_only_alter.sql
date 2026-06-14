@@ -531,6 +531,27 @@ ALTER TABLE t_named_tuple_alter
 DROP TABLE t_named_tuple_alter;
 
 -- ============================================================
+-- Case 18c (REJECT): explicit skip index over a `Tuple` subcolumn (e.g.
+-- `INDEX idx t.sub TYPE set(0)`) is keyed as `t.sub`, not `t`. The metadata-only
+-- guard must follow `column_name + "."` prefixes so the ALTER on the storage
+-- column `t` is still rejected — otherwise the `skp_idx_*.idx` bytes serialized
+-- with the old shape of `t.sub` are left stale.
+-- ============================================================
+CREATE TABLE t_named_tuple_alter
+(id UInt64, t Tuple(a Int64, sub Tuple(x Int64)),
+ INDEX idx t.sub TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, tuple(number)) FROM numbers(10);
+
+SELECT 'Case 18c (explicit skip index on Tuple subcolumn rejected):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN t Tuple(a Int64, sub Tuple(x Int64, y Int64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
 -- Case 19: pure reorder of existing fields (without any additions) is not
 -- metadata-only. `primary.idx` bytes and explicit skip-index bytes for any
 -- embedded tuple value are serialized in the old field order; the new type
