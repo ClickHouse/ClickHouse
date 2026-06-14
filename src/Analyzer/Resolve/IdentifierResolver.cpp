@@ -661,18 +661,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         }
     }
 
-    /// Hybrid short-name fallback (issue #87022 and friends): when canonical lookup
-    /// missed and we're resolving a single-part identifier against a subquery / CTE
-    /// whose projection has a column whose canonical name is `<source>.<short>` and
-    /// whose underlying `ColumnNode` carries just `<short>`, resolve to that node.
-    /// The map is empty unless `analyzer_enable_short_column_names_from_subquery` is on,
-    /// so there is no extra cost in the default-off case.
-    if (!result_expression && identifier_without_column_qualifier.getPartsSize() == 1)
-    {
-        if (auto short_name_node = table_expression_data.tryGetShortNameColumnNode(identifier_full_name))
-            result_expression = short_name_node;
-    }
-
     bool clone_is_needed = true;
 
     String table_expression_source = table_expression_data.table_expression_description;
@@ -690,6 +678,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             clone_is_needed = false;
             result_expression = std::move(nested_function_node);
         }
+    }
+
+    /// Hybrid short-name fallback (issue #87022 and friends): when every existing
+    /// resolution path missed and we're resolving a single-part identifier against
+    /// a subquery / CTE whose projection has a column with canonical name
+    /// `<source>.<short>`, resolve to that column via its short name.
+    ///
+    /// Placed strictly AFTER `tryResolveIdentifierAsNestedPrefix` so that a projection
+    /// list shaped like `f1.x Array(...), f1.y Array(...), b.f1` keeps the existing
+    /// Nested-prefix collapse for outer `f1` instead of being silently rerouted to
+    /// `b.f1`. The setting's contract is additive: enabling it must never change the
+    /// resolution target of an identifier that already resolves successfully on
+    /// master, and the nested-prefix path is one of those successful resolutions.
+    ///
+    /// The map is empty unless `analyzer_enable_short_column_names_from_subquery` is on,
+    /// so there is no extra cost in the default-off case.
+    if (!result_expression && identifier_without_column_qualifier.getPartsSize() == 1)
+    {
+        if (auto short_name_node = table_expression_data.tryGetShortNameColumnNode(identifier_full_name))
+            result_expression = short_name_node;
     }
 
     if (!result_expression)

@@ -17,6 +17,8 @@
 -- on: ambiguous short name (collision among siblings) still errors
 -- on: dotted form still works in the ambiguous case
 1	1
+-- on: existing Nested-prefix resolution wins over the new short-name fallback
+[(1,'a')]
 -- on: explicit canonical alias shadows the short name
 10
 -- on: explicit dotted projection in subquery (related: #94558)

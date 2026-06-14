@@ -123,6 +123,16 @@ SELECT `a.f1`, `b.f1` FROM t3;
 
 SET single_join_prefer_left_table = 1;
 
+SELECT '-- on: existing Nested-prefix resolution wins over the new short-name fallback';
+
+-- For a subquery with `f1.x Array(...)`, `f1.y Array(...)`, `b.f1 ...` columns, outer
+-- `SELECT f1` already resolves (on master) as the Nested-prefix collapse of `f1.x`
+-- and `f1.y`. The new short-name path would also offer `f1` (the rightmost component
+-- of `b.f1`), but the setting's additive contract means existing successful resolutions
+-- must keep their target. The Nested-prefix path is therefore consulted first and
+-- short-name fallback is suppressed for `f1` here.
+SELECT f1 FROM (SELECT [1] AS `f1.x`, ['a'] AS `f1.y`, 42 AS `b.f1`);
+
 SELECT '-- on: explicit canonical alias shadows the short name';
 
 WITH t1 AS (SELECT 1 AS f1, 2 AS f2),
