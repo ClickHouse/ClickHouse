@@ -153,6 +153,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Paimon)
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/OOMCanary)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 
@@ -572,6 +573,10 @@ target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 target_link_libraries(dbms PUBLIC ch_contrib::roaring)
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
+endif()
+
+if (TARGET ch_contrib::libpng)
+    target_link_libraries(dbms PUBLIC ch_contrib::libpng)
 endif()
 
 if (TARGET ch_contrib::rdkafka)

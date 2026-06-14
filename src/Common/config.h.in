@@ -89,5 +89,6 @@
 #cmakedefine01 USE_WASMEDGE
 #cmakedefine01 USE_WASMTIME
 #cmakedefine01 USE_OPENSSL_FIPS
+#cmakedefine01 USE_LIBPNG
 #cmakedefine01 WITH_COVERAGE
 
