@@ -2595,7 +2595,7 @@ try
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStorage().loadEntities(config());
+            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
 
             if (!initial_loading)
             {
