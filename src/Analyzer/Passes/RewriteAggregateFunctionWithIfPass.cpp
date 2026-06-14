@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Core/Settings.h>
 
@@ -24,6 +25,39 @@ namespace Setting
 
 namespace
 {
+
+/// An aggregate preserves NULL payload rows when its null handling keeps them instead of skipping
+/// them: rewriting f(if(cond, x, NULL)) -> fIf(x, cond) drops those rows and is only valid for
+/// NULL-skipping aggregates. The *_respect_nulls family keeps them and signals this by returning
+/// itself from getOwnNullAdapter (the Null combinator's "do not wrap me, I keep NULL rows"
+/// contract). NULL-skipping aggregates return a wrapping adapter or nullptr.
+bool aggregateFunctionPreservesNullPayload(const AggregateFunctionPtr & function)
+{
+    if (!function)
+        return false;
+
+    /// Look through combinators (-OrNull / -OrDefault / -Distinct / -State / ...): they inherit
+    /// NULL-row handling from the function they wrap, so only the wrapped leaf can belong to the
+    /// *_respect_nulls family. Without this, first_value_respect_nullsOrNull(...) would be rewritten.
+    if (auto nested = function->getNestedFunction())
+        return aggregateFunctionPreservesNullPayload(nested);
+
+    /// The *_respect_nulls family is unary; a nullary aggregate (count()) cannot belong to it.
+    const auto & argument_types = function->getArgumentTypes();
+    if (argument_types.size() != 1)
+        return false;
+
+    /// Probe with a Nullable argument, exactly as the Null combinator consults getOwnNullAdapter.
+    /// Some adapters require it: count builds AggregateFunctionCountNotNullUnary whose constructor
+    /// rejects a non-Nullable argument, so probing the resolved (possibly non-Nullable) type crashes.
+    /// If the argument cannot be made Nullable it carries no NULL payload, so the rewrite is safe.
+    auto nullable_argument_type = makeNullableSafe(argument_types[0]);
+    if (!nullable_argument_type->isNullable())
+        return false;
+
+    AggregateFunctionProperties properties;
+    return function->getOwnNullAdapter(function, {nullable_argument_type}, function->getParameters(), properties) == function;
+}
 
 class RewriteAggregateFunctionWithIfVisitor : public InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>
 {
@@ -50,6 +84,11 @@ public:
 
         auto * if_node = function_arguments_nodes[0]->as<FunctionNode>();
         if (!if_node || if_node->getFunctionName() != "if")
+            return;
+
+        /// Do not rewrite aggregates that preserve NULL payload rows (the *_respect_nulls family,
+        /// directly or wrapped in a combinator): the -If form drops those rows and changes the result.
+        if (aggregateFunctionPreservesNullPayload(function_node->getAggregateFunction()))
             return;
 
         FunctionNodePtr replaced_node;
