@@ -145,71 +145,38 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
     return false;
 }
 
-bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
+bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue)
 {
+    const int flags = requeue ? (AMQP::multiple | AMQP::requeue) : AMQP::multiple;
+    const char * verb = requeue ? "requeue" : "nack";
+
     if (state != State::OK)
     {
-        LOG_TEST(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+        LOG_TEST(log, "State is {}, will not {} messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)), verb);
         return false;
     }
 
-    /// Nothing to nack.
+    /// Nothing to reject.
     if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
     {
-        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, Will not nack messages",
-                 commit_info.delivery_tag, last_commited_delivery_tag);
+        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, will not {} messages",
+                 commit_info.delivery_tag, last_commited_delivery_tag, verb);
         return false;
     }
 
-    if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple))
+    if (consumer_channel->reject(commit_info.delivery_tag, flags))
     {
         LOG_TRACE(
-            log, "Consumer rejected messages with deliveryTags from {} to {} on channel {}",
-            last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
+            log, "Consumer did {} messages with deliveryTags from {} to {} on channel {}",
+            verb, last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
 
         return true;
     }
 
     LOG_ERROR(
         log,
-        "Failed to reject messages for {}:{}, (current commit point {}:{})",
-        commit_info.channel_id, commit_info.delivery_tag,
-        channel_id, last_commited_delivery_tag);
-
-    return false;
-}
-
-bool RabbitMQConsumer::requeueMessages(const CommitInfo & commit_info)
-{
-    if (state != State::OK)
-    {
-        LOG_TEST(log, "State is {}, will not requeue messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
-        return false;
-    }
-
-    /// Nothing to requeue.
-    if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
-    {
-        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, will not requeue messages",
-                 commit_info.delivery_tag, last_commited_delivery_tag);
-        return false;
-    }
-
-    /// `AMQP::requeue` asks the broker to put the messages back on the queue for redelivery, rather
-    /// than dropping/dead-lettering them as a plain reject would.
-    if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple | AMQP::requeue))
-    {
-        LOG_TRACE(
-            log, "Consumer requeued messages with deliveryTags from {} to {} on channel {}",
-            last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
-
-        return true;
-    }
-
-    LOG_ERROR(
-        log,
-        "Failed to requeue messages for {}:{}, (current commit point {}:{})",
-        commit_info.channel_id, commit_info.delivery_tag,
+        "Failed to {} messages for {}:{}, (current commit point {}:{})",
+        verb, commit_info.channel_id, commit_info.delivery_tag,
         channel_id, last_commited_delivery_tag);
 
     return false;

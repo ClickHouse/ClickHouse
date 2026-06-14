@@ -397,14 +397,9 @@ bool RabbitMQSource::sendAck()
     return consumer && consumer->ackMessages(commit_info);
 }
 
-bool RabbitMQSource::sendNack()
+bool RabbitMQSource::sendNack(bool requeue)
 {
-    return consumer && consumer->nackMessages(commit_info);
-}
-
-bool RabbitMQSource::sendRequeue()
-{
-    return consumer && consumer->requeueMessages(commit_info);
+    return consumer && consumer->nackMessages(commit_info, requeue);
 }
 
 }

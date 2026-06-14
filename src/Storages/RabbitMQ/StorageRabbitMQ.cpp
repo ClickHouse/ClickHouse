@@ -1294,8 +1294,8 @@ bool StorageRabbitMQ::streamToViews()
                 *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
                 *    will ever happen.
                 */
-                bool send_result = aborted ? source->sendRequeue()
-                                           : (write_failed ? source->sendNack() : source->sendAck());
+                bool send_result = aborted ? source->sendNack(/*requeue=*/true)
+                                           : (write_failed ? source->sendNack(/*requeue=*/false) : source->sendAck());
                 if (send_result)
                 {
                     /// Iterate loop to activate error callbacks if they happened
