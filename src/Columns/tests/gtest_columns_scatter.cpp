@@ -8,6 +8,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -1191,6 +1192,67 @@ TEST(ColumnsScatter, TupleWithSparseElementFirst)
     };
 
     std::vector<ColumnPtr> cols = {build_sparse_tuple(n0), build_full_tuple(n1)};
+    std::vector<std::vector<UInt32>> pids = {randomPids(n0, num_shards), randomPids(n1, num_shards)};
+    checkScatterAgainstMaterialized(cols, pids, num_shards);
+}
+
+TEST(ColumnsScatter, FallbackQBitMixedNestedRepresentation)
+{
+    // QBit has no fast-path dispatch entry, so it routes to scatterFallback, and
+    // ColumnQBit::insertRangeFrom delegates to its nested ColumnTuple via assert_cast. A batch where
+    // one QBit chunk has a full nested FixedString bit-group element and another has a
+    // ColumnSparse(FixedString) element would — without recursive normalization — hit the same
+    // mismatched-nested-representation assert_cast as the Array/Map/Variant cases. The generic
+    // forEachSubcolumn-based gate (hasSubcolumns) routes QBit through normalizeRepresentation, which
+    // strips the sparse element before the cross-chunk append. This is the regression for review
+    // r3409249792 (the hand-written probe switch omitted QBit).
+    constexpr size_t num_shards = 3;
+    const size_t n0 = 200;
+    const size_t n1 = 150;
+    constexpr size_t dimension = 8;   // bitsToBytes(8) = 1 byte per bit-group FixedString
+    constexpr size_t bytes = 1;
+    constexpr size_t bit_groups = 16; // BFloat16-shaped; structure only — values are arbitrary bytes
+
+    auto build_qbit = [&](size_t rows, bool sparse_one_element) -> ColumnPtr
+    {
+        MutableColumns elems;
+        elems.reserve(bit_groups);
+        for (size_t g = 0; g < bit_groups; ++g)
+        {
+            if (sparse_one_element && g == 3)
+            {
+                // One bit-group stored sparse: index 0 of values is the (zero) default.
+                auto vals = ColumnFixedString::create(bytes);
+                vals->insertDefault();
+                auto offs = ColumnUInt64::create();
+                for (size_t i = 0; i < rows; ++i)
+                    if (i % 2 == 0)
+                    {
+                        const char c = static_cast<char>('A' + (i % 20));
+                        vals->insertData(&c, 1);
+                        offs->insertValue(static_cast<UInt64>(i));
+                    }
+                // ColumnSparse::create's mutable overload requires both pointers to share one type.
+                MutableColumnPtr vals_base = std::move(vals);
+                MutableColumnPtr offs_base = std::move(offs);
+                elems.push_back(ColumnSparse::create(std::move(vals_base), std::move(offs_base), rows));
+            }
+            else
+            {
+                auto fs = ColumnFixedString::create(bytes);
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    const char c = static_cast<char>('a' + ((i + g) % 20));
+                    fs->insertData(&c, 1);
+                }
+                elems.push_back(std::move(fs));
+            }
+        }
+        MutableColumnPtr tuple = ColumnTuple::create(std::move(elems));
+        return ColumnQBit::create(std::move(tuple), dimension);
+    };
+
+    std::vector<ColumnPtr> cols = {build_qbit(n0, /*sparse_one_element=*/false), build_qbit(n1, /*sparse_one_element=*/true)};
     std::vector<std::vector<UInt32>> pids = {randomPids(n0, num_shards), randomPids(n1, num_shards)};
     checkScatterAgainstMaterialized(cols, pids, num_shards);
 }

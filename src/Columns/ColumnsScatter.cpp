@@ -433,24 +433,17 @@ constexpr std::array<ScatterKernel, SCATTER_TABLE_SIZE> buildScatterTable()
     return table[static_cast<size_t>(source_columns[0]->getDataType())](source_columns, pids_per_source, rows_per_shard);
 }
 
-/// True for composite types whose subcolumns may hide Const/Sparse/Replicated that a
-/// top-level wrapper probe cannot see (e.g. a full Tuple wrapping a sparse element). Leaf
-/// fast-path types return false, so the hot path skips normalization entirely.
-[[nodiscard]] inline bool probeMayHaveSubcolumns(const IColumn * col)
+/// True if the column exposes any subcolumns via forEachSubcolumn — i.e. every composite
+/// (Nullable/Tuple/Array/Map/Variant/Dynamic/Object/QBit/LowCardinality/...). Such a column may
+/// hide a Const/Sparse/Replicated subcolumn that a top-level wrapper probe cannot see, so it must
+/// take the recursive normalization path. Leaf columns expose none (the base forEachSubcolumn is a
+/// no-op), so the hot path skips normalization entirely. Generic on purpose: no TypeIndex list to
+/// keep in sync as new composite types are added.
+[[nodiscard]] inline bool hasSubcolumns(const IColumn & col)
 {
-    switch (col->getDataType())
-    {
-        case TypeIndex::Tuple:
-        case TypeIndex::Nullable:
-        case TypeIndex::Array:
-        case TypeIndex::Map:
-        case TypeIndex::Variant:
-        case TypeIndex::Dynamic:
-        case TypeIndex::Object:
-            return true;
-        default:
-            return false;
-    }
+    bool any = false;
+    col.forEachSubcolumn([&](const IColumn::WrappedPtr &) { any = true; });
+    return any;
 }
 
 /// Normalize every source once (recursive), holding the rebuilt columns in `holder` (which
@@ -595,7 +588,7 @@ MutableColumns scatter(
     const bool needs_normalization = std::any_of(
         source_columns.begin(), source_columns.end(),
         [](const IColumn * col)
-        { return col->isConst() || col->isSparse() || col->isReplicated() || probeMayHaveSubcolumns(col); });
+        { return col->isConst() || col->isSparse() || col->isReplicated() || hasSubcolumns(*col); });
 
     if (needs_normalization)
         source_columns = normalizeAll(source_columns, normalized, full_ptrs);
