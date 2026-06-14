@@ -52,11 +52,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    String getSignatureString() const override
-    {
-        return "(Array(T)) -> T OR (Map(K, V)) -> Tuple(K, V)";
-    }
-
+    /// No declarative signature here on purpose: for a `Map(K, V)` argument the return type is the
+    /// map's *named* `Tuple(keys, values)`, and the DSL cannot express named tuples. An unnamed
+    /// `Tuple(K, V)` would lose the element names that `untuple` relies on, so `getReturnTypeImpl`
+    /// below stays authoritative.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & arr = getArrayJoinDataType(arguments[0]);
