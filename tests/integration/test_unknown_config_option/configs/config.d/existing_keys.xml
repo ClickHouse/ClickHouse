@@ -9,7 +9,6 @@
     </proto_caps>
     <enable_http_close_session>true</enable_http_close_session>
     <enable_arrow_close_session>true</enable_arrow_close_session>
-    <hsts_max_age>0</hsts_max_age>
     <ignore_table_dependencies_on_metadata_loading>1</ignore_table_dependencies_on_metadata_loading>
     <allow_reserved_database_name_tmp_convert>1</allow_reserved_database_name_tmp_convert>
     <keeper_map_keys_limit>0</keeper_map_keys_limit>

@@ -1941,7 +1941,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "proto_caps",
         "enable_http_close_session",
         "enable_arrow_close_session",
-        "hsts_max_age",
 
         /// Monitoring and metrics
         "graphite",
