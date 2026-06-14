@@ -1,0 +1,15 @@
+ALTER TABLE t (ADD COLUMN `c` UInt8)
+ALTER TABLE t (MODIFY COLUMN `x` ADD ENUM VALUES (  \'b\' = 2 ) )
+ALTER TABLE t (RENAME COLUMN a TO b)
+ALTER TABLE t (MODIFY SETTING s = 1)
+UPDATE t SET a = 1 WHERE b = 2
+INSERT INTO t (a, b) SELECT 1, 2
+SELECT * APPLY x -> (x + 1)
+SELECT * APPLY quantile(0.9)
+SELECT arrayMap(x -> (x + 1), [1, 2, 3])
+SHOW TABLES FROM db
+RENAME TABLE a TO b
+RENAME DATABASE a TO b
+SYSTEM DROP REPLICA \'r\'
+SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01\'
+BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')
