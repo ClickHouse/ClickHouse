@@ -27,9 +27,9 @@ if (ARCH_AMD64)
 endif ()
 
 # NEON accelerated kernels are AArch64 only. NEON is part of the AArch64 baseline, so no extra
-# compile flags are required; the kernel is selected at process start (see decoder::at_process_start).
+# compile flags are required; the kernels are selected at process start (see at_process_start).
 if (ARCH_AARCH64)
-    list (APPEND SRCS "${LIBRARY_DIR}/decoder_neon.cpp")
+    list (APPEND SRCS "${LIBRARY_DIR}/decoder_neon.cpp" "${LIBRARY_DIR}/ans32_neon.cpp")
 endif ()
 
 add_library (_iguana ${SRCS})
