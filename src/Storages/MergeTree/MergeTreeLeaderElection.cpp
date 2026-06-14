@@ -216,6 +216,20 @@ void MergeTreeLeaderElection::run()
             time_t now = time(nullptr);
             time_t session_timeout_seconds = static_cast<time_t>(session_timeout_ms / 1000);
 
+            /// The lease is stale if its timestamp is older than the session timeout, or
+            /// implausibly far in the future (leader clock skew — see the comments in the claim
+            /// branch). Computed up front so that an *expired* lease still carrying our own
+            /// `leader_id` (e.g. after a failed takeover sync cleared `is_leader`) reaches the
+            /// claim branch below instead of being trapped forever in the same-id "do not renew"
+            /// branch — which would otherwise leave a single-node deployment permanently read-only.
+            ///
+            /// Written as `parsed.timestamp < now - X` / `> now + X` (rather than
+            /// `now - parsed.timestamp > X`) to avoid signed overflow when a malformed lease parses
+            /// to an extreme timestamp; `now ± X` is safe because `now` is the current Unix time and
+            /// `X` is at most `leader_election_session_timeout`.
+            const bool lease_expired = parsed.timestamp < now - session_timeout_seconds
+                || parsed.timestamp > now + session_timeout_seconds;
+
             if (parsed.status == LeaseParseStatus::UnknownVersion)
             {
                 /// Fail closed for forward compatibility: a newer binary may write a lease
@@ -227,7 +241,7 @@ void MergeTreeLeaderElection::run()
                 ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionUnknownVersionRejections);
                 became_leader = false;
             }
-            else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id)
+            else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id && !lease_expired)
             {
                 /// The remote lease still carries our `leader_id`. Only renew it while we are
                 /// actually serving as the local leader. If a previous takeover-sync callback
@@ -253,19 +267,12 @@ void MergeTreeLeaderElection::run()
                     became_leader = false;
                 }
             }
-            else if (parsed.status == LeaseParseStatus::ParseError
-                     || parsed.timestamp < now - session_timeout_seconds
-                     || parsed.timestamp > now + session_timeout_seconds)
+            else if (parsed.status == LeaseParseStatus::ParseError || lease_expired)
             {
-                /// The lease has expired, or its timestamp is far in the future (leader clock
-                /// skew — otherwise a follower would wait indefinitely until local time catches
-                /// up), or the content was corrupted. Try to claim leadership.
-                ///
-                /// The two timestamp comparisons are written as `parsed.timestamp < now - X` /
-                /// `parsed.timestamp > now + X` (rather than `now - parsed.timestamp > X`) to
-                /// avoid signed overflow when a malformed lease parses to an extreme timestamp
-                /// value. `now ± X` is safe because `now` is the current Unix time and `X` is
-                /// at most `leader_election_session_timeout`.
+                /// The lease has expired or its timestamp is far in the future (`lease_expired`,
+                /// see above), or the content was corrupted. This also covers an expired lease
+                /// that still carries our own `leader_id`, so this node can reclaim it after a
+                /// failed takeover. Try to claim leadership.
                 LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}), trying to claim",
                     lease_path, parsed.leader_id);
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");

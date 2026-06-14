@@ -737,6 +737,12 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
     }
 
+    /// `renameDatabase` changes each table's `StorageID` via `renameInMemory` below without going
+    /// through `checkTableCanBeRenamed`. Enforce it here so storages that reject renames (e.g.
+    /// `MergeTree` with `leader_election = 1`, whose lease path and cached data path are fixed at
+    /// startup) are not silently renamed by a database-level rename.
+    for (auto & table : tables)
+        table.second->checkTableCanBeRenamed(StorageID{new_name, table.first});
 
     try
     {
