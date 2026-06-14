@@ -36,10 +36,11 @@ class FetchMachineRunner;
 
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
 /// through a fastest-first cache chain, falling back to the source. Tuned for
-/// sequential scans: keeps one source connection alive across windows, reads
-/// the next gap ahead on a `PrefetchThreadPool`, and shrinks its window/block
-/// sizes under memory pressure. Owns its cache and decryption layers, so it is
-/// NOT wrapped by the legacy async/decrypt/cache read buffers.
+/// sequential scans: reads the next gap ahead on a `PrefetchThreadPool` and
+/// shrinks its window/block sizes under memory pressure. Owns its cache and
+/// decryption layers, so it is NOT wrapped by the legacy async/decrypt/cache
+/// read buffers. Each source read is a one-shot bounded GET (the HTTP pool
+/// preserves the socket); no GET stream is kept open across windows.
 ///
 /// One instance per column-stream; not thread-safe beyond the machine handoff:
 /// while a fetch machine is in flight the worker exclusively owns the machine
@@ -50,12 +51,11 @@ class ReaderExecutor
 {
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
-    /// Gap bound for the live-connection bridge / seek-keep and `mergeRanges`:
-    /// a forward gap up to this is skipped on the open GET instead of
-    /// reopening. Near the bandwidth/request cost breakeven.
+    /// Gap bound for `mergeRanges` / `describePlan`: gaps up to this are
+    /// coalesced into one source request rather than read separately. Near the
+    /// bandwidth/request cost breakeven.
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
-    /// Drain bound: a live connection dropped within this of its right bound
-    /// is read out first, so it returns to the pool reusable.
+    /// Drain bound for the future long-connection rework; dormant for now.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t ROPE_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per Rope node
     /// Look-ahead span over which residency is planned ONCE (plan-then-stream),
@@ -95,7 +95,7 @@ public:
         const StoredObjects & objects,
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches);
 
-    /// Out-of-line because `Connection` holds `unique_ptr<ReadBufferFromFileBase>`.
+    /// Out-of-line: runs machine cleanup and the final stats / log flush.
     ~ReaderExecutor();
 
     // ─── Read path ───────────────────────────────────────────────────────
@@ -108,19 +108,19 @@ public:
 
     /// Advertise the read extent (from `ReadBuffer::setReadUntilPosition`,
     /// driven per mark range by `MergeTreeReaderStream::adjustRightMark`). The
-    /// executor bounds its live source connection to it - so the borrowed
-    /// connection is read to a known end and returned to the pool reusable -
-    /// and keeps prefetches within it. `nullopt` clears it. Drains an in-flight
-    /// prefetch when the extent changes.
+    /// executor bounds each one-shot source read and every prefetch within it,
+    /// so the borrowed connection is read to a known end and returned to the
+    /// pool reusable. `nullopt` clears it. Drains an in-flight prefetch when the
+    /// extent changes.
     void setReadExtent(std::optional<size_t> logical_end);
 
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
 
     /// A fresh executor for `[start_position, start_position + read_size)`,
-    /// sharing immutable state but owning its own position / live connection.
-    /// Shares `buffer_limit`; gets no `prefetch_pool`/log (a one-shot read
-    /// can't amortise prefetch). `read_size` bounds every read, so the
-    /// borrowed connection is fully drained and pool-reusable.
+    /// sharing immutable state but owning its own position. Gets no
+    /// `prefetch_pool`/log (a one-shot read can't amortise prefetch).
+    /// `read_size` bounds every read, so the borrowed connection is fully
+    /// drained and pool-reusable.
     std::unique_ptr<ReaderExecutor> makeTransientForReadAt(size_t start_position, size_t read_size) const;
 
     /// Roll a drained transient executor's stats into this (parent) executor.
@@ -329,92 +329,6 @@ private:
         std::shared_ptr<const ReadPlanGeometry> geometry_snapshot;
     };
 
-    /// One kept-open source connection for a sequential cold scan. Reused
-    /// across windows while the next read continues forward within its bound;
-    /// a read past it reopens, so the connection is always read to its bound
-    /// and returned to the pool drained and reusable. Owns the mechanics of
-    /// reading/skipping/draining itself; the executor owns the policy and the
-    /// stats. The global-limit lease lives in `ConnState::slot`.
-    struct Connection
-    {
-        /// Read to its right bound - fully consumed and pool-reusable. Always
-        /// false for an open-ended connection.
-        bool atBound() const { return read_until && current_position >= *read_until; }
-
-        /// Dropping now leaves the connection pool-reusable.
-        bool isComplete(bool at_eof) const { return at_eof || atBound(); }
-
-        /// The request was actually issued: at least one byte crossed the
-        /// wire. A never-read connection returns to the pool untouched (the
-        /// GET is issued lazily), so it must not count as incomplete.
-        bool everTransferred() const { return current_position > opened_at; }
-
-        /// Can be continued forward to object-local `next_local` without
-        /// reopening: forward, within `min_gap`, not past the bound.
-        bool canContinueTo(size_t next_local, size_t min_gap) const
-        {
-            return next_local >= current_position
-                && next_local - current_position <= min_gap
-                && (!read_until || next_local <= *read_until);
-        }
-
-        /// Read the pre-allocated `blocks` off the open connection into a Rope
-        /// using `set()`/`next()`, advancing the frontier. `stop` (nullable)
-        /// is polled before each block - a LIVE connection stops freely: it is
-        /// saved with its frontier and continues later, nothing is forfeited.
-        Rope readInto(VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks,
-                      size_t logical_offset, const LoggerPtr & logger,
-                      const MachineBase * stop);
-
-        /// Discard up to `gap` bytes so the frontier advances over an
-        /// already-cached hole (the bytes are over-read; the request is
-        /// saved). Returns bytes skipped (< `gap` only at EOF).
-        size_t skipForward(size_t gap, size_t block_bytes);
-
-        /// If only a tail <= `max_tail` remains to the bound, read it out so
-        /// the connection completes. Returns bytes drained (over-read,
-        /// accounted by the caller).
-        size_t drainTail(size_t max_tail, size_t block_bytes);
-
-        size_t current_position = 0;
-        /// Where the connection was opened: `current_position > opened_at`
-        /// iff it ever transferred.
-        size_t opened_at = 0;
-        std::optional<size_t> read_until;
-        std::unique_ptr<ReadBufferFromFileBase> buffer;
-        /// The object this open connection streams - decides whether the next
-        /// read can continue it or must reopen.
-        String object_path;
-    };
-
-    /// The source-connection cluster a machine worker takes ownership of for
-    /// its step. Threaded as a `ConnState &` (like `Stats & out_stats`) so a
-    /// worker operates on its OWN cluster and the foreground on its own - the
-    /// shared-`connection` use-after-free becomes a compile-time
-    /// impossibility. Move-only.
-    struct ConnState
-    {
-        /// Special members are out-of-line: the inline move would instantiate
-        /// `optional<Connection>` where `Connection`'s buffer type is still
-        /// incomplete. The move leaves the source genuinely EMPTY (plain
-        /// `std::optional` move leaves it ENGAGED), which is what lets the
-        /// foreground reclaim a job's cluster with a plain move.
-        ConnState();
-        ~ConnState();
-        ConnState(const ConnState &) = delete;
-        ConnState & operator=(const ConnState &) = delete;
-        ConnState(ConnState && other) noexcept;
-        ConnState & operator=(ConnState && other) noexcept;
-
-        std::optional<Connection> connection;
-
-        /// While streaming through a DiskCache segment, hold a bare ref to it
-        /// so a mid-read eviction can't snap the next miss head back to the
-        /// segment start. Re-pointed each window to the segment under the live
-        /// frontier; dropped on seek/EOF/reset/plan rebuild.
-        CacheWriter::CacheSegmentPin inflight_segment_pin;
-    };
-
     /// The background read-ahead machine (`PrefetchJob` grown into a steppable
     /// context). One step today - a pure source fetch of the pre-bounded
     /// aligned gap window - then the `AwaitCollect` barrier; the foreground
@@ -436,10 +350,6 @@ private:
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
         Stats stats;
-        ConnState conn;
-        /// Whether the launching plan held the live-connection lease, so the
-        /// worker opens kept-live vs one-shot WITHOUT reading the shared lease.
-        bool leased = false;
         bool reached_eof = false;
         /// The fetch step's product: raw PHYSICAL source bytes (short at EOF).
         Rope fetched;
@@ -506,13 +416,13 @@ private:
     /// pin. A prefetch worker does NOT come through here. Returns one
     /// contiguous run from the window start. `geometry` is the residency
     /// snapshot; `eof_latch` is the size-unknown EOF latch.
-    Rope readPhysicalWindow(ByteRange physical_window, ConnState & conn,
+    Rope readPhysicalWindow(ByteRange physical_window,
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
     /// `readPhysicalWindow` + remap offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer, so
     /// unconsumed read-ahead is never decrypted.
-    Rope readWindowLogical(ByteRange physical_window, ConnState & conn,
+    Rope readWindowLogical(ByteRange physical_window,
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
     /// Append every byte `geometry` reports resident in `physical_window` to
@@ -552,7 +462,6 @@ private:
         ByteRange requested_window,
         Rope & result,
         IntervalSet & covered,
-        ConnState & conn,
         bool & eof_latch,
         MemoryPressureLevel pressure_level,
         bool push_to_writers,
@@ -561,12 +470,10 @@ private:
     /// PURE source fetch: read the WHOLE `physical_window` from the source as
     /// one contiguous physical Rope (short at EOF), no cache/plan/pin. This is
     /// ALL a machine fetch step runs. `stop` (nullable) carries the machine's
-    /// cooperative stop flag; the stop policy: a LIVE connection stops at the
-    /// next block (saved, continues from its frontier later); a one-shot GET
-    /// is never cut mid-response - the stop lands BETWEEN connections. A
-    /// stop-short return has the same shape as an EOF-short one and must
-    /// neither latch EOF nor throw (the flag is checked FIRST).
-    Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, bool keep_live, ConnState & conn,
+    /// cooperative stop flag, polled BETWEEN connections only - a one-shot GET
+    /// is never cut mid-response. A stop-short return has the same shape as an
+    /// EOF-short one and must neither latch EOF nor throw (the flag is checked FIRST).
+    Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
         bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
         const MachineBase * stop, Stats & out_stats);
 
@@ -589,12 +496,11 @@ private:
         ByteRange fetch_window, ByteRange requested_window, const Rope & source_bytes,
         Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats);
 
-    /// Shared tail of an assembled window: re-point the Strategy-A pin to the
-    /// partial segment under `pin_frontier` (cleared at EOF / no live
-    /// connection), then slice `result` to `slice_window` and enforce the
+    /// Shared tail of an assembled window: re-point the Strategy-A pin
+    /// (`inflight_segment_pin`) to the partial segment under `pin_frontier`
+    /// (cleared at EOF), then slice `result` to `slice_window` and enforce the
     /// single-contiguous-run-from-the-window-start guarantee.
-    Rope finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, Rope & result,
-        ConnState & conn, bool eof_latch) const;
+    Rope finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, Rope & result, bool eof_latch);
 
     /// Push the assembled `result`'s miss bytes into the plan's held write
     /// buffers, fire-and-forget: a short/zero landing affects only the byte
@@ -629,17 +535,14 @@ private:
     /// tail drives the fetch.
     void recreditCommittedPrefixes(ByteRange window, Rope & result, IntervalSet & covered, Stats & out_stats);
 
-    /// Read from source into the pre-allocated `blocks`. Reuses the open
-    /// connection if it continues; otherwise opens kept-live when `keep_live`
-    /// (decided by the caller - the foreground passes `bool(connection_lease)`,
-    /// the worker its `leased` flag), else a one-shot. `blocks` is consumed;
-    /// blocks that receive no data are released. `stop` is polled between
-    /// blocks.
+    /// Read from source into the pre-allocated `blocks`: open a one-shot bounded
+    /// connection for this fetch range, read the blocks, and let it close on
+    /// return (the HTTP pool still preserves the socket). `blocks` is consumed;
+    /// blocks that receive no data are released.
     Rope readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-        bool keep_live, ConnState & conn, std::optional<size_t> read_extent,
-        const MachineBase * stop, Stats & out_stats);
+        std::optional<size_t> read_extent, Stats & out_stats);
 
     /// Allocate OwnedRopeBuffers covering `size` bytes, each <= `block_size`.
     /// `splits` (sorted, relative) forces block boundaries so user-window and
@@ -733,49 +636,10 @@ private:
 
     void drainAbandonedMachines(bool wait_finished = false);
 
-    // ─── Connection policy ───────────────────────────────────────────────
-
-    /// Take a `buffer_limit` lease and record the outcome in the
-    /// `ReaderExecutorBufferSlot{Acquired,Failed}` counters. Caller must hold
-    /// a non-null `buffer_limit`.
-    LiveConnectionSlot acquireSlotCounted();
-
-    /// Acquire `connection_lease` before a wide source read (plan span
-    /// > `window_size`), unless one is already held or this is a transient.
-    void acquireLeaseIfWide();
-
-    /// Return the live connection to the pool the moment it has been read to
-    /// its right bound: it is fully drained and reusable.
-    void releaseLiveConnectionAtBound(ConnState & conn) const;
-
-    /// Account a connection about to be dropped: count it incomplete unless
-    /// drained to its effective end. `at_eof` lets EOF drop sites treat a
-    /// reached-EOF connection as complete.
-    void accountLiveConnectionDrop(ConnState & conn, bool at_eof, Stats & out_stats) const;
-
-    /// Close a live connection that will not be continued: drain its tail,
-    /// account the drop, clear the connection + its segment pin. Does NOT
-    /// touch the lease - an abandon-drop releases it, `readFromSource`'s
-    /// close-to-reopen keeps it.
-    void dropLiveConnection(ConnState & conn, Stats & out_stats) const;
-
-    /// Decide an open live connection's fate before the next read at
-    /// `next_physical`: keep it only while that read is a small bridgeable
-    /// forward gap within its bound; otherwise drain its tail and drop it.
-    /// Called after every cache-only serve. `eof_latch` is passed because
-    /// this runs on both paths and a worker must not read the shared member.
-    void maybeKeepLiveConnectionBefore(size_t next_physical, ConnState & conn, bool eof_latch, Stats & out_stats) const;
-
-    /// Before dropping the live connection away from its bound, if only a
-    /// small tail (<= `max_tail_for_drain`) remains, read it out so the
-    /// connection completes. Drained bytes are charged to `out_stats`.
-    bool maybeDrainLiveTail(ConnState & conn, Stats & out_stats) const;
-
     // ─── Sizing / bounds ─────────────────────────────────────────────────
 
-    /// Effective window size for the next read: `effectiveBlockSize` when on
-    /// the live path, otherwise `window_size` clamped down by `level` (the
-    /// per-plan cached pressure level, not a fresh global query).
+    /// Effective window size for the next read: `window_size` clamped down by
+    /// `level` (the per-plan cached pressure level, not a fresh global query).
     size_t effectiveWindowSize(MemoryPressureLevel level) const;
 
     /// Effective per-block allocation size: `block_size` at normal memory,
@@ -861,18 +725,15 @@ private:
     VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> put_machines;
     static constexpr size_t MAX_PUT_MACHINES = 2;
 
-    /// Connection state.
-    /// The foreground's connection cluster. EMPTY while a machine is in
-    /// flight - moved into `machine->conn` at launch and moved back at
-    /// collect/revoke. Named distinctly from the read-path `ConnState & conn`
-    /// parameter so the two never shadow.
-    ConnState foreground_connection_state;
+    /// Connection state. The Strategy-A pin holding the partial cache segment
+    /// under the live fill frontier non-evictable across windows: re-pointed at
+    /// each `finalizeAssembledWindow`, dropped on seek / EOF / plan rebuild.
+    /// Foreground-only (a prefetch worker does a pure source fetch and never
+    /// touches it). NOT live-connection state - a one-shot fill needs it too.
+    CacheWriter::CacheSegmentPin inflight_segment_pin;
+    /// Server-wide live-connection limit handle, kept for the future long-connection
+    /// rework (shared with `makeTransientForReadAt`). Dormant for now.
     std::shared_ptr<LiveConnectionLimit> buffer_limit;
-    /// The executor's single live-connection lease. Taken lazily before a
-    /// WIDE gap read (`streamReach` beyond `window_size`); released whenever
-    /// no live connection remains. A worker is told whether its read is
-    /// leased via the machine's `leased` flag, never reading this member.
-    LiveConnectionSlot connection_lease;
 
     /// Logging / transient accounting.
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;
