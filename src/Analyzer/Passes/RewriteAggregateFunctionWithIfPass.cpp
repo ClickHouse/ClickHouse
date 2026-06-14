@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -47,13 +48,20 @@ bool aggregateFunctionPreservesNullPayload(const AggregateFunctionPtr & function
     if (argument_types.size() != 1)
         return false;
 
+    /// canContainNull() (not isNullable()): Variant/Dynamic carry NULL via a discriminator without
+    /// being wrapped in Nullable, so makeNullableSafe() leaves them unchanged. The rewrite is safe
+    /// only when the argument cannot hold a NULL payload.
+    if (!canContainNull(*argument_types[0]))
+        return false;
+
     /// Probe with a Nullable argument, exactly as the Null combinator consults getOwnNullAdapter.
-    /// Some adapters require it: count builds AggregateFunctionCountNotNullUnary whose constructor
-    /// rejects a non-Nullable argument, so probing the resolved (possibly non-Nullable) type crashes.
-    /// If the argument cannot be made Nullable it carries no NULL payload, so the rewrite is safe.
+    /// count's adapter (AggregateFunctionCountNotNullUnary) rejects a non-Nullable argument, and
+    /// Variant/Dynamic cannot be wrapped in Nullable, so fall back to a plain Nullable stand-in. The
+    /// respect_nulls adapters ignore the argument and count only checks isNullable(), so the
+    /// substitution does not change which adapter is returned.
     auto nullable_argument_type = makeNullableSafe(argument_types[0]);
     if (!nullable_argument_type->isNullable())
-        return false;
+        nullable_argument_type = makeNullable(std::make_shared<DataTypeUInt8>());
 
     AggregateFunctionProperties properties;
     return function->getOwnNullAdapter(function, {nullable_argument_type}, function->getParameters(), properties) == function;

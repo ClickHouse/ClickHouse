@@ -24,6 +24,11 @@ SELECT anyRespectNullsOrNull(if(number % 2 = 1, number, NULL)) FROM numbers(4);
 SELECT anyLast_respect_nullsOrNull(if(number < 3, number, NULL)) FROM numbers(4);
 SELECT first_value_respect_nullsOrDefault(if(number % 2 = 0, NULL, number)) FROM numbers(4);
 
+-- Variant/Dynamic carry NULL via a discriminator (not Nullable), so canContainNull is true while
+-- makeNullableSafe leaves the type unchanged. The first row is the NULL payload and must be kept.
+SELECT anyRespectNulls(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);
+SELECT anyRespectNulls(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
+
 -- respect_nulls aggregates are NOT rewritten to the -If form (the function name stays).
 SELECT sum(countSubstrings(explain, 'function_name: any_respect_nulls')) > 0
 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT anyRespectNulls(if(number % 2 = 0, NULL, number)) FROM numbers(4));
