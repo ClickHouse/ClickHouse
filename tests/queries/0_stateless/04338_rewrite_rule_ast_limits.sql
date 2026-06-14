@@ -27,5 +27,8 @@ REWRITE TO
 ); -- { serverError TOO_BIG_AST }
 
 -- The rule must not have been persisted by either rejected statement.
-SET max_ast_depth = 0, max_ast_elements = 0;
+-- Restore the default limits first: the explicit checks for rule templates treat
+-- `0` as "no limit", but the regular query pipeline (`QueryNormalizer`) treats
+-- `max_ast_depth = 0` as a literal maximum of zero and would reject this query.
+SET max_ast_depth = 1000, max_ast_elements = 50000;
 SELECT count() FROM system.query_rules WHERE name = 'rule_ast_limits';
