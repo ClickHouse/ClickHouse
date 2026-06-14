@@ -345,6 +345,7 @@ namespace Setting
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
+    extern const SettingsBool use_reader_executor;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsBool use_page_cache_for_local_disks;
     extern const SettingsBool use_page_cache_for_object_storage;
@@ -3507,7 +3508,13 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
-    query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
+    /// A new query starts with an empty set of used/missing privileges.
+    /// We must not copy the contents of the parent's `QueryPrivilegesInfo`: the parent is the session
+    /// (or global) context, whose `query_privileges_info` object is shared between all sessions and queries
+    /// (session contexts are created via `createCopy(global_context)` and never call `makeQueryContext`).
+    /// Copying its contents — and racing with concurrent writers during the copy — leaked privilege strings
+    /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
+    query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
@@ -4753,49 +4760,42 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
-    shared->uncompressed_cache->clear();
+    /// Each cache is null-checked because some `Context` users (e.g. the
+    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
+    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
 
-    if (!shared->mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
-    shared->mark_cache->clear();
+    if (shared->uncompressed_cache)
+        shared->uncompressed_cache->clear();
 
-    if (!shared->primary_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
-    shared->primary_index_cache->clear();
+    if (shared->mark_cache)
+        shared->mark_cache->clear();
 
-    if (!shared->index_uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
-    shared->index_uncompressed_cache->clear();
+    if (shared->primary_index_cache)
+        shared->primary_index_cache->clear();
 
-    if (!shared->index_mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
-    shared->index_mark_cache->clear();
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->clear();
 
-    if (!shared->vector_similarity_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
-    shared->vector_similarity_index_cache->clear();
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->clear();
 
-    if (!shared->text_index_tokens_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
-    shared->text_index_tokens_cache->clear();
+    if (shared->vector_similarity_index_cache)
+        shared->vector_similarity_index_cache->clear();
 
-    if (!shared->text_index_header_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
-    shared->text_index_header_cache->clear();
+    if (shared->text_index_tokens_cache)
+        shared->text_index_tokens_cache->clear();
 
-    if (!shared->text_index_postings_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings cache was not created yet.");
-    shared->text_index_postings_cache->clear();
+    if (shared->text_index_header_cache)
+        shared->text_index_header_cache->clear();
 
-    if (!shared->mmap_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
-    shared->mmap_cache->clear();
+    if (shared->text_index_postings_cache)
+        shared->text_index_postings_cache->clear();
 
-    if (!shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
-    shared->query_condition_cache->clear();
+    if (shared->mmap_cache)
+        shared->mmap_cache->clear();
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
@@ -7855,6 +7855,7 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
     res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
+    res.use_reader_executor = settings_ref[Setting::use_reader_executor];
     res.page_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];
