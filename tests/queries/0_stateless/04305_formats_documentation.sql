@@ -28,8 +28,8 @@ ORDER BY name;
 SELECT count() FROM system.formats WHERE length(description) > 0 AND NOT is_input AND NOT is_output;
 
 -- The embedded documentation must agree with the actual input/output capabilities of the format.
--- `JSONL` is registered for input only, `JSONStrings` for output only, and `JSONStringsEachRow`
--- for both; the descriptions were corrected to match these flags.
+-- `JSONL` is an input/output alias of `JSONEachRow` (like `JSONLines` and `NDJSON`), `JSONStrings`
+-- is output only, and `JSONStringsEachRow` is both; the descriptions match these flags.
 SELECT name, is_input, is_output
 FROM system.formats
 WHERE name IN ('JSONL', 'JSONStrings', 'JSONStringsEachRow')

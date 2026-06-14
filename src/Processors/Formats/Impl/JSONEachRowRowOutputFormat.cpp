@@ -125,6 +125,7 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
     register_function("PrettyJSONLines", false, true);
     register_function("NDJSON", false, false);
     register_function("PrettyNDJSON", false, true);
+    register_function("JSONL", false, false);
     register_function("JSONStringsEachRow", true, false);
 
     factory.setDocumentation("PrettyJSONEachRow", Documentation{

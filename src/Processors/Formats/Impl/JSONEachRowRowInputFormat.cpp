@@ -422,6 +422,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");
     factory.markFormatSupportsSubsetOfColumns("NDJSON");
+    factory.markFormatSupportsSubsetOfColumns("JSONL");
     factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
 
     factory.setDocumentation("JSONEachRow", Documentation{
@@ -504,20 +505,20 @@ Importing data columns with unknown names will be skipped if setting [input_form
 )DOCS_MD"});
 
     factory.setDocumentation("JSONL", Documentation{
-        .description = "An input-only alias for the `JSONEachRow` format (it is not registered for output; use `JSONEachRow`, `JSONLines`, or `NDJSON` for output). See the `JSONEachRow` entry for the full documentation.",
+        .description = "An alias for the `JSONEachRow` format. See the `JSONEachRow` entry for the full documentation.",
         .related = {"JSONEachRow"}});
 
     factory.setDocumentation("JSONLines", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias                                                     |
-|-------|--------|-----------------------------------------------------------|
-| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` (input only) |
+| Input | Output | Alias                                      |
+|-------|--------|--------------------------------------------|
+| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` |
 
 ## Description {#description}
 
 In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
 
-This format is also known as `JSONEachRow`, `JSONLines`, or `NDJSON` (Newline Delimited JSON). These names are aliases for the same format and can be used interchangeably for both input and output. The name `JSONL` is an additional alias, but it is registered for input only, so `SELECT ... FORMAT JSONL` is not supported.
+This format is also known as `JSONEachRow`, `JSONLines`, `NDJSON` (Newline Delimited JSON), or `JSONL`. These names are aliases for the same format and can be used interchangeably for both input and output.
 
 ## Example usage {#example-usage}
 
