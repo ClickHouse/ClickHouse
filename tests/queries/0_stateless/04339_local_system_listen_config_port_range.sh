@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # validated before binding. The port is supplied only via the config file (no CLI `--tcp_port` /
 # `--http_port` override) so this exercises the config-file path specifically, not the CLI validation.
 
-CONFIG="${CLICKHOUSE_TMP}/05017_config_port_range.xml"
+CONFIG="${CLICKHOUSE_TMP}/04339_config_port_range.xml"
 trap 'rm -f "$CONFIG"' EXIT
 
 run_listen() {
