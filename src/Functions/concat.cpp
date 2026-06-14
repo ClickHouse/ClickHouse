@@ -46,7 +46,13 @@ public:
 
     String getSignatureString() const override
     {
-        return "([Any], ...) -> String";
+        /// Accept zero or at least two arguments, but not exactly one: a single argument hits the
+        /// passthrough in `executeImpl` that returns the input column unchanged, which would
+        /// contradict the declared `String` result type (legacy rejected it with
+        /// `TOO_FEW_ARGUMENTS_FOR_FUNCTION`). The `concat` overload resolver routes a single
+        /// argument to `toString` separately, so only the direct `ConcatImpl`
+        /// (`concatAssumeInjective`) relies on this.
+        return "() -> String OR (Any, Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
