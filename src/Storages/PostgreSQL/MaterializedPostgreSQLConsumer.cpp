@@ -76,13 +76,18 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
         {
             storages.emplace(table_name, StorageData(storage_info, log));
         }
-        catch (...)
+        catch (const Exception & e)
         {
             /// The structure of the PostgreSQL table might no longer match the structure of
             /// the nested ClickHouse table (for example, a column was added or dropped in
             /// PostgreSQL while the server was down). Do not fail the whole consumer because
             /// of a single out-of-sync table: skip it (the user can bring it back with
-            /// DETACH/ATTACH) and keep replicating the rest of the tables.
+            /// DETACH/ATTACH) and keep replicating the rest of the tables. Only the expected
+            /// structure-mismatch error is handled this way; any other error is a real problem
+            /// and must propagate.
+            if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                throw;
+
             tryLogCurrentException(
                 log,
                 fmt::format("Table {} is skipped from replication because its structure does not match "
@@ -105,10 +110,15 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
     , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
-    /// +2 because of _sign and _version columns
+    /// +2 because of _sign and _version columns.
+    /// This is an expected condition (the PostgreSQL table structure no longer matches the
+    /// nested ClickHouse table, e.g. a column was added/dropped in PostgreSQL while the server
+    /// was down), not an internal logic error, so it must not be a LOGICAL_ERROR (which aborts
+    /// the server in debug/sanitizer builds). It is caught when constructing the consumer and
+    /// the affected table is skipped from replication.
     if (columns_attributes.size() + 2 != columns_num)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
                         storage_info.storage->getStorageID().getNameForLogs(),
                         columns_attributes.size(), columns_num);
