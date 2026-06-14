@@ -9,7 +9,6 @@ doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import BetaBadge from '@theme/badges/BetaBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # MergeTree table engine
@@ -1211,7 +1210,7 @@ It is possible to set up non-replicated MergeTree tables with a one-writer, many
 
 ### Leader election for non-replicated MergeTree on shared object storage {#leader-election-on-shared-storage}
 
-<BetaBadge/>
+<ExperimentalBadge/>
 
 Multiple ClickHouse instances sharing a single non-replicated `MergeTree` table on object storage can elect a single leader using the [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) setting. Only the leader accepts inserts, merges, mutations, and mutating DDL; the other instances act as read-only followers and will take over automatically when the current leader becomes unavailable. `DROP TABLE` on a follower is permitted as a local-metadata-only operation (see "Behavior on the leader vs. on followers" below). This enables active/standby failover without requiring `ClickHouse Keeper`.
 
@@ -1285,7 +1284,7 @@ Related settings:
 These settings are immutable after table creation: `ALTER TABLE ... MODIFY SETTING leader_election = ...` is rejected.
 
 :::note
-The `leader_election` setting is in beta and is intended for shared object-storage deployments only. For multi-writer replication with full conflict resolution, use `ReplicatedMergeTree`.
+The `leader_election` setting is experimental and is intended for shared object-storage deployments only. For multi-writer replication with full conflict resolution, use `ReplicatedMergeTree`.
 :::
 
 :::note cache configuration

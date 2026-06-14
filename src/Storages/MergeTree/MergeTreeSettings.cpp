@@ -2185,11 +2185,11 @@ namespace ErrorCodes
     `Azure` object storage disk with shared metadata (`metadata_type = plain_rewritable` is recommended), so
     that after a failover the new leader sees the parts written by the previous leader. Tables on disks with
     the default per-replica `metadata_type = local` are rejected at creation.
-    )", BETA) \
+    )", EXPERIMENTAL) \
     DECLARE(Seconds, leader_election_heartbeat_interval, 10, R"(
     Interval in seconds between leader election heartbeats. The leader renews its lease at this interval,
     and followers check for an expired lease at this interval. Only takes effect when `leader_election` is enabled.
-    )", BETA) \
+    )", EXPERIMENTAL) \
     DECLARE(Seconds, leader_election_session_timeout, 30, R"(
     Session timeout in seconds for leader election. If the leader does not renew its lease within this period,
     a follower will assume that the leader is dead and try to claim leadership. Must be at least 3x
@@ -2200,7 +2200,7 @@ namespace ErrorCodes
     `session_timeout - 2 * heartbeat_interval` can briefly leave both the old and new
     leader believing they hold the lease (up to one `leader_election_heartbeat_interval`)
     until the old leader's next heartbeat fails the ETag check.
-    )", BETA) \
+    )", EXPERIMENTAL) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
