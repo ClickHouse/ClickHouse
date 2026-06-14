@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+
+# Checks that a server rejects the obsolete `Client::IgnoredPartUUIDs` packet (8).
+# The packet was used by the removed `allow_experimental_query_deduplication` feature.
+# An old initiator in a mixed-version cluster can still send it to a new replica during a
+# rolling upgrade. The packet is a command to skip parts, so silently ignoring it would yield
+# duplicate rows; instead the new replica must fail the query (fail-close).
+#
+# The packet arrives before the query starts, so - like every other unexpected pre-query
+# packet - the server logs the exception (UNSUPPORTED_METHOD) and closes the connection rather
+# than sending an Exception packet back. Hence the test expects the connection to be closed.
+
+import os
+import socket
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "simple native protocol"
+
+# Protocol::Client::IgnoredPartUUIDs
+CLIENT_IGNORED_PART_UUIDS = 8
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+
+        ba.append(byte)
+
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8")
+    writeVarUInt(len(s), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise EOFError("Connection closed by server")
+        size -= len(cur)
+        res.extend(cur)
+
+    return res
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+
+        if not byte & 0x80:
+            return x
+
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    s = readStrict(s, size)
+    return s.decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(54449, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # pwd
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    p_type = readVarUInt(s)
+    assert p_type == 0  # Hello
+    _server_name = readStringBinary(s)
+    _server_version_major = readVarUInt(s)
+    _server_version_minor = readVarUInt(s)
+    _server_revision = readVarUInt(s)
+    _server_timezone = readStringBinary(s)
+    _server_display_name = readStringBinary(s)
+    _server_version_patch = readVarUInt(s)
+
+
+def sendIgnoredPartUUIDs(s):
+    ba = bytearray()
+    writeVarUInt(CLIENT_IGNORED_PART_UUIDS, ba)
+    writeVarUInt(1, ba)  # one UUID in the vector
+    ba.extend([0] * 16)  # the UUID itself (two UInt64 halves)
+    s.sendall(ba)
+
+
+def main():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+        sendIgnoredPartUUIDs(s)
+
+        # The server rejects the obsolete packet and closes the connection.
+        assert s.recv(1) == b"", "Expected the server to close the connection after rejecting the packet"
+
+        s.close()
+    print("OK")
+
+
+if __name__ == "__main__":
+    main()

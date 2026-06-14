@@ -297,6 +297,8 @@ private:
     [[noreturn]] void processUnexpectedQuery();
     [[noreturn]] void processUnexpectedHello();
     [[noreturn]] void processUnexpectedTablesStatusRequest();
+    /// Reject the obsolete IgnoredPartUUIDs packet (allow_experimental_query_deduplication was removed).
+    [[noreturn]] void processObsoleteIgnoredPartUUIDs();
 
     /// Process INSERT query
     void startInsertQuery(QueryState & state);

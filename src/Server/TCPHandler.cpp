@@ -14,6 +14,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
@@ -1153,6 +1154,9 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
             processTablesStatusRequest();
             return false;
 
+        case Protocol::Client::IgnoredPartUUIDs:
+            processObsoleteIgnoredPartUUIDs();
+
         case Protocol::Client::Query:
             processQuery(state);
             return true;
@@ -1207,6 +1211,9 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
             case Protocol::Client::TablesStatusRequest:
                 processUnexpectedTablesStatusRequest();
+
+            case Protocol::Client::IgnoredPartUUIDs:
+                processObsoleteIgnoredPartUUIDs();
 
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
@@ -2548,6 +2555,17 @@ void TCPHandler::processUnexpectedQuery()
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }
 
+void TCPHandler::processObsoleteIgnoredPartUUIDs()
+{
+    /// Read the obsolete payload off the wire to keep the chunked input stream framed, then reject.
+    std::vector<UUID> ignored_part_uuids;
+    readVectorBinary(ignored_part_uuids, *in);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        "Received IgnoredPartUUIDs packet, but query deduplication "
+        "(allow_experimental_query_deduplication) is no longer supported. "
+        "Disable the setting on the initiator or finish the cluster upgrade.");
+}
+
 bool TCPHandler::receiveQueryPlan(QueryState & state)
 {
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
@@ -2817,6 +2835,9 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
                 case Protocol::Client::Cancel:
                     processCancel(state);
                     break;
+
+                case Protocol::Client::IgnoredPartUUIDs:
+                    processObsoleteIgnoredPartUUIDs();
 
                 default:
                     throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
