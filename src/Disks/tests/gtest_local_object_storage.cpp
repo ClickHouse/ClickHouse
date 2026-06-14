@@ -309,6 +309,49 @@ TEST(LocalObjectStorage, ListObjectsThrowsOnPermissionDeniedSubdirectory)
     fs::permissions(no_access, fs::perms::owner_all, fs::perm_options::replace, ec);
 }
 
+/// Regression test for the follow-up clickhouse-gh[bot] review on PR #107432.
+/// The iterator tolerates the disappearance class (ENOENT + ENOTDIR), but the
+/// per-entry metadata stat (`tryGetObjectMetadata`) must apply the same tolerance:
+/// after `is_directory` succeeds on a yielded child `<root>/d/file`, the parent
+/// `<root>/d` can be concurrently replaced by a file, so `fs::last_write_time` /
+/// `fs::file_size` on `<root>/d/file` return `not_a_directory` (ENOTDIR). That
+/// is the same race the PR promises to omit, so it must yield an empty optional,
+/// not abort the listing. A genuine error (EACCES) must still propagate.
+TEST(LocalObjectStorage, TryGetObjectMetadataToleratesNonDirectoryPathComponent)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_enotdir");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    /// `<root>/d` is a regular file, so stat-ing `<root>/d/file` walks through a
+    /// non-directory component and fails with ENOTDIR (`not_a_directory`).
+    std::ofstream(root / "d") << "x";
+    EXPECT_NO_THROW({
+        auto metadata = storage->tryGetObjectMetadata((root / "d" / "file").string(), /*with_tags=*/ false);
+        EXPECT_FALSE(metadata.has_value()) << "a vanished (ENOTDIR) entry must be omitted, not reported";
+    });
+
+    /// A genuine, non-disappearance error must still propagate. A subdirectory
+    /// stripped of all permissions makes the traversal fail with EACCES.
+    if (::geteuid() != 0) /// root bypasses permission bits
+    {
+        const auto no_access = root / "noaccess";
+        fs::create_directories(no_access);
+        std::ofstream(no_access / "hidden.txt") << "1";
+
+        std::error_code ec;
+        fs::permissions(no_access, fs::perms::none, fs::perm_options::replace, ec);
+        ASSERT_FALSE(ec) << "Failed to chmod 000 the subdirectory: " << ec.message();
+
+        EXPECT_THROW(
+            storage->tryGetObjectMetadata((no_access / "hidden.txt").string(), /*with_tags=*/ false),
+            fs::filesystem_error);
+
+        fs::permissions(no_access, fs::perms::owner_all, fs::perm_options::replace, ec);
+    }
+}
+
 /// A non-existent or non-directory input must return an empty listing,
 /// never throw or crash.
 TEST(LocalObjectStorage, ListObjectsHandlesMissingAndNonDirectoryPaths)

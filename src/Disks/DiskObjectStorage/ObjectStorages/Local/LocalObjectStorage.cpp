@@ -368,6 +368,18 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
+namespace
+{
+/// The concurrent-disappearance class for a best-effort local listing: an entry
+/// removed mid-stat (ENOENT) or whose parent path component was concurrently
+/// replaced by a non-directory (ENOTDIR). Mirrors libc++'s own `__is_dne_error`.
+/// Every other error (EACCES, EIO, ...) is a real failure and must propagate.
+bool isVanishedEntryError(const std::error_code & error)
+{
+    return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
+}
+}
+
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     ObjectMetadata object_metadata;
@@ -391,7 +403,7 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     auto time = fs::last_write_time(path, error);
     if (error)
     {
-        if (error == std::errc::no_such_file_or_directory)
+        if (isVanishedEntryError(error))
             return {};
         throw fs::filesystem_error("Got unexpected error while getting last write time", path, error);
     }
@@ -399,8 +411,9 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     object_metadata.size_bytes = fs::file_size(path, error);
     if (error)
     {
-        /// The file may vanish between the two stat calls (concurrent removal).
-        if (error == std::errc::no_such_file_or_directory)
+        /// The entry may vanish between the two stat calls (concurrent removal),
+        /// or a parent path component may be concurrently replaced by a file.
+        if (isVanishedEntryError(error))
             return {};
         throw fs::filesystem_error("Got unexpected error while getting file size", path, error);
     }
@@ -417,15 +430,15 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
         return;
 
     /// Listing is a best-effort snapshot driven with the non-throwing
-    /// `error_code` overloads. Tolerate ONLY the concurrent-disappearance race:
-    /// an entry removed mid-listing (ENOENT), or a directory concurrently
-    /// replaced by a non-directory (ENOTDIR) - such an entry is simply omitted,
-    /// mirroring how a remote object store omits a concurrently-deleted object.
-    /// Any other error (EACCES, EIO, ...) is propagated as `filesystem_error`,
-    /// so a caller never reads a silently truncated listing.
+    /// `error_code` overloads. Tolerate ONLY the concurrent-disappearance class
+    /// (see `isVanishedEntryError`) - such an entry is simply omitted, mirroring
+    /// how a remote object store omits a concurrently-deleted object. Any other
+    /// error (EACCES, EIO, ...) is propagated, so a caller never reads a
+    /// silently truncated listing. The same tolerance is applied by
+    /// `tryGetObjectMetadata` below for the per-entry metadata stat.
     auto throw_unless_vanished = [&](const std::error_code & e)
     {
-        if (e != std::errc::no_such_file_or_directory && e != std::errc::not_a_directory)
+        if (!isVanishedEntryError(e))
             throw fs::filesystem_error("Cannot list local object storage directory", path, e);
     };
 
