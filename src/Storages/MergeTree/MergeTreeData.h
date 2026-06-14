@@ -645,6 +645,15 @@ public:
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// Whether this node may currently write to the (possibly shared) storage that backs the
+    /// parts — repairing `checksums.txt`/`columns.txt`, removing duplicate parts, detaching
+    /// broken parts, and persisting removal TIDs during loading and refresh. A standalone table
+    /// owns its data outright and always may. `StorageMergeTree` with `leader_election` overrides
+    /// this to allow such writes only while the lease is held, so that a follower (or a node that
+    /// has not yet acquired the lease) loads and refreshes its part view strictly read-only and
+    /// never mutates shared object-storage metadata owned by the current leader.
+    virtual bool mayMutateSharedStorage() const { return true; }
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
@@ -662,7 +671,13 @@ public:
     /// The caller is responsible for invalidating the disk metadata cache via
     /// `disk->refresh(...)` before this call when it needs the freshest view.
     /// Returns the number of newly loaded parts.
-    size_t loadNewlyAppearedParts();
+    ///
+    /// When `strict_takeover` is true (a `leader_election` leadership acquisition), a part that
+    /// cannot be loaded aborts the call with an exception instead of being skipped, so the new
+    /// leader never enables writes with an incomplete active set or advances the block-number
+    /// counter past a part it failed to load. The periodic follower refresh leaves it false and
+    /// stays best-effort.
+    size_t loadNewlyAppearedParts(bool strict_takeover = false);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;

@@ -358,7 +358,10 @@ void StorageMergeTree::startup()
                     {
                         for (const auto & disk : getStoragePolicy()->getDisks())
                             disk->refresh(/* not_sooner_than_milliseconds= */ 0);
-                        size_t newly_loaded = loadNewlyAppearedParts();
+                        /// Strict load: if any part written by the previous leader cannot be
+                        /// loaded, abort the takeover rather than enabling writes with an
+                        /// incomplete active set or advancing the block counter past a missing part.
+                        size_t newly_loaded = loadNewlyAppearedParts(/* strict_takeover = */ true);
                         Int64 max_block_number = getMaxBlockNumber();
                         UInt64 next_block = std::max<UInt64>(increment.value.load(), static_cast<UInt64>(std::max<Int64>(0, max_block_number)));
                         increment.set(next_block);
@@ -383,12 +386,12 @@ void StorageMergeTree::startup()
                     /// The takeover sync above can take longer than
                     /// `leader_election_session_timeout`, and the heartbeat task cannot renew
                     /// the lease while it is executing this callback. If the lease has gone
-                    /// stale, another node may have already claimed leadership — running the
-                    /// destructive `clearEmptyParts` / `clearOldTemporaryDirectories` below as
-                    /// a stale leader would violate the single-writer invariant. Re-check lease
-                    /// freshness (relaxed to `session_timeout` by `TakeoverSyncScope`) and abort
-                    /// the takeover: the exception propagates to the election task, which
-                    /// relinquishes leadership locally and retries on a later heartbeat.
+                    /// stale, another node may have already claimed leadership — reconciling the
+                    /// remaining shared state and starting background write jobs below as a stale
+                    /// leader would violate the single-writer invariant. Re-check lease freshness
+                    /// (relaxed to `session_timeout` by `TakeoverSyncScope`) and abort the
+                    /// takeover: the exception propagates to the election task, which relinquishes
+                    /// leadership locally and retries on a later heartbeat.
                     if (!leader_election_ptr->isLeader())
                     {
                         if (refresh_parts_task)
@@ -396,7 +399,7 @@ void StorageMergeTree::startup()
                         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
                             "The leader lease was not renewed within the session timeout while "
                             "syncing parts from shared storage on leadership acquisition; "
-                            "refusing to run destructive cleanup as a possibly stale leader");
+                            "refusing to enable writes as a possibly stale leader");
                     }
 
                     /// Cancel pre-existing follower-state cancellations on merges and moves so the
@@ -405,8 +408,28 @@ void StorageMergeTree::startup()
                     follower_merges_cancellation = {};
                     follower_moves_cancellation = {};
 
-                    clearEmptyParts();
-                    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+                    /// Reconcile the rest of the shared write-order state created by the previous
+                    /// leader while this node was a follower, before any writes or background jobs:
+                    ///  - reload mutation entries so an acknowledged `ALTER ... UPDATE/DELETE` is
+                    ///    tracked in `current_mutations_by_version` and actually finishes after
+                    ///    failover (and stale `tmp_mutation_*`/uncommitted entries are now cleaned
+                    ///    up as the leader);
+                    ///  - open the deduplication log so retried inserts cannot bypass
+                    ///    `non_replicated_deduplication_window` because the previous leader's dedup
+                    ///    records were not loaded.
+                    /// These run while `writes_enabled` is still false (set by the election task
+                    /// only after this callback returns) and before the background jobs below.
+                    loadMutations(/* reloading = */ true);
+                    loadDeduplicationLog();
+
+                    /// Do NOT run `clearEmptyParts` / `clearOldTemporaryDirectories` synchronously
+                    /// here: those can be long (they list and delete on shared object storage),
+                    /// and the heartbeat task cannot renew the lease while it executes this
+                    /// callback, so a slow cleanup could run past lease expiry and overlap another
+                    /// node's takeover. The `cleanup_thread` started just below performs both
+                    /// periodically and re-checks `canRunDestructiveCleanup()` (lease freshness)
+                    /// at execution time, outside the heartbeat, so it fails closed if the lease
+                    /// is no longer held.
                     cleanup_thread.start();
                     background_operations_assignee.start();
                     startBackgroundMovesIfNeeded();
@@ -1538,17 +1561,28 @@ void StorageMergeTree::loadDeduplicationLog()
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
-    /// Deduplication log only matters on INSERTs.
-    if (!disk->isReadOnly())
+    /// Deduplication log only matters on INSERTs, so followers never need it. Under
+    /// `leader_election`, `MergeTreeDeduplicationLog::load` rotates/drops shared log files,
+    /// which a non-leader must not do — defer creation until the leadership-acquisition
+    /// callback (which calls this again once the lease is held). Followers reach this with
+    /// `mayMutateSharedStorage() == false` and leave `deduplication_log` null.
+    if (!disk->isReadOnly() && mayMutateSharedStorage())
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
         deduplication_log->load();
     }
 }
 
-void StorageMergeTree::loadMutations()
+void StorageMergeTree::loadMutations(bool reloading)
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// Under `leader_election` a follower (or a node that has not yet acquired the lease) must
+    /// not delete or rewrite files on shared storage; it still loads the mutation state into
+    /// memory so reads observe the correct mutated view. The leadership-acquisition callback
+    /// calls this again with `reloading = true` once the lease is held, which both performs the
+    /// deferred file maintenance and picks up entries the previous leader created meanwhile.
+    const bool may_mutate = mayMutateSharedStorage();
 
     for (const auto & disk : getDisks())
     {
@@ -1558,6 +1592,13 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
                 UInt64 block_number = entry.block_number;
+
+                /// On a leadership-takeover reload, entries created by the previous leader while
+                /// this node was a follower are already in memory. Skip them so we neither
+                /// double-count mutation counters nor hit the "already exists" bug check below.
+                if (reloading && current_mutations_by_version.contains(block_number))
+                    continue;
+
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
@@ -1565,16 +1606,18 @@ void StorageMergeTree::loadMutations()
                     if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
-                        entry.writeCSN(csn);
+                        if (may_mutate)
+                            entry.writeCSN(csn);
                     }
                     else
                     {
                         /// Transaction is not committed. The TID may be outdated if the transaction log entry
                         /// was garbage-collected (e.g. after upgrade from a version that advanced tail_ptr).
-                        /// In either case the mutation was not committed and should be removed.
+                        /// In either case the mutation was not committed and should be removed (by the leader).
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
                                   it->name(), entry.tid);
-                        disk->removeFile(it->path());
+                        if (may_mutate)
+                            disk->removeFile(it->path());
                         continue;
                     }
                 }
@@ -1587,7 +1630,8 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                if (may_mutate)
+                    disk->removeFile(it->path());
             }
         }
     }
@@ -3532,6 +3576,20 @@ bool StorageMergeTree::canRunDestructiveCleanup() const
     /// `isLeaderAndWritable()`: cleanup must keep running during the short post-failover
     /// takeover-sync window when `writes_enabled` is still false but the lease is held.
     return !leader_election_ptr || leader_election_ptr->isLeader();
+}
+
+bool StorageMergeTree::mayMutateSharedStorage() const
+{
+    /// Without `leader_election` this is a standalone writer that owns its data outright.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return true;
+
+    /// Otherwise only the lease-holding leader may write to shared storage. This is keyed on
+    /// `isLeader()` (lease freshness), matching `canRunDestructiveCleanup`: during the
+    /// post-failover takeover sync `writes_enabled` is still false but the lease is held, and
+    /// the callback must be able to reconcile shared state. `leader_election_ptr` is null until
+    /// `startup` creates it, so initial part/mutation/dedup loading runs read-only.
+    return leader_election_ptr && leader_election_ptr->isLeader();
 }
 
 Pipe StorageMergeTree::alterPartition(

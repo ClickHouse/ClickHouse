@@ -1792,7 +1792,11 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
-        writeChecksums(checksums, {});
+        /// Under `leader_election`, a follower must not repair `checksums.txt` on shared object
+        /// storage owned by the current leader. The recomputed `checksums` is still used
+        /// in-memory below; only its persistence is deferred to the leader.
+        if (storage.mayMutateSharedStorage())
+            writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
         bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
@@ -2091,7 +2095,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-        if (!is_readonly_storage)
+        /// Same as for `checksums.txt`: a `leader_election` follower must not write `columns.txt`
+        /// to shared object storage owned by the current leader (`mayMutateSharedStorage`).
+        if (!is_readonly_storage && storage.mayMutateSharedStorage())
             writeColumns(loaded_columns, {});
     }
 

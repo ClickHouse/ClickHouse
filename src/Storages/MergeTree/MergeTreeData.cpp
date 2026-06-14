@@ -2010,7 +2010,10 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 
     /// Explicitly set remove_tid for parts w/o transaction (i.e. w/o txn_version.txt)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
-    if (!current_version_info.isRemoved())
+    /// Under `leader_election`, persisting the removal TID writes to the covered part's version
+    /// metadata on shared object storage; only the lease-holding leader may do that. A follower
+    /// sets `remove_time` in memory above but leaves the on-disk removal TID to the leader.
+    if (!current_version_info.isRemoved() && part->storage.mayMutateSharedStorage())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
         part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
@@ -2519,7 +2522,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
             else if (res.part->is_duplicate)
             {
-                if (!is_static_storage)
+                /// Under `leader_election`, only the lease-holding leader may remove parts from
+                /// shared object storage; a follower loads its view read-only (mayMutateSharedStorage).
+                if (!is_static_storage && mayMutateSharedStorage())
                 {
                     LOG_ERROR(log, "Removing duplicate part {}", res.part->getDataPartStorage().getFullPath());
                     res.part->remove();
@@ -2574,7 +2579,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    if (!is_static_storage)
+    /// Under `leader_election`, detaching a broken part renames it on shared object storage,
+    /// which only the lease-holding leader may do; a follower loads its view read-only.
+    if (!is_static_storage && mayMutateSharedStorage())
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
@@ -2696,7 +2703,7 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
-size_t MergeTreeData::loadNewlyAppearedParts()
+size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
 {
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");
@@ -2755,6 +2762,11 @@ size_t MergeTreeData::loadNewlyAppearedParts()
 
         if (res.is_broken)
         {
+            if (strict_takeover)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Data part {} on shared storage is broken and cannot be loaded during leadership "
+                    "takeover; refusing to enable writes with an incomplete active set",
+                    res.part->name);
             LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
         }
         else
@@ -2932,7 +2944,9 @@ try
             loadUnexpectedDataPart(load_state);
 
             chassert(load_state.part);
-            if (load_state.is_broken)
+            /// Under `leader_election`, detaching renames on shared object storage; only the
+            /// lease-holding leader may do it. A follower leaves the broken part in place.
+            if (load_state.is_broken && mayMutateSharedStorage())
                 load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
         }, Priority{});
     }
@@ -3023,13 +3037,24 @@ try
                 loading_parts_max_backoff_ms, loading_parts_max_tries);
 
             ++num_loaded_parts;
+            /// Under `leader_election`, detaching/removing parts mutates shared object storage,
+            /// which only the lease-holding leader may do. A follower loads the parts read-only
+            /// and leaves broken/duplicate parts in place (mayMutateSharedStorage). The normal
+            /// `preparePartForRemoval` path is itself read-only on a follower — it sets the
+            /// in-memory remove time but skips persisting the removal TID (see the function).
             if (res.is_broken)
             {
-                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                if (mayMutateSharedStorage())
+                {
+                    forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                }
             }
             else if (res.part->is_duplicate)
-                res.part->remove();
+            {
+                if (mayMutateSharedStorage())
+                    res.part->remove();
+            }
             else
                 preparePartForRemoval(res.part);
         }, Priority{});

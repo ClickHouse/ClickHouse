@@ -228,7 +228,19 @@ private:
 
     void assertCanCommitTransaction() const override;
 
-    void loadMutations();
+    /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
+    /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove
+    /// parts, persist removal TIDs). During construction and while a follower the lease is not
+    /// held, so these maintenance writes are deferred and re-run by the leadership-acquisition
+    /// callback as the single writer. Keyed on the persisted setting rather than
+    /// `leader_election_ptr` (which is null during construction) so the very first load is
+    /// read-only on a follower.
+    bool mayMutateSharedStorage() const override;
+
+    /// `reloading` is set on a `leader_election` leadership takeover, when mutation entries
+    /// created by the previous leader while this node was a follower must be picked up. Already
+    /// known entries are then skipped instead of triggering the "already exists" bug check.
+    void loadMutations(bool reloading = false);
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
