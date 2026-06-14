@@ -1,5 +1,7 @@
--- Tags: no-parallel
+-- Tags: no-parallel, shard
 -- no-parallel: Uses the `future_set_from_subquery_skip_inplace_build` failpoint, which is global.
+-- shard: Uses `remote('127.0.0.2', ...)`, so it must be skipped where the server cannot
+--        listen on `127.0.0.2` (e.g. the macOS `arm_darwin` fast-test build).
 --
 -- Regression test for `GLOBAL IN` when the in-place set build stops early.
 --
