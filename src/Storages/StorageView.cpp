@@ -1020,6 +1020,20 @@ SinkToStoragePtr StorageView::write(
     auto context = metadata_snapshot->getSQLSecurityOverriddenContext(local_context);
     auto target_table = getViewTargetTable(select, getStorageID(), context);
 
+    /// The target of an insertable view must be a real storage, not another regular view. A view as
+    /// the target would break the "omitted columns receive the target table's defaults" contract,
+    /// because the intermediate view carries no column `DEFAULT`s: an omitted column would be
+    /// materialized as a type default here and the final storage's `DEFAULT` expression would never
+    /// apply. For example, with `CREATE TABLE t (a UInt8, b UInt8 DEFAULT 42)`,
+    /// `CREATE VIEW v1 AS SELECT * FROM t`, `CREATE VIEW v2 AS SELECT * FROM v1`, the statement
+    /// `INSERT INTO v2 (a) VALUES (1)` would store `b = 0` instead of `42`. Reject such chains
+    /// instead of silently storing diverging values.
+    if (target_table->as<StorageView>())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its target {} is itself a view; "
+            "inserting through a chain of views is not supported",
+            getStorageID().getFullTableName(), target_table->getStorageID().getFullTableName());
+
     NameSet target_columns;
     for (const auto & col : target_table->getInMemoryMetadataPtr(context, false)->getColumns().getOrdinary())
         target_columns.insert(col.name);
