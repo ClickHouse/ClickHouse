@@ -687,17 +687,27 @@ void LocalServer::startServers(const ServerType & server_type)
             });
     };
 
-    /// Start listeners as an all-or-nothing operation. If any later bind fails, or the final
-    /// per-protocol verification rejects a partial start, roll back every listener this call
-    /// started so a reported failure never leaves a half-open set of listeners behind (in
-    /// particular, a TCP port still accepting connections after the command was rejected). Only
-    /// the listeners appended by this call are rolled back; listeners from earlier successful
-    /// `SYSTEM START LISTEN` calls are left untouched.
+    /// Start listeners as an all-or-nothing operation in two phases, so a failure can never leave a
+    /// half-open set of listeners — or, worse, an already-admitted external session — behind.
+    ///
+    /// Phase 1 binds every requested `listen_host` x protocol socket but does NOT start its accept
+    /// thread (`start_server=false`): each socket is bound and listening at the kernel level, yet no
+    /// connection is ever handed to a handler. Only once every requested protocol is confirmed bound
+    /// (the per-protocol verification below) does phase 2 start the accept threads. This closes the
+    /// window where an earlier listener could accept a connection and begin executing a query while a
+    /// later bind in the same call is still pending: under the default unauthenticated local users
+    /// setup, a rejected `SYSTEM START LISTEN` must not leave any external session running.
+    ///
+    /// On any failure (a bind in phase 1, the verification, or a `start` in phase 2) the listeners
+    /// appended by this call are rolled back; in the common case none has begun accepting, so
+    /// destroying them simply closes the bound sockets (a connection still queued in the kernel
+    /// backlog is reset, never served). Listeners from earlier successful `SYSTEM START LISTEN` calls
+    /// are left untouched.
     ///
     /// `Context::server_ports` (read by the `getServerPort` SQL function and the `tcp_port` /
     /// `http_port` lookups) must stay consistent with the all-or-nothing listener state, so port
-    /// registration is deferred until after the per-protocol verification passes. Otherwise a
-    /// rolled-back bind would leave the registry pointing at a port whose listener was just closed.
+    /// registration is deferred until after phase 2. Otherwise a rolled-back bind would leave the
+    /// registry pointing at a port whose listener was just closed.
     const size_t servers_started_before = servers.size();
     std::vector<std::pair<const char *, UInt16>> ports_to_register;
     try
@@ -707,7 +717,7 @@ void LocalServer::startServers(const ServerType & server_type)
             if (server_type.shouldStart(ServerType::Type::TCP))
             {
                 const char * port_name = "tcp_port";
-                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
@@ -734,7 +744,7 @@ void LocalServer::startServers(const ServerType & server_type)
             if (server_type.shouldStart(ServerType::Type::HTTP))
             {
                 const char * port_name = "http_port";
-                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
@@ -767,6 +777,15 @@ void LocalServer::startServers(const ServerType & server_type)
         if (server_type.shouldStart(ServerType::Type::HTTP) && !has_active_listener("http_port"))
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Failed to start HTTP listener — check listen_host and http_port configuration");
+
+        /// Phase 2: the whole requested set is bound and verified. Only now start the accept threads,
+        /// so no listener admits a connection until the entire set is known-good. `createServer` no
+        /// longer logs (it does not start the server), so emit the "Listening for ..." line here.
+        for (size_t i = servers_started_before; i < servers.size(); ++i)
+        {
+            servers[i].start();
+            LOG_INFO(&logger(), "Listening for {}", servers[i].getDescription());
+        }
     }
     catch (...)
     {
@@ -776,13 +795,17 @@ void LocalServer::startServers(const ServerType & server_type)
         /// mutex is not recursive), and we must not call `waitServersToFinish` (it takes the lock and
         /// would also stop listeners from earlier successful calls).
         ///
-        /// `stop` only prevents new connections; once `server.start` has returned, an accept thread may
-        /// already have handed an external connection to a handler that still references the underlying
-        /// `TCPServer`. Destroying the adapter while such a handler is running would be a use-after-free.
-        /// Mirror the normal `stopServers` lifetime rule: stop every appended adapter, then erase only
-        /// those with no active connections. Any still-busy adapter stays in `servers` (already stopped,
-        /// so it accepts nothing new and is not reported as an active listener); it is drained and
-        /// destroyed by `cleanup` at teardown.
+        /// In the common failure path (a bind in phase 1, or the verification) none of the appended
+        /// adapters has started accepting, so `currentConnections()` is 0 for every one and the erase
+        /// loop drops them all — no external connection was ever admitted. The stop/erase shape below
+        /// is still the correct general rule for the rare case where a `start` itself throws in phase 2
+        /// after some accept threads are already live: `stop` only prevents new connections, and an
+        /// accept thread that already handed a connection to a handler still references the underlying
+        /// `TCPServer`, so destroying that adapter would be a use-after-free. Mirror the normal
+        /// `stopServers` lifetime rule: stop every appended adapter, then erase only those with no
+        /// active connections. Any still-busy adapter stays in `servers` (already stopped, so it
+        /// accepts nothing new and is not reported as an active listener); it is drained and destroyed
+        /// by `cleanup` at teardown.
         for (size_t i = servers_started_before; i < servers.size(); ++i)
             if (!servers[i].isStopping())
                 servers[i].stop();
@@ -794,7 +817,7 @@ void LocalServer::startServers(const ServerType & server_type)
         throw;
     }
 
-    /// All requested listeners started and passed verification — publish their ports now, so the
+    /// All requested listeners are bound, verified, and now started — publish their ports, so the
     /// registry is only ever updated for a fully successful (and therefore non-rolled-back) start.
     for (const auto & [port_name, port] : ports_to_register)
         global_context->registerServerPort(port_name, port);
