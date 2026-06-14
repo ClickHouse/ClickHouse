@@ -2,6 +2,7 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 
@@ -659,6 +660,62 @@ bool ASTAlterQuery::isDropPartitionAlter() const
 bool ASTAlterQuery::isCommentAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
+}
+
+namespace
+{
+
+/// True only for a pure comment-only `MODIFY COLUMN c COMMENT 'x'`, mirroring the
+/// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
+/// routing and the storage fast path agree. Placement (FIRST/AFTER) and
+/// per-column SETTINGS are excluded: they alter the replicated /columns and must
+/// take the full replicated path.
+bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
+{
+    if (command.type != ASTAlterCommand::MODIFY_COLUMN)
+        return false;
+
+    const auto * col_decl = command.col_decl ? command.col_decl->as<ASTColumnDeclaration>() : nullptr;
+    if (!col_decl)
+        return false;
+
+    return col_decl->getComment() != nullptr
+        && col_decl->getType() == nullptr
+        && col_decl->getCodec() == nullptr
+        && col_decl->getDefaultExpression() == nullptr
+        && col_decl->getTTL() == nullptr
+        && col_decl->getSettings() == nullptr
+        && command.settings_changes == nullptr
+        && command.settings_resets == nullptr
+        && command.column == nullptr
+        && !command.first;
+}
+
+}
+
+bool ASTAlterQuery::isSettingsOrCommentAlter() const
+{
+    if (!command_list || command_list->children.empty())
+        return false;
+    for (const auto & child : command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        switch (command.type)
+        {
+            case ASTAlterCommand::MODIFY_SETTING:
+            case ASTAlterCommand::RESET_SETTING:
+            case ASTAlterCommand::COMMENT_COLUMN:
+            case ASTAlterCommand::MODIFY_COMMENT:
+                break;
+            case ASTAlterCommand::MODIFY_COLUMN:
+                if (!isCommentOnlyModifyColumn(command))
+                    return false;
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
 }
 
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
