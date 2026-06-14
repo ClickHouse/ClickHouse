@@ -23,9 +23,12 @@ struct BitShiftRightImpl
     static constexpr auto signature =
         /// Float arguments are rejected by the runtime (`valid_on_float_arguments=false`);
         /// see the matching comment in `bitAnd.cpp`.
+        /// The String / FixedString shift path only supports native-width shift counts
+        /// (`IsIntegral`); big integers (`UInt128`/`Int256`/...) reach `executeImpl` but are
+        /// rejected there, so spell the count as `NativeInteger` (cf. `bitTest`).
         "(A : Integer, B : Integer) -> nativeNumber(maxBits(A, B), anySigned(A, B), 0)"
-        " OR (String, Integer) -> String"
-        " OR (F : FixedString, Integer) -> F";
+        " OR (String, NativeInteger) -> String"
+        " OR (F : FixedString, NativeInteger) -> F";
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
