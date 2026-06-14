@@ -271,6 +271,44 @@ TEST(LocalObjectStorage, ListObjectsToleratesConcurrentAtomicRename)
     EXPECT_GT(listings_done.load(), 0u) << "no listing completed";
 }
 
+/// Regression test for the clickhouse-gh[bot] review on PR #107432. The
+/// concurrent-rename fix must suppress ONLY the disappearance race (an entry
+/// removed mid-listing); a real I/O or permission error must still propagate so
+/// callers never read a silently truncated `icebergLocal`/local-object-storage
+/// listing. Here a subdirectory is made unreadable (mode 000): the iterator can
+/// see the entry but recursing into it fails with EACCES, which must surface as
+/// a `filesystem_error` rather than a short listing.
+TEST(LocalObjectStorage, ListObjectsThrowsOnPermissionDeniedSubdirectory)
+{
+    /// Running as root bypasses permission bits, so EACCES would never trigger.
+    if (::geteuid() == 0)
+        GTEST_SKIP() << "must not run as root (permission checks are bypassed)";
+
+    ScopedTempDir tmp("ch_gtest_local_object_storage_eacces");
+    const auto & root = tmp.path;
+
+    std::ofstream(root / "top.txt") << "0";
+    const auto no_access = root / "noaccess";
+    fs::create_directories(no_access);
+    std::ofstream(no_access / "hidden.txt") << "1";
+
+    /// Strip every permission bit: the `noaccess` entry stays visible from the
+    /// root, but opening it to recurse fails with EACCES.
+    std::error_code ec;
+    fs::permissions(no_access, fs::perms::none, fs::perm_options::replace, ec);
+    ASSERT_FALSE(ec) << "Failed to chmod 000 the subdirectory: " << ec.message();
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    DB::RelativePathsWithMetadata children;
+    EXPECT_THROW(
+        storage->listObjects(root.string(), children, /* max_keys */ 0),
+        fs::filesystem_error);
+
+    /// Restore permissions so ScopedTempDir can remove the tree on teardown.
+    fs::permissions(no_access, fs::perms::owner_all, fs::perm_options::replace, ec);
+}
+
 /// A non-existent or non-directory input must return an empty listing,
 /// never throw or crash.
 TEST(LocalObjectStorage, ListObjectsHandlesMissingAndNonDirectoryPaths)

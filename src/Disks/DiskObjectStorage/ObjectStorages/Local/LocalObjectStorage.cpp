@@ -416,29 +416,45 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
-    /// Listing is a best-effort snapshot: entries may be created or removed
-    /// concurrently (e.g. an external writer atomically replacing a file via
-    /// rename). Drive the iterator with the non-throwing `error_code` overloads
-    /// and skip entries that vanish mid-listing, mirroring how a remote object
-    /// store simply omits a concurrently-deleted object. The previous code used
-    /// the throwing overloads, so a file removed between enumeration and the
-    /// metadata stat aborted the whole listing with a `filesystem_error`.
+    /// Listing is a best-effort snapshot driven with the non-throwing
+    /// `error_code` overloads. Tolerate ONLY the concurrent-disappearance race:
+    /// an entry removed mid-listing (ENOENT), or a directory concurrently
+    /// replaced by a non-directory (ENOTDIR) - such an entry is simply omitted,
+    /// mirroring how a remote object store omits a concurrently-deleted object.
+    /// Any other error (EACCES, EIO, ...) is propagated as `filesystem_error`,
+    /// so a caller never reads a silently truncated listing.
+    auto throw_unless_vanished = [&](const std::error_code & e)
+    {
+        if (e != std::errc::no_such_file_or_directory && e != std::errc::not_a_directory)
+            throw fs::filesystem_error("Cannot list local object storage directory", path, e);
+    };
+
     std::error_code ec;
     fs::recursive_directory_iterator it(path, ec);
     if (ec)
+    {
+        throw_unless_vanished(ec);
         return;
+    }
 
     const fs::recursive_directory_iterator end;
-    for (; it != end; it.increment(ec))
+    while (it != end)
     {
+        const bool is_dir = it->is_directory(ec);
         if (ec)
-            return;
+            throw_unless_vanished(ec); /// entry vanished before we could stat it: skip it
+        else if (!is_dir)
+        {
+            if (auto metadata = tryGetObjectMetadata(it->path(), /*with_tags=*/ false))
+                children.emplace_back(std::make_shared<RelativePathWithMetadata>(it->path(), std::move(*metadata)));
+        }
 
-        if (it->is_directory(ec) || ec)
-            continue;
-
-        if (auto metadata = tryGetObjectMetadata(it->path(), /*with_tags=*/ false))
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(it->path(), std::move(*metadata)));
+        it.increment(ec);
+        if (ec)
+        {
+            throw_unless_vanished(ec);
+            return; /// increment resets the iterator to end() on error
+        }
     }
 }
 
