@@ -731,6 +731,16 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     }
 
     /// Sparse union: every child holds `rows` values; compact each Variant element to only its own rows.
+    /// Validate that before the per-row access below — a malformed file can give a child a shorter
+    /// `FieldNode::length` (the decoder accepts each child length independently), and `insertFrom` / the
+    /// child null-map lookup would then read past the child column. Dense unions are already bounded by the
+    /// per-row offset check above, so this is needed only for the sparse layout.
+    for (size_t l = 0; l < variant_columns.size(); ++l)
+        if (variant_columns[l]->size() != rows)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC sparse union child {} has {} rows, expected {}", l, variant_columns[l]->size(), rows);
+
     MutableColumns compact;
     compact.reserve(variant_columns.size());
     for (const auto & col : variant_columns)
@@ -876,6 +886,14 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         {
             const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
             validate(buffer->offset(), buffer->length());
+            /// Typed decoders read int32/int64 values straight from `body.data() + offset` (offsets, list and
+            /// dictionary indices, union offsets). Arrow IPC pads every buffer to an 8-byte boundary and the
+            /// body is allocated aligned, so a non-empty buffer at an unaligned offset is malformed and an
+            /// unaligned typed load would be undefined behavior; reject it as corrupt data. Compressed buffers
+            /// are decompressed into an aligned scratch buffer below, so this only applies to the direct path.
+            if (buffer->length() > 0 && (buffer->offset() % 8) != 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Arrow IPC buffer offset {} is not 8-byte aligned", buffer->offset());
             const char * ptr = buffer->length() > 0 ? body.data() + buffer->offset() : nullptr;
             buffer_slices.push_back(Slice{ptr, buffer->length()});
         }
