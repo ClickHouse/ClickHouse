@@ -4003,7 +4003,7 @@ Possible values:
     DECLARE(UInt64, shard_by_hash_input_batch_bytes, 2097152, R"(
 When `enable_sharding_aggregator = 1`, controls the number of source bytes accumulated in `BufferedShardByHashTransform` before a batch scatter-flush is performed via `DB::ColumnsScatter::scatter`.
 
-Setting this to a non-zero value enables input batching: the transform collects multiple input chunks until their total size in bytes reaches or exceeds this budget, then scatters them all at once. This amortises the K×P `IColumn` allocation cost over many input chunks and eliminates the associated cold-page TLB flushes, yielding a wall-clock improvement on high-cardinality GROUP BY workloads. Using a byte budget (rather than a row count) keeps each flush short and its per-shard buffers small for wide rows, while narrow rows still accumulate until the budget is reached.
+Setting this to a non-zero value enables input batching: the transform collects multiple input chunks until their total size in bytes reaches or exceeds this budget, then scatters them all at once, amortising the K×P `IColumn` allocation cost over many input chunks. Using a byte budget (rather than a row count) keeps each flush short and its per-shard buffers small for wide rows, while narrow rows still accumulate until the budget is reached.
 
 Chunks are never split; a batch may exceed the budget by at most one input chunk's bytes. The byte budget is a soft target with an internal safety cap on the number of accumulated chunks, so a flush may also happen before the budget is reached — this bounds the row count for const-heavy chunks whose physical byte size does not reflect how many rows (and partition ids) they carry.
 
