@@ -40,9 +40,6 @@ struct GroupFormatData
 
 UInt64 getSerializationProtocolVersion(const ContextPtr & context)
 {
-    if (!context)
-        return DBMS_TCP_PROTOCOL_VERSION;
-
     const auto & client_info = context->getClientInfo();
     if (client_info.connection_tcp_protocol_version)
         return client_info.connection_tcp_protocol_version;
