@@ -26,6 +26,12 @@ if (ARCH_AMD64)
         PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512bw -mavx512vl -mavx512dq")
 endif ()
 
+# NEON accelerated kernels are AArch64 only. NEON is part of the AArch64 baseline, so no extra
+# compile flags are required; the kernel is selected at process start (see decoder::at_process_start).
+if (ARCH_AARCH64)
+    list (APPEND SRCS "${LIBRARY_DIR}/decoder_neon.cpp")
+endif ()
+
 add_library (_iguana ${SRCS})
 
 # Linked statically into ClickHouse, so no shared-object visibility/dllexport attributes.
