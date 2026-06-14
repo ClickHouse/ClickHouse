@@ -564,6 +564,7 @@ SHARED_UUID_ALTER = "12345678-abcd-abcd-abcd-12345678ab02"
 SHARED_UUID_RENAME = "12345678-abcd-abcd-abcd-12345678ab03"
 SHARED_UUID_VISIBILITY = "12345678-abcd-abcd-abcd-12345678ab04"
 SHARED_UUID_FOLLOWER_REFRESH = "12345678-abcd-abcd-abcd-12345678ab05"
+SHARED_UUID_EPOCH = "12345678-abcd-abcd-abcd-12345678ab06"
 
 
 def ensure_node_up(node, timeout=60):
@@ -868,3 +869,60 @@ def test_replicated_mergetree_rejects_leader_election(started_cluster):
     raise AssertionError(
         "ReplicatedMergeTree with leader_election=1 should have been rejected at CREATE"
     )
+
+
+def test_commit_rejected_on_stale_leadership_epoch(started_cluster):
+    """
+    Regression for the commit-time epoch fence (`assertWritableLeaderAtEpoch`): a write must not
+    publish a part if leadership was lost (and possibly reacquired) between the write's admission
+    and its commit. A non-refresh `Transaction::commit` that raced a leadership change could
+    otherwise rename a part onto shared storage that a new leader then activates.
+
+    The `merge_tree_leader_election_stale_epoch_before_commit` failpoint deterministically makes
+    `MergeTreeSink::commitPart` present an admission epoch older than the current one, so the real
+    pre-rename guard rejects the INSERT. Because the guard runs BEFORE the rename that publishes
+    the part, the rejected INSERT must leave no new part behind (no orphan a new leader could later
+    activate) — this is what the test asserts via the unchanged row count.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    table = "test_epoch_fence"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_EPOCH)
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            rejected = False
+            try:
+                node1.query(f"INSERT INTO {table} VALUES (10)")
+            except Exception as e:
+                msg = str(e)
+                assert "Leadership epoch" in msg or "stale lease" in msg, (
+                    f"INSERT was rejected, but not by the leadership-epoch fence: {msg}"
+                )
+                rejected = True
+            assert rejected, "INSERT under a stale leadership epoch should have been rejected"
+
+            # The rejection must happen before the publishing rename: no new part is committed.
+            assert (
+                int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+            ), "A part was published despite the stale-epoch rejection (orphan part)"
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared the same INSERT succeeds and becomes visible.
+        node1.query(f"INSERT INTO {table} VALUES (10)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
@@ -29,6 +30,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_leader_election_stale_epoch_before_commit[];
 }
 
 namespace Setting
@@ -383,7 +389,15 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// then the rename has already happened, so a node that lost (or lost and reacquired)
         /// leadership could leave a part a new leader then activates. Checking here also rejects an
         /// `INSERT` admitted under a previous lease epoch (stale block numbers).
-        storage.assertWritableLeaderAtEpoch(commit_epoch);
+        UInt64 admission_epoch = commit_epoch;
+        /// Test hook: deterministically simulate a leadership loss+reacquire between this INSERT's
+        /// admission and its commit by presenting an older admission epoch than the current one, so
+        /// the real `assertWritableLeaderAtEpoch` comparison rejects the write before the rename.
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_commit,
+        {
+            admission_epoch = commit_epoch >= 1 ? commit_epoch - 1 : commit_epoch + 1;
+        });
+        storage.assertWritableLeaderAtEpoch(admission_epoch);
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
     }
