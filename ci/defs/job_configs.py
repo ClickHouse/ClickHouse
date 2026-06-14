@@ -219,6 +219,9 @@ class JobConfigs:
             'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " || sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done',
         ],
         post_hooks=[
+            # Remove the lo0 aliases added in pre_hooks: the macos_m2 runner is reused,
+            # so leftover aliases make 127.0.0.2+ look local to later jobs. Best-effort.
+            'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
         ],
