@@ -249,24 +249,38 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 {
     std::lock_guard lock(mutex);
 
-    /// `Memory` tables do not own patch parts (lightweight update support is provided only by
-    /// engines from the `MergeTree` family) and do not maintain a `_row_exists` deletion mask.
-    /// `APPLY PATCHES` / `APPLY DELETED MASK` are therefore semantic no-ops here: the post-state
-    /// the user is asking for ("all patches applied", "deleted rows physically removed") is
-    /// already satisfied trivially. Filtering them out before constructing the mutation pipeline
-    /// avoids reaching `MutationsInterpreter` with a command set that has no stages to apply to
-    /// the in-memory blocks. The previous code path produced N output blocks with 0 rows each
-    /// (matching the input block count but empty), which then failed the partial-column
-    /// invariant check at the bottom of this function with
+    /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
+    /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
+    /// indices, projections, statistics, patch parts, the `_row_exists` deletion mask,
+    /// or rewritten parts. Reaching `MutationsInterpreter` with such a command set
+    /// produces a pipeline that returns one zero-row block per input block, after which
+    /// the partial-column path below fails the per-block row-count invariant with
     /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    /// A real `UPDATE` / `DELETE` / `MATERIALIZE COLUMN` mixed into the same `ALTER` still
+    /// executes normally.
+    ///
+    /// Only the kinds that can actually reach this method are filtered:
+    ///   - `DROP INDEX` / `DROP PROJECTION` / `DROP STATISTICS` are rejected earlier by
+    ///     `StorageMemory::checkAlterIsPossible`, never reach `mutate`.
+    ///   - `MATERIALIZE TTL` is rejected by `MutationsInterpreter::prepare` during
+    ///     pre-mutation validation when there is no TTL on the table, never reaches `mutate`.
     MutationCommands commands_to_run;
     commands_to_run.reserve(commands.size());
     for (const auto & command : commands)
     {
-        if (command.type == MutationCommand::APPLY_PATCHES
-         || command.type == MutationCommand::APPLY_DELETED_MASK)
-            continue;
-        commands_to_run.push_back(command);
+        switch (command.type)
+        {
+            case MutationCommand::APPLY_PATCHES:
+            case MutationCommand::APPLY_DELETED_MASK:
+            case MutationCommand::MATERIALIZE_INDEX:
+            case MutationCommand::MATERIALIZE_PROJECTION:
+            case MutationCommand::MATERIALIZE_STATISTICS:
+            case MutationCommand::REWRITE_PARTS:
+                continue;
+            default:
+                commands_to_run.push_back(command);
+                break;
+        }
     }
 
     if (commands_to_run.empty())

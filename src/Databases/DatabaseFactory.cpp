@@ -125,9 +125,9 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     return impl;
 }
 
-void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features)
+void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features, Documentation documentation)
 {
-    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features}).second)
+    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
 }
 

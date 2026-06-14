@@ -491,14 +491,29 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
         {
             const auto & expr = expr_step->getExpression();
+            /// `arrayJoin` changes the number of rows produced by an expression.
+            /// Lazy materialization splits the DAG into a main half (applied before the
+            /// `LIMIT`) and a lazy half (applied after `JoinLazyColumnsStep`, i.e. after
+            /// the `LIMIT`). If `arrayJoin` ends up in the lazy half, it would expand the
+            /// already-truncated rows, producing extra rows that should have been part of
+            /// the row pool the `LIMIT` was supposed to cut from. See issue #82279.
+            /// Bail out conservatively whenever an `ExpressionStep` below the sort
+            /// contains `arrayJoin`; this is the same condition used by
+            /// `tryExecuteFunctionsAfterSorting` in `liftUpFunctions.cpp`.
+            if (expr.hasArrayJoin())
+                return false;
             /// The number of DAG outputs can be less than the number of columns in the header.
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *expr_step->getInputHeaders().front() , std::move(required_columns));
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
         {
-            updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
             const auto & expr = filter_step->getExpression();
+            /// Same reasoning as above: an `arrayJoin` action in a `FilterStep`'s DAG
+            /// can be split into the lazy half and run after the `LIMIT`. See #82279.
+            if (expr.hasArrayJoin())
+                return false;
+            updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *filter_step->getInputHeaders().front(), std::move(required_columns));
             has_filter = true;

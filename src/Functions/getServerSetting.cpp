@@ -70,7 +70,21 @@ private:
 
         std::string_view setting_name{column->getDataAt(0)};
 
-        return Context::getGlobalContextInstance()->getServerSettings().get(setting_name);
+        auto global_context = Context::getGlobalContextInstance();
+
+        /// Take a consistent snapshot of the server settings under the shared context lock. A few settings
+        /// (e.g. `s3queue_disable_streaming`) are mutated at runtime on config reload, so copying the struct
+        /// without synchronization would race with those writers.
+        ServerSettings server_settings = global_context->getServerSettingsCopy();
+
+        /// Some server settings can be changed at runtime (e.g. memory limits, cache sizes, thread pool sizes).
+        /// In that case the live value held by the component diverges from the value stored in `ServerSettings`,
+        /// which only reflects what was last loaded from the config. `system.server_settings` already returns
+        /// the live value for such settings - mirror that behaviour here.
+        if (auto live = server_settings.tryGetLiveValueAsString(global_context, setting_name))
+            server_settings.set(setting_name, *live);
+
+        return server_settings.get(setting_name);
     }
 };
 

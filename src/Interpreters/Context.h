@@ -1831,6 +1831,13 @@ public:
 
     const ServerSettings & getServerSettings() const;
 
+    /// Returns a consistent snapshot (copy) of the server settings taken under `shared->mutex`.
+    /// A few server settings are mutated at runtime on config reload (e.g. `s3queue_disable_streaming`),
+    /// so reading the whole struct without synchronization races with those writers. Use this accessor
+    /// whenever a copy of the settings is needed; the reference returned by `getServerSettings` must only
+    /// be used to read fields that are never changed after startup.
+    ServerSettings getServerSettingsCopy() const;
+
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 

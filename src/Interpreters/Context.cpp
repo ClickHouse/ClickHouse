@@ -8032,6 +8032,14 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
+ServerSettings Context::getServerSettingsCopy() const
+{
+    /// Synchronize with the runtime writers of `shared->server_settings`
+    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings;
+}
+
 uint64_t HTTPContext::getMaxHstsAge() const
 {
     return context->getSettingsRef()[Setting::hsts_max_age];
