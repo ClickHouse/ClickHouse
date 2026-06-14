@@ -525,6 +525,17 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!source)
         return;
 
+    /// For a `GLOBAL IN` set backed by an external table, the in-place build writes the
+    /// *deduplicated* set to the external table (see `buildExternalTableFromInplaceSet`),
+    /// so it cannot account for the full materialized subquery payload that
+    /// `max_rows_to_transfer` / `max_bytes_to_transfer` limit: a subquery of many duplicate
+    /// rows collapses to a few set elements and slips under the limit, even though the
+    /// streaming `CreatingSetsTransform` would ship (and reject) the full payload. When these
+    /// limits are active, defer to the streaming path, which checks them per source block on
+    /// the raw payload. `source` is left intact so the delayed build can run it.
+    if (set_and_key->external_table && network_transfer_limits.hasLimits())
+        return;
+
     auto source_for_retry = createQueryPlanForRetry(context);
     auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(false);
     auto plan = std::move(source);
@@ -632,6 +643,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
 
     if (!source)
+        return nullptr;
+
+    /// See the matching comment in `buildSetInplace`: an in-place build of a `GLOBAL IN`
+    /// external-table set deduplicates before writing the external table, so it cannot enforce
+    /// `max_rows_to_transfer` / `max_bytes_to_transfer` on the full materialized payload. Defer
+    /// to the streaming path, which enforces these limits per source block.
+    if (set_and_key->external_table && network_transfer_limits.hasLimits())
         return nullptr;
 
     auto source_for_retry = createQueryPlanForRetry(context);
