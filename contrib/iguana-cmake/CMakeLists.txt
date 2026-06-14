@@ -1,0 +1,38 @@
+set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/iguana/iguana")
+
+# Build the portable code paths of the library (structural LZ compression + the rANS entropy
+# coders). The SIMD/assembly fast paths, the command-line tool, the C bindings stub and the
+# file-I/O helpers are not compiled here (see the submodule's CHANGES.ClickHouse.md).
+set (SRCS
+    "${LIBRARY_DIR}/common.cpp"
+    "${LIBRARY_DIR}/error.cpp"
+    "${LIBRARY_DIR}/entropy.cpp"
+    "${LIBRARY_DIR}/output_stream.cpp"
+    "${LIBRARY_DIR}/ans_bitstream.cpp"
+    "${LIBRARY_DIR}/ans_byte_statistics.cpp"
+    "${LIBRARY_DIR}/ans_nibble_statistics.cpp"
+    "${LIBRARY_DIR}/ans1.cpp"
+    "${LIBRARY_DIR}/ans32.cpp"
+    "${LIBRARY_DIR}/ans_nibble.cpp"
+    "${LIBRARY_DIR}/encoder.cpp"
+    "${LIBRARY_DIR}/decoder.cpp"
+)
+
+add_library (_iguana ${SRCS})
+
+# Linked statically into ClickHouse, so no shared-object visibility/dllexport attributes.
+target_compile_definitions (_iguana PUBLIC IGUANA_STATIC)
+
+# ClickHouse only supports Clang (see cmake/tools.cmake); select the matching intrinsics in bitops.h.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_definitions (_iguana PRIVATE IGUANA_COMPILER_CLANG)
+else ()
+    target_compile_definitions (_iguana PRIVATE IGUANA_COMPILER_GNU)
+endif ()
+
+# The upstream port emits a number of -Wsign-compare / -Wmissing-field-initializers warnings.
+target_compile_options (_iguana PRIVATE -w)
+
+target_include_directories (_iguana SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/iguana")
+
+add_library (ch_contrib::iguana ALIAS _iguana)

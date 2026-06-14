@@ -399,3 +399,7 @@
 [submodule "contrib/silk"]
 	path = contrib/silk
 	url = https://github.com/ClickHouse/silk.git
+[submodule "contrib/iguana"]
+	path = contrib/iguana
+	url = https://github.com/ClickHouse/iguana.git
+	branch = complete-cpp-implementation

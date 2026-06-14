@@ -527,6 +527,7 @@ target_link_libraries (clickhouse_compression
         PRIVATE
             ch_contrib::lz4
             ch_contrib::roaring
+            ch_contrib::iguana
 )
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
