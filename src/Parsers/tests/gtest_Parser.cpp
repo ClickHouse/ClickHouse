@@ -9,6 +9,8 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
@@ -45,6 +47,39 @@ TEST(Lexer, NullInputWithMaxQuerySize)
     Lexer lexer(nullptr, nullptr, 262144);
     Token token = lexer.nextToken();
     EXPECT_EQ(TokenType::EndOfStream, token.type);
+}
+
+/// The output-option children (INTO OUTFILE, COMPRESSION, FORMAT, SETTINGS) must end up
+/// in the same canonical order whether the AST is freshly parsed, cloned, or obtained by
+/// a format+reparse roundtrip. Otherwise the tree hash differs across these paths, which
+/// trips the `Inconsistent AST formatting` consistency check. See
+/// `ASTQueryWithOutput::output_option_members`.
+TEST(ParserQueryWithOutput, OutputOptionChildOrderIsCanonical)
+{
+    const std::vector<String> queries = {
+        "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' FORMAT JSONEachRow",
+        "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' FORMAT JSONEachRow SETTINGS max_threads = 1",
+        "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' SETTINGS max_threads = 1 FORMAT JSONEachRow",
+        "SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 1",
+        "SELECT 1 SETTINGS max_threads = 1 FORMAT JSONEachRow",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQueryWithOutput parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// A clone must have the same tree hash as the original.
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+
+        /// A format+reparse roundtrip must reproduce the same tree hash.
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
 }
 
 TEST_P(ParserTest, parseQuery)

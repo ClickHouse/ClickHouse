@@ -35,7 +35,6 @@
 #include <Common/assert_cast.h>
 
 #include <algorithm>
-#include <array>
 
 
 namespace DB
@@ -216,26 +215,22 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     /// to the query (by `ParserExplainQuery`) before INTO OUTFILE is parsed here.
     /// Reorder the output-option children into the canonical (formatting) order
     /// so that the tree hash is stable across a formatting roundtrip, regardless
-    /// of the original clause order.
+    /// of the original clause order. The order is shared with `cloneOutputOptions`
+    /// and `formatImpl` via `ASTQueryWithOutput::output_option_members`.
     {
-        std::array<ASTPtr *, 5> ordered_options{
-            &query_with_output.out_file,
-            &query_with_output.compression,
-            &query_with_output.compression_level,
-            &query_with_output.format_ast,
-            &query_with_output.settings_ast};
-
         auto & ch = query_with_output.children;
         auto is_output_option = [&](const ASTPtr & child)
         {
-            return std::any_of(ordered_options.begin(), ordered_options.end(),
-                [&](const ASTPtr * option) { return *option && option->get() == child.get(); });
+            return std::any_of(
+                ASTQueryWithOutput::output_option_members.begin(),
+                ASTQueryWithOutput::output_option_members.end(),
+                [&](auto member) { return (query_with_output.*member) && (query_with_output.*member).get() == child.get(); });
         };
 
         ch.erase(std::remove_if(ch.begin(), ch.end(), is_output_option), ch.end());
-        for (auto * option : ordered_options)
-            if (*option)
-                ch.push_back(*option);
+        for (auto member : ASTQueryWithOutput::output_option_members)
+            if (query_with_output.*member)
+                ch.push_back(query_with_output.*member);
     }
 
     node = std::move(query);
