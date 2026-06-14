@@ -17,12 +17,17 @@ private:
     /// Serialization of the dictionary type.
     /// It can differ from the nested serialization for nullable types.
     SerializationPtr dict_inner_serialization;
+    /// False when this serialization is the on-disk dictionary-encoded representation
+    /// of a column whose data type is NOT LowCardinality (automatic LowCardinality serialization).
+    bool is_native_low_cardinality;
 
-    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
+    SerializationLowCardinality(const DataTypePtr & dictionary_type, bool is_native_low_cardinality_);
 
 public:
-    static UInt128 getHash(const DataTypePtr & dictionary_type);
-    static SerializationPtr create(const DataTypePtr & dictionary_type);
+    static UInt128 getHash(const DataTypePtr & dictionary_type, bool is_native_low_cardinality_);
+    static SerializationPtr create(const DataTypePtr & dictionary_type, bool is_native_low_cardinality_ = true);
+
+    KindStack getKindStack() const override;
 
     bool supportsPooling() const override { return dict_inner_serialization->supportsPooling(); }
 

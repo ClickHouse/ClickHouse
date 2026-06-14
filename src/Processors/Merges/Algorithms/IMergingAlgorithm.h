@@ -56,6 +56,9 @@ public:
     {
         convertToFullIfConst(input.chunk);
         convertToFullIfSparse(input.chunk);
+        /// Merge algorithms operate on full columns; materialize non-native LowCardinality
+        /// (automatic LowCardinality serialization) so merged output columns match their data types.
+        convertToFullIfNonNativeLowCardinality(input.chunk);
     }
 
     static void removeConstAndSparse(Inputs & inputs)

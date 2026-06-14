@@ -96,6 +96,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
@@ -877,6 +878,32 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
+
+    /// Automatic LowCardinality serialization: store a String/FixedString column in dictionary-encoded
+    /// form when it has a `uniq` statistic with a low cardinality estimate. This is decided after sparse
+    /// serialization (so a mostly-default column is stored as sparse instead), and uses only the existing
+    /// `uniq` statistics - it does not change statistics serialization.
+    const UInt64 max_uniq_for_low_cardinality = (*data_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality];
+    if (max_uniq_for_low_cardinality != 0)
+    {
+        for (const auto & [column_name, column_type] : columns)
+        {
+            if (!isStringOrFixedString(column_type))
+                continue;
+
+            auto info_it = infos.find(column_name);
+            if (info_it == infos.end()
+                || ISerialization::hasKind(info_it->second->getKindStack(), ISerialization::Kind::SPARSE))
+                continue;
+
+            auto stats_it = statistics.find(column_name);
+            if (stats_it == statistics.end() || !stats_it->second->getStats().contains(StatisticsType::Uniq))
+                continue;
+
+            if (stats_it->second->estimateCardinality() <= max_uniq_for_low_cardinality)
+                info_it->second->appendToKindStack(ISerialization::Kind::LOW_CARDINALITY);
+        }
+    }
 
     for (const auto & [column_name, _] : columns)
     {

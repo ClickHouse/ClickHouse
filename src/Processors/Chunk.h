@@ -167,6 +167,9 @@ using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 /// and their structure must be equal (e.g. compareAt).
 void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
+/// Materialize non-native LowCardinality columns (automatic LowCardinality serialization) to full columns.
+/// Genuine LowCardinality(T) columns are left intact.
+void convertToFullIfNonNativeLowCardinality(Chunk & chunk);
 void removeSpecialColumnRepresentations(Chunk & chunk);
 
 /// Analog of materializeBlock: converts const columns to full and removes sparse/replicated representations.

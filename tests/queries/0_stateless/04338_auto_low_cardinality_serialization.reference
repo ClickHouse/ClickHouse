@@ -1,0 +1,37 @@
+serialization per part
+all_1_1_0	hc	Default
+all_1_1_0	id	Default
+all_1_1_0	lc	LowCardinality
+all_1_1_0	num	Default
+all_1_1_0	sp	Sparse
+all_2_2_0	hc	Default
+all_2_2_0	id	Default
+all_2_2_0	lc	LowCardinality
+all_2_2_0	num	Default
+all_2_2_0	sp	Sparse
+transparent type
+String	String	String
+correctness
+200000	17	200000	11	3
+functions on lc
+1100000	100000	198000
+group by lc
+item_0	14286
+item_1	14286
+item_2	14286
+item_3	14286
+item_4	14286
+after merge
+all_1_2_1	hc	Default
+all_1_2_1	id	Default
+all_1_2_1	lc	LowCardinality
+all_1_2_1	num	Default
+all_1_2_1	sp	Sparse
+200000	17	200000	11	3
+after detach/attach
+hc	Default
+id	Default
+lc	LowCardinality
+num	Default
+sp	Sparse
+200000	17

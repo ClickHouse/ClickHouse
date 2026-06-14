@@ -16,6 +16,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
+#include <DataTypes/Serializations/SerializationLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataTypes/Serializations/SerializationDetached.h>
@@ -96,6 +98,8 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
             column = ColumnSparse::create(std::move(column));
         else if (kind == ISerialization::Kind::REPLICATED)
             column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
+        else if (kind == ISerialization::Kind::LOW_CARDINALITY)
+            column = createEmptyLowCardinalityColumn(*this, /*is_native=*/false);
     }
 
     return column;
@@ -361,6 +365,8 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
             serialization = SerializationDetached::create(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
             serialization = SerializationReplicated::create(serialization);
+        else if (canBeInsideLowCardinality() && kind == ISerialization::Kind::LOW_CARDINALITY)
+            serialization = SerializationLowCardinality::create(getPtr(), /*is_native_low_cardinality=*/false);
     }
 
     return serialization;

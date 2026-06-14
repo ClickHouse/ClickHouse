@@ -198,6 +198,17 @@ namespace ErrorCodes
     └────────┴────────────────────┘
     ```
     )", 0) \
+    DECLARE(UInt64, max_uniq_number_for_low_cardinality, 0, R"(
+    Maximal estimated number of unique values in a `String` or `FixedString` column for the column to be
+    stored using automatic `LowCardinality` serialization (dictionary encoding). The estimate is taken from
+    the column's `uniq` statistic, so a `uniq` statistic must be declared on the column for this to take effect.
+
+    When a column qualifies, it is stored in dictionary-encoded form on disk even though its data type is not
+    `LowCardinality`, and is materialized to a full column when a query requires it. This is checked after
+    sparse serialization, so a column that qualifies for sparse serialization is stored as sparse instead.
+
+    A value of `0` disables automatic `LowCardinality` serialization.
+    )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128

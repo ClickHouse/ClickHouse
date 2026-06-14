@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/HashingWriteBuffer.h>
@@ -44,6 +45,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
+    , part_serialization_infos(data_part->getSerializationInfos())
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     auto prewarm_caches = data_part->storage.getCachesToPrewarm(part_uncompressed_bytes);
@@ -452,9 +454,15 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    writer->write(block, permutation, permuted_columns_cache);
+    /// Build the dictionary-encoded representation for columns chosen for automatic LowCardinality
+    /// serialization (SerializationLowCardinality requires a ColumnLowCardinality on the write path).
+    /// For all other columns this is a no-op.
+    Block block_to_write = block;
+    convertToSerializations(block_to_write, part_serialization_infos);
+
+    writer->write(block_to_write, permutation, permuted_columns_cache);
     if (reset_columns)
-        new_serialization_infos.add(block);
+        new_serialization_infos.add(block_to_write);
 
     rows_count += rows;
 }

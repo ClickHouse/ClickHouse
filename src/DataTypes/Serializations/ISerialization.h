@@ -73,6 +73,11 @@ public:
         SPARSE = 1,
         DETACHED = 2,
         REPLICATED = 3,
+        /// Automatic LowCardinality serialization: a column whose data type is NOT
+        /// LowCardinality is stored on disk in dictionary-encoded form. Such a column
+        /// flows through the pipeline as a (non-native) ColumnLowCardinality and is
+        /// materialized to a full column at boundaries that require it.
+        LOW_CARDINALITY = 4,
     };
 
     /// We can have multiple serialization kinds created over each other.

@@ -838,6 +838,11 @@ public:
 
     [[nodiscard]] virtual bool lowCardinality() const { return false; }
 
+    /// True for a genuine LowCardinality(T) column (whose data type is LowCardinality).
+    /// False for a non-native LowCardinality column that is merely the on-disk
+    /// representation of a column with a non-LowCardinality data type (automatic LowCardinality serialization).
+    [[nodiscard]] virtual bool isNativeLowCardinality() const { return false; }
+
     [[nodiscard]] virtual bool isSparse() const { return false; }
 
     [[nodiscard]] virtual bool isReplicated() const { return false; }

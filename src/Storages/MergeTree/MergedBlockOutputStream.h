@@ -90,6 +90,9 @@ private:
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
     MergeTreeWriterSettings writer_settings;
+    /// Serialization kinds chosen for the part. Used to build the dictionary-encoded representation
+    /// of columns selected for automatic LowCardinality serialization before they are written.
+    SerializationInfoByName part_serialization_infos;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

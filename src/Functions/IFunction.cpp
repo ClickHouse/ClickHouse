@@ -502,7 +502,29 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
         }
     }
     else
-        result = executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+    {
+        /// The function handles LowCardinality columns itself (it opted out of the default implementation),
+        /// but it keys on argument data types. A non-native LowCardinality column (automatic LowCardinality
+        /// serialization) has a non-LowCardinality data type, so the function would mishandle it. Materialize
+        /// such columns to full columns first; genuine LowCardinality(T) columns are kept for the function.
+        bool has_non_native_low_cardinality = false;
+        for (const auto & column : arguments)
+            if (column.column && column.column->lowCardinality() && !column.column->isNativeLowCardinality())
+            {
+                has_non_native_low_cardinality = true;
+                break;
+            }
+
+        if (has_non_native_low_cardinality)
+        {
+            ColumnsWithTypeAndName full_arguments = arguments;
+            for (auto & column : full_arguments)
+                column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+            result = executeWithoutLowCardinalityColumns(full_arguments, result_type, input_rows_count, dry_run);
+        }
+        else
+            result = executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+    }
 
     return result;
 }

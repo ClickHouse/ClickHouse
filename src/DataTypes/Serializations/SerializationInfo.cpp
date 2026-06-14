@@ -112,24 +112,37 @@ void SerializationInfo::add(const IColumn & column)
 
 void SerializationInfo::add(const SerializationInfo & other)
 {
+    /// LowCardinality cannot be derived from Data (it needs the cardinality estimate), so it is
+    /// preserved across aggregation (e.g. for per-table serialization hints): the result is
+    /// LowCardinality if either side is. It takes precedence over Sparse in the aggregated hint.
+    bool low_cardinality = ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY)
+        || ISerialization::hasKind(other.kind_stack, ISerialization::Kind::LOW_CARDINALITY);
     data.add(other.data);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = low_cardinality
+            ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
+            : chooseKindStack(data, settings);
 }
 
 void SerializationInfo::remove(const SerializationInfo & other)
 {
+    bool low_cardinality = ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY);
     data.remove(other.data);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = low_cardinality
+            ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
+            : chooseKindStack(data, settings);
 }
 
 
 void SerializationInfo::addDefaults(size_t length)
 {
+    bool low_cardinality = ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY);
     data.addDefaults(length);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = low_cardinality
+            ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
+            : chooseKindStack(data, settings);
 }
 
 void SerializationInfo::replaceData(const SerializationInfo & other)

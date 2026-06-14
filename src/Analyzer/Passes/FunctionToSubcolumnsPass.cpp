@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Storages/IStorage.h>
 
@@ -92,6 +94,20 @@ bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subco
     auto * table_node = column_source->as<TableNode>();
     if (!table_node)
         return {};
+
+    /// A column stored with automatic (non-native) LowCardinality serialization is dictionary-encoded
+    /// and does not have the regular subcolumns of its data type available on disk (e.g. the String
+    /// `.size` substream). Reading such a subcolumn would fail, so the optimization must be skipped.
+    if (auto hints = table_node->getStorage()->tryGetSerializationHints())
+    {
+        for (const auto & [name, info] : *hints)
+        {
+            if (info
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY)
+                && (subcolumn_name == name || subcolumn_name.starts_with(name + ".")))
+                return false;
+        }
+    }
 
     const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto get_options = GetColumnsOptions(GetColumnsOptions::All);

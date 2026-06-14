@@ -5,6 +5,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/iota.h>
@@ -987,7 +988,11 @@ ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
         return column;
 
     /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    auto res = recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    /// Also materialize non-native LowCardinality columns (automatic LowCardinality serialization),
+    /// so a column always matches its data type at boundaries that require a full column.
+    /// Genuine LowCardinality(T) columns are left intact.
+    return recursiveRemoveNonNativeLowCardinality(res);
 }
 
 }

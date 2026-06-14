@@ -211,6 +211,15 @@ void removeSpecialColumnRepresentations(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
+void convertToFullIfNonNativeLowCardinality(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveNonNativeLowCardinality(column);
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
 void materializeChunk(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();

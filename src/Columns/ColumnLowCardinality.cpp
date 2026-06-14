@@ -133,8 +133,8 @@ namespace
 }
 
 
-ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
-    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
+ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared, bool is_native_)
+    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_)), is_native(is_native_)
 {
 }
 
@@ -170,7 +170,12 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        /// Source is a full (non-LowCardinality) column. This happens for non-native
+        /// LowCardinality columns when inserting from a materialized column.
+        insertFromFullColumn(src, n);
+        return;
+    }
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -202,7 +207,12 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+    {
+        /// Source is a full (non-LowCardinality) column. This happens for non-native
+        /// LowCardinality columns when inserting from a materialized column.
+        insertRangeFromFullColumn(src, start, length);
+        return;
+    }
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -350,7 +360,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
-    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size), /*is_shared=*/false);
+    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size), /*is_shared=*/false, is_native);
 }
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
@@ -583,7 +593,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t 
     for (auto & column : columns)
     {
         auto unique_ptr = global_unique_ptr->cloneEmpty();
-        column = ColumnLowCardinality::create(std::move(unique_ptr), std::move(column), true);
+        column = ColumnLowCardinality::create(std::move(unique_ptr), std::move(column), true, is_native);
         static_cast<ColumnLowCardinality &>(*column).dictionary.setShared(global_unique_ptr);
     }
 

@@ -26,7 +26,7 @@ class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardi
 {
     friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
-    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared);
+    ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared, bool is_native = true);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
 public:
@@ -34,19 +34,19 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared, bool is_native = true)
     {
-        return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
+        return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared, is_native);
     }
 
-    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared, bool is_native = true)
     {
-        return Base::create(std::move(column_unique), std::move(indexes), is_shared);
+        return Base::create(std::move(column_unique), std::move(indexes), is_shared, is_native);
     }
 
     std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
+    TypeIndex getDataType() const override { return is_native ? TypeIndex::LowCardinality : getDictionary().getNestedColumn()->getDataType(); }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
     ColumnPtr convertToFullColumnIfLowCardinality() const override { return convertToFullColumn(); }
@@ -73,7 +73,7 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary(), is_native);
     }
 
     void insert(const Field & x) override;
@@ -122,7 +122,7 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(
-            dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
+            dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary(), is_native);
     }
 
     void filter(const Filter & filt) override
@@ -137,12 +137,12 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit), isSharedDictionary(), is_native);
     }
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit), isSharedDictionary(), is_native);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -171,7 +171,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary(), is_native);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
@@ -272,6 +272,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
+    bool isNativeLowCardinality() const override { return is_native; }
     bool isCollationSupported() const override { return getDictionary().getNestedColumn()->isCollationSupported(); }
 
     /**
@@ -372,6 +373,9 @@ private:
 
     Dictionary dictionary;
     ColumnIndex idx;
+    /// See IColumn::isNativeLowCardinality. When false, this column is the on-disk
+    /// dictionary-encoded representation of a column with a non-LowCardinality data type.
+    bool is_native = true;
 
     void compactInplace();
     void compactInplaceToNullable();
