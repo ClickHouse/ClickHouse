@@ -5887,6 +5887,17 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     modifyPartState(it_part, DataPartState::Deleting, lock);
 
+    /// Leaving PreActive can flip the `waitForPreActivePartsInRange` predicate (it only counts PreActive
+    /// parts), so any waiter must be woken to re-check. Guarantee the notification on every exit path
+    /// below: both `commitTransaction` and `renameToDetached` can throw, and skipping the wake-up would
+    /// leave a waiter sleeping forever on a lost notification even though the part is already out of
+    /// PreActive. On the `commitTransaction` failure path the part is restored to PreActive, so nothing
+    /// changed for waiters and no notification is owed.
+    SCOPE_EXIT({
+        if (was_preactive && part->getState() != DataPartState::PreActive)
+            preactive_parts_cv.notify_all();
+    });
+
     /// A PreActive part discarded mid-insert still owns an uncommitted part storage transaction: on
     /// object-storage disks its writes and renames are only buffered and are normally materialized by
     /// `MergeTreeData::Transaction::commit` via `commitTransaction`. Here the part leaves the working set
@@ -5894,8 +5905,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     /// detached part is never materialized and its blobs are orphaned. The commit is done before
     /// `renameToDetached` (so the rename below executes directly instead of being buffered), and if it
     /// throws, the part state is restored: the part stays PreActive, indexed and with its storage
-    /// transaction still active, so the recovering INSERT can commit or roll it back normally and
-    /// `waitForPreActivePartsInRange` waiters do not sleep forever on a part stuck in the Deleting state.
+    /// transaction still active, so the recovering INSERT can commit or roll it back normally.
     if (was_preactive && part->getDataPartStorage().hasActiveTransaction())
     {
         try
@@ -5913,9 +5923,6 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
-
-    if (was_preactive)
-        preactive_parts_cv.notify_all();
 }
 
 
