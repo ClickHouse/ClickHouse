@@ -285,12 +285,12 @@ Use the statement below to add a projection description to a tables metadata:
 -- Normal projection (supports WHERE)
 ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 
--- Aggregate projection (does not support WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
 
 :::note
-A `WHERE` clause is supported only for normal projections. Aggregate projections (projections containing a `GROUP BY` clause) cannot use a `WHERE` clause.
+When a projection defines a `WHERE` clause, only rows matching the predicate are materialized. The optimizer can use such a projection when the query's `WHERE` logically implies the projection's `WHERE` and the projection is beneficial for the query plan. This applies to both normal and aggregate projections.
 :::
 
 #### `WITH SETTINGS` Clause {#with-settings}

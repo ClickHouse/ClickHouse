@@ -21,4 +21,18 @@ Projection with SELECT alias
 Mutation with filtered projection
 2024-01-03 00:00:00	c
 2024-01-04 00:00:00	d
-Aggregate projection with WHERE is rejected
+Aggregate projection with WHERE
+Aggregate exact match
+1	30
+Aggregate stricter AND
+1	30
+Aggregate non-matching
+2	300
+Aggregate no WHERE
+1	30
+2	300
+3	1000
+Aggregate filter column not in GROUP BY
+30
+Aggregate exact match k=0
+0	30

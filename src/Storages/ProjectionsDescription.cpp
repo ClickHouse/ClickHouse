@@ -441,15 +441,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
-        /// A WHERE clause is only supported for normal projections (Issue #74234, sub-task 1).
-        /// Aggregate projections store pre-aggregated state, and `optimizeUseAggregateProjections`
-        /// does not yet verify that the query's filter implies the projection's WHERE. Allowing a
-        /// filtered aggregate projection would let it be matched for an unfiltered aggregation and
-        /// silently return results computed over only the filtered subset of rows.
-        if (result.where_clause_ast)
-            throw Exception(
-                ErrorCodes::ILLEGAL_PROJECTION,
-                "WHERE clause is not supported for aggregate projections");
+        /// Aggregate projections with WHERE are now supported: the optimizer's predicate
+        /// implication check (doesQueryFilterImplyProjectionWhere) ensures a filtered
+        /// aggregate projection is only selected when the query's filter covers it.
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())

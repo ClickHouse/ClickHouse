@@ -185,10 +185,10 @@ SETTINGS force_optimize_projection = 1;
 
 DROP TABLE t_proj_mut;
 
--- A WHERE clause is not supported for aggregate projections and must be rejected at creation.
--- Otherwise a filtered aggregate projection could be matched for an unfiltered aggregation
--- (e.g. `SELECT k, sum(v) GROUP BY k`) and silently return results over only the filtered subset.
-SELECT 'Aggregate projection with WHERE is rejected';
+-- Aggregate projections with WHERE are now supported. The optimizer's predicate implication
+-- check ensures a filtered aggregate projection is only selected when the query's WHERE
+-- logically implies the projection's WHERE.
+SELECT 'Aggregate projection with WHERE';
 
 DROP TABLE IF EXISTS t_proj_agg_where;
 
@@ -200,11 +200,98 @@ CREATE TABLE t_proj_agg_where
 ENGINE = MergeTree
 ORDER BY k;
 
+-- Create a filtered aggregate projection: only rows where k = 1 are materialized.
 ALTER TABLE t_proj_agg_where ADD PROJECTION p_agg
 (
     SELECT k, sum(v)
     WHERE k = 1
     GROUP BY k
-); -- { serverError ILLEGAL_PROJECTION }
+);
+
+INSERT INTO t_proj_agg_where VALUES (1, 10), (1, 20), (2, 100), (2, 200), (3, 1000);
+
+ALTER TABLE t_proj_agg_where MATERIALIZE PROJECTION p_agg SETTINGS mutations_sync = 2;
+
+-- Exact match: query WHERE implies projection WHERE → projection should be used.
+SELECT 'Aggregate exact match';
+SELECT k, sum(v) FROM t_proj_agg_where WHERE k = 1 GROUP BY k
+SETTINGS force_optimize_projection = 1;
+
+-- Stricter AND: adding an extra conjunct on the GROUP BY key still implies the projection.
+SELECT 'Aggregate stricter AND';
+SELECT k, sum(v) FROM t_proj_agg_where WHERE k = 1 AND k < 10 GROUP BY k
+SETTINGS force_optimize_projection = 1;
+
+-- Non-matching: query WHERE does not imply projection WHERE → must NOT use projection.
+SELECT 'Aggregate non-matching';
+SELECT k, sum(v) FROM t_proj_agg_where WHERE k = 2 GROUP BY k;
+
+-- No WHERE: unfiltered aggregation must NOT use the filtered projection.
+SELECT 'Aggregate no WHERE';
+SELECT k, sum(v) FROM t_proj_agg_where GROUP BY k ORDER BY k;
 
 DROP TABLE t_proj_agg_where;
+
+-- Regression test: filtered aggregate projection where the filter column is NOT part of GROUP BY.
+-- The projection materializes only k = 1 rows but does not store k as a key.
+-- The residual-filter logic must strip the implied `k = 1` conjunct so that
+-- analyzeAggregateProjection does not require k to be computable from projection keys.
+SELECT 'Aggregate filter column not in GROUP BY';
+
+DROP TABLE IF EXISTS t_proj_agg_no_key;
+
+CREATE TABLE t_proj_agg_no_key
+(
+    k UInt8,
+    v UInt64
+)
+ENGINE = MergeTree
+ORDER BY k;
+
+ALTER TABLE t_proj_agg_no_key ADD PROJECTION p_agg_no_key
+(
+    SELECT sum(v)
+    WHERE k = 1
+);
+
+INSERT INTO t_proj_agg_no_key VALUES (1, 10), (1, 20), (2, 100), (3, 1000);
+
+ALTER TABLE t_proj_agg_no_key MATERIALIZE PROJECTION p_agg_no_key SETTINGS mutations_sync = 2;
+
+-- Exact match: query WHERE matches projection WHERE, k is not in projection keys.
+-- The residual filter is empty, so the projection should be usable.
+SELECT sum(v) FROM t_proj_agg_no_key WHERE k = 1
+SETTINGS force_optimize_projection = 1;
+
+DROP TABLE t_proj_agg_no_key;
+
+-- Regression test: k = 0 (falsy value). When the residual filter is empty, the projection
+-- analysis must not misinterpret a key/aggregate column as a filter predicate. With k = 0
+-- the key itself is falsy, so treating it as a boolean filter would incorrectly prune the row.
+SELECT 'Aggregate exact match k=0';
+
+DROP TABLE IF EXISTS t_proj_agg_k0;
+
+CREATE TABLE t_proj_agg_k0
+(
+    k UInt8,
+    v UInt64
+)
+ENGINE = MergeTree
+ORDER BY k;
+
+ALTER TABLE t_proj_agg_k0 ADD PROJECTION p_agg_k0
+(
+    SELECT k, sum(v)
+    WHERE k = 0
+    GROUP BY k
+);
+
+INSERT INTO t_proj_agg_k0 VALUES (0, 10), (0, 20), (1, 100);
+
+ALTER TABLE t_proj_agg_k0 MATERIALIZE PROJECTION p_agg_k0 SETTINGS mutations_sync = 2;
+
+SELECT k, sum(v) FROM t_proj_agg_k0 WHERE k = 0 GROUP BY k
+SETTINGS force_optimize_projection = 1;
+
+DROP TABLE t_proj_agg_k0;
