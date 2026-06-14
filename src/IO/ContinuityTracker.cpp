@@ -33,22 +33,9 @@ size_t ContinuityTracker::currentRun() const
     return last_pos ? *last_pos - run_start : 0;
 }
 
-size_t ContinuityTracker::signal() const
+size_t ContinuityTracker::predictedReach() const
 {
     return std::max<size_t>(currentRun(), static_cast<size_t>(expected_run));
-}
-
-std::optional<size_t> ContinuityTracker::suggestedBound(size_t pos, size_t object_end, size_t extent_end) const
-{
-    const size_t s = signal();
-    if (s < options.trigger)
-        return std::nullopt;
-    const size_t clamp = std::min(object_end, extent_end);
-    /// A CONFIRMED long run (this run, not the carried estimate) opens to the
-    /// clamp - full-file mode; otherwise bound to the estimated reach.
-    if (currentRun() >= options.eof_confidence)
-        return clamp;
-    return std::min(pos + s, clamp);
 }
 
 void ContinuityTracker::closeRun()
