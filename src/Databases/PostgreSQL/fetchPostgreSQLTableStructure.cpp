@@ -125,6 +125,12 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
             else if (precision <= DecimalUtils::max_precision<Decimal256>)
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            else if (scale == 0)
+                /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
+                /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
+                /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
+                /// are rejected at insert time (see insertPostgreSQLValue).
+                res = std::make_shared<DataTypeInt256>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
         }

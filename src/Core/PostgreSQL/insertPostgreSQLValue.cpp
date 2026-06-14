@@ -15,6 +15,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <pqxx/pqxx>
 
@@ -74,6 +75,17 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtInt64:
             assert_cast<ColumnInt64 &>(column).insertValue(pqxx::from_string<int64_t>(value));
             break;
+        case ExternalResultDescription::ValueType::vtInt256:
+        {
+            /// Used for PostgreSQL `numeric` with precision wider than Decimal256 can hold.
+            Int256 v = parse<Int256>(value.data(), value.size());
+            /// Wide-integer text parsing does not detect overflow, so verify by round-tripping
+            /// the parsed value back to text to avoid silently storing a wrapped-around value.
+            if (toString(v) != value)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of Int256", String(value));
+            assert_cast<ColumnInt256 &>(column).insertValue(v);
+            break;
+        }
         case ExternalResultDescription::ValueType::vtFloat32:
             assert_cast<ColumnFloat32 &>(column).insertValue(pqxx::from_string<float>(value));
             break;
