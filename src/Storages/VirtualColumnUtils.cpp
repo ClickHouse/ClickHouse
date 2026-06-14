@@ -285,7 +285,12 @@ static void addPathAndFileToVirtualColumns(
     bool parse_hive_columns)
 {
     if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
+    {
+        auto & holder = block.getByName("_path").column;
+        auto mutable_column = IColumn::mutate(std::move(holder));
+        mutable_column->insert(path);
+        holder = std::move(mutable_column);
+    }
 
     if (block.has("_file"))
     {
@@ -296,7 +301,10 @@ static void addPathAndFileToVirtualColumns(
         else
             file = path;
 
-        block.getByName("_file").column->assumeMutableRef().insert(file);
+        auto & holder = block.getByName("_file").column;
+        auto mutable_column = IColumn::mutate(std::move(holder));
+        mutable_column->insert(file);
+        holder = std::move(mutable_column);
     }
 
     if (parse_hive_columns)
@@ -307,12 +315,20 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
+                auto & holder = block.getByName(column->name).column;
+                auto mutable_column = IColumn::mutate(std::move(holder));
+                column->type->getDefaultSerialization()->deserializeWholeText(*mutable_column, buf, format_settings);
+                holder = std::move(mutable_column);
             }
         }
     }
 
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+    {
+        auto & holder = block.getByName("_idx").column;
+        auto mutable_column = IColumn::mutate(std::move(holder));
+        mutable_column->insert(idx);
+        holder = std::move(mutable_column);
+    }
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(

@@ -1961,7 +1961,8 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             {
                 for (size_t i = 0; i < columns_info.columns.size(); ++i)
                 {
-                    auto & col = columns_info.columns[i]->assumeMutableRef();
+                    auto mutable_column = IColumn::mutate(std::move(columns_info.columns[i]));
+                    auto & col = *mutable_column;
                     /// Check if we insert into non replicated column from a replicated column.
                     if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
                     {
@@ -1972,6 +1973,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                     {
                         col.insertFrom(*(it->columns_info->columns[i]), it->row_num);
                     }
+                    columns_info.columns[i] = std::move(mutable_column);
                 }
             }
             size_t new_rows = columns_info.columns.at(0)->size();

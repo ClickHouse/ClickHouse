@@ -166,13 +166,15 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
         sub_object_column, rows_offset, limit, nested_settings, combined_state->sub_object_state, cache);
 
     size_t rows = literal_column->size();
-    auto & result = result_column->assumeMutableRef();
+    auto mutable_column = IColumn::mutate(std::move(result_column));
+    auto & result = *mutable_column;
 
     /// If sub-object contains only empty objects, append literal column directly.
     const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
     if (!sub_object_typed_column->hasNonEmptyRows())
     {
         result.insertRangeFrom(*literal_column, 0, rows);
+        result_column = std::move(mutable_column);
         return;
     }
 
@@ -190,6 +192,8 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
         else
             result.insertDefault();
     }
+
+    result_column = std::move(mutable_column);
 }
 
 }

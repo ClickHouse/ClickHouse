@@ -188,17 +188,28 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
 
-        block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(*column, 0, rows_to_read);
-        column->assumeMutableRef().popBack(rows_to_read);
+        {
+            auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
+            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
+            block.getByPosition(i).column = std::move(mutable_column);
+        }
+
+        {
+            auto mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->popBack(rows_to_read);
+            column = std::move(mutable_column);
+        }
     }
 
     /// The last column is designating the granule
     auto & elem = block.getByPosition(num_columns);
-    MutableColumnPtr granule_num_column = elem.column->assumeMutable();
+    MutableColumnPtr granule_num_column = IColumn::mutate(std::move(elem.column));
 
     auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
     for (size_t i = 0; i < rows_to_read; ++i)
         data.push_back(granule_num);
+
+    elem.column = std::move(granule_num_column);
 }
 
 
