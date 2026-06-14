@@ -451,6 +451,61 @@ TEST(LocalObjectStorage, ListObjectsKeepsSiblingsWhenADirectoryVanishesMidTraver
     EXPECT_GT(listings_done.load(), 0u) << "no listing completed";
 }
 
+/// Regression test for the fourth clickhouse-gh[bot] review on PR #107432.
+/// Each directory-typed entry is probed with `is_symlink(sym_ec)` so symlinked
+/// directories are skipped (no-follow, avoids cycles) while real subdirectories
+/// are descended. That probe is the fourth stat in the listing path, so its
+/// error_code is routed through the same disappearance filter as iterator
+/// construction / `is_directory` / `increment`: a real error (EACCES, EIO)
+/// propagates, a vanished entry (ENOENT/ENOTDIR) is skipped. A non-disappearance
+/// error silently dropped here would truncate the listing without an exception.
+///
+/// A deterministic EACCES-at-`is_symlink` case is not portably constructible: on
+/// filesystems that report `d_type` in `readdir` (ext4/xfs/tmpfs, i.e. the CI
+/// runners) libc++'s `directory_iterator` caches the entry type, so
+/// `directory_entry::is_symlink` answers from cache with no syscall and `sym_ec`
+/// can only be clear or ENOENT, never EACCES/EIO. The error routing is therefore
+/// correct by construction and uniform with the other three stat sites; what is
+/// testable here is the descend-vs-skip decision the probe drives. This test pins
+/// that decision: a real subdirectory is descended (its file is listed) while a
+/// symlink-to-directory is neither descended nor reported as an object.
+TEST(LocalObjectStorage, ListObjectsDescendsRealDirsButSkipsSymlinkedDirs)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_symlink_dir");
+    const auto & root = tmp.path;
+
+    /// root/
+    ///   realdir/inside.txt    <- real subdir: descended, file listed
+    ///   target/leaf.txt       <- real subdir (the symlink target)
+    ///   linkdir -> target     <- symlink-to-dir: not descended, not reported
+    fs::create_directories(root / "realdir");
+    fs::create_directories(root / "target");
+    std::ofstream(root / "realdir" / "inside.txt") << "a";
+    std::ofstream(root / "target" / "leaf.txt") << "b";
+
+    std::error_code ec;
+    fs::create_directory_symlink("target", root / "linkdir", ec);
+    ASSERT_FALSE(ec) << "Failed to create directory symlink: " << ec.message();
+
+    auto storage = makeLocalObjectStorage(root.string());
+
+    DB::RelativePathsWithMetadata children;
+    storage->listObjects(root.string(), children, /* max_keys */ 0);
+
+    std::vector<std::string> paths;
+    paths.reserve(children.size());
+    for (const auto & c : children)
+        paths.push_back(c->relative_path);
+    std::sort(paths.begin(), paths.end());
+
+    /// Only the two real files via the real directories: `linkdir` is a
+    /// symlink-to-dir, so it is neither descended (no `linkdir/leaf.txt`) nor
+    /// reported as an object itself.
+    ASSERT_EQ(paths.size(), 2u) << "Unexpected listing size " << paths.size();
+    EXPECT_EQ(paths[0], (root / "realdir" / "inside.txt").string());
+    EXPECT_EQ(paths[1], (root / "target" / "leaf.txt").string());
+}
+
 /// A non-existent or non-directory input must return an empty listing,
 /// never throw or crash.
 TEST(LocalObjectStorage, ListObjectsHandlesMissingAndNonDirectoryPaths)

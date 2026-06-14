@@ -484,9 +484,15 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
                 /// Descend only into real subdirectories, never into symlinks,
                 /// matching the no-follow-symlink default of the recursive
                 /// iterator (avoids cycles). A symlink-to-directory is neither
-                /// descended into nor reported as an object.
+                /// descended into nor reported as an object. The symlink probe
+                /// is the fourth stat in this path: route its error through the
+                /// same disappearance filter so a real error (EACCES, EIO) is
+                /// not silently dropped while a vanished entry is skipped.
                 std::error_code sym_ec;
-                if (!it->is_symlink(sym_ec) && !sym_ec)
+                const bool is_symlink = it->is_symlink(sym_ec);
+                if (sym_ec)
+                    throw_unless_vanished(sym_ec, entry_path);
+                else if (!is_symlink)
                     pending_dirs.push_back(entry_path);
             }
             else
