@@ -46,3 +46,9 @@ SET param_array_test = ARRAY[10, 20, 30];
 -- BACKUP SETTINGS uses ParserArray, not the main expression parser.
 -- Use formatQuery to verify parsing without executing the backup.
 SELECT formatQuery('BACKUP TABLE t TO File(''/tmp/bk/'') SETTINGS cluster_host_ids = ARRAY[ARRAY[''id1'', ''id2'']]') != '';
+
+-- Precedence: ARRAY[n] is always an array constructor, never an identifier subscript.
+-- This follows PostgreSQL, where ARRAY is a reserved constructor keyword.
+-- To subscript a column named ARRAY, quote it: `ARRAY`[n].
+SELECT ARRAY[1] FROM (SELECT [10, 20] AS ARRAY);  -- returns [1], not 10
+SELECT `ARRAY`[1] FROM (SELECT [10, 20] AS `ARRAY`);  -- returns 10 (quoted identifier)
