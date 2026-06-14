@@ -552,6 +552,28 @@ ALTER TABLE t_named_tuple_alter
 DROP TABLE t_named_tuple_alter;
 
 -- ============================================================
+-- Case 18d (ALLOW): an explicit skip index keyed on a top-level column whose name
+-- starts with `data.` (e.g. `data.deeper`) must NOT be confused with a subcolumn
+-- of a separate top-level column `data`. Adding a subfield to `data` is allowed.
+-- (The previous prefix-only guard incorrectly rejected this.)
+-- ============================================================
+CREATE TABLE t_named_tuple_alter
+(id UInt64, `data` Tuple(a Int64, b Int64), `data.deeper` Int64,
+ INDEX idx `data.deeper` TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_named_tuple_alter SELECT number, (number, 0), number FROM numbers(10);
+
+SELECT 'Case 18d (skip index on dotted top-level column does not block sibling):';
+ALTER TABLE t_named_tuple_alter
+    MODIFY COLUMN `data` Tuple(a Int64, b Int64, c Int64);
+SELECT 'mutations:', count() FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_named_tuple_alter';
+
+DROP TABLE t_named_tuple_alter;
+
+-- ============================================================
 -- Case 19: pure reorder of existing fields (without any additions) is not
 -- metadata-only. `primary.idx` bytes and explicit skip-index bytes for any
 -- embedded tuple value are serialized in the old field order; the new type

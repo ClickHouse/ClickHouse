@@ -4860,19 +4860,27 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         backQuoteIfNeed(command.column_name),
                         it->second);
                 }
-                const String subcol_prefix = command.column_name + ".";
+                /// For dotted index keys, resolve through `tryGetColumnOrSubcolumn` to
+                /// distinguish a true subcolumn (e.g. `t.sub` of column `t`) from an
+                /// unrelated top-level column whose name happens to start with
+                /// `command.column_name + "."` (e.g. column `data.deeper` when altering
+                /// `data`). Only reject when the indexed key resolves to a real subcolumn
+                /// of the storage column being altered.
+                const auto & old_columns_desc = old_metadata.getColumns();
                 for (const auto & [indexed_col, index_name] : columns_in_explicit_indices)
                 {
-                    if (indexed_col.starts_with(subcol_prefix))
-                    {
-                        throw Exception(
-                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "Adding new Tuple subfields to column '{}' is forbidden because its subcolumn '{}' is used by the explicit skip index '{}'. "
-                            "Drop the index first, then re-create it after the ALTER",
-                            backQuoteIfNeed(command.column_name),
-                            indexed_col,
-                            index_name);
-                    }
+                    if (!indexed_col.starts_with(command.column_name + "."))
+                        continue;
+                    auto resolved = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, indexed_col);
+                    if (!resolved || resolved->getNameInStorage() != command.column_name)
+                        continue;
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Adding new Tuple subfields to column '{}' is forbidden because its subcolumn '{}' is used by the explicit skip index '{}'. "
+                        "Drop the index first, then re-create it after the ALTER",
+                        backQuoteIfNeed(command.column_name),
+                        indexed_col,
+                        index_name);
                 }
             }
         }

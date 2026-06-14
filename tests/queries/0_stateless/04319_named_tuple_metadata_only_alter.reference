@@ -81,6 +81,8 @@ mutations:	0
 Case 18a (explicit set skip index on whole column rejected, default mode):
 Case 18b (explicit skip index rejected even with rebuild mode):
 Case 18c (explicit skip index on Tuple subcolumn rejected):
+Case 18d (skip index on dotted top-level column does not block sibling):
+mutations:	0
 Case 19a (pure reorder triggers mutation):
 mutations:	1
 (20,10)
