@@ -850,6 +850,17 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SystemQuery` carries 'zk_name'/'replica_zk_path' without 'full_replica_zk_path' during AST JSON deserialization");
     is_drop_whole_replica = r.getBool("is_drop_whole_replica");
+    /// The parser sets `is_drop_whole_replica` only for `SYSTEM DROP [DATABASE] REPLICA 'r'` with no
+    /// `FROM DATABASE`/`FROM TABLE`/`FROM ZKPATH` target (the replica name itself and `FROM SHARD`
+    /// are still allowed). `InterpreterSystemQuery::dropReplica`/`dropDatabaseReplica` check
+    /// `is_drop_whole_replica` before the scoped ZooKeeper-path branch, so a `clickhouse_json`
+    /// payload combining it with a target would execute the whole-replica drop while `formatImpl`
+    /// prints the scoped form. Reject the parser-impossible combination.
+    if (is_drop_whole_replica
+        && (database || table || !full_replica_zk_path.empty() || !replica_zk_path.empty() || !zk_name.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'is_drop_whole_replica' cannot be combined with a database, table, or ZooKeeper-path target "
+            "during AST JSON deserialization");
     with_tables = r.getBool("with_tables");
     storage_policy = r.getString("storage_policy");
     volume = r.getString("volume");
