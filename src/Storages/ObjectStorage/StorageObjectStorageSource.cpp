@@ -1712,6 +1712,18 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     }
 }
 
+static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
+{
+    const auto object_metadata = object_info->getObjectMetadata();
+    if (!object_metadata->is_size_known)
+        throw Exception(
+            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+            "Cannot read archive {} because its size is unknown",
+            object_info->getPath());
+
+    return object_metadata->size_bytes;
+}
+
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -1759,10 +1771,11 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         }
         else
         {
+            const auto archive_size = getKnownArchiveSize(archive_object);
             archive_reader = DB::createArchiveReader(
                 path_to_archive,
                 [=, this]() { return createReadBuffer(archive_object->relative_path_with_metadata, object_storage, getContext(), log); },
-                archive_object->getObjectMetadata()->size_bytes);
+                archive_size);
 
             archive_readers.emplace(archive_reader_key, archive_reader);
         }
@@ -1816,14 +1829,7 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
 std::shared_ptr<IArchiveReader>
 StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr object_info) const
 {
-    const auto object_metadata = object_info->getObjectMetadata();
-    if (!object_metadata->is_size_known)
-        throw Exception(
-            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
-            "Cannot read archive {} because its size is unknown",
-            object_info->getPath());
-
-    const auto size = object_metadata->size_bytes;
+    const auto size = getKnownArchiveSize(object_info);
     return DB::createArchiveReader(
         /* path_to_archive */
         object_info->getPath(),
