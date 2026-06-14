@@ -232,7 +232,20 @@ private:
                     "Not caching plan: query or view body uses non-deterministic function {}", function->name);
                 return false;
             }
-            in_set_or_table_position = isSetFunction(function->name);
+
+            /// For `x IN (subquery)` only the right-hand argument is the set (re-executed on
+            /// every run); the left-hand operand is an ordinary expression, so a subquery there
+            /// is a scalar subquery (folded into a constant) and must be gated like any other
+            /// scalar subquery. Marking every child as set-position would let a scalar subquery
+            /// in the left operand escape the `query_plan_cache_allow_scalar_subqueries` gate.
+            if (isSetFunction(function->name) && function->arguments && function->arguments->children.size() == 2)
+            {
+                const auto & args = function->arguments->children;
+                return collectImpl(*args[0], default_database, /*in_set_or_table_position=*/ false)
+                    && collectImpl(*args[1], default_database, /*in_set_or_table_position=*/ true);
+            }
+
+            in_set_or_table_position = false;
         }
         else if (ast.as<ASTSubquery>())
         {

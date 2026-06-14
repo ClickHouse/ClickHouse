@@ -10,7 +10,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event QueryPlanCacheHits;
     extern const Event QueryPlanCacheMisses;
 }
 
@@ -29,7 +28,6 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
     return setting_name == "allow_experimental_query_plan_cache"
         || setting_name == "enable_query_plan_cache"
         || setting_name == "query_plan_cache_size_in_bytes_quota"
-        || setting_name == "query_plan_cache_allow_scalar_subqueries"
         || setting_name.starts_with("query_cache_")
         || setting_name.ends_with("_query_cache")
         /// Output formatting: applied after the plan and never baked into a plan step.
@@ -61,6 +59,11 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
     /// Sort-related limits (`max_rows_to_sort`, `max_bytes_to_sort`) and `extremes` are
     /// intentionally NOT ignored: they are baked into `SortingStep` / `ExtremesStep`,
     /// so two queries with different values of these settings must not share a plan.
+    /// `query_plan_cache_allow_scalar_subqueries` is also intentionally NOT ignored: it
+    /// affects whether a query is eligible at all and whether scalar subqueries are folded
+    /// into the plan as constants. If it were ignored, an entry stored while it was enabled
+    /// could be reused by a later execution that explicitly disabled it, reusing a stale
+    /// baked scalar value.
 }
 
 bool QueryPlanCacheKey::operator==(const QueryPlanCacheKey & other) const
