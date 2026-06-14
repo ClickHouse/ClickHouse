@@ -112,6 +112,8 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     /// functions below the sort; otherwise lifting them is the default behavior and must be
     /// preserved, so that an opt-in feature does not regress the default plan.
     if (settings.push_down_volume_reducing_functions && hasVolumeReducingFunctionRoot(unneeded_for_sorting))
+        return 0;
+
     /// `arrayJoin` can change the number of rows produced by an expression.
     /// Lifting it above the `SortingStep` is unsound when the sort has a
     /// `LIMIT` pushed down to it: the `LIMIT` would truncate input rows

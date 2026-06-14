@@ -409,19 +409,13 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     for (const auto * candidate : candidates)
         pushed_functions.push_back({candidate->function_base, candidate->result_name, candidate_to_child_input->at(candidate)});
 
-    /// Rewrite parent in-place: replace candidate FUNCTION nodes in outputs
-    /// with same-named INPUTs and prune dead actions (including the now-dead
-    /// wide source inputs).
-    if (!rewriteParentToConsumePushed(parent_actions, candidates))
-        return 0;
-
     /// Decide which wide source columns to stop passing through. We only do
     /// this for pure-passthrough children (`Sort` / `Limit`): they carry every
     /// column through and `removeUnusedColumns` cannot prune them afterwards,
     /// so a wide argument column would otherwise stay inside the step. A column
-    /// is safe to drop iff the child step does not need it and the rewritten
-    /// parent no longer references it (its INPUT survived `removeUnusedActions`
-    /// only if it is still used, e.g. `SELECT s, length(s)`).
+    /// is safe to drop iff the child step does not need it and the parent will
+    /// no longer reference it after the rewrite below replaces the candidate
+    /// FUNCTIONs with INPUTs (e.g. it stays for `SELECT s, length(s)`).
     NameSet columns_to_drop;
     const bool child_is_passthrough
         = typeid_cast<const SortingStep *>(child_node->step.get()) || typeid_cast<const LimitStep *>(child_node->step.get());
@@ -429,9 +423,30 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     {
         const NameSet child_required = childRequiredPassthroughColumns(child_node->step);
 
+        /// Inputs that will still be referenced after `rewriteParentToConsumePushed`
+        /// replaces every candidate (at its output slot) with a same-named INPUT:
+        /// the inputs reachable from the parent outputs once the candidate output
+        /// slots are treated as severed leaves. Computed here *without* mutating
+        /// `parent_actions`, so the bail-out guards below can run before the rewrite.
         NameSet parent_still_needs;
-        for (const auto * input : parent_actions.getInputs())
-            parent_still_needs.insert(input->result_name);
+        {
+            std::stack<const ActionsDAG::Node *> reachable;
+            std::unordered_set<const ActionsDAG::Node *> visited;
+            for (const auto * output : parent_actions.getOutputs())
+                if (!candidates.contains(output))
+                    reachable.push(output);
+            while (!reachable.empty())
+            {
+                const auto * node = reachable.top();
+                reachable.pop();
+                if (!visited.insert(node).second)
+                    continue;
+                if (node->type == ActionsDAG::ActionType::INPUT)
+                    parent_still_needs.insert(node->result_name);
+                for (const auto * child : node->children)
+                    reachable.push(child);
+            }
+        }
 
         for (const auto & pushed_function : pushed_functions)
         {
@@ -446,6 +461,11 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     /// with duplicate names, and the rewritten parent INPUT (resolved by name)
     /// could bind to the original wide source column instead of the scalar we
     /// computed (e.g. `length(s) AS id` colliding with a surviving sort key).
+    ///
+    /// All bail-out guards must run *before* `rewriteParentToConsumePushed`
+    /// mutates `parent_actions`: a late bail would otherwise leave the parent
+    /// rewritten to consume an INPUT that no pushed step produces, so
+    /// `ActionsDAG::updateHeader` would bind it to a surviving same-named column.
     const Block & child_output_header = *child_node->step->getOutputHeader();
     for (const auto & pushed_function : pushed_functions)
     {
@@ -461,6 +481,12 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
         if (child_dag && child_output_header.has(pushed_function.result_name))
             return 0;
     }
+
+    /// All guards passed — only now mutate the parent in-place: replace candidate
+    /// FUNCTION nodes in outputs with same-named INPUTs and prune dead actions
+    /// (including the now-dead wide source inputs).
+    if (!rewriteParentToConsumePushed(parent_actions, candidates))
+        return 0;
 
     /// Build the pushed DAG (passthrough minus dropped columns + new FUNCTION nodes).
     auto pushed = buildPushedDag(pushed_functions, child_input_header, columns_to_drop);
