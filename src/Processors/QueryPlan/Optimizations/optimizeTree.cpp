@@ -10,14 +10,10 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
 
 #include <memory>
 #include <stack>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
 namespace DB
 {
@@ -46,7 +42,6 @@ namespace ErrorCodes
 extern const int INCORRECT_DATA;
 extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 extern const int PROJECTION_NOT_USED;
-extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace QueryPlanOptimizations
@@ -183,9 +178,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root);
-void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
-bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
-void checkDistributedReadSupported(const QueryPlan::Node & root);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -302,23 +294,12 @@ void optimizeTreeSecondPass(
             });
     }
 
-    /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
-    /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
-    /// than silently running single-node.
-    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
-    /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
-    if (optimization_settings.make_distributed_plan)
-        checkDistributedReadSupported(root);
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
-
     traverseQueryPlan(stack, root,
         [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (make_distributed_plan)
+            if (optimization_settings.make_distributed_plan)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
@@ -400,6 +381,9 @@ void optimizeTreeSecondPass(
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
+            if (optimization_settings.limit_by_in_order)
+                optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
+
             if (optimization_settings.push_limit_by_into_sort)
                 pushLimitByIntoSort(frame_node);
         });
@@ -467,11 +451,6 @@ void optimizeTreeSecondPass(
     /// Optimize exchanges
     if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
         optimizeExchanges(root);
-
-    /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
-    /// and constness is re-derived per step.
-    if (optimization_settings.make_distributed_plan)
-        materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
@@ -600,7 +579,6 @@ void addStepsToBuildSets(
         stack.pop_back();
     }
 }
-
 
 }
 }
