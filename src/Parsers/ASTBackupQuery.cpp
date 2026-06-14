@@ -591,7 +591,16 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
         set(base_backup_name, base_backup_name_child);
     auto base_snapshot_name_child = r.readChildOfType<ASTFunction>("base_snapshot_name");
     if (base_snapshot_name_child)
+    {
+        /// `FROM SNAPSHOT` is parser-producible only for `BACKUP` (`ParserBackupQuery` gates it on
+        /// `kind == Kind::BACKUP`). A `RESTORE` carrying `base_snapshot_name` would format the
+        /// parser-impossible `RESTORE FROM SNAPSHOT ...` and restore an empty `elements` set, so
+        /// reject the combination at the JSON boundary.
+        if (kind != Kind::BACKUP)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'base_snapshot_name' (FROM SNAPSHOT) is only valid for BACKUP, not RESTORE, during AST JSON deserialization");
         set(base_snapshot_name, base_snapshot_name_child);
+    }
     settings = r.readChild("settings");
     if (settings)
         children.push_back(settings);
