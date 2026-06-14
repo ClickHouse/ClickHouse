@@ -190,6 +190,7 @@ public:
         const std::optional<KeyCondition> & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & data,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
