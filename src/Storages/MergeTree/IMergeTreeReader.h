@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -96,6 +98,32 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
+    virtual LargePostingListReaderStreamPtr getProjectionIndexPostingStreamPtr() const { return nullptr; }
+    virtual LargePostingListReaderStreamPtr getProjectionIndexPostingIndexStreamPtr() const { return nullptr; }
+
+    /// Callback invoked after reading the term column and before reading the posting column
+    /// in projection text index parts. Receives the just-read term column and returns matched
+    /// row indices so the posting deserializer can skip non-matched rows.
+    using PostingFilterCallback = std::function<std::vector<size_t>(const IColumn & term_column)>;
+    PostingFilterCallback posting_filter_callback;
+
+    /// Populated by `posting_filter_callback` during readRows. The optional disambiguates
+    /// three states that a bare vector cannot express cleanly:
+    ///   * `std::nullopt`           — no filter active; the posting deserializer reads every
+    ///                                row (used when nothing matched the callback wasn't
+    ///                                invoked, OR when every row matched and a full read is
+    ///                                cheaper than per-row dispatch).
+    ///   * value.empty()            — filter active with zero matches; the deserializer must
+    ///                                skip every row AND advance the posting/position streams
+    ///                                past the entire mark so the next `continue_reading=true`
+    ///                                call starts from the correct byte offset.
+    ///   * value.size() > 0         — filter active with a sparse list of matched rows.
+    /// Callback setters are responsible for resetting this between iterations (see
+    /// `MergeTreeProjectionIndexText::deserializeBinaryWithMultipleStreams` for the only
+    /// current setter) — the readRows implementations themselves do not reset it, so callers
+    /// that set the callback must manage the per-iteration state explicitly.
+    std::optional<std::vector<size_t>> matched_row_indices_for_posting;
+
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
     /// propagated. Used when compiling default or virtual-column expressions at read time.
@@ -151,6 +179,18 @@ protected:
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
     std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
+
+    /// Create a specialized reader stream for large posting lists used in projection index text.
+    LargePostingListReaderStreamPtr createLargePostingStream(
+        const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const;
+
+    /// Create a reader stream for .pos position data.
+    LargePostingListReaderStreamPtr createPositionStream(
+        const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const;
+
+    /// Create a reader stream for .pidx index section data.
+    LargePostingListReaderStreamPtr createIndexStream(
+        const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const;
 
     NameSet partially_read_columns;
 

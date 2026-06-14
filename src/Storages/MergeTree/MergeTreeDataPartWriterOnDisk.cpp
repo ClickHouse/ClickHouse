@@ -30,6 +30,51 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+LargePostingListWriterStream::LargePostingListWriterStream( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    const String & escaped_column_name_,
+    const MutableDataPartStoragePtr & data_part_storage,
+    const String & data_path_,
+    const std::string & data_file_extension_,
+    size_t max_compress_block_size_,
+    const WriteSettings & query_write_settings)
+    : escaped_column_name(escaped_column_name_)
+    , data_file_extension{data_file_extension_}
+    , plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings))
+    , plain_hashing(*plain_file)
+{
+}
+
+void LargePostingListWriterStream::preFinalize()
+{
+    plain_hashing.finalize();
+    plain_file->preFinalize();
+    is_prefinalized = true;
+}
+
+void LargePostingListWriterStream::finalize()
+{
+    if (!is_prefinalized)
+        preFinalize();
+    plain_file->finalize();
+}
+
+void LargePostingListWriterStream::cancel() noexcept
+{
+    plain_hashing.cancel();
+    plain_file->cancel();
+}
+
+void LargePostingListWriterStream::sync() const
+{
+    plain_file->sync();
+}
+
+void LargePostingListWriterStream::addToChecksums(MergeTreeDataPartChecksums & checksums)
+{
+    checksums.files[escaped_column_name + data_file_extension].file_size = plain_hashing.count();
+    checksums.files[escaped_column_name + data_file_extension].file_hash = plain_hashing.getHash();
+}
+
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const String & data_part_name_,
     const String & logger_name_,
@@ -82,6 +127,15 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
         index_source_hashing_stream->cancel();
 
     for (auto & stream : skip_indices_streams_holders)
+        stream->cancel();
+
+    for (auto & [_, stream] : large_posting_streams)
+        stream->cancel();
+
+    for (auto & [_, stream] : position_streams)
+        stream->cancel();
+
+    for (auto & [_, stream] : lidx_streams)
         stream->cancel();
 }
 
@@ -343,6 +397,51 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
             stream->preFinalize();
             stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
         }
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishLargePostingSerialization(bool sync)
+{
+    for (auto & [_, stream] : large_posting_streams)
+    {
+        stream->finalize();
+        if (sync)
+            stream->sync();
+    }
+
+    for (auto & [_, stream] : position_streams)
+    {
+        stream->finalize();
+        if (sync)
+            stream->sync();
+    }
+
+    for (auto & [_, stream] : lidx_streams)
+    {
+        stream->finalize();
+        if (sync)
+            stream->sync();
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::fillLargePostingChecksums(MergeTreeData::DataPart::Checksums & checksums)
+{
+    for (auto & [_, stream] : large_posting_streams)
+    {
+        stream->preFinalize();
+        stream->addToChecksums(checksums);
+    }
+
+    for (auto & [_, stream] : position_streams)
+    {
+        stream->preFinalize();
+        stream->addToChecksums(checksums);
+    }
+
+    for (auto & [_, stream] : lidx_streams)
+    {
+        stream->preFinalize();
+        stream->addToChecksums(checksums);
     }
 }
 

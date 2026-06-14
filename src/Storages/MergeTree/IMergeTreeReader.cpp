@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
@@ -527,6 +528,75 @@ String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, s
         from_mark,
         max_rows_to_read,
         offset);
+}
+
+LargePostingListReaderStreamPtr IMergeTreeReader::createLargePostingStream(
+    const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const
+{
+    static constexpr size_t marks_count = 1;
+    auto large_posting_stream_settings = settings;
+    large_posting_stream_settings.is_compressed = false;
+    return std::make_shared<LargePostingListReaderStream>(
+        data_part_info_for_read->getMergedPartOffsets(),
+        data_part_info_for_read->getPartIndex(),
+        data_part_info_for_read->getPartStartingOffset(),
+        data_part_info_for_read->getDataPartStorage(),
+        stream_name,
+        PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+        marks_count,
+        MarkRanges{{0, marks_count}},
+        large_posting_stream_settings,
+        /*uncompressed_cache=*/nullptr,
+        data_part_info_for_read->getFileSizeOrZero(stream_name + PROJECTION_INDEX_LARGE_POSTING_SUFFIX),
+        /*marks_loader=*/nullptr,
+        profile_callback,
+        clock_type);
+}
+
+LargePostingListReaderStreamPtr IMergeTreeReader::createPositionStream(
+    const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const
+{
+    static constexpr size_t marks_count = 1;
+    auto stream_settings = settings;
+    stream_settings.is_compressed = false;
+    return std::make_shared<LargePostingListReaderStream>(
+        data_part_info_for_read->getMergedPartOffsets(),
+        data_part_info_for_read->getPartIndex(),
+        data_part_info_for_read->getPartStartingOffset(),
+        data_part_info_for_read->getDataPartStorage(),
+        stream_name,
+        PROJECTION_INDEX_POSITION_SUFFIX,
+        marks_count,
+        MarkRanges{{0, marks_count}},
+        stream_settings,
+        /*uncompressed_cache=*/nullptr,
+        data_part_info_for_read->getFileSizeOrZero(stream_name + PROJECTION_INDEX_POSITION_SUFFIX),
+        /*marks_loader=*/nullptr,
+        profile_callback,
+        clock_type);
+}
+
+LargePostingListReaderStreamPtr IMergeTreeReader::createIndexStream(
+    const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const
+{
+    static constexpr size_t marks_count = 1;
+    auto stream_settings = settings;
+    stream_settings.is_compressed = false;
+    return std::make_shared<LargePostingListReaderStream>(
+        data_part_info_for_read->getMergedPartOffsets(),
+        data_part_info_for_read->getPartIndex(),
+        data_part_info_for_read->getPartStartingOffset(),
+        data_part_info_for_read->getDataPartStorage(),
+        stream_name,
+        PROJECTION_INDEX_INDEX_SUFFIX,
+        marks_count,
+        MarkRanges{{0, marks_count}},
+        stream_settings,
+        /*uncompressed_cache=*/nullptr,
+        data_part_info_for_read->getFileSizeOrZero(stream_name + PROJECTION_INDEX_INDEX_SUFFIX),
+        /*marks_loader=*/nullptr,
+        profile_callback,
+        clock_type);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(

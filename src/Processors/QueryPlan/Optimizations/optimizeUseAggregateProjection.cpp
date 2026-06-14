@@ -366,8 +366,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     std::vector<const ProjectionDescription *> agg_projections;
 
     for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
+    {
+        if (projection.type == ProjectionDescription::Type::Aggregate && !projection.index)
             agg_projections.push_back(&projection);
+    }
 
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
@@ -466,8 +468,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     std::vector<const ProjectionDescription *> agg_projections;
 
     for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
+    {
+        if (projection.type == ProjectionDescription::Type::Aggregate && !projection.index)
             agg_projections.push_back(&projection);
+    }
 
     AggregateProjectionCandidates candidates;
 

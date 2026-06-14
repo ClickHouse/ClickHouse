@@ -135,6 +135,12 @@
     M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
+    M(TextIndexLazyPackedBlocksSkipped, "Number of packed blocks skipped (arithmetic sequence) in the lazy posting list cursor path.", ValueType::Number) \
+    M(TextIndexLazySeekCount, "Number of seek calls on lazy posting list cursors.", ValueType::Number) \
+    M(TextIndexLazyLargeBlocksPrepared, "Number of large block Index Sections loaded by lazy posting list cursors.", ValueType::Number) \
+    M(TextIndexLazyLargeBlocksSkippedDense, "Number of large blocks skipped via dense-memset optimization in posting list fill.", ValueType::Number) \
+    M(TextIndexLazyLargeBlocksSkippedCovered, "Number of large blocks skipped because the output region was already all-ones in posting list fill.", ValueType::Number) \
+    M(TextIndexLazyPackedBlocksSkippedCovered, "Number of packed blocks skipped because the output region was already all-ones in posting list fill.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \

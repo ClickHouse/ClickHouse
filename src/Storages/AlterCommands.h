@@ -241,6 +241,9 @@ public:
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
 
+    /// Check if commands have a projection-based text index specifically (subset of `hasTextIndex`)
+    static bool hasProjectionTextIndex(const StorageInMemoryMetadata & metadata);
+
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };

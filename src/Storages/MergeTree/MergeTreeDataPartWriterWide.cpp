@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -141,7 +143,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
     const ASTPtr & effective_codec_desc)
 {
-    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+    ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         chassert(!substream_path.empty());
 
@@ -219,6 +221,39 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             query_write_settings));
+
+        if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+        {
+            large_posting_streams.emplace(
+                stream_name,
+                std::make_unique<LargePostingListWriterStream>(
+                    stream_name,
+                    data_part_storage,
+                    stream_name,
+                    PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+                    settings.max_compress_block_size,
+                    settings.query_write_settings));
+
+            position_streams.emplace(
+                stream_name,
+                std::make_unique<LargePostingListWriterStream>(
+                    stream_name,
+                    data_part_storage,
+                    stream_name,
+                    PROJECTION_INDEX_POSITION_SUFFIX,
+                    settings.max_compress_block_size,
+                    settings.query_write_settings));
+
+            lidx_streams.emplace(
+                stream_name,
+                std::make_unique<LargePostingListWriterStream>(
+                    stream_name,
+                    data_part_storage,
+                    stream_name,
+                    PROJECTION_INDEX_INDEX_SUFFIX,
+                    settings.max_compress_block_size,
+                    settings.query_write_settings));
+        }
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -380,6 +415,11 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
                 writeColumn(*it, index_column, offset_substreams, granules_to_write);
+            }
+            else if (permuted_columns_cache && permuted_columns_cache->has(it->name))
+            {
+                const auto & cached_column = *permuted_columns_cache->getByName(it->name).column;
+                writeColumn(*it, cached_column, offset_substreams, granules_to_write);
             }
             else
             {
@@ -567,6 +607,32 @@ void MergeTreeDataPartWriterWide::writeColumn(
         auto & stream = column_streams.at(stream_name);
         return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
     };
+
+    ProjectionIndexSerializationContext projection_index_context;
+    if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+    {
+        projection_index_context.large_posting_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListWriterStream *
+        {
+            auto stream_name = getStreamName(name_and_type, substream_path);
+            return large_posting_streams.at(stream_name).get();
+        };
+        projection_index_context.position_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListWriterStream *
+        {
+            auto stream_name = getStreamName(name_and_type, substream_path);
+            auto pos_it = position_streams.find(stream_name);
+            return pos_it != position_streams.end() ? pos_it->second.get() : nullptr;
+        };
+        projection_index_context.index_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListWriterStream *
+        {
+            auto stream_name = getStreamName(name_and_type, substream_path);
+            auto idx_it = lidx_streams.find(stream_name);
+            return idx_it != lidx_streams.end() ? idx_it->second.get() : nullptr;
+        };
+        serialize_settings.projection_index_context = &projection_index_context;
+    }
 
     for (const auto & granule : granules)
     {
@@ -858,6 +924,7 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
+    fillLargePostingChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)
@@ -870,6 +937,7 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
+    finishLargePostingSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::cancel() noexcept

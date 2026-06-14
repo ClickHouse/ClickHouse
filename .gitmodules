@@ -396,3 +396,6 @@
 [submodule "contrib/silk"]
 	path = contrib/silk
 	url = https://github.com/ClickHouse/silk.git
+[submodule "contrib/TurboPFor-CPP"]
+	path = contrib/TurboPFor-CPP
+	url = https://github.com/amosbird/TurboPFor-CPP

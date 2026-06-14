@@ -209,6 +209,7 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_projection_text_index;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
@@ -1030,10 +1031,10 @@ void MergeTreeData::checkProperties(
                 new_virtuals_sample_block.dumpStructure(), old_virtuals_sample_block.dumpStructure());
     }
 
+    std::unordered_set<String> columns_with_text_indexes;
     if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
-        std::unordered_set<String> columns_with_text_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1119,6 +1120,28 @@ void MergeTreeData::checkProperties(
                     "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
                     projection.name);
             }
+
+            /// Text indexes on projections use the same query optimization rules as regular skip indexes. We apply the
+            /// same constraint here: each column is limited to one text index to avoid issues with
+            /// 'hasAllTokens/hasAnyTokens' (see https://github.com/ClickHouse/ClickHouse/issues/82385).
+            if (projection.index && projection.index->getName() == TEXT_INDEX_NAME)
+            {
+                const auto * index_desc = projection.index->getIndexDescription();
+                if (!index_desc)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection index '{}' has no index description", projection.name);
+                const auto & column = index_desc->column_names[0];
+
+                if (columns_with_text_indexes.contains(column))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} must not have more than one text index",
+                        backQuote(index_desc->column_names[0]));
+                }
+
+                columns_with_text_indexes.insert(column);
+            }
+
             projections_names.insert(projection.name);
         }
     }
@@ -1229,6 +1252,7 @@ namespace
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
+    const std::vector<ProjectionDescriptionRawPtr> & projection_indices,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
     ContextPtr context)
@@ -1236,8 +1260,23 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
     for (const auto & index : indices)
+    {
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
+    }
+
+    for (const auto & projection : projection_indices)
+    {
+        if (!projection->index)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection '{}' has no index", projection->name);
+        const auto * index_desc = projection->index->getIndexDescription();
+        if (!index_desc)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection index '{}' has no index description", projection->name);
+        if (!index_desc->expression_list_ast)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection index '{}' has no expression list", projection->name);
+        for (const auto & index_expr : index_desc->expression_list_ast->children)
+            combined_expr_list->children.push_back(index_expr->clone());
+    }
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
@@ -1278,16 +1317,24 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
     return getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
 }
 
-ExpressionActionsPtr
-MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
+ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndIndicesExpression(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeIndices & indices,
+    const std::vector<ProjectionDescriptionRawPtr> & projection_indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+
+    return getCombinedIndicesExpression(
+        metadata_snapshot->getPrimaryKey(), indices, projection_indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
-ExpressionActionsPtr
-MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
+ExpressionActionsPtr MergeTreeData::getSortingKeyAndIndicesExpression(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeIndices & indices,
+    const std::vector<ProjectionDescriptionRawPtr> & projection_indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+
+    return getCombinedIndicesExpression(
+        metadata_snapshot->getSortingKey(), indices, projection_indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
@@ -4497,6 +4544,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
 
+    if (AlterCommands::hasProjectionTextIndex(new_metadata) && !settings[Setting::allow_experimental_projection_text_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection text index is experimental. Enable the setting 'allow_experimental_projection_text_index' to use it.");
+
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
@@ -5055,17 +5106,57 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr(getContext(), false)))
-    {
-        auto data_parts = getDataPartsVectorForInternalUsage();
 
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (hasTextIndexMaterialization(commands, metadata_snapshot))
+    {
         for (const auto & part : data_parts)
         {
             if (part->rows_count > std::numeric_limits<UInt32>::max())
             {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
-                    part->name, part->rows_count, std::numeric_limits<UInt32>::max());
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with "
+                    "more than {} rows",
+                    part->name,
+                    part->rows_count,
+                    std::numeric_limits<UInt32>::max());
+            }
+        }
+    }
+
+    UInt64 limit = std::numeric_limits<UInt64>::max();
+    ProjectionDescriptionRawPtr limiting_projection = nullptr;
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (projection.index)
+        {
+            UInt64 index_limit = projection.index->getMaxRows();
+            if (index_limit < limit)
+            {
+                limit = index_limit;
+                limiting_projection = &projection;
+            }
+        }
+    }
+
+    if (limit != std::numeric_limits<UInt64>::max())
+    {
+        chassert(limiting_projection && limiting_projection->index);
+        for (const auto & part : data_parts)
+        {
+            if (part->rows_count > limit)
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize projection index in part {} because it has {} rows, which exceeds the limit ({}) "
+                    "for projection index '{}' (Type: {}).",
+                    part->name,
+                    part->rows_count,
+                    limit,
+                    limiting_projection->name,
+                    limiting_projection->index->getName());
             }
         }
     }
