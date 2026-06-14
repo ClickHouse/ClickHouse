@@ -1293,7 +1293,8 @@ static std::optional<BlockIO> tryExecuteFromCache(
     const Stopwatch & start_watch,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
-    CacheProbeOutput & output)
+    CacheProbeOutput & output,
+    QueryResultDetails & result_details)
 {
     const Settings & settings = context->getSettingsRef();
     const bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
@@ -1347,7 +1348,45 @@ static std::optional<BlockIO> tryExecuteFromCache(
             auto quota = context->getQuota();
             res.pipeline.setLimitsAndQuota(limits, quota);
         }
-        
+        if (output.can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
+        {
+            auto created_at = std::chrono::system_clock::now();
+            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+            QueryResultCache::Key key(
+                ast, context->getCurrentDatabase(), *output.settings_copy, res.pipeline.getSharedHeader(),
+                context->getCurrentQueryId(),
+                context->getUserID(), context->getCurrentRoles(),
+                settings[Setting::query_cache_share_between_users],
+                created_at, expires_at,
+                settings[Setting::query_cache_compress_entries],
+                /* is_subquery = */ false);
+
+            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+            if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
+            {
+                LOG_TRACE(getLogger("QueryResultCache"),
+                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                    num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+            }
+            else
+            {
+                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                    key,
+                    std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                    settings[Setting::query_cache_squash_partial_results],
+                    settings[Setting::max_block_size],
+                    settings[Setting::query_cache_max_size_in_bytes],
+                    settings[Setting::query_cache_max_entries]));
+                res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
+                output.query_result_cache_usage = QueryResultCacheUsage::Write;
+            }
+
+            /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
+            /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+            if (settings[Setting::enable_reads_from_query_cache])
+                result_details.query_cache_entry_expires_at = expires_at;
+        }
     }
 
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
@@ -1487,7 +1526,7 @@ static BlockIO executeQueryImpl(
     CacheProbeOutput cache_output;
     if (auto cached_result = tryExecuteFromCache(
             begin, end, context, internal, stage,
-            query_start_time, start_watch, query_span, implicit_tcl_executor, cache_output))
+            query_start_time, start_watch, query_span, implicit_tcl_executor, cache_output, result_details))
     {
         return std::move(*cached_result);
     }
@@ -2074,30 +2113,6 @@ static BlockIO executeQueryImpl(
         }
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
-            /// then set a pipeline with a source populated by the query result cache.
-            // auto get_result_from_query_result_cache = [&]()
-            // {
-            //     if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
-            //     {
-            //         QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
-            //         QueryResultCacheReader reader = query_result_cache->createReader(key);
-
-            //         if (reader.hasCacheEntryForKey())
-            //         {
-            //             result_details.query_cache_entry_created_at = reader.entryCreatedAt();
-            //             result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
-
-            //             QueryPipeline pipeline;
-            //             pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
-            //             res.pipeline = std::move(pipeline);
-            //             query_result_cache_usage = QueryResultCacheUsage::Read;
-
-            //             return true;
-            //         }
-            //     }
-            //     return false;
-            // };
             if (!query_result_cache_entry_exists)
             {
                 query_result_cache_entry_exists = getResultFromQueryResultCache(
@@ -2222,48 +2237,48 @@ static BlockIO executeQueryImpl(
                     {
                         vector_query_plan_cache_writer = interpreter->getVectorQueryPlanCacheWriter();
                     }
-                }
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))
                     {
-                            auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                        auto created_at = std::chrono::system_clock::now();
+                        auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
-                            QueryResultCache::Key key(
-                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
-                                context->getCurrentQueryId(),
-                                context->getUserID(), context->getCurrentRoles(),
-                                settings[Setting::query_cache_share_between_users],
-                                created_at, expires_at,
-                                settings[Setting::query_cache_compress_entries],
-                                /* is_subquery = */ false);
+                        QueryResultCache::Key key(
+                            out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
+                            context->getCurrentQueryId(),
+                            context->getUserID(), context->getCurrentRoles(),
+                            settings[Setting::query_cache_share_between_users],
+                            created_at, expires_at,
+                            settings[Setting::query_cache_compress_entries],
+                            /* is_subquery = */ false);
 
-                            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
-                            if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
-                            {
-                                LOG_TRACE(getLogger("QueryResultCache"),
-                                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                    num_query_runs, settings[Setting::query_cache_min_query_runs].value);
-                            }
-                            else
-                            {
-                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                     key,
-                                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                     settings[Setting::query_cache_squash_partial_results],
-                                     settings[Setting::max_block_size],
-                                     settings[Setting::query_cache_max_size_in_bytes],
-                                     settings[Setting::query_cache_max_entries]));
-                                res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
-                                query_result_cache_usage = QueryResultCacheUsage::Write;
-                            }
+                        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+                        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
+                        {
+                            LOG_TRACE(getLogger("QueryResultCache"),
+                                "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+                        }
+                        else
+                        {
+                            auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                key,
+                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                settings[Setting::query_cache_squash_partial_results],
+                                settings[Setting::max_block_size],
+                                settings[Setting::query_cache_max_size_in_bytes],
+                                settings[Setting::query_cache_max_entries]));
+                            res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
+                            query_result_cache_usage = QueryResultCacheUsage::Write;
+                        }
 
-                            /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
-                            /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
-                            if (settings[Setting::enable_reads_from_query_cache])
-                                result_details.query_cache_entry_expires_at = expires_at;
+                        /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
+                        /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+                        if (settings[Setting::enable_reads_from_query_cache])
+                            result_details.query_cache_entry_expires_at = expires_at;
                     }
+                }
             }
         }
 
