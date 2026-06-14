@@ -890,10 +890,15 @@ def test_backup_database(started_cluster):
     instance.query(f"BACKUP DATABASE test_database TO {backup_name}")
 
     # The backed-up table data can be restored as a standalone ReplacingMergeTree.
+    # `allow_different_table_def` is required because we intentionally restore a
+    # MaterializedPostgreSQL table as a plain ReplacingMergeTree: the create query stored in the
+    # backup is the synthetic nested-table query (without the default `index_granularity` setting,
+    # to match `SHOW CREATE TABLE`), while the freshly created standalone table normalizes its
+    # definition and gains `SETTINGS index_granularity = 8192`. Only the data has to match.
     instance.query("DROP DATABASE IF EXISTS restored_db SYNC")
     instance.query("CREATE DATABASE restored_db")
     instance.query(
-        f"RESTORE TABLE test_database.test_backup_tbl AS restored_db.test_backup_tbl FROM {backup_name}"
+        f"RESTORE TABLE test_database.test_backup_tbl AS restored_db.test_backup_tbl FROM {backup_name} SETTINGS allow_different_table_def = 1"
     )
     assert 50 == int(
         instance.query("SELECT count() FROM restored_db.test_backup_tbl")
