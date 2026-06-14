@@ -150,6 +150,39 @@ def test_system_refresh_consuming(rabbitmq_cluster):
     wait_dst_count(table, 20)
 
 
+def test_refresh_on_viewless_table_is_not_leaked(rabbitmq_cluster):
+    # Regression: a SYSTEM REFRESH issued while no view is attached must consume the one-shot right
+    # away. Otherwise it leaks until a view is attached and then fires one extra cycle even though
+    # the table is STOPped — i.e. the loop must not gate shouldRunCycle() behind num_views.
+    table = "rabbitmq_refresh_leak"
+    exchange = "refresh_leak_exchange"
+    setup_consuming_table(table, exchange)
+
+    # Warm up so the queue/consumer are established, then detach the view (num_views -> 0). The
+    # rabbitmq_queue_base keeps the queue around so messages published below are retained.
+    publish(rabbitmq_cluster, exchange, 0, 1)
+    wait_dst_count(table, 1)
+    instance.query(f"DROP TABLE test.{table}_mv")
+
+    # REFRESH on the now view-less, STOPped table must consume the one-shot immediately.
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(f"SYSTEM REFRESH test.{table}")
+    publish(rabbitmq_cluster, exchange, 1, 10)
+
+    # Re-attach the view. The table is still STOPped, so nothing new should be consumed; a leaked
+    # one-shot would drain the 10 messages here. The window is generous because the leaked cycle only
+    # surfaces on the next reschedule and may need a consumer re-engagement first.
+    instance.query(
+        f"CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst "
+        f"AS SELECT key, value FROM test.{table}"
+    )
+    assert_dst_count_stable(table, 1, seconds=15)
+
+    # Sanity: START drains them, proving the messages were retained and consumable.
+    instance.query(f"SYSTEM START test.{table}")
+    wait_dst_count(table, 11)
+
+
 def test_refresh_runs_once_while_start_keeps_consuming(rabbitmq_cluster):
     # REFRESH runs exactly one consumption cycle out of order without resuming the stream; START
     # resumes continuous consumption. With the stream STOPped, a single REFRESH drains exactly the

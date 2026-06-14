@@ -1078,7 +1078,8 @@ void StorageRabbitMQ::threadFunc()
             size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
-            if (num_views && rabbit_connected && stream_control.shouldRunCycle())
+            const bool run_cycle = rabbit_connected && stream_control.shouldRunCycle();
+            if (num_views && run_cycle)
             {
                 auto start_time = std::chrono::steady_clock::now();
 
