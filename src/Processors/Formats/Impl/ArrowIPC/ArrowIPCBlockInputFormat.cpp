@@ -295,8 +295,17 @@ void ArrowIPCBlockInputFormat::reinterpretFixedSizeBinary(ColumnWithTypeAndName 
     {
         const ColumnPtr nested = src->isNullable()
             ? assert_cast<const ColumnNullable &>(*src).getNestedColumnPtr() : src;
-        if (const auto * fixed = typeid_cast<const ColumnFixedString *>(nested.get()); fixed && fixed->getN() == 16)
+        if (const auto * fixed = typeid_cast<const ColumnFixedString *>(nested.get()))
         {
+            /// A fixed_size_binary read as UUID must be exactly 16 bytes wide. Reject any other width before
+            /// the UUID column is reserved: the per-row reinterpret reads 16 bytes regardless of the source
+            /// stride (a heap over-read for a narrower width), and reserving `sizeof(UUID)` per row for a
+            /// forged-huge row count would otherwise hit the memory limit instead of being recognised as
+            /// corrupt data (matching the library reader's `byte_width` check).
+            if (fixed->getN() != 16)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow fixed_size_binary of width {} cannot be read as UUID (expected 16)", fixed->getN());
             const size_t rows = fixed->size();
             auto uuids = ColumnVector<UUID>::create(rows);
             for (size_t i = 0; i < rows; ++i)

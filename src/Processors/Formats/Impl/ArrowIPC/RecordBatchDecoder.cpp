@@ -89,6 +89,21 @@ void checkBufferSize(const RecordBatchDecoder::Slice & slice, size_t required, c
             what, slice.length, required);
 }
 
+/// Overflow-safe `count * elem_size` for buffer-size validation. An untrusted Arrow file can declare a
+/// row count near 2^62; multiplying it by the element size would wrap modulo 2^64 to a small value,
+/// letting an undersized buffer pass `checkBufferSize` and then driving an oversized column allocation
+/// (resize/reserve). Reject the overflow as corrupt data before any allocation, mirroring the checked
+/// arithmetic the Apache Arrow library based reader uses.
+size_t requiredBytes(size_t count, size_t elem_size)
+{
+    size_t bytes = 0;
+    if (__builtin_mul_overflow(count, elem_size, &bytes))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC buffer size overflows: {} elements of {} bytes each", count, elem_size);
+    return bytes;
+}
+
 /// Fills a fixed-width ClickHouse column (ColumnVector / ColumnDecimal) by copying `value_size`
 /// bytes per row from the source buffer. For decimals `value_size` may be smaller than the Arrow
 /// storage width, so the low (little-endian) bytes are taken per value.
@@ -96,7 +111,7 @@ template <typename Col>
 void fillFixed(IColumn & column, size_t rows, const RecordBatchDecoder::Slice & values, size_t arrow_value_size)
 {
     using V = typename Col::ValueType;
-    checkBufferSize(values, rows * arrow_value_size, "values");
+    checkBufferSize(values, requiredBytes(rows, arrow_value_size), "values");
     auto & data = assert_cast<Col &>(column).getData();
     data.resize(rows);
     if (rows == 0)
@@ -190,7 +205,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             else
             {
                 /// half-float -> Float32
-                checkBufferSize(values, rows * sizeof(uint16_t), "half_float");
+                checkBufferSize(values, requiredBytes(rows, sizeof(uint16_t)), "half_float");
                 auto & data = assert_cast<ColumnFloat32 &>(*column).getData();
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const uint16_t *>(values.ptr);
@@ -249,7 +264,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             else
             {
                 /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds).
-                checkBufferSize(values, rows * sizeof(int64_t), "date64");
+                checkBufferSize(values, requiredBytes(rows, sizeof(int64_t)), "date64");
                 auto & data = assert_cast<ColumnUInt32 &>(*column).getData();
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const int64_t *>(values.ptr);
@@ -266,7 +281,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             /// `time32[s|ms]` stores 4-byte values; `time64`/`timestamp` store 8-byte values.
             if (type.kind == TypeKind::Time && type.time_bit_width == 32)
             {
-                checkBufferSize(values, rows * sizeof(int32_t), "time32");
+                checkBufferSize(values, requiredBytes(rows, sizeof(int32_t)), "time32");
                 auto & data = assert_cast<ColumnDecimal<DateTime64> &>(*column).getData();
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const int32_t *>(values.ptr);
@@ -296,11 +311,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             /// A zero-row column may omit its offsets buffer entirely; nothing to decode.
             if (rows == 0)
                 break;
+
+            /// Validate the offsets buffer before reserving: an inflated (or forged-huge) row count would
+            /// otherwise reserve gigabytes (and hit the memory limit) before this check could reject the file.
+            const size_t offset_size = large ? sizeof(int64_t) : sizeof(int32_t);
+            checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "offsets");
+
             string_column.reserve(rows);
             string_column.getChars().reserve(static_cast<size_t>(data_slice.length) + rows);
-
-            const size_t offset_size = large ? sizeof(int64_t) : sizeof(int32_t);
-            checkBufferSize(offsets_slice, (rows + 1) * offset_size, "offsets");
 
             auto read_offset = [&](size_t i) -> int64_t
             {
@@ -332,7 +350,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             /// buffers. Each view is {int32 length; if length<=12 inline 12 bytes; else int32 prefix,
             /// int32 buffer_index, int32 offset into that data buffer}.
             const Slice views = nextBuffer();
-            checkBufferSize(views, rows * 16, "binary view");
+            checkBufferSize(views, requiredBytes(rows, 16), "binary view");
             const int64_t num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
             std::vector<Slice> data_buffers;
@@ -373,7 +391,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
         {
             const Slice values = nextBuffer();
             const size_t n = static_cast<size_t>(type.byte_width);
-            checkBufferSize(values, rows * n, "fixed_size_binary");
+            checkBufferSize(values, requiredBytes(rows, n), "fixed_size_binary");
             if (isUUIDField(field))
             {
                 /// 16 bytes per value, with the two 64-bit halves byte-reversed (matches the writer).
@@ -420,16 +438,29 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             Columns elements;
             elements.reserve(type.children.size());
             for (const ArrowField & child : type.children)
-                elements.push_back(decodeField(child));
+            {
+                ColumnPtr element = decodeField(child);
+                /// Every struct field carries its own `FieldNode.length`, but they must all equal the
+                /// parent struct's row count. A malformed file can shorten one field (or slice a child
+                /// out of range), leaving a `ColumnTuple` with elements of unequal size. Reject it here
+                /// (the Apache Arrow library reader's `StructArray::field()` silently clamps such fields).
+                if (element->size() != rows)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC struct field '{}' has {} rows, expected {}", child.name, element->size(), rows);
+                elements.push_back(std::move(element));
+            }
             return ColumnTuple::create(elements);
         }
         case TypeKind::Map:
         {
             /// Map is List<Struct<key, value>>: read the list offsets, then the entries struct.
             const Slice offsets_slice = nextBuffer();
-            checkBufferSize(offsets_slice, (rows + 1) * sizeof(int32_t), "map offsets");
+            checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(int32_t)), "map offsets");
             const auto * arrow_offsets = reinterpret_cast<const int32_t *>(offsets_slice.ptr);
             const int64_t base = arrow_offsets[0];
+            if (base < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has a negative first offset {}", base);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
             /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
@@ -447,6 +478,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
             if (entries_tuple.tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
+            /// The last absolute offset must stay within the decoded entries (offsets that point past the
+            /// entries array, e.g. [1,1] over zero entries, are corrupt even when per-row spans look empty).
+            if (rows && prev > static_cast<int64_t>(entries_tuple.size()))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map offset {} points past the {} entries", prev, entries_tuple.size());
             if (entries_tuple.size() != (rows ? offs.back() : 0))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries size does not match offsets");
             return ColumnMap::create(entries_tuple.getColumnPtr(0), entries_tuple.getColumnPtr(1), std::move(offsets_col));
@@ -465,7 +500,7 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(const ArrowField & field, size
 {
     const Slice offsets_slice = nextBuffer();
     const size_t offset_size = large ? sizeof(int64_t) : sizeof(int32_t);
-    checkBufferSize(offsets_slice, (rows + 1) * offset_size, "list offsets");
+    checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "list offsets");
 
     auto read_offset = [&](size_t i) -> int64_t
     {
@@ -475,6 +510,9 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(const ArrowField & field, size
     };
 
     const int64_t base = read_offset(0);
+    /// The first offset must be non-negative; the per-row offsets below are stored relative to it.
+    if (base < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has a negative first offset {}", base);
     auto offsets_col = ColumnUInt64::create(rows);
     auto & offs = offsets_col->getData();
     /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
@@ -489,6 +527,12 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(const ArrowField & field, size
     }
 
     ColumnPtr child = decodeField(field.type.children.at(0));
+    /// The last absolute offset must stay within the child values; otherwise the offsets point past the
+    /// values array (e.g. [1,1] over a zero-length child) even when the per-row spans look empty.
+    if (rows && prev > static_cast<int64_t>(child->size()))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC list offset {} points past the {}-element child", prev, child->size());
     if (child->size() != (rows ? offs.back() : 0))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -506,7 +550,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     const int bits = field.dictionary->index_bit_width;
     const bool index_is_signed = field.dictionary->index_is_signed;
     const size_t index_size = static_cast<size_t>(bits) / 8;
-    checkBufferSize(indices_slice, rows * index_size, "dictionary indices");
+    checkBufferSize(indices_slice, requiredBytes(rows, index_size), "dictionary indices");
 
     /// A row can be null either because the indices array marks it null (pyarrow style) or because it
     /// points at a null entry inside the dictionary values (the ClickHouse writer style); handle both.
@@ -587,7 +631,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     if (dense)
     {
         const Slice offsets_slice = nextBuffer();
-        checkBufferSize(offsets_slice, rows * sizeof(int32_t), "union offsets");
+        checkBufferSize(offsets_slice, requiredBytes(rows, sizeof(int32_t)), "union offsets");
         value_offsets = reinterpret_cast<const int32_t *>(offsets_slice.ptr);
     }
 
@@ -741,6 +785,15 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
 
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();
+
+    /// Validate the validity bitmap against the declared row count whenever the field declares nulls,
+    /// before decoding the value buffers — even when the resulting column type drops the null map
+    /// (Array/Tuple/Map cannot be `Nullable` in ClickHouse, so their outer validity is not built). A
+    /// non-zero (or unknown, i.e. negative) null count with a present-but-too-small bitmap, or a forged
+    /// huge length, is corrupt data: building the null map or scanning the bitmap would read past the
+    /// buffer or drive an oversized allocation.
+    if (node.null_count() != 0 && validity.length != 0)
+        checkBufferSize(validity, (rows + 7) / 8, "validity");
 
     /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch.
     if (field.dictionary)
