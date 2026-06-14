@@ -2,7 +2,6 @@
 
 #include <Parsers/IParserBase.h>
 
-#include <cassert>
 #include <string_view>
 #include <unordered_set>
 
@@ -137,6 +136,7 @@ namespace DB
     MR_MACROS(CURRENT_ROW, "CURRENT ROW") \
     MR_MACROS(CURRENT_TRANSACTION, "CURRENT TRANSACTION") \
     MR_MACROS(CURRENTUSER, "CURRENTUSER") \
+    MR_MACROS(CURSOR, "CURSOR") \
     MR_MACROS(D, "D") \
     MR_MACROS(DATA, "DATA") \
     MR_MACROS(DATABASE, "DATABASE") \
@@ -464,6 +464,7 @@ namespace DB
     MR_MACROS(REPLACE_PARTITION, "REPLACE PARTITION") \
     MR_MACROS(REPLACE, "REPLACE") \
     MR_MACROS(REPLICATED, "REPLICATED") \
+    MR_MACROS(ADD_ENUM_VALUES, "ADD ENUM VALUES") \
     MR_MACROS(RESET_SETTING, "RESET SETTING") \
     MR_MACROS(RESET_AUTHENTICATION_METHODS_TO_NEW, "RESET AUTHENTICATION METHODS TO NEW") \
     MR_MACROS(RESOURCE, "RESOURCE") \
@@ -527,6 +528,7 @@ namespace DB
     MR_MACROS(STATISTICS, "STATISTICS") \
     MR_MACROS(STEP, "STEP") \
     MR_MACROS(STORAGE, "STORAGE") \
+    MR_MACROS(STREAM, "STREAM") \
     MR_MACROS(STRICT, "STRICT") \
     MR_MACROS(SUBPARTITION_BY, "SUBPARTITION BY") \
     MR_MACROS(SUBPARTITION, "SUBPARTITION") \
@@ -627,6 +629,8 @@ namespace DB
     MR_MACROS(DOUBLE_SHA1_HASH, "DOUBLE_SHA1_HASH") \
     MR_MACROS(DOUBLE_SHA1_PASSWORD, "DOUBLE_SHA1_PASSWORD") \
     MR_MACROS(IS_OBJECT_ID, "IS_OBJECT_ID") \
+    MR_MACROS(IPV4_PREFIX_BITS, "IPV4_PREFIX_BITS") \
+    MR_MACROS(IPV6_PREFIX_BITS, "IPV6_PREFIX_BITS") \
     MR_MACROS(NO_PASSWORD, "NO_PASSWORD") \
     MR_MACROS(NO_AUTHENTICATION, "NO_AUTHENTICATION") \
     MR_MACROS(PART_MOVE_TO_SHARD, "PART_MOVE_TO_SHARD") \
@@ -649,6 +653,8 @@ namespace DB
     MR_MACROS(SSH_KEY, "SSH_KEY") \
     MR_MACROS(SSL_CERTIFICATE, "SSL_CERTIFICATE") \
     MR_MACROS(STRICTLY_ASCENDING, "STRICTLY_ASCENDING") \
+    MR_MACROS(TIMEZONE_HOUR, "TIMEZONE_HOUR") \
+    MR_MACROS(TIMEZONE_MINUTE, "TIMEZONE_MINUTE") \
     MR_MACROS(WITH_ITEMINDEX, "WITH_ITEMINDEX")
 
 enum class Keyword : size_t
@@ -677,7 +683,7 @@ class ParserKeyword : public IParserBase
 private:
     std::string_view s;
 
-    explicit ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
+    explicit ParserKeyword(std::string_view s_): s(s_) { chassert(!s.empty()); }
 
 public:
     static ParserKeyword createDeprecated(std::string_view s_)

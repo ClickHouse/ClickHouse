@@ -30,6 +30,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    UInt64 float_precision = 0;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -191,10 +192,21 @@ struct FormatSettings
         UInt64 receive_timeout = 1;
     };
 
+    /// Retry policy for the Confluent Schema Registry HTTP client. Applied to
+    /// transient transport-level failures (connection refused, DNS, socket
+    /// timeouts) and to retryable HTTP responses (5xx, 408, 429). Schema
+    /// validation errors (HTTP 409, malformed Avro JSON) are NOT retried.
+    struct AvroSchemaRegistryRetryConfig
+    {
+        UInt64 max_retries = 5;
+        UInt64 initial_backoff_ms = 100;
+    };
+
     struct
     {
         String schema_registry_url;
         AvroSchemaRegistryTimeouts schema_registry_timeouts;
+        AvroSchemaRegistryRetryConfig schema_registry_retry;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
@@ -403,6 +415,8 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
+
+        bool use_nbsp_for_padding = false;
 
         enum class Charset : uint8_t
         {
