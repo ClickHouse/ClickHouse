@@ -212,6 +212,9 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         pre_hooks=[
             "sudo rm -rf /Library/Logs/DiagnosticReports/*",
+            # macOS does not auto-route 127.0.0.0/8 like Linux; alias 127.0.0.2+ on
+            # lo0 so remote()/cluster() tests can reach them. Idempotent on reuse.
+            "for i in $(seq 2 16); do sudo ifconfig lo0 alias 127.0.0.$i up 2>/dev/null || true; done",
         ],
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
