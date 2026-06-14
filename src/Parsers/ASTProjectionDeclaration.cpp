@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTProjectionDeclaration::clone() const
 {
     auto res = make_intrusive<ASTProjectionDeclaration>();
