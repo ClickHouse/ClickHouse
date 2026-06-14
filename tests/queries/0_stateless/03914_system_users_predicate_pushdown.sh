@@ -30,7 +30,7 @@ read_rows() {
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} -q "
         SELECT read_rows FROM system.query_log
-        WHERE query_id = '${qid}' AND type = 'QueryFinish'
+        WHERE query_id = '${qid}' AND type = 'QueryFinish' AND current_database = currentDatabase()
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
 
