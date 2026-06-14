@@ -4,6 +4,15 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/DataDestinationType.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
@@ -144,6 +153,10 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeChild("refresh", refresh);
     w.writeChild("snapshot_desc", snapshot_desc);
     w.writeChild("execute_args", execute_args);
+    /// `ALTER TABLE ... MODIFY COLUMN x ADD ENUM VALUES (...)` stores the new enum values here and
+    /// `formatImpl` emits the `ADD ENUM VALUES` clause for them; serialize it so the JSON round-trip
+    /// does not silently drop the clause and change the command's semantics.
+    w.writeChild("add_enum_values", add_enum_values);
 }
 
 void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
@@ -189,6 +202,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
+    /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
+    /// are arbitrary expressions/lists with no single parser-produced node type, so they are
+    /// restored generically.
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
@@ -199,31 +215,54 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         }
     };
 
-    readRawChild("col_decl", col_decl);
-    readRawChild("column", column);
+    /// The remaining children are parser-owned concrete node types that `AlterCommand::parse` and
+    /// `MutationCommands` downcast unconditionally (e.g. `col_decl` to `ASTColumnDeclaration`, the
+    /// `*_decl` fields to their declaration nodes, `column`/`index`/`constraint`/`projection`/
+    /// `rename_to` to `ASTIdentifier`, `settings_changes` to `ASTSetQuery`, `sql_security` to
+    /// `ASTSQLSecurity`). Restoring them generically would let a wrong node type from malformed
+    /// `clickhouse_json` reach those downcasts as an internal cast error instead of a user-facing
+    /// `BAD_ARGUMENTS`, so validate the type at the JSON boundary.
+    auto readTypedChild = [&]<typename T>(const char * key, IAST *& field)
+    {
+        auto child = r.readChildOfType<T>(key);
+        if (child)
+        {
+            field = child.get();
+            children.push_back(std::move(child));
+        }
+    };
+
+    readTypedChild.operator()<ASTColumnDeclaration>("col_decl", col_decl);
+    readTypedChild.operator()<ASTIdentifier>("column", column);
     readRawChild("order_by", order_by);
     readRawChild("sample_by", sample_by);
-    readRawChild("index_decl", index_decl);
-    readRawChild("index", index);
-    readRawChild("constraint_decl", constraint_decl);
-    readRawChild("constraint", constraint);
-    readRawChild("projection_decl", projection_decl);
-    readRawChild("projection", projection);
-    readRawChild("statistics_decl", statistics_decl);
+    readTypedChild.operator()<ASTIndexDeclaration>("index_decl", index_decl);
+    readTypedChild.operator()<ASTIdentifier>("index", index);
+    readTypedChild.operator()<ASTConstraintDeclaration>("constraint_decl", constraint_decl);
+    readTypedChild.operator()<ASTIdentifier>("constraint", constraint);
+    readTypedChild.operator()<ASTProjectionDeclaration>("projection_decl", projection_decl);
+    readTypedChild.operator()<ASTIdentifier>("projection", projection);
+    readTypedChild.operator()<ASTStatisticsDeclaration>("statistics_decl", statistics_decl);
     readRawChild("partition", partition);
     readRawChild("predicate", predicate);
     readRawChild("update_assignments", update_assignments);
     readRawChild("comment", comment);
     readRawChild("ttl", ttl);
-    readRawChild("settings_changes", settings_changes);
+    readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
     readRawChild("settings_resets", settings_resets);
     readRawChild("select", select);
-    readRawChild("sql_security", sql_security);
-    readRawChild("rename_to", rename_to);
+    readTypedChild.operator()<ASTSQLSecurity>("sql_security", sql_security);
+    readTypedChild.operator()<ASTIdentifier>("rename_to", rename_to);
     readRawChild("snapshot_desc", snapshot_desc);
     readRawChild("execute_args", execute_args);
 
     readRawChild("refresh", refresh);
+
+    /// `ADD ENUM VALUES (...)` is parser-produced as an `ASTExpressionList`; `formatImpl` emits it
+    /// for `MODIFY_COLUMN`, so it must round-trip through JSON (see `writeJSON`).
+    add_enum_values = r.readChildOfType<ASTExpressionList>("add_enum_values");
+    if (add_enum_values)
+        children.push_back(add_enum_values);
 
     /// Validate that all children required by `formatImpl` for this command type are present.
     /// Without this, a malformed JSON could produce a command whose `formatImpl` dereferences a null member.
