@@ -4558,14 +4558,13 @@ TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
     EXPECT_FALSE(ex.shouldOpenLongForTest(0));            /// open path not wired (Stage 1)
 }
 
-TEST(ReaderExecutor, LongConnectionCarriedIntoPrefetchAndReclaimed)
+TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
 {
-    /// W1 ownership transfer: a foreground-held long connection is moved into the
-    /// prefetch machine at launch and reclaimed at collect. The connection is carried
-    /// INERTLY here - the worker still fetches one-shot and never drains it - so this
-    /// exercises only the move-in / reclaim plumbing; the slot rides along.
+    /// W2 foreground drain: with a held long connection, the synchronous gap reads
+    /// drain it window-by-window from a SINGLE open GET (`SourceRequests` stays 1), and
+    /// it is released at its bound after the last window.
     const size_t window = 100;
-    const size_t size = 2 * window;
+    const size_t size = 4 * window;
     String content(size, 0);
     for (size_t i = 0; i < size; ++i)
         content[i] = static_cast<char>('A' + (i % 26));
@@ -4578,31 +4577,118 @@ TEST(ReaderExecutor, LongConnectionCarriedIntoPrefetchAndReclaimed)
 
     ReaderExecutor::Options opts;
     opts.window_size = window;
-    opts.min_bytes_for_seek = 0;
+    opts.min_bytes_for_seek = 4096;
+    opts.long_connection_limit = limit;          /// no prefetch pool: pure synchronous reads
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    ex.openLongForTest(0, size);                 /// foreground holds [0, size); one open GET
+    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);   /// the open
+
+    String got;
+    while (true)
+    {
+        auto w = ex.readNextWindow();
+        if (w.empty())
+            break;
+        got += ropeBytes(w);
+    }
+
+    EXPECT_EQ(got, content);                     /// byte-exact
+    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);   /// one GET served the whole file (drained, not re-opened)
+    EXPECT_FALSE(ex.hasLongConnForTest());       /// drained to its bound + released
+    EXPECT_EQ(limit->getActiveCount(), 0u);
+}
+
+TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
+{
+    /// W2: the long connection is drained by the foreground sync read AND, once carried
+    /// into the prefetch machine, by the worker - one open GET serves the whole file
+    /// across foreground + prefetch windows (`SourceRequests` stays 1).
+    const size_t window = 100;
+    const size_t size = 4 * window;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 4096;
     opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
     opts.long_connection_limit = limit;
     ReaderExecutor ex(source, objects, {}, opts);
 
-    ex.openLongForTest(/*phys_offset=*/0, /*reach=*/size);   /// foreground holds it; slot taken
-    EXPECT_TRUE(ex.hasLongConnForTest());
-    EXPECT_EQ(limit->getActiveCount(), 1u);
+    ex.openLongForTest(0, size);
+    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);
 
-    /// Window 1: synchronous gap read, then prefetch of window 2 carries the connection.
+    /// Window 1: foreground drains [0,100), then carries the connection into the prefetch
+    /// machine, whose worker drains [100,200) (advancing it, not yet at bound).
     auto r1 = ex.readNextWindow();
     EXPECT_EQ(r1.range().size, window);
     EXPECT_TRUE(ex.hasInflightPrefetch());
-    EXPECT_TRUE(ex.machineHasLongConnForTest());             /// moved into the machine
-    EXPECT_FALSE(ex.hasLongConnForTest());                   /// moved out of the foreground
-    EXPECT_EQ(limit->getActiveCount(), 1u);                  /// slot rode along, not double-counted
+    EXPECT_TRUE(ex.machineHasLongConnForTest());   /// carried + worker-advanced
+    EXPECT_FALSE(ex.hasLongConnForTest());
 
-    /// Window 2: collects the prefetch and reclaims the connection; EOF -> no relaunch.
-    auto r2 = ex.readNextWindow();
-    EXPECT_EQ(r2.range().size, window);
-    EXPECT_FALSE(ex.hasInflightPrefetch());
-    EXPECT_TRUE(ex.hasLongConnForTest());                    /// reclaimed to the foreground
-    EXPECT_FALSE(ex.machineHasLongConnForTest());
-    EXPECT_EQ(limit->getActiveCount(), 1u);
+    String got = ropeBytes(r1);
+    while (true)
+    {
+        auto w = ex.readNextWindow();
+        if (w.empty())
+            break;
+        got += ropeBytes(w);
+    }
 
-    EXPECT_TRUE(ex.readNextWindow().empty());                /// EOF
-    EXPECT_EQ(ropeBytes(r1) + ropeBytes(r2), content);       /// read correctly despite the inert carry
+    EXPECT_EQ(got, content);                       /// byte-exact across fg + worker drains
+    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);     /// ONE GET served the whole file
+    EXPECT_FALSE(ex.hasLongConnForTest());         /// exhausted at bound
+    EXPECT_EQ(limit->getActiveCount(), 0u);
+}
+
+TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
+{
+    /// W2: a held connection that cannot serve the next read (here after a backward
+    /// seek) is dropped in `readFromSource`, and the read falls through to a one-shot;
+    /// the drop accounts an incomplete connection (its tail too big to drain).
+    const size_t window = 100;
+    const size_t size = 4 * window;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 4096;
+    opts.max_tail_for_drain = 16;                  /// far smaller than the remaining tail
+    opts.long_connection_limit = limit;
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    ex.openLongForTest(0, size);
+    auto r0 = ex.readNextWindow();                 /// drains [0,100); frontier at 100
+    EXPECT_EQ(ropeBytes(r0), content.substr(0, window));
+    EXPECT_TRUE(ex.hasLongConnForTest());
+    EXPECT_EQ(ex.longConnPositionForTest(), window);
+
+    ex.seek(window / 2);                           /// backward; seek keeps the connection
+    EXPECT_TRUE(ex.hasLongConnForTest());
+
+    auto r1 = ex.readNextWindow();                 /// cannot continue (backward) -> drop + one-shot
+    EXPECT_EQ(ropeBytes(r1), content.substr(window / 2, window));
+    EXPECT_FALSE(ex.hasLongConnForTest());         /// dropped
+    /// The drop accounts an incomplete connection (tail too big to drain); the one-shot
+    /// fallback adds another here because this local-file mock cannot right-bound a
+    /// read, so assert >= 1 rather than exactly 1 (the precise drop accounting is
+    /// covered in isolation by LongConnectionDropBeforeBoundCountsIncomplete).
+    EXPECT_GE(ex.incompleteConnectionsForTest(), 1u);
+    EXPECT_EQ(limit->getActiveCount(), 0u);
 }

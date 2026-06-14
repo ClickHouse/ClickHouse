@@ -1272,7 +1272,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             auto blocks = allocateBlocks(pr.size, window_block_size, splits);
             StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
             Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
-                read_extent_end, out_stats);
+                read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             const size_t actual = sr.totalBytes();
@@ -1298,7 +1298,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 
 Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
-    const MachineBase * stop, Stats & out_stats)
+    std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats)
 {
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
     /// physical run (short at EOF or at an interrupt point). No cache
@@ -1327,7 +1327,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         auto blocks = allocateBlocks(pr.size, window_block_size, {});
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
-            read_extent, out_stats);
+            read_extent, lc, stop, out_stats);
         HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
             static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
         const size_t actual = source_rope.totalBytes();
@@ -1583,7 +1583,8 @@ void ReaderExecutor::recreditCommittedPrefixes(
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-    std::optional<size_t> read_extent, Stats & out_stats)
+    std::optional<size_t> read_extent, std::optional<LongConnection> * lc,
+    const MachineBase * stop, Stats & out_stats)
 {
     /// One-shot source read: open a connection for this fetch range, bound it so it
     /// is fully consumed and returned to the pool reusable, read the blocks, and let
@@ -1592,6 +1593,20 @@ Rope ReaderExecutor::readFromSource(
     size_t want = 0;
     for (const auto & block : blocks)
         want += block->size();
+
+    /// Drain a held/carried long connection if it can serve this fetch contiguously
+    /// within its bound. A held connection that cannot continue (wrong object /
+    /// backward / far / past bound) is dropped here and the read falls through to a
+    /// one-shot - the long-connection OPEN path is wired in a later stage. `lc` is the
+    /// foreground's `long_conn` or the worker's machine payload, never the other's, so
+    /// each thread drains only its own.
+    if (lc && *lc)
+    {
+        if ((*lc)->servesObject(object.remote_path)
+            && (*lc)->canContinue(offset, want, min_bytes_for_seek))
+            return serveFromLong(*lc, offset, std::move(blocks), logical_offset, stop, out_stats);
+        dropLong(*lc, out_stats);
+    }
 
     auto opened = source->open(object);
     if (offset > 0)
@@ -2533,7 +2548,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
         self->fetched = fetchGapsFromSource(
             self->physical_window, /*from_prefetch=*/true,
             self->reached_eof, self->geometry->pressure_level,
-            self->extent_snapshot, self, self->stats);
+            self->extent_snapshot, &self->long_conn, self, self->stats);
         /// Wrapped early iff the fetch actually stopped short on the flag (a
         /// request near the tail completes instead; an EOF-short is not a wrap).
         const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;

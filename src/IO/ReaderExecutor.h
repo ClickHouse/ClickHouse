@@ -195,6 +195,7 @@ public:
     Rope serveFromLongForTest(size_t phys_offset, size_t want);
     void dropLongForTest() { dropLong(long_conn, stats); }
     UInt64 incompleteConnectionsForTest() const { return stats.get(Stats::IncompleteConnections); }
+    UInt64 sourceRequestsForTest() const { return stats.get(Stats::SourceRequests); }
     bool machineHasLongConnForTest() const { return machine && machine->long_conn.has_value(); }
 
     /// Merge ranges separated by less than `min_gap`, to reduce request count.
@@ -546,9 +547,11 @@ private:
     /// cooperative stop flag, polled BETWEEN connections only - a one-shot GET
     /// is never cut mid-response. A stop-short return has the same shape as an
     /// EOF-short one and must neither latch EOF nor throw (the flag is checked FIRST).
+    /// `lc` (nullable) is the long connection to DRAIN if it can serve a piece - the
+    /// worker passes its machine's payload, never the foreground's.
     Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
         bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
-        const MachineBase * stop, Stats & out_stats);
+        std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats);
 
     /// Backfill for `physical_window` from `source_bytes` (already fetched).
     /// FOREGROUND-only: late hits, then append the still-missing ranges from
@@ -608,14 +611,16 @@ private:
     /// tail drives the fetch.
     void recreditCommittedPrefixes(ByteRange window, Rope & result, IntervalSet & covered, Stats & out_stats);
 
-    /// Read from source into the pre-allocated `blocks`: open a one-shot bounded
-    /// connection for this fetch range, read the blocks, and let it close on
-    /// return (the HTTP pool still preserves the socket). `blocks` is consumed;
-    /// blocks that receive no data are released.
+    /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long
+    /// connection (`lc`, nullable) if it can serve this fetch, otherwise open a
+    /// one-shot bounded connection, read the blocks, and let it close on return (the
+    /// HTTP pool still preserves the socket). `blocks` is consumed; blocks that receive
+    /// no data are released. `stop` (nullable) is the drain's interrupt point.
     Rope readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
-        std::optional<size_t> read_extent, Stats & out_stats);
+        std::optional<size_t> read_extent, std::optional<LongConnection> * lc,
+        const MachineBase * stop, Stats & out_stats);
 
     /// Allocate OwnedRopeBuffers covering `size` bytes, each <= `block_size`.
     /// `splits` (sorted, relative) forces block boundaries so user-window and
