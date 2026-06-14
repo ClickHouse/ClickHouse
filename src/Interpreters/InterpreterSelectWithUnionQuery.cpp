@@ -291,7 +291,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 
         auto max_threads = getMaxThreadsForAvailableMemory(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* is_sql_union = */ true);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* allow_narrowing = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 

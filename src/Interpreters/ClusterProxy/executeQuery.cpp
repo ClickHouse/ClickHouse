@@ -836,7 +836,7 @@ void executeQueryWithParallelReplicas(
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
-            remote_query_plan = createRemotePlanForParallelReplicas(query_ast, * header, new_context, processed_stage);
+            remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
             remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 

@@ -79,8 +79,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     auto status = writer->WriteTable(*arrow_table, format_settings.arrow.row_group_size);
 
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while writing a table: {}", status.ToString());
+        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table");
 }
 
 void ArrowBlockOutputFormat::finalizeImpl()
@@ -94,8 +93,7 @@ void ArrowBlockOutputFormat::finalizeImpl()
 
     auto status = writer->Close();
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while closing a table: {}", status.ToString());
+        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table");
 }
 
 void ArrowBlockOutputFormat::resetFormatterImpl()
@@ -119,8 +117,7 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
         writer_status = arrow::ipc::MakeFileWriter(arrow_ostream.get(), schema,options);
 
     if (!writer_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while opening a table writer: {}", writer_status.status().ToString());
+        throwFromArrowStatus(writer_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table writer");
 
     writer = *writer_status;
 }
