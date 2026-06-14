@@ -1,5 +1,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Columns/ColumnConst.h>
+#include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -34,7 +36,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
-#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents
@@ -737,7 +738,7 @@ void executeQueryWithParallelReplicas(
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
-            remote_query_plan = createRemotePlanForParallelReplicas(query_ast, * header, new_context, processed_stage);
+            remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
             remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 

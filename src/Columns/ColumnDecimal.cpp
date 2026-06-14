@@ -170,7 +170,7 @@ void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHas
 /// Accesses `.value` directly to avoid `wide::integer` implicit-conversion constraints; `intHashCRC32`
 /// consumes the whole native word (folding 64-bit words for 128/256-bit decimals).
 template <is_decimal T>
-[[gnu::always_inline]] static inline UInt32 weakHashDecimalValue32(const T & v) noexcept
+static inline UInt32 weakHashDecimalValue32(const T & v) noexcept
 {
     return static_cast<UInt32>(intHashCRC32(v.value, WEAK_HASH32_INITIAL_VALUE));
 }

@@ -312,6 +312,10 @@ public:
         }
     }
 
+    /// The distinct dictionary positions used by rows [offset, offset + limit) of
+    /// getIndexes(), in unspecified order. Requires offset + limit <= getIndexes().size().
+    PaddedPODArray<UInt64> getDistinctIndexes(size_t offset, size_t limit) const;
+
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 
     /// Set shared ColumnUnique for empty low cardinality column.

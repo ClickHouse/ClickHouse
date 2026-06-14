@@ -79,7 +79,7 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
 
 /// Finalized per-row CRC32C hash of a value of type T (seeded with `WEAK_HASH32_INITIAL_VALUE`).
 template <typename T>
-[[gnu::always_inline]] static inline UInt32 weakHashValue32(T v) noexcept
+static inline UInt32 weakHashValue32(T v) noexcept
 {
     /// `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type; hash its raw bits.
     if constexpr (std::is_same_v<T, BFloat16>)

@@ -1,4 +1,6 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -1130,7 +1132,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Filter - Union - Something
         ///                - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
