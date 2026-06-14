@@ -163,6 +163,15 @@ public:
             /// Preserve original mtime so that ALTER does not change the rule's place in creation order.
             preserved_mtime = fs::last_write_time(target_path);
         }
+        else if (replace)
+        {
+            /// `ALTER RULE` must only update an existing rule, never (re)create one.
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
+                "File {} for query rule doesn't exist",
+                file_name
+            );
+        }
 
         fs::create_directories(root_path);
 
@@ -360,7 +369,25 @@ public:
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::write");
         if (replace)
         {
-            getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            /// `ALTER RULE` must only update an existing rule, never (re)create one.
+            /// `RewriteRules::updateRule` checks only the (possibly stale) local cache
+            /// before reaching this point, so a concurrent `DROP RULE` on one replica
+            /// followed by `ALTER RULE` on another would, with `createOrUpdate`,
+            /// resurrect the dropped znode and diverge the replicated state from the
+            /// user's intent. Update the existing node and fail if it is gone instead.
+            auto code = getClient()->trySet(getPath(file_name), data);
+
+            if (code == Coordination::Error::ZNONODE)
+            {
+                throw Exception(
+                    ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
+                    "File {} for query rule doesn't exist",
+                    file_name
+                );
+            }
+
+            if (code != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(code, getPath(file_name));
         }
         else
         {
