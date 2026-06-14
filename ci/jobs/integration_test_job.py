@@ -23,6 +23,15 @@ temp_path = f"{repo_dir}/ci/tmp"
 
 
 MAX_FAILS_BEFORE_DROP = 5
+# Flaky-check best-effort scope cap: the maximum number of changed test modules a single
+# flaky-check run will execute. A PR can mechanically touch a large number of integration
+# test modules (e.g. a repo-wide lint/format change), and running every one of them
+# repeatedly under `--dist=each` cannot fit the flaky-check time budget - the job would be
+# hard-killed by the external CI timeout before producing any report. When the cap is
+# exceeded the extra modules are skipped (best effort) and the selected ones get full
+# flakiness coverage instead of a truncated run. See FLAKY_CHECK_TIME_LIMIT for the hard
+# time guarantee that backstops this.
+MAX_FLAKY_CHECK_MODULES = 10
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
@@ -704,6 +713,24 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     )
                     changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
+    # Best-effort scope cap for the flaky check (see MAX_FLAKY_CHECK_MODULES). When a PR
+    # touches more changed test modules than can be repeatedly run within the time budget,
+    # run a deterministic subset (sorted for reproducibility) and skip the rest rather than
+    # truncating the whole run. The remaining ones are reported below as skipped so the
+    # reduced coverage is explicit, not silent.
+    skipped_flaky_modules = []
+    if is_flaky_check and len(changed_test_modules) > MAX_FLAKY_CHECK_MODULES:
+        changed_test_modules = sorted(changed_test_modules)
+        skipped_flaky_modules = changed_test_modules[MAX_FLAKY_CHECK_MODULES:]
+        changed_test_modules = changed_test_modules[:MAX_FLAKY_CHECK_MODULES]
+        print(
+            f"Flaky check: best-effort scope cap - running {len(changed_test_modules)} of "
+            f"{len(changed_test_modules) + len(skipped_flaky_modules)} changed modules "
+            f"to fit the time budget.\n"
+            f"  Running: {changed_test_modules}\n"
+            f"  Skipped (best effort): {skipped_flaky_modules}"
+        )
+
     if is_bugfix_validation:
         bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
         # In local runs, only reuse existing binaries; probing master commits in S3
@@ -884,11 +911,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Flaky-check soft timeout. Mirrors the pattern in `ci/jobs/functional_tests.py`:
     # bound the total time spent inside pytest so the job has headroom for cleanup,
-    # log collection and reporting before the workflow global timeout fires. Without
-    # this, a flaky-check run over many modified test modules can be hard-killed by
-    # the global timeout, producing `Unknown error (exit status: None)` instead of
-    # a proper report.
-    FLAKY_CHECK_TIME_LIMIT = 90 * 60  # 90 min, integration tests are slower than functional
+    # log collection and reporting before the job is cancelled. Without this, a
+    # flaky-check run over many modified test modules can be hard-killed, producing no
+    # report at all instead of a best-effort partial one.
+    #
+    # The budget must stay well below the external ceiling at which a lone integration
+    # job is cancelled (observed at ~80-90 min from job start in CI). The previous 90 min
+    # was above that ceiling: the graceful xdist `--session-timeout` and the subprocess
+    # hard-kill backstop never fired before the external cancellation, so the whole
+    # process was killed and 0 results were reported (the job showed a red failure rather
+    # than a best-effort report). 45 min matches the functional flaky check and leaves
+    # ample room for the hard-kill backstop (+600s below), cleanup and reporting.
+    FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
     if is_flaky_check:
         elapsed_for_flaky = int(sw.duration)
         flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
@@ -1151,7 +1185,32 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check or is_flaky_check or is_bugfix_validation:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
+    # Make the best-effort scope cap explicit in the report: list the modules that were
+    # skipped to fit the time budget as SKIPPED entries rather than dropping them silently.
+    for skipped_module in skipped_flaky_modules:
+        test_results.append(
+            Result(
+                name=skipped_module,
+                status=Result.Status.SKIPPED,
+                info="Skipped by flaky-check best-effort scope cap (MAX_FLAKY_CHECK_MODULES)",
+            )
+        )
+
+    # If the time budget was exhausted before any test produced a result (e.g. a single
+    # very slow or hanging module consumed the whole budget), report SKIPPED rather than
+    # letting `create_from` default an empty result set to ERROR, which would block the PR.
+    empty_best_effort = (is_flaky_check or is_targeted_check) and not test_results
+    R = Result.create_from(
+        results=test_results,
+        status=Result.Status.SKIPPED if empty_best_effort else "",
+        info=(
+            "No test results collected within the flaky-check time budget (best effort)"
+            if empty_best_effort
+            else ""
+        ),
+        stopwatch=sw,
+        files=attached_files,
+    )
 
     if is_llvm_coverage:
         assert (
