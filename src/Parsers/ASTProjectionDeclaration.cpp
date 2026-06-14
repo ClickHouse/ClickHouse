@@ -41,21 +41,38 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
 
     name = r.getString("name");
 
-    auto child = r.readChild("query");
-    if (child)
-        set(query, child);
+    auto query_child = r.readChild("query");
+    if (query_child)
+        set(query, query_child);
 
-    child = r.readChild("index");
-    if (child)
-        set(index, child);
+    auto index_child = r.readChild("index");
+    if (index_child)
+        set(index, index_child);
 
-    child = r.readChild("projection_type");
-    if (child)
-        set(type, child);
+    /// `projection_type` and `with_settings` are typed members (`ASTFunction *` / `ASTSetQuery *`);
+    /// restoring them through the generic child path would let a wrong node type reach `IAST::set`
+    /// as an internal cast error instead of a user-facing `BAD_ARGUMENTS`.
+    auto type_child = r.readChildOfType<ASTFunction>("projection_type");
+    if (type_child)
+        set(type, type_child);
 
-    child = r.readChild("with_settings");
-    if (child)
-        set(with_settings, child);
+    auto with_settings_child = r.readChildOfType<ASTSetQuery>("with_settings");
+    if (with_settings_child)
+        set(with_settings, with_settings_child);
+
+    /// A `ProjectionDeclaration` has exactly two parser-produced shapes: a `(SELECT ...)` projection
+    /// (`query` set) or an `INDEX ... TYPE ...` projection (`index` and `type` set together). Reject
+    /// parser-impossible combinations so `formatImpl` cannot print SQL the parser would never produce
+    /// (e.g. `p INDEX a` without `TYPE`, or both a query and an index).
+    if (query && (index || type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`ProjectionDeclaration` cannot have both a SELECT query and an INDEX during AST JSON deserialization");
+    if (static_cast<bool>(index) != static_cast<bool>(type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`ProjectionDeclaration` INDEX requires TYPE during AST JSON deserialization");
+    if (!query && !index)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`ProjectionDeclaration` must have either a SELECT query or an INDEX during AST JSON deserialization");
 }
 
 void ASTProjectionDeclaration::formatImpl(
