@@ -22,8 +22,10 @@ CREATE TABLE test_leader_election_zero_heartbeat (x UInt64) ENGINE = MergeTree O
 CREATE TABLE test_leader_election_zero_timeout (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS leader_election = true, leader_election_session_timeout = 0; -- { serverError BAD_ARGUMENTS }
 
--- Validation: `leader_election` requires an S3 or Azure object storage disk
--- (the lease protocol relies on conditional writes that other backends do not support).
+-- Validation: `leader_election` requires an `S3` object storage disk with shared metadata
+-- (the lease protocol relies on conditional writes that other backends do not support; `Azure`
+-- is implemented but not yet test-covered, so it is rejected too). A plain local disk like the
+-- default below has neither, so creation fails.
 CREATE TABLE test_leader_election_local (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS leader_election = true; -- { serverError BAD_ARGUMENTS }
 
