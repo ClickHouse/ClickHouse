@@ -50,32 +50,23 @@ public:
 
     String getSignatureString() const override
     {
-        /// Legacy further constrains FixedString(N) to N=26 at executeImpl; here we accept
-        /// any FixedString and let the executor reject the wrong length.
+        /// `FixedString(26)` encodes the exact ULID byte length, so a wrong-width FixedString is
+        /// rejected during analysis (with ILLEGAL_TYPE_OF_ARGUMENT) rather than only at execution.
+        static_assert(ULID_LENGTH == 26, "the signature string below hardcodes the ULID length");
         return
-            "(String | FixedString, const tz String) -> DateTime64(3, tz)"
-            " OR (String | FixedString) -> DateTime64(3)";
+            "(String | FixedString(26), const tz String) -> DateTime64(3, tz)"
+            " OR (String | FixedString(26)) -> DateTime64(3)";
     }
 
-    /// Restore the legacy `FixedString(26)` analyzer-time invariant; the DSL has no width matcher.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Validate arity and argument types through the declarative signature first, so a
-        /// non-string first argument is rejected with ILLEGAL_TYPE_OF_ARGUMENT (and a zero-argument
-        /// call with NUMBER_OF_ARGUMENTS_DOESNT_MATCH) before we inspect the optional timezone
-        /// argument below. Otherwise `ULIDStringToDateTime(1, 2)` would report the timezone
-        /// argument as illegal instead of the non-string first argument. This also computes the
-        /// result type and guarantees `arguments` is non-empty for the refinements that follow.
+        /// Validate arity and argument types through the declarative signature first (it also
+        /// enforces the FixedString(26) width now), so e.g. `ULIDStringToDateTime(1, 2)` is rejected
+        /// on its non-string first argument with ILLEGAL_TYPE_OF_ARGUMENT (and a zero-argument call
+        /// with NUMBER_OF_ARGUMENTS_DOESNT_MATCH) before we inspect the optional timezone argument.
+        /// This also computes the result type and guarantees `arguments` is non-empty below.
         auto result_type = IFunction::getReturnTypeImpl(arguments);
 
-        /// The DSL has no FixedString-width matcher, so restore the legacy `FixedString(26)` invariant.
-        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
-        {
-            if (fs->getN() != ULID_LENGTH)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument 1 of function {}, expected String or FixedString({})",
-                    arguments[0].type->getName(), getName(), ULID_LENGTH);
-        }
         /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
         /// `DateTime64(3, tz)` type function silently falls back to the server timezone when tz == ''.
         if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
