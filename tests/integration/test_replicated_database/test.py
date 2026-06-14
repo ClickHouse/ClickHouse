@@ -1810,15 +1810,16 @@ def test_sync_database_replica_strict(started_cluster):
                 settings=settings,
             )
 
-        # The sync's wait budget is the server-side `receive_timeout`. The STRICT
-        # loop only reaches its `became_synced` check AFTER the inner DDL-worker
-        # wait consumes that whole budget, so STRICT returns success at ~the
-        # timeout. Over the native protocol the client socket uses the same
-        # `receive_timeout`, so it gives up at the exact moment the server
-        # answers (a flaky photo-finish). Use the HTTP interface instead: `params`
-        # sets `receive_timeout` server-side (the sync's budget), while the python
-        # read timeout (`timeout=`) is independent and generous, so the STRICT
-        # success is always delivered.
+        # `receive_timeout` (set server-side via HTTP `params`) is the sync's wait
+        # budget. STRICT checks became_synced before waiting on the worker, so it
+        # returns almost immediately here (lag 3 <= threshold 100); DEFAULT needs
+        # the frozen snapshot fully processed, so it waits out the whole budget and
+        # times out. We drive both over HTTP so the python read timeout (`timeout=`)
+        # is independent of the server-side `receive_timeout`: that lets us assert
+        # the DEFAULT *server-side* TIMEOUT_EXCEEDED with a generous read window
+        # instead of coupling it to the native client's socket timeout, which fires
+        # at the same `receive_timeout` and would make the timeout's origin a flaky
+        # client/server race.
         sync_params = {"receive_timeout": 3}
 
         # DEFAULT: needs the frozen snapshot fully processed -> times out.
