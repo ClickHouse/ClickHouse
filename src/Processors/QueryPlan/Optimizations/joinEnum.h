@@ -10,7 +10,6 @@
 namespace DB
 {
 
-// generates S subset X, where S is not empty
 template <std::unsigned_integral Tuint>
 class NonEmptySubmasks
 {
