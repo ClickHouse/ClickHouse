@@ -94,6 +94,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    /// Capture the leadership epoch at the start of the merge (just after selection, as the
+    /// leader). `finish` re-checks it before publishing, so a merge that survives a leadership
+    /// loss+reacquire is rejected rather than publishing parts prepared under the previous epoch.
+    admission_epoch = storage.currentLeadershipEpoch();
+
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -159,8 +164,11 @@ void MergePlainMergeTreeTask::finish()
     /// Under `leader_election`, enforce the writable-leader check BEFORE the rename inside
     /// `renameMergedTemporaryPart` publishes the covering part on shared storage. `transaction.commit`
     /// re-checks leadership, but by then the rename has already happened, so a node that lost
-    /// leadership during the merge could leave a covering part a new leader then activates.
-    storage.assertWritableLeaderAtEpoch(storage.currentLeadershipEpoch());
+    /// leadership during the merge could leave a covering part a new leader then activates. Use the
+    /// epoch captured when the merge was *selected* (not the current one): a merge that started
+    /// under a previous lease and only reaches `finish` after a leadership loss+reacquire must be
+    /// rejected, because its source parts and block range belong to the previous epoch.
+    storage.assertWritableLeaderAtEpoch(admission_epoch);
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();
 
