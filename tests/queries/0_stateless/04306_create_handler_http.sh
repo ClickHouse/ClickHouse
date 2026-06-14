@@ -30,10 +30,14 @@ USER="u_${DB}"
 RUSER="ru_${DB}"
 
 cleanup() {
+    # Drop everything in a single connection: this test runs under the flaky check (many repetitions)
+    # and under heavy configurations (sanitizers, S3 storage, metadata in Keeper), so we minimize the
+    # number of separate clickhouse-client invocations to keep the running time well under the limit.
+    local drops=""
     for h in "$HA" "$HB" "$HC" "$HP" "$HPOST" "$HINS" "$HPROTO" "$HCONST" "$HSECRET" "$HVIEW" "$HWHO" "$HDBNAME" "$HHDR" "$HBRANCH" "$HORDA" "$HORDZ" "hx_${DB}"; do
-        $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$h\`"
+        drops+="DROP HANDLER IF EXISTS \`$h\`; "
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS \`$USER\`, \`$RUSER\`"
+    $CLICKHOUSE_CLIENT -q "${drops}DROP USER IF EXISTS \`$USER\`, \`$RUSER\`"
 }
 trap cleanup EXIT
 cleanup
@@ -72,8 +76,7 @@ echo "=== POST allowed when listed in METHODS ==="
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/param?param_n=5" --data-binary ''
 
 echo "=== INSERT handler reads data from the HTTP body ==="
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t (x UInt32) ENGINE = Memory"
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HINS\` URL '${P}/insert' METHODS (POST) AS INSERT INTO ${DB}.t FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t (x UInt32) ENGINE = Memory; CREATE HANDLER \`$HINS\` URL '${P}/insert' METHODS (POST) AS INSERT INTO ${DB}.t FORMAT TSV"
 printf '1\n2\n3\n' | ${CLICKHOUSE_CURL} -sS "${BASE}${P}/insert" --data-binary @-
 $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM ${DB}.t"
 
@@ -82,14 +85,12 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HHDR\` URL '${P}/rheaders' AS SELECT 1 
 ${CLICKHOUSE_CURL} -sS -D - "${BASE}${P}/rheaders" -o /dev/null | grep -i '^x-custom' | tr -d '\r' | tr 'A-Z' 'a-z'
 
 echo "=== HTTP header used as usual: X-ClickHouse-Database sets the database ==="
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE IF NOT EXISTS db2_${DB}"
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HDBNAME\` URL '${P}/curdb' AS SELECT currentDatabase() = 'db2_${DB}' AS ok FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE IF NOT EXISTS db2_${DB}; CREATE HANDLER \`$HDBNAME\` URL '${P}/curdb' AS SELECT currentDatabase() = 'db2_${DB}' AS ok FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/curdb" -H "X-ClickHouse-Database: db2_${DB}"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS db2_${DB}"
 
 echo "=== SQL-defined handlers matched in lexicographic order of names ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HORDZ\` URL REGEXP '${P}/order/.*' AS SELECT 'Z' FORMAT TSV"
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HORDA\` URL REGEXP '${P}/order/.*' AS SELECT 'A' FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HORDZ\` URL REGEXP '${P}/order/.*' AS SELECT 'Z' FORMAT TSV; CREATE HANDLER \`$HORDA\` URL REGEXP '${P}/order/.*' AS SELECT 'A' FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/order/x"
 
 echo "=== PROTOCOL-scoped handler is not served on the default http port ==="
@@ -103,16 +104,14 @@ ${CLICKHOUSE_CURL} -sS -H "X-ClickHouse-Database: ${DB}" "${BASE}${P}/exact?quer
 # Retry to handle the race between the HTTP response and the log entry being written.
 # http_request_url must equal the path only: the query string (here `?query_id=...`) is not persisted.
 for _ in {1..60}; do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    res=$($CLICKHOUSE_CLIENT -q "SELECT http_handler_name = '${HA}' AS name_ok, http_request_url = '${P}/exact' AS url_is_path_only FROM system.query_log WHERE query_id = '${QID}' AND type = 'QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1")
+    res=$($CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log; SELECT http_handler_name = '${HA}' AS name_ok, http_request_url = '${P}/exact' AS url_is_path_only FROM system.query_log WHERE query_id = '${QID}' AND type = 'QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1")
     [ -n "$res" ] && break
     sleep 0.5
 done
 echo "$res"
 
 echo "=== authentication: credentials provided in the request ==="
-$CLICKHOUSE_CLIENT -q "CREATE USER \`$RUSER\` IDENTIFIED WITH plaintext_password BY 'pw'"
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HWHO\` URL '${P}/whoami' AS SELECT currentUser() = '${RUSER}' AS ok FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "CREATE USER \`$RUSER\` IDENTIFIED WITH plaintext_password BY 'pw'; CREATE HANDLER \`$HWHO\` URL '${P}/whoami' AS SELECT currentUser() = '${RUSER}' AS ok FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/whoami?user=${RUSER}&password=pw"
 
 echo "=== invoking a handler needs no special grant; SELECT of a constant works for any user ==="
@@ -120,14 +119,11 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HCONST\` URL '${P}/const' AS SELECT 42 
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/const?user=${RUSER}&password=pw"
 
 echo "=== grants are checked as usual during invocation: no access to a table -> denied ==="
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.secret (x UInt32) ENGINE = Memory AS SELECT 111"
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HSECRET\` URL '${P}/secret' AS SELECT x FROM ${DB}.secret FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.secret (x UInt32) ENGINE = Memory AS SELECT 111; CREATE HANDLER \`$HSECRET\` URL '${P}/secret' AS SELECT x FROM ${DB}.secret FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/secret?user=${RUSER}&password=pw" | grep -oE 'ACCESS_DENIED|111' | head -1
 
 echo "=== SQL SECURITY DEFINER view lets a restricted user read through a handler ==="
-$CLICKHOUSE_CLIENT -q "CREATE VIEW ${DB}.sv DEFINER=default SQL SECURITY DEFINER AS SELECT x FROM ${DB}.secret"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${DB}.sv TO \`$RUSER\`"
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HVIEW\` URL '${P}/view' AS SELECT x FROM ${DB}.sv FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "CREATE VIEW ${DB}.sv DEFINER=default SQL SECURITY DEFINER AS SELECT x FROM ${DB}.secret; GRANT SELECT ON ${DB}.sv TO \`$RUSER\`; CREATE HANDLER \`$HVIEW\` URL '${P}/view' AS SELECT x FROM ${DB}.sv FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/view?user=${RUSER}&password=pw"
 
 echo "=== access control: CREATE/ALTER/DROP HANDLER require separate grants ==="
