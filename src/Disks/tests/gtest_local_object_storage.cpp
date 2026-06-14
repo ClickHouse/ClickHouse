@@ -248,6 +248,8 @@ TEST(LocalObjectStorage, ListObjectsToleratesConcurrentAtomicRename)
             }
             catch (...)
             {
+                /// Ok: catch-all is the test's failure assertion. Record only an atomic
+                /// flag (not the message) so the reader threads stay data-race-free under TSAN.
                 listing_threw.store(true, std::memory_order_relaxed);
                 return;
             }
