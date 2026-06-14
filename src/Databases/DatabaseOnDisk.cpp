@@ -391,13 +391,25 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         throw;
     }
 
-    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+    /// Honor the storage's data-cleanup skip contract. A `MergeTree` with `leader_election = 1`
+    /// keeps its data on shared object storage owned by whichever node holds the lease, and
+    /// `StorageMergeTree::drop` deliberately skips local cleanup; without this, the on-disk
+    /// database drop path below would still `removeRecursive` the shared prefix on a follower and
+    /// delete data the live leader owns (the documented "DROP TABLE removes only local metadata").
+    if (table && table->dropSkipsDataDirectoryCleanup())
     {
-        if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
-            continue;
+        LOG_INFO(log, "Skipping data directory cleanup for dropped table {}: storage manages its data externally", table_name);
+    }
+    else
+    {
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
+                continue;
 
-        LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
-        disk->removeRecursive(table_data_path_relative);
+            LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
+            disk->removeRecursive(table_data_path_relative);
+        }
     }
     db_disk->removeFileIfExists(table_metadata_path_drop);
 }

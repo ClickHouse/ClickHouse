@@ -81,6 +81,12 @@ public:
             return;
         }
 
+        StoragePtr nested_storage;
+        /// Only *materializing* the nested storage is allowed to fail closed. A failure of the
+        /// nested `drop()` itself must propagate: otherwise a failed drop is reported as success,
+        /// and `dropSkipsDataDirectoryCleanup` then tells `DatabaseCatalog::dropTableFinally` to
+        /// skip per-disk cleanup and finalize the catalog drop, leaving half-dropped / leaked
+        /// shared-storage state.
         try
         {
             LOG_TRACE(log, "Loading table for drop without startup");
@@ -92,15 +98,7 @@ public:
                 return;
             }
 
-            auto nested_storage = get_nested();
-            nested_storage->drop();
-            get_nested = {};
-            /// Keep the dropped storage around so `dropSkipsDataDirectoryCleanup`
-            /// can delegate to it: `DatabaseCatalog::dropTableFinally` queries it
-            /// right after `drop()` returns to decide whether to skip per-disk
-            /// cleanup. Without this, an unloaded `MergeTree` with
-            /// `leader_election = 1` would fall back to the unsafe default.
-            nested = std::move(nested_storage);
+            nested_storage = get_nested();
         }
         catch (...)
         {
@@ -115,7 +113,19 @@ public:
             /// another node. Leaking local data on the unreachable engine is
             /// the lesser harm.
             drop_load_failed = true;
+            return;
         }
+
+        /// Outside the catch: a real drop failure here propagates rather than being converted into
+        /// a finalized catalog drop.
+        nested_storage->drop();
+        get_nested = {};
+        /// Keep the dropped storage around so `dropSkipsDataDirectoryCleanup`
+        /// can delegate to it: `DatabaseCatalog::dropTableFinally` queries it
+        /// right after `drop()` returns to decide whether to skip per-disk
+        /// cleanup. Without this, an unloaded `MergeTree` with
+        /// `leader_election = 1` would fall back to the unsafe default.
+        nested = std::move(nested_storage);
     }
 
     void read(
