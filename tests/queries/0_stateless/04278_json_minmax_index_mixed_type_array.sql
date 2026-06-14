@@ -1,3 +1,7 @@
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tag no-replicated-database: mixed local/replicated ALTER is rejected earlier by Replicated database validation.
+-- Tag no-shared-merge-tree: covers ReplicatedMergeTree-specific local settings vs replicated metadata behavior.
+
 -- Test for https://github.com/ClickHouse/ClickHouse/issues/106088
 -- JSON (Object) column should be forbidden in minmax skip index by default.
 -- The MergeTree setting allow_minmax_index_for_json controls this behavior.
@@ -68,6 +72,24 @@ ALTER TABLE t_json_minmax_forbidden
     MODIFY SETTING allow_minmax_index_for_json = 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
+
+-- Should fail: for ReplicatedMergeTree, MODIFY SETTING is local but ADD INDEX is replicated.
+-- The setting must be enabled before the replicated metadata alter writes the index to Keeper.
+CREATE TABLE t_json_minmax_forbidden_replicated (
+    id Int32,
+    col1 JSON
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array', 'r1') ORDER BY id;
+
+ALTER TABLE t_json_minmax_forbidden_replicated
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
+    MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
+
+ALTER TABLE t_json_minmax_forbidden_replicated MODIFY SETTING allow_minmax_index_for_json = 1;
+ALTER TABLE t_json_minmax_forbidden_replicated ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1;
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
 
 -- Should succeed: dropping the JSON minmax index and resetting the escape hatch in one ALTER
 -- leaves a valid final metadata state.

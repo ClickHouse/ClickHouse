@@ -4477,6 +4477,46 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    const bool allow_minmax_index_for_json_before_alter
+        = (*settings_from_storage)[MergeTreeSetting::allow_minmax_index_for_json];
+    const bool allow_minmax_index_for_json_after_alter
+        = getAllowMinmaxIndexForJSON(new_metadata, allow_minmax_index_for_json_before_alter);
+    const bool enables_json_minmax_index_for_replicated_table = supportsReplication()
+        && !allow_minmax_index_for_json_before_alter
+        && allow_minmax_index_for_json_after_alter;
+
+    bool adds_json_minmax_index = false;
+    if (enables_json_minmax_index_for_replicated_table)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_INDEX || command.ignore)
+                continue;
+
+            const auto & index = new_metadata.secondary_indices.getByName(command.index_name);
+            if (index.type != "minmax")
+                continue;
+
+            for (const auto & idx_column : index.sample_block)
+            {
+                auto check_json = [&](const IDataType & type)
+                {
+                    if (isObject(type))
+                        adds_json_minmax_index = true;
+                };
+                check_json(*idx_column.type);
+                idx_column.type->forEachChild(check_json);
+            }
+        }
+    }
+
+    if (enables_json_minmax_index_for_replicated_table && adds_json_minmax_index)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot add a minmax index on JSON/Object columns to ReplicatedMergeTree in the same ALTER query that enables "
+            "setting 'allow_minmax_index_for_json'. ReplicatedMergeTree table settings are local and are not stored in "
+            "replicated metadata; enable the setting on replicas first, then add the index");
+    }
 
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
