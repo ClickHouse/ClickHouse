@@ -701,22 +701,13 @@ void HandledSignals::reset(bool close_pipe)
         signal_pipe.close();
 }
 
-HandledSignals::~HandledSignals()
-{
-    try
-    {
-        reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-};
-
 HandledSignals & HandledSignals::instance()
 {
-    static HandledSignals res;
-    return res;
+    /// Intentionally leaked: must outlive signal handlers and the sanitizer death
+    /// callback, both of which read handled_signals/signal_pipe and can run after
+    /// static destructors. Destroying it left those reads touching freed members.
+    static HandledSignals * res = new HandledSignals;
+    return *res;
 }
 
 void HandledSignals::setupTerminateHandler()
