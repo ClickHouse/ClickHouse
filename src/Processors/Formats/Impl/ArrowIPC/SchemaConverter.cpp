@@ -56,6 +56,17 @@ KeyValueMetadata parseMetadata(const flatbuffers::Vector<flatbuffers::Offset<fla
 
 ArrowType parseType(const flatbuf::Field & field);
 
+/// List-like and Map types carry exactly one child in a well-formed Arrow schema. FlatBuffers verification
+/// proves the buffer shape but not this semantic child count, so reject a missing or extra child here as
+/// INCORRECT_DATA rather than letting a later `type.children.at(0)` throw std::out_of_range.
+void requireSingleChild(const ArrowType & type, const char * what)
+{
+    if (type.children.size() != 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC {} type must have exactly one child, got {}", what, type.children.size());
+}
+
 std::vector<ArrowField> parseChildren(const flatbuffers::Vector<flatbuffers::Offset<flatbuf::Field>> * children)
 {
     std::vector<ArrowField> result;
@@ -176,15 +187,18 @@ ArrowType parseType(const flatbuf::Field & field)
         case flatbuf::Type_List:
             type.kind = TypeKind::List;
             type.children = parseChildren(field.children());
+            requireSingleChild(type, "List");
             break;
         case flatbuf::Type_LargeList:
             type.kind = TypeKind::LargeList;
             type.children = parseChildren(field.children());
+            requireSingleChild(type, "LargeList");
             break;
         case flatbuf::Type_FixedSizeList:
             type.kind = TypeKind::FixedSizeList;
             type.list_size = field.type_as_FixedSizeList()->listSize();
             type.children = parseChildren(field.children());
+            requireSingleChild(type, "FixedSizeList");
             break;
         case flatbuf::Type_Struct_:
             type.kind = TypeKind::Struct;
@@ -193,6 +207,16 @@ ArrowType parseType(const flatbuf::Field & field)
         case flatbuf::Type_Map:
             type.kind = TypeKind::Map;
             type.children = parseChildren(field.children());
+            /// FlatBuffers verification proves the buffer shape but not these Arrow semantic child counts.
+            /// A Map is List<Struct<key, value>>: exactly one "entries" struct child holding key and value.
+            /// Validate it here so a malformed schema is rejected as INCORRECT_DATA instead of throwing
+            /// std::out_of_range from a later `.at()` during schema inference or decoding.
+            requireSingleChild(type, "Map");
+            if (type.children[0].type.kind != TypeKind::Struct || type.children[0].type.children.size() != 2)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC Map entries must be a struct of (key, value), got {} children",
+                    type.children[0].type.children.size());
             break;
         case flatbuf::Type_Union:
         {

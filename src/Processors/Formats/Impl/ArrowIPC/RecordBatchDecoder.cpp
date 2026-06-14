@@ -353,6 +353,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             checkBufferSize(views, requiredBytes(rows, 16), "binary view");
             const int64_t num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
+            /// `num_data` is untrusted IPC metadata (already checked non-negative in `decodeColumns`). A forged
+            /// huge positive count would drive an oversized `reserve` before `nextBuffer` notices the batch has
+            /// fewer buffers; cap it at the number of remaining buffers first.
+            if (static_cast<size_t>(num_data) > buffer_slices.size() - buffer_index)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC binary view column declares {} data buffers but only {} remain",
+                    num_data, buffer_slices.size() - buffer_index);
             std::vector<Slice> data_buffers;
             data_buffers.reserve(static_cast<size_t>(num_data));
             for (int64_t i = 0; i < num_data; ++i)
@@ -418,13 +426,21 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             return readOffsetsAndChild(field, rows, /*large=*/type.kind == TypeKind::LargeList);
         case TypeKind::FixedSizeList:
         {
-            /// No offsets buffer: each row has exactly `list_size` elements.
+            /// No offsets buffer: each row has exactly `list_size` elements. `list_size` is untrusted IPC
+            /// metadata: a negative value would wrap to a huge `size_t`, and a zero would make the expected
+            /// child length independent of `rows`, leaving the forged parent row count unbounded. Reject a
+            /// non-positive size, and compute the expected child length with checked multiplication so an
+            /// overflowing `rows * list_size` cannot wrap to disguise a forged `rows` before allocating.
+            if (type.list_size <= 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Arrow IPC fixed-size-list has a non-positive list size {}", type.list_size);
             const size_t list_size = static_cast<size_t>(type.list_size);
+            const size_t expected_child = requiredBytes(rows, list_size);
             ColumnPtr child = decodeField(type.children.at(0));
-            if (child->size() != rows * list_size)
+            if (child->size() != expected_child)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Arrow IPC fixed-size-list child has {} rows, expected {}", child->size(), rows * list_size);
+                    "Arrow IPC fixed-size-list child has {} rows, expected {}", child->size(), expected_child);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
             for (size_t i = 0; i < rows; ++i)
