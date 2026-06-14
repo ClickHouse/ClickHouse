@@ -32,9 +32,9 @@ public:
     std::unique_ptr<DB::ReadBufferFromFileBase> readObject(
         const DB::StoredObject &,
         const DB::ReadSettings &,
-        std::optional<size_t> = {},
-        bool = false,
-        bool = false) const override
+        std::optional<size_t>,
+        bool,
+        bool) const override
     {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "The archive reader should not read an object of unknown size");
     }
@@ -42,9 +42,9 @@ public:
     std::unique_ptr<DB::WriteBufferFromFileBase> writeObject(
         const DB::StoredObject &,
         DB::WriteMode,
-        std::optional<DB::ObjectAttributes> = {},
-        size_t = DB::DBMS_DEFAULT_BUFFER_SIZE,
-        const DB::WriteSettings & = {}) override
+        std::optional<DB::ObjectAttributes>,
+        size_t,
+        const DB::WriteSettings &) override
     {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected write");
     }
@@ -58,7 +58,7 @@ public:
         const DB::StoredObject &,
         const DB::ReadSettings &,
         const DB::WriteSettings &,
-        std::optional<DB::ObjectAttributes> = {}) override
+        std::optional<DB::ObjectAttributes>) override
     {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected copy");
     }
