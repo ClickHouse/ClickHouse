@@ -313,7 +313,13 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    String getSignatureString() const override { return "(const Any, Any) -> UInt32"; }
+    /// The bucket-count argument is constant, but that is already enforced by
+    /// `getArgumentsThatAreAlwaysConstant` (and validated in `executeImpl`). Do not spell it as
+    /// `const` here: when used as an Iceberg partition / sort-order transform, a non-constant
+    /// argument should surface the dedicated `BAD_ARGUMENTS` "Invalid iceberg sort order" message
+    /// from `parseTransformAndArgument`, not a generic `ILLEGAL_COLUMN` from the signature matcher;
+    /// and return-type inference in `ChunkPartitioner` passes a placeholder (non-const) column here.
+    String getSignatureString() const override { return "(Any, Any) -> UInt32"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
