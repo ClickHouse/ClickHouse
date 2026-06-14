@@ -201,6 +201,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
+    RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
@@ -218,6 +219,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
+    , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
@@ -302,6 +304,9 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " Example: `SET max_http_get_redirects = 10`."
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
                 initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
+
+        if (redirect_callback)
+            redirect_callback(current_uri, uri_redirect);
 
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
@@ -846,6 +851,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         use_external_buffer,
         http_skip_not_found_url,
         http_header_entries,
+        redirect_callback,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
     return ptr;

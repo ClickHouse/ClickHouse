@@ -38,20 +38,20 @@ def setup_node():
         cluster.shutdown()
 
 
-def reset_index_page_server_stats():
+def reset_index_page_server_stats(port=8087):
     resolver_id = cluster.get_container_id("resolver")
     cluster.exec_in_container(
         resolver_id,
-        ["curl", "-s", "http://localhost:8087/__reset__"],
+        ["curl", "-s", f"http://localhost:{port}/__reset__"],
     )
 
 
-def get_index_page_server_stats():
+def get_index_page_server_stats(port=8087):
     resolver_id = cluster.get_container_id("resolver")
     return json.loads(
         cluster.exec_in_container(
             resolver_id,
-            ["curl", "-s", "http://localhost:8087/__stats__"],
+            ["curl", "-s", f"http://localhost:{port}/__stats__"],
         )
     )
 
@@ -595,13 +595,23 @@ def test_url_engine_wildcard_limit_uses_query_setting():
 
 
 def test_url_wildcard_rejects_cross_origin_index_redirect():
+    reset_index_page_server_stats()
+    reset_index_page_server_stats(8088)
+
     error = node1.query_and_get_error(
         with_url_wildcard_setting(
-            "SELECT count() FROM url('http://resolver:8087/data/cross_origin_redirect/**/part*.tsv', 'TSV', 'x UInt64') "
+            "SELECT count() FROM url("
+            "'http://user:pass@resolver:8087/data/cross_origin_redirect/**/part*.tsv', "
+            "'TSV', "
+            "'x UInt64', "
+            "headers('X-Test-Header'='1')) "
             "SETTINGS max_http_get_redirects=1"
         )
     )
     assert "redirected to a different origin" in error
+
+    redirect_target_stats = get_index_page_server_stats(8088)
+    assert "GET /data/cross_origin_target/" not in redirect_target_stats
 
 
 def test_url_wildcard_reads_index_file_redirect():

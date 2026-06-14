@@ -371,6 +371,10 @@ MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readInde
                    .withEnableUrlEncoding(enable_url_encoding)
                    .withHostFilter(&request_context->getRemoteHostFilter())
                    .withHeaders(object_storage.getHeaders())
+                   .withRedirectCallback([](const Poco::URI & requested_uri, const Poco::URI & redirect_uri)
+                   {
+                       rejectOriginChangingRedirect(requested_uri.toString(), redirect_uri.toString());
+                   })
                    .create(credentials);
 
     std::string body;
