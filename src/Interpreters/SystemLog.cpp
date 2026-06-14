@@ -834,12 +834,16 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
-            /// Mark the old (renamed) table as readonly if it's MergeTree.
+            /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree.
             /// This prevents the old table from wasting CPU on background operations.
+            /// `table_readonly` is only supported for `StorageMergeTree`: `StorageReplicatedMergeTree`
+            /// rejects `ALTER TABLE ... MODIFY SETTING table_readonly` with `NOT_IMPLEMENTED`, so issuing
+            /// it for a replicated system log table (configured via a custom `<engine>`) would throw and
+            /// abort the flush, losing the current batch of log entries. Skip the marking in that case.
             {
                 StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
-                if (old_table && old_table->isMergeTree())
+                if (old_table && old_table->isMergeTree() && !old_table->supportsReplication())
                 {
                     auto alter_context = Context::createCopy(context);
                     alter_context->makeQueryContext();
