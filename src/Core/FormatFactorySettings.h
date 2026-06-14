@@ -1366,6 +1366,11 @@ Enabled by default
     DECLARE(Bool, output_format_pretty_row_numbers, true, R"(
 Add row numbers before each row for pretty output format
 )", 0) \
+    DECLARE(Bool, output_format_pretty_use_nbsp_for_padding, false, R"(
+If enabled, padding in `Pretty` output formats is rendered with `U+00A0` instead of an ASCII space.
+The output remains visually identical in monospace, but the padding survives tools that compress or trim runs of regular spaces.
+Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
+)", 0) \
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.
 )", 0) \
