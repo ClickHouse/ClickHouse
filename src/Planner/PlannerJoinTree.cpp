@@ -254,6 +254,57 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
     return false;
 }
 
+/// Returns true if any descendant of `node` (the outer query) is a subquery, i.e. a QUERY or
+/// UNION node. `node` itself is the outer query and is intentionally not treated as a subquery.
+///
+/// The pushdown ships the outer query to the shards. A subquery in it (e.g. the right-hand side
+/// of `IN (SELECT ...)`) is evaluated once on the coordinator on the normal StorageView path, but
+/// per-shard once the optimization fires; if it reads an initiator-local table, or one whose
+/// contents/privileges differ between shards, the result can change or the query can start
+/// throwing. So suppress the optimization whenever the outer query contains a subquery.
+///
+/// At this planner stage `IN (subquery)` still carries its subquery as a QUERY/UNION child of the
+/// `in` function (see CollectSets.cpp), so it is found here. Scalar subqueries that the analyzer
+/// already constant-folded live in ConstantNode::source_expression, which is NOT a child
+/// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
+/// the initiator and safe to ship.
+bool containsSubqueryNode(const QueryTreeNodePtr & node)
+{
+    for (const auto & child : node->getChildren())
+    {
+        if (!child)
+            continue;
+        const auto child_node_type = child->getNodeType();
+        if (child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION)
+            return true;
+        if (containsSubqueryNode(child))
+            return true;
+    }
+    return false;
+}
+
+/// AST-level subquery detector, the counterpart of containsSubqueryNode for the predicates the
+/// pushdown injects as shard-side filters (the view's row policy and view-keyed
+/// additional_table_filters), which are not part of the outer query tree. They are coordinator-side
+/// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
+/// the optimization fires, with the same divergence risk described above, so suppress the
+/// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+bool astContainsSubquery(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (ast->as<ASTSubquery>())
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsSubquery(child))
+            return true;
+    }
+    return false;
+}
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -1323,9 +1374,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (underlying_dist)
                     {
                         /// Suppress the pushdown if any expression the optimization would move from
-                        /// the coordinator onto the shards is non-deterministic or server-local
-                        /// (hostName, serverUUID, nowInBlock, blockNumber, rand, now, ...). Evaluated
-                        /// per-shard instead of once on the initiator, such expressions change results.
+                        /// the coordinator onto the shards is unsafe to evaluate per-shard. Two such
+                        /// hazards are checked here:
+                        ///   * non-deterministic / server-local functions (hostName, serverUUID,
+                        ///     nowInBlock, blockNumber, rand, now, ...): evaluated per-shard instead of
+                        ///     once on the initiator, they change results;
+                        ///   * subqueries (e.g. the right-hand side of `IN (SELECT ...)`): evaluated
+                        ///     once on the coordinator on the normal StorageView path, but per-shard
+                        ///     under the pushdown. If such a subquery reads an initiator-local table,
+                        ///     or one whose contents/privileges differ between shards, the result can
+                        ///     change or the query can start throwing. (A scalar subquery the analyzer
+                        ///     already folded into a constant is safe and is not flagged — see
+                        ///     containsSubqueryNode.)
                         /// Three sources are moved to the shards by the pushdown:
                         ///   * the outer query (projections, WHERE, ...), shipped to the shards;
                         ///   * the view's row policy, injected into the inner WHERE below (a
@@ -1334,17 +1394,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         ///     (likewise coordinator-side normally).
                         /// The view body itself needs no check: it is read through
                         /// StorageDistributed::read in both paths, so its expressions run on the shards
-                        /// either way. Dist-keyed row policies are not enforced (see below) and
-                        /// dist-keyed additional_table_filters are propagated to shards in both paths,
-                        /// so neither contributes a divergence.
+                        /// either way (and tryGetTrivialViewUnderlyingStorage already rejects a body
+                        /// whose WHERE/SELECT contains a subquery). Dist-keyed row policies are not
+                        /// enforced (see below) and dist-keyed additional_table_filters are propagated
+                        /// to shards in both paths, so neither contributes a divergence.
                         const auto & view_id = storage->getStorageID();
                         auto view_policy_for_check = query_context->getRowPolicyFilter(
                             view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
                         if (containsNonDeterministicFunction(table_expression_query_info.query_tree)
+                            || containsSubqueryNode(table_expression_query_info.query_tree)
                             || (view_policy_for_check && !view_policy_for_check->isAlwaysTrue()
-                                && astContainsNonDeterministicFunction(view_policy_for_check->expression, query_context))
-                            || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context))
+                                && (astContainsNonDeterministicFunction(view_policy_for_check->expression, query_context)
+                                    || astContainsSubquery(view_policy_for_check->expression)))
+                            || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context)
+                            || astContainsSubquery(table_expression_query_info.additional_filter_ast))
                             underlying_dist = nullptr;
                     }
                     if (underlying_dist)
