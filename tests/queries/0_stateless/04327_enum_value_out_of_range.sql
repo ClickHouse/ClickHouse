@@ -39,3 +39,11 @@ SELECT toInt16(CAST('a', 'Enum16(\'a\' = 32767, \'b\' = -32768)'));
 
 -- Auto-detection still promotes to Enum16 for values outside Int8 but inside Int16.
 SELECT toTypeName(CAST('a', 'Enum(\'a\' = 200, \'b\' = -200)'));
+
+-- DataTypeFactory::tryGet must keep returning nullptr (not throw) on invalid enum type text.
+-- Dynamic subcolumn detection parses the subcolumn name as a type via tryGet and uses the null
+-- result as the "not a subcolumn" signal; an out-of-range enum value must therefore surface as
+-- UNKNOWN_IDENTIFIER (subcolumn not found), not leak ARGUMENT_OUT_OF_BOUND from the type parse.
+SELECT d.`Enum8('a' = 200)` FROM (SELECT CAST('42', 'Dynamic') AS d); -- { serverError UNKNOWN_IDENTIFIER }
+-- A valid enum subcolumn name is still parsed fine (the subcolumn simply isn't present -> NULL).
+SELECT d.`Enum8('a' = 100)` FROM (SELECT CAST('42', 'Dynamic') AS d);

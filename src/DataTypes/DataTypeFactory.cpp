@@ -162,13 +162,45 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// These specialized branches construct the type directly, bypassing the registered-creator
+    /// try/catch below, so they must honor nullptr_on_error themselves: tryGet promises nullptr
+    /// (not an exception) on invalid type text, e.g. an out-of-range enum value.
+
     /// Handle specialized ASTEnumDataType directly
     if (const auto * enum_type = ast->as<ASTEnumDataType>())
-        return createEnumFromValues(enum_type->name, enum_type->values);
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createEnumFromValues(enum_type->name, enum_type->values);
+            }
+            catch (...) // Ok: tryGet is a try-pattern
+            {
+                return nullptr;
+            }
+        }
+        else
+            return createEnumFromValues(enum_type->name, enum_type->values);
+    }
 
     /// Handle specialized ASTTupleDataType directly
     if (const auto * tuple_type = ast->as<ASTTupleDataType>())
-        return createTupleFromAST(tuple_type);
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createTupleFromAST(tuple_type);
+            }
+            catch (...) // Ok: tryGet is a try-pattern
+            {
+                return nullptr;
+            }
+        }
+        else
+            return createTupleFromAST(tuple_type);
+    }
 
     if (const auto * type = ast->as<ASTDataType>())
     {
