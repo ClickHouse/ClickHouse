@@ -9,3 +9,7 @@ OPTIMIZE TABLE t FINAL
 OPTIMIZE TABLE t DRY RUN PARTS \'p1\', \'p2\'
 CREATE INDEX idx ON t col TYPE minmax GRANULARITY 1
 SELECT (((1 + 2) + 3) + 4) + 5
+BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')
+CREATE TABLE t (`x` Nullable(UInt8)) ENGINE = Memory
+SELECT quantile(0.9)(x)
+CREATE TABLE t (`x` UInt8, PROJECTION p (SELECT x)) ENGINE = MergeTree ORDER BY x

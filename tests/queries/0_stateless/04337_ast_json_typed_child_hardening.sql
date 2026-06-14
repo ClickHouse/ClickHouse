@@ -77,3 +77,31 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t PARTITION \'
 SET max_ast_depth = 20;
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 + 2 + 3 + 4 + 5'));
 SET max_ast_depth = 1000;
+
+-- ---------------------------------------------------------------------------
+-- Review follow-up: more parser-owned children restored by concrete type.
+-- ---------------------------------------------------------------------------
+
+-- Valid shapes that the new validation must NOT reject (round-trip unchanged):
+SELECT formatQueryFromJSON(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` Nullable(UInt8)) ENGINE = Memory'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT quantile(0.9)(x)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8, PROJECTION p (SELECT x)) ENGINE = MergeTree ORDER BY x'));
+
+-- ASTFunction: `arguments`/`parameters` are parser-owned `ASTExpressionList` children. A scalar
+-- node would make `formatImpl` iterate its (empty) `children` and silently rewrite `f(x)` as `f()`.
+SELECT formatQueryFromJSON('{"type":"Function","name":"f","arguments":{"type":"Identifier","name":"x"}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"f","parameters":{"type":"Identifier","name":"x"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTDataType: `arguments` must be the `ASTExpressionList` produced by `ParserDataType`; a non-list
+-- child is silently dropped (e.g. `Nullable(UInt8)` formatting as bare `Nullable`).
+SELECT formatQueryFromJSON('{"type":"DataType","name":"Nullable","arguments":{"type":"Identifier","name":"UInt8"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTSelectQuery: `tables` must be an `ASTTablesInSelectQuery`; analysis helpers downcast `tables()`.
+SELECT formatQueryFromJSON('{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]},"tables":{"type":"Identifier","name":"system.one"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTProjectionDeclaration: `projection_type` must be an `ASTFunction`.
+SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"projection_type":{"type":"Identifier","name":"minmax"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTBackupQuery: `backup_name` must be the parser-owned `ASTFunction` (marked `BACKUP_NAME`).
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t TO Disk(\'backups\', \'f\')'), '"type":"Function","name":"Disk"', '"type":"Identifier","name":"Disk"')); -- { serverError BAD_ARGUMENTS }

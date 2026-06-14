@@ -39,3 +39,17 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('KILL PART_MOVE_TO_SHARD WHE
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'aux:/clickhouse/foo\''), '"zk_name":"aux"', '"zk_name":"other"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SYSTEM DROP REPLICA \'r\''), '"is_drop_whole_replica":true', '"zk_name":"x","is_drop_whole_replica":true')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ProjectionDeclaration has two parser-produced shapes: a `(SELECT ...)` projection (`query` set)
+-- or an `INDEX ... TYPE ...` projection (`index` and `type` set together). An `index` without a
+-- `projection_type` would format as `p INDEX a`, even though the parser requires `TYPE`.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- BACKUP FROM SNAPSHOT: `base_snapshot_name` set means `ParserBackupQuery` skipped `parseElements`,
+-- so the query carries no `elements` and `formatQueryImpl` prints the snapshot form. A payload that
+-- sets both `base_snapshot_name` and `elements` is parser-impossible.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'), '"base_snapshot_name":', '"elements":[{}],"base_snapshot_name":')); -- { serverError BAD_ARGUMENTS }
