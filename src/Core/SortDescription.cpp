@@ -11,9 +11,6 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
 
-#include <string_view>
-#include <unordered_set>
-
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
@@ -76,6 +73,27 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
+bool SortDescription::hasPrefixWithoutCollation(const Names & prefix) const
+{
+    if (prefix.empty())
+        return true;
+
+    if (prefix.size() > size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if ((*this)[i].column_name != prefix[i])
+            return false;
+
+        /// A collated column is ordered by its collation key, not by value, so equal values are
+        /// not adjacent and the prefix is not value-ordered.
+        if ((*this)[i].collator)
+            return false;
+    }
+    return true;
+}
+
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
 {
     size_t i = 0;
@@ -88,27 +106,6 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     auto res = lhs;
     res.erase(res.begin() + i, res.end());
     return res;
-}
-
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
-{
-    std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
-
-    SortDescription prefix;
-    for (const auto & sort_column_desc : description)
-    {
-        if (!column_set.contains(sort_column_desc.column_name))
-            break;
-
-        /// A collated column is ordered by its collation key, not by value, so equal values are not
-        /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
-        if (sort_column_desc.collator)
-            break;
-
-        prefix.emplace_back(sort_column_desc);
-    }
-
-    return prefix;
 }
 
 #if USE_EMBEDDED_COMPILER
