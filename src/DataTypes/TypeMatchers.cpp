@@ -1031,10 +1031,15 @@ void registerTypeMatcherWithNoArguments(TypeMatcherFactory & factory)
     auto elem = std::make_shared<TypeMatcher>();
     auto name = elem->toString();
     factory.registerElement(name,
-        [captured = std::move(elem), name](const TypeMatchers & children)
+        [captured = std::move(elem)](const TypeMatchers & children) -> TypeMatcherPtr
         {
+            /// A no-argument matcher whose name is given children (e.g. `FixedString(16)`,
+            /// `Decimal(10, 2)`, `DateTime64(3)`) is not a matcher invocation but an exact
+            /// parameterized type. Return "no match" instead of throwing, so the parser falls
+            /// through to exact `DataTypeFactory` parsing and the parameterized type stays
+            /// expressible in a signature.
             if (!children.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} type matcher cannot have arguments", name);
+                return nullptr;
             return captured;
         });
 }

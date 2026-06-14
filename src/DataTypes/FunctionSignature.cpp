@@ -1232,24 +1232,24 @@ static bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
         if (res)
             return true;
 
-        /// Exact type (example: UInt8).
+        /// Exact type (examples: `UInt8`, `FixedString(16)`, `Decimal(10, 2)`, `DateTime64(3)`).
+        /// Reconstruct the full type expression (the name plus any parenthesized parameters) and
+        /// let DataTypeFactory parse it. This runs after matcher lookup, so a parameterized type
+        /// whose name collides with a no-argument matcher (`FixedString`, `Decimal`, `DateTime64`,
+        /// ...) still resolves: the no-argument matcher returns "no match" when given parameters.
+        /// `tryGet` yields nullptr for non-types (such as a type variable like `T`), so parsing
+        /// falls through to the type-variable handling below.
 
         const auto & factory = DataTypeFactory::instance();
-        if (typeFamilyExists(name))
         {
             auto prev_pos = pos;
             --prev_pos;
             const std::string full_name(begin->begin, prev_pos->end);
-            try
+            if (auto exact_type = factory.tryGet(full_name))
             {
-                res = std::make_shared<ExactTypeMatcher>(factory.get(full_name));
+                res = std::make_shared<ExactTypeMatcher>(std::move(exact_type));
+                return true;
             }
-            catch (Exception & e)
-            {
-                e.addMessage("in expression " + full_name);
-                throw;
-            }
-            return true;
         }
 
         /// Type variable (example: T).
