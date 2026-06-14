@@ -631,9 +631,6 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     if (download_state == State::DOWNLOADED)
         return;
 
-    download_state = State::DOWNLOADED;
-    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
-
     if (cache_writer)
     {
         cache_writer->finalize();
@@ -644,7 +641,16 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
 
     /// The file is now fully written and closed; encode its size into the file name so that
     /// startup metadata loading can avoid a `stat` per file.
+    /// This must happen before publishing the `DOWNLOADED` state. Both callers
+    /// (`completePartAndResetDownloader` and `complete`) reset the downloader only after this
+    /// method returns, so if `rename` threw with the state already set to `DOWNLOADED`, the segment
+    /// would be left `DOWNLOADED` with a stale downloader, violating `assertCorrectness`. Renaming
+    /// first leaves the segment `DOWNLOADING` (with its downloader still set, which is a valid state)
+    /// on failure, so the completion stays consistent and retryable.
     renameToIncludeSizeInNameUnlocked(lock);
+
+    download_state = State::DOWNLOADED;
+    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
