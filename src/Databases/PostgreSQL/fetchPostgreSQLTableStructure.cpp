@@ -129,14 +129,10 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
                 scale = parse<UInt32>(scale_str);
             }
 
-            if (precision <= DecimalUtils::max_precision<Decimal32>)
-                res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
-                res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
-                res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>)
-                res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            if (precision <= DecimalUtils::max_precision<Decimal256>)
+                /// createDecimal validates the precision/scale (in particular it rejects scale > precision,
+                /// e.g. numeric(5, 7)) and dispatches to the smallest Decimal type that fits the precision.
+                res = createDecimal<DataTypeDecimal>(precision, scale);
             else if (scale == 0)
                 /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
                 /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be

@@ -918,6 +918,42 @@ def test_numeric_to_int256(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS test_int256")
 
 
+def test_numeric_int256_validation(started_cluster):
+    # https://github.com/ClickHouse/ClickHouse/issues/59224
+    # Regressions for the numeric -> Int256 mapping. The postgresql() table function is used
+    # because it runs schema inference (fetchPostgreSQLTableStructure) and value parsing
+    # (insertPostgreSQLValue) synchronously, so both error paths surface to the client.
+    cursor = pg_manager.get_db_cursor()
+
+    def pg_table(table_name):
+        return (
+            f"postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', "
+            f"'postgres_database', '{table_name}', 'postgres', '{pg_pass}')"
+        )
+
+    # A numeric with scale greater than precision (allowed by PostgreSQL >= 15) must still be
+    # rejected, as it was before the Int256 mapping was added: it cannot be a valid Decimal.
+    cursor.execute("DROP TABLE IF EXISTS test_bad_scale")
+    cursor.execute("CREATE TABLE test_bad_scale (key integer PRIMARY KEY, v numeric(5, 7))")
+    error = instance.query_and_get_error(f"DESCRIBE TABLE {pg_table('test_bad_scale')}")
+    assert "larger than precision" in error, error
+
+    # A value that fits into numeric(78, 0) but is out of the Int256 range must be rejected
+    # instead of being silently wrapped around (wide-integer text parsing does not detect overflow).
+    cursor.execute("DROP TABLE IF EXISTS test_overflow")
+    cursor.execute("CREATE TABLE test_overflow (key integer PRIMARY KEY, v numeric(78, 0))")
+    # 10^77 has 78 digits (fits numeric(78, 0)) and exceeds the Int256 maximum (~5.79 * 10^76).
+    cursor.execute(
+        "INSERT INTO test_overflow VALUES "
+        "(1, 100000000000000000000000000000000000000000000000000000000000000000000000000000)"
+    )
+    error = instance.query_and_get_error(f"SELECT v FROM {pg_table('test_overflow')}")
+    assert "out of range of Int256" in error, error
+
+    cursor.execute("DROP TABLE IF EXISTS test_bad_scale")
+    cursor.execute("DROP TABLE IF EXISTS test_overflow")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
