@@ -38,7 +38,9 @@ public:
     /// is set — a runtime-setting-dependent choice the DSL can't express.
     String getSignatureString() const override
     {
-        return "(Date | Date32 | DateTime | DateTime64 | String, [UInt8], [const String]) -> Date";
+        /// The optional mode and timezone arguments are always constant
+        /// (see IFunctionCustomWeek::getArgumentsThatAreAlwaysConstant); encode both as `const`.
+        return "(Date | Date32 | DateTime | DateTime64 | String, [const UInt8], [const String]) -> Date";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

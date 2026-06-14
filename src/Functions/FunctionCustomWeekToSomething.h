@@ -23,7 +23,10 @@ public:
         const String input_matcher = Transform::value_may_be_string
             ? "Date | Date32 | DateTime | DateTime64 | String"
             : "Date | Date32 | DateTime | DateTime64";
-        return "(" + input_matcher + ", [UInt8], [String]) -> " + to;
+        /// The optional mode and timezone arguments are always constant
+        /// (see IFunctionCustomWeek::getArgumentsThatAreAlwaysConstant), so encode them as `const`
+        /// to reject a non-constant `mode`/`timezone` during analysis rather than at execution.
+        return "(" + input_matcher + ", [const UInt8], [const String]) -> " + to;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
