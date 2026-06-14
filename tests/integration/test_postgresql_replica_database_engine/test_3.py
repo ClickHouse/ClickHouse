@@ -39,7 +39,7 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/log_conf.xml"],
+    main_configs=["configs/log_conf.xml", "configs/backups_disk.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
     stay_alive=True,
@@ -858,6 +858,53 @@ def test_quoting_publication(started_cluster):
         result
         == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
     )
+
+
+def test_backup_database(started_cluster):
+    # https://github.com/ClickHouse/ClickHouse/issues/44252
+    # BACKUP of a MaterializedPostgreSQL database used to hang forever with
+    # "Table ... were created or changed its definition during scanning", because the table
+    # definition was generated with a fresh random UUID on every metadata read. Now the
+    # backup completes and the data of the nested ReplacingMergeTree is captured, so a table
+    # can be restored as a standalone ReplacingMergeTree.
+    pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
+    pg_manager.execute(
+        "CREATE TABLE test_backup_tbl (key integer PRIMARY KEY, value integer)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.test_backup_tbl SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'test_backup_tbl'"],
+    )
+    check_tables_are_synchronized(instance, "test_backup_tbl")
+    assert 50 == int(
+        instance.query("SELECT count() FROM test_database.test_backup_tbl")
+    )
+
+    backup_name = "Disk('backups', 'mpg_backup')"
+    # Must finish (previously looped forever on the consistency check).
+    instance.query(f"BACKUP DATABASE test_database TO {backup_name}")
+
+    # The backed-up table data can be restored as a standalone ReplacingMergeTree.
+    instance.query("DROP DATABASE IF EXISTS restored_db SYNC")
+    instance.query("CREATE DATABASE restored_db")
+    instance.query(
+        f"RESTORE TABLE test_database.test_backup_tbl AS restored_db.test_backup_tbl FROM {backup_name}"
+    )
+    assert 50 == int(
+        instance.query("SELECT count() FROM restored_db.test_backup_tbl")
+    )
+    assert "1225" == instance.query(
+        "SELECT sum(key) FROM restored_db.test_backup_tbl"
+    ).strip()
+
+    instance.query("DROP DATABASE restored_db SYNC")
+    pg_manager.drop_materialized_db()
+    pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
 
 
 if __name__ == "__main__":

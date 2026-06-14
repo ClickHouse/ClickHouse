@@ -301,6 +301,27 @@ void StorageMaterializedPostgreSQL::read(
 }
 
 
+void StorageMaterializedPostgreSQL::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    /// The data lives in the nested ReplacingMergeTree table, delegate the backup to it.
+    if (auto nested = tryGetNested())
+        nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    else
+        LOG_WARNING(log, "Nested table does not exist, will not back up any data");
+}
+
+
+void StorageMaterializedPostgreSQL::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (auto nested = tryGetNested())
+        nested->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    else
+        LOG_WARNING(log, "Nested table does not exist, will not restore any data");
+}
+
+
 boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
         String name, String type, UInt64 default_value)
 {
