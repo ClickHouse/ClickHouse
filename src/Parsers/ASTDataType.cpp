@@ -54,7 +54,10 @@ void ASTDataType::readJSON(const Poco::JSON::Object & json)
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTDataType");
 
-    auto args = r.readChild("arguments");
+    /// `arguments` is the `ASTExpressionList` produced by `ParserDataType`. `formatImpl` only prints
+    /// the `(...)` when this child has its own `children`, so a non-list node here would be silently
+    /// dropped (e.g. `Nullable(UInt8)` formatting as bare `Nullable`). Reject it at the JSON boundary.
+    auto args = r.readChildOfType<ASTExpressionList>("arguments");
     if (args)
         children.push_back(args);
 }
