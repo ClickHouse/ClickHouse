@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <base/scope_guard.h>
@@ -53,8 +54,7 @@ void exportTable(
 {
     auto batch = table->CombineChunksToBatch();
     if (!batch.ok())
-        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to create chunks batch: {}", batch.status().ToString());
+        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
 
     arrow::Status status = arrow::ExportRecordBatch(
         **batch,
@@ -62,12 +62,7 @@ void exportTable(
         reinterpret_cast<ArrowSchema *>(&schema));
 
     if (!status.ok())
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to export record batch: {}",
-            status.ToString());
-    }
+        DB::throwFromArrowStatus(status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export record batch");
 }
 
 std::shared_ptr<arrow::Table> getWriteMetadata(
@@ -231,8 +226,8 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array;
-    ffi::FFI_ArrowSchema schema;
+    ffi::FFI_ArrowArray array{};
+    ffi::FFI_ArrowSchema schema{};
     SCOPE_EXIT({
         if (schema.release)
             schema.release(&schema);

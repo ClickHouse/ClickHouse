@@ -283,7 +283,7 @@ namespace
         {
             try
             {
-                DestType result;
+                DestType result{};
                 ReadBufferFromMemory buf(str.data(), str.length());
                 readText(result, buf);
                 return result;
@@ -299,7 +299,7 @@ namespace
         {
             if constexpr (std::is_same_v<DestType, SrcType>)
                 return value;
-            DestType result;
+            DestType result{};
             try
             {
                 /// TODO: use accurate::convertNumeric() maybe?
@@ -1046,7 +1046,7 @@ namespace
 
         void checkEnumDataTypeValue(NumberType value)
         {
-            enum_data_type->findByValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
+            enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
@@ -1909,7 +1909,7 @@ namespace
         {
             auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
             Arena & arena = column_af.createOrGetArena();
-            AggregateDataPtr data;
+            AggregateDataPtr data = nullptr;
             readStr(text_buffer);
             data = stringToData(text_buffer, arena);
 
@@ -2650,7 +2650,7 @@ namespace
 
                 try
                 {
-                    int field_tag;
+                    int field_tag = 0;
                     while (reader->readFieldNumber(field_tag))
                     {
                         size_t field_index = findFieldIndexByFieldTag(field_tag);
@@ -2942,7 +2942,7 @@ namespace
         {
             startReading();
 
-            int field_tag;
+            int field_tag = 0;
             if (!reader->readFieldNumber(field_tag))
                 throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
 

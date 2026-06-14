@@ -58,7 +58,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
 }
 
@@ -219,7 +219,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// dependency checks), leaving orphaned tables that prevent server restart.
         if (!secondary_query && !is_refreshable_view && !is_drop_or_detach_database
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
-            && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
+            && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
             ast_drop_query.sync = false;
             if (table->storesDataOnDisk())
@@ -315,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+                throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped(context_);
 
@@ -432,7 +432,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     return res;
 }
 
-bool matchesLikePattern(const String & haystack,
+static bool matchesLikePattern(const String & haystack,
                         const String & like_pattern,
                         bool case_insensitive)
 {
@@ -905,6 +905,7 @@ bool InterpreterDropQuery::supportsTransactions() const
             && drop.table;
 }
 
+void registerInterpreterDropQuery(InterpreterFactory & factory);
 void registerInterpreterDropQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

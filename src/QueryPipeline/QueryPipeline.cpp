@@ -60,7 +60,7 @@ QueryPipeline::QueryPipeline()
 }
 
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
-QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
+QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)
@@ -243,7 +243,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 6.
-            if (typeid_cast<LimitByTransform *>(processor))
+            if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);

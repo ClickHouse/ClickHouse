@@ -55,7 +55,6 @@ class Labels:
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     NO_FAST_TESTS = "no-fast-tests"
-    CI_MACOS = "ci-macos"
     MUST_BACKPORT = "pr-must-backport"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
@@ -247,6 +246,11 @@ def check_labels(category, info):
 
     if info.pr_number:
         changed_files = info.get_kv_data("changed_files")
+        assert changed_files is not None, (
+            "changed_files is not populated in JOB_KV_DATA: the store_data pre-hook "
+            "most likely failed to fetch the PR file list from the GitHub API. "
+            "See the Config Workflow logs for the underlying error."
+        )
         if "contrib/" in " ".join(changed_files):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 

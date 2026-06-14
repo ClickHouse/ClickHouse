@@ -882,7 +882,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 auto & path_info = path_to_info[requested_path];
                 /// Seek to the start of the substreams list for this path.
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
-                size_t num_substreams;
+                size_t num_substreams = 0;
                 readVarUInt(num_substreams, *paths_substreams_stream);
                 path_info.substreams.reserve(num_substreams);
                 for (size_t i = 0; i != num_substreams; ++i)
@@ -911,7 +911,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
                 for (size_t i = 0; i != path_info.substreams.size(); ++i)
                 {
-                    MarkInCompressedFile substream_mark;
+                    MarkInCompressedFile substream_mark{};
                     readBinaryLittleEndian(substream_mark.offset_in_compressed_file, *paths_substreams_marks_stream);
                     readBinaryLittleEndian(substream_mark.offset_in_decompressed_block, *paths_substreams_marks_stream);
                     path_info.substream_to_mark[path_info.substreams[i]] = substream_mark;
@@ -1201,7 +1201,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (!paths_substreams_stream)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams");
 
-                size_t num_substreams;
+                size_t num_substreams = 0;
                 size_t total_number_of_substreams = 0;
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {

@@ -43,6 +43,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
@@ -154,6 +155,7 @@
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace fs = std::filesystem;
 
@@ -259,6 +261,8 @@ namespace CurrentMetrics
     extern const Metric IndexMarkCacheFiles;
     extern const Metric MarkCacheBytes;
     extern const Metric MarkCacheFiles;
+    extern const Metric UniqueKeyIndexCacheBytes;
+    extern const Metric UniqueKeyIndexCacheEntries;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
@@ -278,6 +282,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -337,6 +342,7 @@ namespace Setting
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
+    extern const SettingsBool use_reader_executor;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsBool use_page_cache_for_local_disks;
     extern const SettingsBool use_page_cache_for_object_storage;
@@ -512,7 +518,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
 
     mutable OnceFlag workload_entity_storage_initialized;
-    mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
+    mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
     mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
 
@@ -547,6 +553,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
+    mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
@@ -968,14 +975,27 @@ struct ContextSharedPart : boost::noncopyable
         TransactionLog::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
-        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
+        // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
+        // initialize it (a concurrent read/write of the same `shared_ptr` object would be a data race).
+        {
+            std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage_to_stop;
+            {
+                SharedLockGuard lock(mutex);
+                workload_entity_storage_to_stop = workload_entity_storage;
+            }
+            if (workload_entity_storage_to_stop)
+            {
+                LOG_DEBUG(log, "Shutting down workload entity storage");
+                workload_entity_storage_to_stop->stopWatching();
+            }
+        }
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
-        std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
+        std::shared_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
@@ -1565,17 +1585,20 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             (*settings)[Setting::ast_fuzzer_runs].value);
 
     /// Make setting's name ordered
-    auto obsolete_settings = settings->getChangedAndObsoleteNames();
-
-    if (!obsolete_settings.empty())
+    if (!(*settings)[Setting::cloud_mode])
     {
-        bool single_element = obsolete_settings.size() == 1;
-        constexpr auto message_format_string
-            = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
-              "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
-        common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
-            = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        auto obsolete_settings = settings->getChangedAndObsoleteNames();
+
+        if (!obsolete_settings.empty())
+        {
+            bool single_element = obsolete_settings.size() == 1;
+            constexpr auto message_format_string
+                = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
+                  "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
+            String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
+            common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
+                = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        }
     }
 
     return common_warnings;
@@ -3492,7 +3515,13 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
-    query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
+    /// A new query starts with an empty set of used/missing privileges.
+    /// We must not copy the contents of the parent's `QueryPrivilegesInfo`: the parent is the session
+    /// (or global) context, whose `query_privileges_info` object is shared between all sessions and queries
+    /// (session contexts are created via `createCopy(global_context)` and never call `makeQueryContext`).
+    /// Copying its contents — and racing with concurrent writers during the copy — leaked privilege strings
+    /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
+    query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
 }
@@ -3748,13 +3777,16 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
-IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
+std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
-        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
+        auto storage = createWorkloadEntityStorage(getGlobalContext());
+        std::lock_guard lock(shared->mutex);
+        shared->workload_entity_storage = std::move(storage);
     });
 
-    return *shared->workload_entity_storage;
+    SharedLockGuard lock(shared->mutex);
+    return shared->workload_entity_storage;
 }
 
 WasmModuleManager * Context::initWasmModuleManager()
@@ -4009,6 +4041,87 @@ void Context::clearMarkCache() const
         cache->clear();
 
     JemallocCacheArena::purge();
+}
+
+void Context::setUniqueKeyIndexCache(
+    [[maybe_unused]] const String & cache_policy,
+    [[maybe_unused]] size_t max_cache_size_in_bytes,
+    [[maybe_unused]] double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->unique_key_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "UNIQUE KEY index cache has been already created.");
+
+#if USE_ROCKSDB
+    if (max_cache_size_in_bytes == 0)
+        return; /// Explicit opt-out — callers get nullptr from getUniqueKeyIndexCache.
+
+    shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
+        cache_policy,
+        CurrentMetrics::UniqueKeyIndexCacheBytes,
+        CurrentMetrics::UniqueKeyIndexCacheEntries,
+        max_cache_size_in_bytes,
+        size_ratio);
+#endif
+    /// !USE_ROCKSDB: index cache is never registered; silently accept the
+    /// call so startup works on non-RocksDB builds. `getUniqueKeyIndexCache`
+    /// returns nullptr.
+}
+
+void Context::updateUniqueKeyIndexCacheConfiguration(
+    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+#if USE_ROCKSDB
+    size_t size = config.getUInt64("unique_key_index_cache_size_bytes", 1ULL << 30);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+
+    if (!shared->unique_key_index_cache)
+    {
+        if (size == 0)
+            return; /// Stay disabled until reload requests a non-zero size.
+        /// Construct on the first reload that requests a non-zero size, so
+        /// `unique_key_index_cache_size_bytes` is reversible rather than a
+        /// one-way disable for the process lifetime.
+        shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
+            config.getString("unique_key_index_cache_policy", "SLRU"),
+            CurrentMetrics::UniqueKeyIndexCacheBytes,
+            CurrentMetrics::UniqueKeyIndexCacheEntries,
+            size,
+            config.getDouble("unique_key_index_cache_size_ratio", 0.5));
+        LOG_INFO(shared->log, "Enabled UNIQUE KEY index cache at {} via reload-config",
+                 formatReadableSizeWithBinarySuffix(size));
+        return;
+    }
+
+    const size_t before = shared->unique_key_index_cache->GetCapacity();
+    shared->unique_key_index_cache->setMaxSizeInBytes(size);
+    if (size != before)
+        LOG_INFO(shared->log, "Reconfigured UNIQUE KEY index cache from {} to {}",
+                 formatReadableSizeWithBinarySuffix(before), formatReadableSizeWithBinarySuffix(size));
+#endif
+}
+
+UniqueKeyIndexCachePtr Context::getUniqueKeyIndexCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->unique_key_index_cache;
+}
+
+void Context::clearUniqueKeyIndexCache() const
+{
+#if USE_ROCKSDB
+    UniqueKeyIndexCachePtr cache = getUniqueKeyIndexCache();
+    if (cache)
+        cache->clear();
+#endif
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -4610,49 +4723,42 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
-    shared->uncompressed_cache->clear();
+    /// Each cache is null-checked because some `Context` users (e.g. the
+    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
+    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
 
-    if (!shared->mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
-    shared->mark_cache->clear();
+    if (shared->uncompressed_cache)
+        shared->uncompressed_cache->clear();
 
-    if (!shared->primary_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
-    shared->primary_index_cache->clear();
+    if (shared->mark_cache)
+        shared->mark_cache->clear();
 
-    if (!shared->index_uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
-    shared->index_uncompressed_cache->clear();
+    if (shared->primary_index_cache)
+        shared->primary_index_cache->clear();
 
-    if (!shared->index_mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
-    shared->index_mark_cache->clear();
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->clear();
 
-    if (!shared->vector_similarity_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
-    shared->vector_similarity_index_cache->clear();
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->clear();
 
-    if (!shared->text_index_tokens_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
-    shared->text_index_tokens_cache->clear();
+    if (shared->vector_similarity_index_cache)
+        shared->vector_similarity_index_cache->clear();
 
-    if (!shared->text_index_header_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
-    shared->text_index_header_cache->clear();
+    if (shared->text_index_tokens_cache)
+        shared->text_index_tokens_cache->clear();
 
-    if (!shared->text_index_postings_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings cache was not created yet.");
-    shared->text_index_postings_cache->clear();
+    if (shared->text_index_header_cache)
+        shared->text_index_header_cache->clear();
 
-    if (!shared->mmap_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
-    shared->mmap_cache->clear();
+    if (shared->text_index_postings_cache)
+        shared->text_index_postings_cache->clear();
 
-    if (!shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
-    shared->query_condition_cache->clear();
+    if (shared->mmap_cache)
+        shared->mmap_cache->clear();
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
@@ -4764,7 +4870,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 {
     size_t max_parallel_tasks_per_type = static_cast<size_t>(
         static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
+        * static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]));
     callOnce(
         shared->schedule_pool_initialized,
         [&]
@@ -6475,7 +6581,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     {
         std::lock_guard lock(shared->mutex);
         if (shared->storage_azure_settings)
-            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"configuration.disks.", getSettingsRef());
+            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"storage_configuration.disks", getSettingsRef());
     }
 
 }
@@ -7503,7 +7609,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
             }
         }
     }
-    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * background_merges_mutations_concurrency_ratio);
+    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * static_cast<double>(background_merges_mutations_concurrency_ratio));
     /// After auto-lowering, a small `background_pool_size` combined with a user-configured
     /// fractional `background_merges_mutations_concurrency_ratio` (e.g. `1 * 0.5 = 0`) can
     /// produce zero task count, which fails the `MergeTreeBackgroundExecutor` startup check.
@@ -7712,6 +7818,7 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
     res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
+    res.use_reader_executor = settings_ref[Setting::use_reader_executor];
     res.page_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];
@@ -7922,6 +8029,14 @@ PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uu
 
 const ServerSettings & Context::getServerSettings() const
 {
+    return shared->server_settings;
+}
+
+ServerSettings Context::getServerSettingsCopy() const
+{
+    /// Synchronize with the runtime writers of `shared->server_settings`
+    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
+    SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
 }
 
