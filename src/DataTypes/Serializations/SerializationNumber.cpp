@@ -21,7 +21,7 @@ void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_nu
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     if constexpr (is_floating_point<T>)
-        writeFloatText(x, ostr, settings, settings.approximate_numbers_with_decimal_point);
+        writeFloatText(x, ostr, settings, settings.always_write_decimal_point_in_float_and_decimal);
     else
         writeText(x, ostr);
 }

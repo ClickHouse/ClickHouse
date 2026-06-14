@@ -1243,7 +1243,7 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
-    DECLARE(Bool, output_format_approximate_numbers_with_decimal_point, false, R"(
+    DECLARE(Bool, output_format_always_write_decimal_point_in_float_and_decimal, false, R"(
 Always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number. For example, output `1.` instead of `1`.
 
 Disabled by default.
