@@ -1539,6 +1539,11 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
+    /// Re-fence leadership immediately before deleting the mutation file on shared storage. The
+    /// entry-level `assertNotReadonly` above can pass and the lease then be lost while we roll
+    /// back the transaction / cancel running part mutations; without this re-check a stale leader
+    /// would remove a `mutation_*.txt` that now belongs to another node's lease epoch.
+    assertNotReadonly();
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
@@ -3638,6 +3643,14 @@ Pipe StorageMergeTree::alterPartition(
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             case PartitionCommand::UNFREEZE_PARTITION:
             case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
+                /// `FREEZE`/`UNFREEZE` write to / delete from `shadow/<backup>/<relative_data_path>`
+                /// on the table's disks. Under `leader_election` those are the shared `S3`/`Azure`
+                /// disks (and `shadow/increment.txt` is per-node, so default backup names collide
+                /// across nodes), so only the leader may run them. For other tables these are
+                /// node-local backup operations and remain unrestricted (including on a
+                /// `table_readonly` table), so we gate only on leadership here, not `assertNotReadonly`.
+                if (leader_election_ptr)
+                    leader_election_ptr->assertIsLeaderAndWritable();
                 continue;
             default:
                 assertNotReadonly();

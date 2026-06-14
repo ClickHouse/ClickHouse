@@ -2180,7 +2180,9 @@ namespace ErrorCodes
     DECLARE(Bool, leader_election, false, R"(
     Enable leader election for non-replicated MergeTree tables on shared object storage (S3, Azure).
     When enabled, the table uses conditional writes on the object storage to elect a single leader among
-    multiple server instances sharing the same data. Only the leader can perform writes, merges, and mutations.
+    multiple server instances sharing the same data. Only the leader can perform writes and merges (and
+    mutations on disks that support hard links; note the recommended `plain_rewritable` layout does not, so
+    `ALTER TABLE ... UPDATE`/`DELETE` is rejected even on the leader there).
     Follower instances act as read-only replicas. Requires every disk in the storage policy to be an `S3` or
     `Azure` object storage disk with shared metadata (`metadata_type = plain_rewritable` is recommended), so
     that after a failover the new leader sees the parts written by the previous leader. Tables on disks with
