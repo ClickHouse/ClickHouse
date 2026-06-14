@@ -153,7 +153,11 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         /// If it is server startup, we put entries in any queue it will fit in,
         /// but with preference for probationary queue,
         /// because we do not know the distribution between queues after server restart.
-        is_protected = !probationary_queue.canFit(size, /* elements */1, *state_lock);
+        /// Use the disk-accounted size for the fit check, because that is the size the
+        /// `Entry` will occupy in the subqueue (with `use_real_disk_size` the `Entry`
+        /// constructor aligns the size to the filesystem block size).
+        const size_t accounted_size = key_metadata->useRealDiskSize() ? key_metadata->alignFileSize(size) : size;
+        is_protected = !probationary_queue.canFit(accounted_size, /* elements */1, *state_lock);
     }
     else if (size && !state_lock)
     {

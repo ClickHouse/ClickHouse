@@ -1138,6 +1138,15 @@ bool FileCache::doTryReserve(
         chassert(file_segment.getReservedSize() == 0);
 #endif
 
+    /// When `use_real_disk_size` is enabled, priority queue entries are accounted by their
+    /// disk-aligned size, so every priority-queue decision (fit checks, eviction collection and
+    /// the final size increment) must operate on the disk-accounted delta rather than on the raw
+    /// requested `size`. The raw `size` is used only to advance `reserved_size`.
+    /// When `use_real_disk_size` is disabled the delta is equal to `size`, so this is a no-op.
+    /// The delta can be `0` for a sub-block write that stays within an already-accounted block,
+    /// in which case the queue entry is left unchanged.
+    const size_t aligned_delta = file_segment.computeDiskAccountedDelta(size);
+
     /// In case of per query cache limit (by default disabled),
     /// we add/remove entries from both (main_priority and query_priority) priority queues,
     /// but iterate entries in order of query_priority, while checking the limits in both.
@@ -1164,7 +1173,7 @@ bool FileCache::doTryReserve(
             if (query_context)
             {
                 query_priority = &query_context->getPriority();
-                if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
+                if (!query_priority->canFit(aligned_delta, required_elements_num, lock, /* reservee */nullptr, origin_info)
                     && !query_context->recacheOnFileCacheQueryLimitExceeded())
                 {
                     LOG_TEST(
@@ -1176,7 +1185,7 @@ bool FileCache::doTryReserve(
                     return false;
                 }
                 query_eviction_info = query_priority->collectEvictionInfo(
-                    size,
+                    aligned_delta,
                     required_elements_num,
                     main_priority_iterator.get(),
                     /* is_total_space_cleanup */false,
@@ -1187,7 +1196,7 @@ bool FileCache::doTryReserve(
 
         /// Check server-wide cache limits.
         main_eviction_info = main_priority->collectEvictionInfo(
-            size,
+            aligned_delta,
             required_elements_num,
             main_priority_iterator.get(),
             /* is_total_space_cleanup */false,
@@ -1199,8 +1208,8 @@ bool FileCache::doTryReserve(
         if (main_priority_iterator && !main_eviction_info->requiresEviction() && !query_context)
         {
             main_eviction_info->releaseHoldSpace(lock);
-            const size_t aligned_delta = file_segment.computeDiskAccountedDelta(size);
-            main_priority_iterator->incrementSize(aligned_delta, lock);
+            if (aligned_delta)
+                main_priority_iterator->incrementSize(aligned_delta, lock);
 
             file_segment.reserved_size += size;
             chassert(file_segment.getDiskAccountedSize() == main_priority_iterator->getEntry()->size);
@@ -1265,11 +1274,13 @@ bool FileCache::doTryReserve(
             query_eviction_info->releaseHoldSpace(lock);
 
         eviction_candidates.afterEvictState(lock);
-        const size_t aligned_delta = file_segment.computeDiskAccountedDelta(size);
-        main_priority_iterator->incrementSize(aligned_delta, lock);
+        if (aligned_delta)
+        {
+            main_priority_iterator->incrementSize(aligned_delta, lock);
 
-        if (query_priority_iterator)
-            query_priority_iterator->incrementSize(aligned_delta, lock);
+            if (query_priority_iterator)
+                query_priority_iterator->incrementSize(aligned_delta, lock);
+        }
     }
     catch (...)
     {

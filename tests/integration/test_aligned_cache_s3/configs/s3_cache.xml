@@ -14,6 +14,14 @@
                 <max_size>1Gi</max_size>
                 <use_real_disk_size>1</use_real_disk_size>
             </aligned_cache>
+            <!-- An encrypted disk on top of a cache with `use_real_disk_size` writes a tiny
+                 (sub-block) header file during `checkAccess` at startup, which exercises a
+                 cache reservation whose disk-accounted delta is zero. -->
+            <aligned_cache_encrypted>
+                <type>encrypted</type>
+                <disk>aligned_cache</disk>
+                <key>1234567812345678</key>
+            </aligned_cache_encrypted>
         </disks>
         <policies>
             <external>
@@ -23,6 +31,13 @@
                     </main>
                 </volumes>
             </external>
+            <external_encrypted>
+                <volumes>
+                    <main>
+                        <disk>aligned_cache_encrypted</disk>
+                    </main>
+                </volumes>
+            </external_encrypted>
         </policies>
     </storage_configuration>
 </clickhouse>
