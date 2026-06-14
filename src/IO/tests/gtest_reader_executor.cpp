@@ -4361,29 +4361,53 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
     EXPECT_FALSE(slow->hasBlock(0)) << "lower tier not written down from a fully-covering upper hit";
 }
 
-TEST(ReaderExecutor, ContinuityTrackerFedFromSchedule)
+TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
 {
-    /// Wiring check: a cold sequential read feeds the schedule's predicted source
-    /// reads into the continuity estimator, so the plan's predicted reach is
-    /// populated (at least the window read so far). Plumbing only - nothing acts on
-    /// it yet; the value lives in `schedule.predicted_reach`.
-    String content(64 * 1024, 'Q');
+    /// Wiring check: a cold sequential read spanning MANY plans must accumulate the
+    /// full contiguous read into the continuity estimator. The look-ahead is shrunk
+    /// to one segment so every window forces a fresh plan; the watermark must feed
+    /// each re-plan's source reads exactly once - no double-feed (which would fold
+    /// the run and collapse the estimate) and no skipped region. So `predicted_reach`
+    /// grows by one segment per window and equals the file size at EOF.
+    const size_t seg = 16 * 1024;
+    const size_t file = 5 * seg;          /// 80 KiB -> 5 plans / 5 windows
+    String content(file, 'Q');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", content}});
     StoredObjects objects;
-    objects.emplace_back("obj", "", content.size());
+    objects.emplace_back("obj", "", file);
 
-    auto cache = std::make_shared<EvictableSegmentMockCache>(64 * 1024);   /// cold -> all miss -> one Remote retrieve
+    auto cache = std::make_shared<EvictableSegmentMockCache>(seg);   /// cold -> all miss
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
     ReaderExecutor::Options opts;
-    opts.window_size = 8 * 1024;
+    opts.window_size = seg;               /// one segment per window
+    opts.plan_look_ahead_window = seg;    /// one segment per plan -> a re-plan every window
     opts.min_bytes_for_seek = 4 * 1024;
     ReaderExecutor executor(source, objects, caches, opts);
 
-    auto w = executor.readNextWindow();   /// builds the first plan; feeds its source reads
-    ASSERT_FALSE(w.empty());
-    EXPECT_GE(executor.predictedReachForTest(), w.range().size)
-        << "the cold read's predicted source reads were fed to the continuity estimator";
+    String result;
+    size_t reach_after_1 = 0;
+    size_t reach_after_3 = 0;
+    int n = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+        ++n;
+        if (n == 1)
+            reach_after_1 = executor.predictedReachForTest();
+        if (n == 3)
+            reach_after_3 = executor.predictedReachForTest();
+    }
+
+    EXPECT_EQ(result, content);                          /// full read, no corruption
+    EXPECT_EQ(reach_after_1, seg) << "first plan fed exactly one segment";
+    EXPECT_EQ(reach_after_3, 3 * seg) << "accumulated three segments, no double-feed/gap";
+    EXPECT_EQ(executor.predictedReachForTest(), file)
+        << "the estimator captured the full contiguous read across all plans";
 }
