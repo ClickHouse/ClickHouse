@@ -143,3 +143,38 @@ AND
               SETTINGS shard_by_hash_input_batch_bytes = 67108864)
     ) = baseline
 );
+
+-- ── Non-key payload column (UInt64 key + UInt64 aggregate argument) ─────────────
+-- The blocks above only aggregate `count()`, so the scattered input carries the grouping
+-- key but no aggregate-argument column: a bug that keeps keys aligned while misscattering a
+-- non-key payload column would go undetected. Here `v` is a distinct-per-row payload, and
+-- aggregating `sum(v)`, `max(v)` and the sorted `groupArray(v)` forces a non-key column
+-- through `BufferedShardByHashTransform::flushBatch` alongside the key, so any misalignment
+-- between the key and the payload after batched scatter changes a per-key aggregate and
+-- trips the comparison to 0.
+SELECT 'PayloadUInt64';
+WITH
+(
+    SELECT arraySort(groupArray((k, s, mx, ga)))
+    FROM (SELECT k, sum(v) AS s, max(v) AS mx, arraySort(groupArray(v)) AS ga
+          FROM (SELECT number % 100 AS k, number AS v FROM numbers_mt(50000)) GROUP BY k
+          SETTINGS shard_by_hash_input_batch_bytes = 0)
+) AS baseline
+SELECT
+(
+    (
+        SELECT arraySort(groupArray((k, s, mx, ga)))
+        FROM (SELECT k, sum(v) AS s, max(v) AS mx, arraySort(groupArray(v)) AS ga
+              FROM (SELECT number % 100 AS k, number AS v FROM numbers_mt(50000)) GROUP BY k
+              SETTINGS shard_by_hash_input_batch_bytes = 16384)
+    ) = baseline
+)
+AND
+(
+    (
+        SELECT arraySort(groupArray((k, s, mx, ga)))
+        FROM (SELECT k, sum(v) AS s, max(v) AS mx, arraySort(groupArray(v)) AS ga
+              FROM (SELECT number % 100 AS k, number AS v FROM numbers_mt(50000)) GROUP BY k
+              SETTINGS shard_by_hash_input_batch_bytes = 67108864)
+    ) = baseline
+);

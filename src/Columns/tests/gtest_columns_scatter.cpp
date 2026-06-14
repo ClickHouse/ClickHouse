@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -15,6 +16,8 @@
 #include <Columns/ColumnsScatter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 
@@ -161,6 +164,47 @@ ColumnPtr makeConstLowCardinalityString(const std::string & value, size_t num_ro
     auto one = type->createColumn();
     one->insertData(value.data(), value.size());
     return ColumnConst::create(std::move(one), num_rows);
+}
+
+/// Minimal resolved-function stub so a `ColumnFunction` can be constructed without the
+/// Functions/Interpreters machinery. The scatter path only clones/scatters the captured
+/// columns and never invokes the function, so `prepare`/`execute` are never reached; the stub
+/// exists solely to satisfy `ColumnFunction`'s constructor, which reads the argument types to
+/// validate the captured columns.
+class StubFunctionBase final : public IFunctionBase
+{
+public:
+    StubFunctionBase(DataTypes argument_types_, DataTypePtr result_type_)
+        : argument_types(std::move(argument_types_)), result_type(std::move(result_type_))
+    {
+    }
+
+    String getName() const override { return "stub"; }
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+    const DataTypePtr & getResultType() const override { return result_type; }
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override { return nullptr; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+private:
+    DataTypes argument_types;
+    DataTypePtr result_type;
+};
+
+/// `ColumnConst(ColumnFunction)` — exactly what a higher-order function with all-constant
+/// captured arguments produces (see `FunctionCapture` in `FunctionsMiscellaneous.h`). Its
+/// nested `ColumnFunction` is non-serializable (`serializeValueIntoArena` throws), so the
+/// const-scatter path must not attempt to serialize it.
+ColumnPtr makeConstFunctionColumn(size_t num_rows, UInt64 captured_value = 42)
+{
+    DataTypePtr u64 = std::make_shared<DataTypeUInt64>();
+    auto function = std::make_shared<StubFunctionBase>(DataTypes{u64}, u64);
+
+    auto captured_col = ColumnUInt64::create();
+    captured_col->insertValue(captured_value);
+    ColumnsWithTypeAndName captured{ColumnWithTypeAndName{std::move(captured_col), u64, "x"}};
+
+    auto func_col = ColumnFunction::create(1, std::move(function), captured);
+    return ColumnConst::create(std::move(func_col), num_rows);
 }
 
 ColumnPtr makeNullableStringCol(size_t num_rows)
@@ -386,6 +430,76 @@ TEST(ColumnsScatter, FallbackConst)
     auto pids = randomPids(num_rows, num_shards);
     ColumnPtr const_col = ColumnConst::create(makeUInt64Col(1), num_rows);
     checkEquivalence({const_col}, {pids}, num_shards);
+}
+
+TEST(ColumnsScatter, ConstFunctionSingleSource)
+{
+    // A single ColumnConst(ColumnFunction): the nested value is non-serializable, so the
+    // compact const path must short-circuit to per-shard cloneResized WITHOUT serializing
+    // (which would throw NOT_IMPLEMENTED), mirroring the legacy ColumnConst::scatter that
+    // simply cloned. The result keeps the const form.
+    constexpr size_t num_rows = 300;
+    constexpr size_t num_shards = 4;
+    auto pids = randomPids(num_rows, num_shards);
+
+    std::vector<UInt32> counts(num_shards, 0);
+    for (auto p : pids)
+        counts[p]++;
+
+    ColumnPtr col = makeConstFunctionColumn(num_rows);
+    std::vector<const IColumn *> col_ptrs{col.get()};
+    std::vector<std::span<const UInt32>> pid_spans{std::span<const UInt32>(pids)};
+
+    MutableColumns got;
+    ASSERT_NO_THROW(got = ColumnsScatter::scatter(col_ptrs, pid_spans, num_shards));
+    ASSERT_EQ(got.size(), num_shards);
+    for (size_t s = 0; s < num_shards; ++s)
+    {
+        EXPECT_EQ(got[s]->size(), counts[s]) << "shard " << s;
+        EXPECT_TRUE(got[s]->isConst()) << "single-source short-circuit must keep const form, shard " << s;
+    }
+}
+
+TEST(ColumnsScatter, ConstFunctionMultiSource)
+{
+    // A batch of equal-valued ColumnConst(ColumnFunction) sources cannot be compared
+    // byte-exactly (no serialization available), so the compact optimization is skipped and
+    // the batch falls through to the materializing dispatch instead of throwing. Row counts
+    // per shard must still be preserved across all sources.
+    constexpr size_t num_shards = 5;
+    constexpr size_t num_batches = 3;
+    std::vector<ColumnPtr> cols;
+    std::vector<std::vector<UInt32>> pids;
+    std::vector<UInt32> counts(num_shards, 0);
+    size_t expected_total = 0;
+    for (size_t b = 0; b < num_batches; ++b)
+    {
+        const size_t n = 100 + b * 50;
+        cols.push_back(makeConstFunctionColumn(n));
+        pids.push_back(randomPids(n, num_shards));
+        for (auto p : pids.back())
+            counts[p]++;
+        expected_total += n;
+    }
+
+    std::vector<const IColumn *> col_ptrs(cols.size());
+    std::vector<std::span<const UInt32>> pid_spans(cols.size());
+    for (size_t b = 0; b < cols.size(); ++b)
+    {
+        col_ptrs[b] = cols[b].get();
+        pid_spans[b] = pids[b];
+    }
+
+    MutableColumns got;
+    ASSERT_NO_THROW(got = ColumnsScatter::scatter(col_ptrs, pid_spans, num_shards));
+    ASSERT_EQ(got.size(), num_shards);
+    size_t total = 0;
+    for (size_t s = 0; s < num_shards; ++s)
+    {
+        EXPECT_EQ(got[s]->size(), counts[s]) << "shard " << s;
+        total += got[s]->size();
+    }
+    EXPECT_EQ(total, expected_total);
 }
 
 TEST(ColumnsScatter, AllRowsToOneShard)

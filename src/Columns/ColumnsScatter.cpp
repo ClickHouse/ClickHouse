@@ -550,23 +550,42 @@ MutableColumns scatter(
         source_columns.begin(), source_columns.end(), [](const IColumn * c) { return c->isConst(); });
     if (all_const)
     {
-        /// Byte-exact equality, not `compareAt`: scatter is a physical split of *every* column (not
-        /// just keys), so this compact path must preserve the exact source bytes. `compareAt` is
-        /// ordering-equality — it treats `+0.0`/`-0.0` and all `NaN` payloads as equal — so cloning
-        /// `source_columns[0]` for a shard that received rows from a bit-different (but SQL-equal)
-        /// const chunk would silently rewrite their payload. Compare the serialized single value of
-        /// each const; any bit difference falls through to the materializing dispatch below.
-        Arena arena;
-        const char * probe_begin = nullptr;
-        const std::string_view probe_bytes
-            = assert_cast<const ColumnConst &>(*source_columns[0]).getDataColumn().serializeValueIntoArena(0, arena, probe_begin, nullptr);
-        const bool all_same_value = std::all_of(
-            source_columns.begin() + 1, source_columns.end(),
-            [&](const IColumn * c)
-            {
-                const char * begin = nullptr;
-                return assert_cast<const ColumnConst &>(*c).getDataColumn().serializeValueIntoArena(0, arena, begin, nullptr) == probe_bytes;
-            });
+        /// A single const source is trivially equal to itself: shard s just needs
+        /// `rows_per_shard[s]` copies of that one value, which is exactly what the legacy
+        /// `ColumnConst::scatter` produces (`cloneResized` re-wraps the same data, no
+        /// materialization). Because this needs no value comparison it also works for const
+        /// wrappers whose nested value cannot be serialized (e.g. `ColumnConst(ColumnFunction)`),
+        /// where the legacy path simply cloned — serializing such a value just to compare it
+        /// would throw `NOT_IMPLEMENTED` and turn this optimization into a regression.
+        bool all_same_value = source_columns.size() == 1;
+
+        /// Multiple const sources (a batch of chunks) may carry bit-different — but SQL-equal —
+        /// values, so the compact clone is only safe when every const holds the byte-identical
+        /// value. Byte-exact equality, not `compareAt`: scatter is a physical split of *every*
+        /// column (not just keys), so this compact path must preserve the exact source bytes.
+        /// `compareAt` is ordering-equality — it treats `+0.0`/`-0.0` and all `NaN` payloads as
+        /// equal — so cloning `source_columns[0]` for a shard that received rows from a
+        /// bit-different const chunk would silently rewrite their payload. Compare the serialized
+        /// single value of each const; any bit difference falls through to the materializing
+        /// dispatch below. The comparison needs serialization, so when the nested value is not
+        /// serializable (`ColumnFunction`) there is no byte-exact test available: skip the
+        /// optimization and let the materializing dispatch handle the batch rather than throwing.
+        if (!all_same_value
+            && assert_cast<const ColumnConst &>(*source_columns[0]).getDataColumn().getDataType() != TypeIndex::Function)
+        {
+            Arena arena;
+            const char * probe_begin = nullptr;
+            const std::string_view probe_bytes
+                = assert_cast<const ColumnConst &>(*source_columns[0]).getDataColumn().serializeValueIntoArena(0, arena, probe_begin, nullptr);
+            all_same_value = std::all_of(
+                source_columns.begin() + 1, source_columns.end(),
+                [&](const IColumn * c)
+                {
+                    const char * begin = nullptr;
+                    return assert_cast<const ColumnConst &>(*c).getDataColumn().serializeValueIntoArena(0, arena, begin, nullptr) == probe_bytes;
+                });
+        }
+
         if (all_same_value)
         {
             absl::InlinedVector<UInt32, SCATTER_INLINE_SHARDS> rps_buf;
