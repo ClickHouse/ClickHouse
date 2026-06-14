@@ -866,8 +866,11 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     # `materialized_postgresql_schema` setting and created the publication for the bare,
     # unqualified table name, failing with `relation "..." does not exist`.
     cursor = pg_manager.get_db_cursor()
-    schema_name = "test_table_engine_schema"
-    table = "test_table_engine_schema_table"
+    schema_name = "test_engine_schema"
+    # Keep the table name short: the default replication slot name is
+    # `<postgres_database>_<table>_ch_replication_slot`, which must stay within
+    # PostgreSQL's 63-character identifier limit (`postgres_database` is 17 chars here).
+    table = "test_engine_table"
     clickhouse_postgres_db = "postgres_database_with_schema_for_table_engine"
 
     create_postgres_schema(cursor, schema_name)
