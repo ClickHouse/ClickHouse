@@ -344,6 +344,15 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
         name_parts = std::move(parts);
+        /// `ASTTableIdentifier` can only represent a one- or two-part table name
+        /// (`table` or `database.table`): `ParserCompoundIdentifier` rejects `parts.size() > 2`
+        /// for table identifiers. `getTableId`/`getDatabaseName` would otherwise mis-resolve a
+        /// longer name (treating `db.tbl.extra` as the single table `db`), formatting a different
+        /// target than execution uses. Reject the parser-impossible shape at the JSON boundary.
+        if (name_parts.size() > 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTTableIdentifier JSON 'name_parts' has {} parts, but a table identifier accepts at most 2 during AST JSON deserialization",
+                name_parts.size());
         if (children.empty())
             resetFullName();
         else
