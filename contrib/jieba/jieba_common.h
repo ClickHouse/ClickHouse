@@ -7,6 +7,9 @@
 namespace Jieba
 {
 
+/// One Unicode codepoint, clamped to the Basic Multilingual Plane.
+/// Codepoints beyond the BMP (which UTF-8 encodes as 4 bytes) are mapped to the
+/// sentinel value `0xFFFF` so that the HMM emission table can stay BMP-sized.
 using Rune = uint16_t;
 
 /// Stores the offset and length information of a Rune in the original string
@@ -65,61 +68,46 @@ struct RuneRange
 
 using RuneRanges = std::vector<RuneRange>;
 
-/// Fast UTF-8 to Unicode decoder (BMP-clamped)
-/// - Invalid UTF-8 sequences are replaced with 0xFFFD (replacement char)
-/// - 4-byte sequences (> 0xFFFF) are clamped to 0xFFFF
-/// - Note: When encoding UTF-16 for Darts-clone usage, any 0x00 bytes
-///   (common in ASCII chars when using UTF-16-LE) are replaced with 0xF0
-///   prefix to avoid conflicts, because Darts-clone cannot handle
-///   0x00 bytes inside keys even if lengths are provided.
+/// Fast UTF-8 to Unicode decoder (BMP-clamped).
+/// - Invalid UTF-8 sequences are replaced with `0xFFFD` (replacement char).
+/// - 4-byte sequences (codepoint > 0xFFFF) are clamped to `0xFFFF` so we can keep
+///   `Rune = uint16_t` and a BMP-sized HMM emission table.
+///
+/// The returned value is the raw Unicode codepoint, with no remapping applied.
+/// All downstream code (HMM `emit_probs[state][rune]` lookup, the `separators` set,
+/// ASCII detection in the HMM segmenter) compares against raw codepoint values.
+/// Trie keys for `darts-clone` use a separate, explicit byte encoding (see
+/// `encodeRuneKey` in `jieba_dict.h`) because `darts-clone` cannot store `\0`
+/// bytes inside keys — that encoding is the only place where bytes are reshuffled.
 inline Rune decodeUTF8Rune(const char * str, size_t len, size_t & out_len)
 {
-    Rune rune;
     uint8_t b0 = static_cast<uint8_t>(str[0]);
 
     if (b0 < 0x80)
     {
-        rune = b0;
         out_len = 1;
+        return b0;
     }
-    else if ((b0 & 0xE0) == 0xC0 && len >= 2 && (static_cast<uint8_t>(str[1]) & 0xC0) == 0x80)
+    if ((b0 & 0xE0) == 0xC0 && len >= 2 && (static_cast<uint8_t>(str[1]) & 0xC0) == 0x80)
     {
-        rune = ((b0 & 0x1F) << 6) | (static_cast<uint8_t>(str[1]) & 0x3F);
         out_len = 2;
+        return ((b0 & 0x1F) << 6) | (static_cast<uint8_t>(str[1]) & 0x3F);
     }
-    else if (
-        (b0 & 0xF0) == 0xE0 && len >= 3 && (static_cast<uint8_t>(str[1]) & 0xC0) == 0x80 && (static_cast<uint8_t>(str[2]) & 0xC0) == 0x80)
+    if ((b0 & 0xF0) == 0xE0 && len >= 3 && (static_cast<uint8_t>(str[1]) & 0xC0) == 0x80
+        && (static_cast<uint8_t>(str[2]) & 0xC0) == 0x80)
     {
-        rune = ((b0 & 0x0F) << 12) | ((static_cast<uint8_t>(str[1]) & 0x3F) << 6) | (static_cast<uint8_t>(str[2]) & 0x3F);
         out_len = 3;
+        return ((b0 & 0x0F) << 12) | ((static_cast<uint8_t>(str[1]) & 0x3F) << 6) | (static_cast<uint8_t>(str[2]) & 0x3F);
     }
-    else if (
-        (b0 & 0xF8) == 0xF0 && len >= 4 && (static_cast<uint8_t>(str[1]) & 0xC0) == 0x80 && (static_cast<uint8_t>(str[2]) & 0xC0) == 0x80
-        && (static_cast<uint8_t>(str[3]) & 0xC0) == 0x80)
+    if ((b0 & 0xF8) == 0xF0 && len >= 4 && (static_cast<uint8_t>(str[1]) & 0xC0) == 0x80
+        && (static_cast<uint8_t>(str[2]) & 0xC0) == 0x80 && (static_cast<uint8_t>(str[3]) & 0xC0) == 0x80)
     {
-        rune = 0xFFFF; // Beyond BMP
         out_len = 4;
-    }
-    else
-    {
-        rune = 0xFFFD; // Invalid UTF-8
-        out_len = 1;
+        return 0xFFFF; // Beyond BMP — clamp to the sentinel value.
     }
 
-    /// Replace any 0x00 byte in the rune's UTF-16-LE byte representation with 0xF0,
-    /// matching the dictionary key encoding produced by `generate_dict.py`.
-    /// This is required because Darts-clone cannot handle 0x00 bytes inside keys,
-    /// and we look up keys using the raw uint16_t bytes via `reinterpret_cast`.
-    /// This affects:
-    ///   - ASCII characters U+0000..U+00FF (high byte is 0x00) -> mapped into U+F0xx.
-    ///   - BMP characters whose codepoint is a multiple of 0x100 (low byte is 0x00),
-    ///     e.g. U+4E00 (一) -> stored as 0x4EF0.
-    if ((rune & 0xFF00) == 0)
-        rune |= 0xF000;
-    if ((rune & 0x00FF) == 0)
-        rune |= 0x00F0;
-
-    return rune;
+    out_len = 1;
+    return 0xFFFD; // Invalid UTF-8
 }
 
 /// Decode UTF-8 string into Runes (values + infos)

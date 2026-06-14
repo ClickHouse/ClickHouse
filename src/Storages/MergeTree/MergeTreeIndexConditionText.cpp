@@ -914,6 +914,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+#if USE_JIEBA
+        /// `hasToken` is defined to split its needle on ASCII separators (`splitByNonAlpha`)
+        /// at row-level evaluation. For the `chinese` tokenizer this disagrees with the
+        /// index tokens (which are Jieba-segmented words), so using the text index here
+        /// would either return wrong answers (`Exact` direct read trusts the index and
+        /// drops the row-level predicate) or just be wasted work (`Hint`-then-recheck
+        /// produces the same `false`-for-every-row answer that running without the
+        /// index would). We bypass the index and let the row-level `hasToken` run as
+        /// documented; users who want CJK-aware token matching should use
+        /// `hasAllTokens` / `hasAnyTokens`, which tokenize the needle with the index
+        /// tokenizer and are therefore consistent.
+        if (tokenizer->getType() == ITokenizer::Type::Chinese)
+            return false;
+#endif
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {

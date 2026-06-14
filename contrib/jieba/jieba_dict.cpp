@@ -1,15 +1,26 @@
 #include <jieba_dict.h>
 
+#include <array>
 #include <cstring>
 #include <stdexcept>
 
 #include <zstd.h>
 
-/// The dictionary is stored on disk in UTF-16 little-endian byte order
-/// (as produced by `generate_dict.py`) and zstd-compressed to keep the
-/// in-tree footprint small. ClickHouse only targets little-endian platforms,
-/// so we don't ship a separate big-endian dictionary.
-static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "Jieba dictionary is little-endian only");
+/// The dictionary file on disk is little-endian (as produced by `generate_dict.py`):
+///   - the `DartsHeader` fields are written as little-endian via Python `struct.pack('<dQQ', ...)`;
+///   - the `double` weights array is `np.float64` little-endian;
+///   - the `darts-clone` trie array is `np.uint32` little-endian.
+///
+/// We `reinterpret_cast` the decompressed buffer onto those types directly, so the
+/// host must also be little-endian. ClickHouse builds jieba only on little-endian
+/// targets (see the `ENABLE_JIEBA` / `ARCH_S390X` guard in `contrib/CMakeLists.txt`);
+/// this `static_assert` is a belt-and-suspenders check in case someone manually
+/// enables jieba on a big-endian platform.
+///
+/// The trie *key* encoding (`encodeRuneKey` in `jieba_dict.h`) is independent of
+/// host endianness — bytes are emitted in an explicit big-endian order with the
+/// high bit set in every byte.
+static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "Jieba dictionary file is little-endian only");
 
 constexpr unsigned char resource_jieba_dict_zst[] =
 {
@@ -21,7 +32,19 @@ namespace Jieba
 
 double DartsDict::find(std::span<const Rune> key) const
 {
-    int res = da.exactMatchSearch<int>(reinterpret_cast<const char *>(key.data()), key.size_bytes());
+    /// `find` is called in a hot O(N²) loop from `QuerySegment::cut` with very
+    /// short keys (1-3 runes), so use a stack buffer instead of heap-allocating
+    /// the encoded form on every call. The hard cap matches `MAX_WORD_LENGTH`
+    /// in `buildDAG` — longer keys are not part of jieba's standard search.
+    static constexpr size_t MAX_RUNES_FIND = 32;
+    if (key.size() > MAX_RUNES_FIND)
+        return 0;
+
+    std::array<char, MAX_RUNES_FIND * BYTES_PER_RUNE> encoded;
+    for (size_t i = 0; i < key.size(); ++i)
+        encodeRuneIntoBuffer(key[i], encoded.data() + i * BYTES_PER_RUNE);
+
+    int res = da.exactMatchSearch<int>(encoded.data(), key.size() * BYTES_PER_RUNE);
     if (res < 0 || res >= static_cast<int>(num_elems))
         return 0;
     return elems[res];
@@ -31,14 +54,21 @@ DAG DartsDict::buildDAG(std::span<const Rune> runes) const
 {
     size_t size = runes.size();
     DAG dag(size);
+
+    /// Encode the entire input once and reuse contiguous suffixes for every starting
+    /// position. The 3-byte encoding is endian-independent and contains no `0x00`
+    /// bytes (see `BYTES_PER_RUNE` in `jieba_dict.h`).
+    auto encoded = encodeRuneKey(runes);
+
     for (size_t i = 0; i < size; ++i)
     {
         static constexpr size_t MAX_RESULTS = 128;
         static constexpr size_t MAX_WORD_LENGTH = 32;
 
         ::Darts::DoubleArray::result_pair_type results[MAX_RESULTS] = {};
+        size_t max_bytes = std::min(MAX_WORD_LENGTH, size - i) * BYTES_PER_RUNE;
         size_t num = da.commonPrefixSearch(
-            reinterpret_cast<const char *>(&runes[i]), results, MAX_RESULTS, std::min(MAX_WORD_LENGTH, size - i) * 2);
+            encoded.data() + i * BYTES_PER_RUNE, results, MAX_RESULTS, max_bytes);
 
         dag[i].nexts.emplace_back(i + 1, min_weight); /// Single rune is always a word
         for (size_t j = 0; j < num; ++j)
@@ -47,7 +77,7 @@ DAG DartsDict::buildDAG(std::span<const Rune> runes) const
             if (match.value < 0 || match.value >= static_cast<int>(num_elems))
                 continue;
 
-            size_t char_num = match.length / 2;
+            size_t char_num = match.length / BYTES_PER_RUNE;
             if (char_num == 1)
                 dag[i].nexts[0].second = elems[match.value];
             else

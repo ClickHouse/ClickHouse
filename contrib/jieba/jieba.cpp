@@ -130,11 +130,19 @@ std::vector<std::string_view> convertRangesToWords(std::string_view sentence, co
     return words;
 }
 
-/// The runes here use the post-decode encoding produced by `decodeUTF8Rune` (jieba_common.h):
-/// ASCII characters U+00xx (high byte 0x00) are remapped into U+F0xx so that trie keys
-/// never contain 0x00 bytes. Compare against the remapped values, not raw ASCII, otherwise
-/// space/tab/newline would not be recognized as separators in the input stream.
-const absl::flat_hash_set<Rune> separators = {0xF020, 0xF009, 0xF00A, 0xFF0C, 0x3002};
+/// The runes here are raw Unicode codepoints (see `decodeUTF8Rune` in `jieba_common.h`).
+/// The list intentionally includes only "structural" separators that should never
+/// appear inside a token: ASCII whitespace, ASCII control characters (NUL, etc., which
+/// `FixedString` uses to pad short values), and a few common full-width Chinese
+/// punctuation marks. ASCII punctuation (commas, semicolons, parentheses, ...) is
+/// handled separately by the HMM segmenter, which drops it instead of emitting it
+/// as a standalone token.
+const absl::flat_hash_set<Rune> separators = {
+    /// ASCII whitespace and the most common control characters that appear in real input.
+    0x00, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20,
+    /// Common full-width Chinese punctuation marks.
+    0x3001 /* 、 */, 0x3002 /* 。 */, 0xFF0C /* ， */, 0xFF1F /* ？ */, 0xFF01 /* ！ */,
+    0xFF1A /* ： */, 0xFF1B /* ； */};
 
 class PreFilter
 {

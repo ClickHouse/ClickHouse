@@ -23,7 +23,12 @@ constexpr size_t STATE_COUNT = 4;
 /// Short alias used to keep the serialized hmm model file compact.
 constexpr double Z = -3.14e+100;
 
-/// Defines start_prob, trans_prob, emit_probs
+/// Defines start_prob, trans_prob, emit_probs.
+///
+/// The HMM tables are indexed by raw Unicode codepoint (`emit_probs[state][rune]`).
+/// `Rune` is `uint16_t` and `decodeUTF8Rune` returns either the raw codepoint or
+/// the sentinel `0xFFFF` (for >BMP) / `0xFFFD` (for invalid UTF-8); both fit, so
+/// every possible `Rune` value is a valid index into the table.
 #include "jieba_hmm_model.dat"
 
 std::vector<State> viterbi(std::span<const Rune> runes)
@@ -74,55 +79,50 @@ std::vector<State> viterbi(std::span<const Rune> runes)
     return states;
 }
 
-/// Check if a rune is an ASCII letter or digit
-inline bool isAlpha(Rune r)
+/// Raw ASCII tests on the raw codepoint (no encoding remap).
+inline bool isAsciiLetter(Rune r)
 {
     return ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z');
 }
 
-inline bool isDigit(Rune r)
+inline bool isAsciiDigit(Rune r)
 {
     return ('0' <= r && r <= '9');
 }
 
-/// Match a continuous sequence of [a-zA-Z0-9] or [0-9.]+
-/// Return index right after the sequence
+inline bool isAsciiAlphaNumeric(Rune r)
+{
+    return isAsciiLetter(r) || isAsciiDigit(r);
+}
+
+/// Match a continuous alphanumeric run.
+/// Mixed forms such as `5G`, `iPhone6s` and `H2O` are consumed as a single token.
+/// A leading run of digits is allowed to contain `.` (so floats like `3.14` stay
+/// in one token); once a letter has been seen we stop accepting `.` to avoid
+/// swallowing sentence-ending dots.
 size_t matchAlphaOrDigitSeq(const std::vector<Rune> & runes, size_t i)
 {
-    /// Undo mapping to check
-    Rune r = runes[i] - 0xF000;
-
-    /// [a-zA-Z]+[a-zA-Z0-9]*
-    if (isAlpha(r))
-    {
-        ++i;
-        while (i < runes.size())
-        {
-            r = runes[i] - 0xF000;
-            if (isAlpha(r) || isDigit(r))
-                ++i;
-            else
-                break;
-        }
+    if (i >= runes.size() || !isAsciiAlphaNumeric(runes[i]))
         return i;
-    }
 
-    /// [0-9]+(.[0-9]+)*
-    if (isDigit(r))
+    bool seen_letter = isAsciiLetter(runes[i]);
+    ++i;
+    while (i < runes.size())
     {
-        ++i;
-        while (i < runes.size())
+        Rune r = runes[i];
+        if (isAsciiAlphaNumeric(r))
         {
-            r = runes[i] - 0xF000;
-            if (isDigit(r) || r == '.')
-                ++i;
-            else
-                break;
+            seen_letter = seen_letter || isAsciiLetter(r);
+            ++i;
+            continue;
         }
-        return i;
+        if (r == '.' && !seen_letter && i + 1 < runes.size() && isAsciiDigit(runes[i + 1]))
+        {
+            ++i;
+            continue;
+        }
+        break;
     }
-
-    /// not matched
     return i;
 }
 
@@ -133,9 +133,15 @@ struct HMMSegment
     static void cut(const DartsDict & /* dict */, const Runes & runes, size_t begin, size_t end, RuneRanges & ranges);
 };
 
-/// Unified segmentation: handle ASCII and non-ASCII ranges
-/// - ASCII: match English words / numbers
-/// - non-ASCII: use HMM (Viterbi)
+/// Unified segmentation: handle ASCII and non-ASCII ranges.
+///   - ASCII alphanumeric: consume as a single English/number token (see `matchAlphaOrDigitSeq`).
+///   - ASCII non-word characters: dropped (treated as separators).
+///   - Non-ASCII: feed to the HMM (Viterbi) segmenter.
+///
+/// Non-word ASCII characters (punctuation, control characters, the `\0` padding
+/// that `FixedString` adds to short values, etc.) are deliberately dropped here
+/// rather than emitted as standalone tokens — they are not meaningful tokens for
+/// a text index, and emitting them inflates the dictionary with noise.
 void HMMSegment::cut(const DartsDict & /* dict */, const Runes & runes_data, size_t begin, size_t end, RuneRanges & ranges)
 {
     if (begin >= end || runes_data.empty())
@@ -148,30 +154,27 @@ void HMMSegment::cut(const DartsDict & /* dict */, const Runes & runes_data, siz
     {
         Rune r = runes[i];
 
-        /// ASCII section. ASCII-range mapped to 0xF0xx
-        if (0xF000 <= r && r <= 0xF0FF)
+        /// ASCII branch (raw codepoint < 0x80).
+        if (r < 0x80)
         {
-            size_t next = matchAlphaOrDigitSeq(runes, i);
-            if (next == i)
-                ++next; // single ASCII symbol
-            ranges.emplace_back(RuneRange{i, next - 1});
-            i = next;
+            if (isAsciiAlphaNumeric(r))
+            {
+                size_t next = matchAlphaOrDigitSeq(runes, i);
+                ranges.emplace_back(RuneRange{i, next - 1});
+                i = next;
+            }
+            else
+            {
+                /// Drop ASCII non-word characters (punctuation, control bytes, padding).
+                ++i;
+            }
             continue;
         }
 
-        /// Non-ASCII section (likely Chinese)
+        /// Non-ASCII section (likely Chinese / CJK).
         size_t j = i;
-        while (j < end)
-        {
-            Rune r = runes[j];
-
-            /// Treat mapped ASCII (0xF000~0xF0FF) as ASCII, skip
-            if (0xF000 <= r && r <= 0xF0FF)
-                break;
-
-            /// Otherwise non-ASCII
+        while (j < end && runes[j] >= 0x80)
             ++j;
-        }
 
         std::span<const Rune> span(&runes[i], j - i);
         std::vector<State> states = viterbi(span);

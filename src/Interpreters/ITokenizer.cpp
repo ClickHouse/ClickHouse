@@ -764,14 +764,22 @@ void ChineseTokenizer::stringToTokens(const char * data, size_t length, VectorWi
         tokens.emplace_back(word);
 }
 
-void ChineseTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool, bool) const
+void ChineseTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
 {
-    stringToBloomFilter(data, length, bloom_filter);
+    /// Substring/prefix/suffix paths are gated by `supportsStringLike()` everywhere
+    /// they are called from (`startsWith`, `endsWith`, `like`, `match`,
+    /// `multiSearchAny`, `multiMatchAny` in `MergeTreeIndexConditionText`), and
+    /// `ChineseTokenizer::supportsStringLike()` returns `false`. Reaching this
+    /// method indicates a bug in the index-condition machinery, not a user error,
+    /// so fail loud rather than silently returning an empty filter that would
+    /// over-prune granules.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToBloomFilter is not supported");
 }
 
-void ChineseTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool, bool) const
+void ChineseTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
 {
-    stringToTokens(data, length, tokens);
+    /// See the comment on `substringToBloomFilter`.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToTokens is not supported");
 }
 #endif
 

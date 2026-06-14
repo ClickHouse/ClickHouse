@@ -1,0 +1,27 @@
+-- previously-colliding dictionary words segment correctly
+['一头']
+['仰头']
+['一面']
+['仰面']
+-- alphanumeric runs stay as one token
+['5G']
+['5G','网络']
+['iPhone6s']
+['H2O','很','重要']
+-- ASCII punctuation is dropped
+['hello','world']
+['a','b','c']
+['foo','bar','baz']
+-- full-width punctuation is a separator
+['你好','世界']
+['你好','再见']
+-- hasToken on chinese text index agrees with row-level evaluation
+0
+0
+1
+1
+-- startsWith / endsWith / like fall through to row-level evaluation
+1
+1
+2
+1

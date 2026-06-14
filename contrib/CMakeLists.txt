@@ -175,9 +175,20 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(ENABLE_JIEBA "Enable jieba support" ${ENABLE_LIBRARIES})
-if (ENABLE_JIEBA AND NOT ARCH_S390X)
-    add_contrib (darts-clone-cmake darts-clone)
-    add_contrib (jieba)
+if (ENABLE_JIEBA)
+    if (ARCH_S390X)
+        # The jieba dictionary file (`contrib/jieba/dict_le.dat.zst`) is little-endian
+        # only: the header, the double weights array, and the darts-clone trie array
+        # are all `reinterpret_cast` directly out of the decompressed buffer. There is
+        # no big-endian variant of the file. The runtime would fail anyway via
+        # `static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, ...)` in
+        # `jieba_dict.cpp`; we report it here so the misconfiguration is caught at
+        # configure time rather than during the build.
+        message(WARNING "ENABLE_JIEBA is not supported on big-endian (s390x) — disabling")
+    else()
+        add_contrib (darts-clone-cmake darts-clone)
+        add_contrib (jieba)
+    endif()
 endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
