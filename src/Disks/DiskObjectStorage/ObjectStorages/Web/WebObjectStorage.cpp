@@ -520,9 +520,9 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);
     if (!path_uri.getRawQuery().empty())
-        base_uri.setQuery(path_uri.getRawQuery());
+        base_uri.setRawQuery(path_uri.getRawQuery());
     else
-        base_uri.setQuery(source_uri.getRawQuery());
+        base_uri.setRawQuery(source_uri.getRawQuery());
 
     if (!path_uri.getFragment().empty())
         base_uri.setFragment(path_uri.getFragment());

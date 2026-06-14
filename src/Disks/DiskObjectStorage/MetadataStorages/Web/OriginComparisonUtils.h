@@ -121,7 +121,7 @@ inline String getEffectiveRelativePathForDeduplication(const String & relative, 
     const Poco::URI source_uri(source_url, false);
 
     if (relative_uri.getRawQuery().empty())
-        relative_uri.setQuery(source_uri.getRawQuery());
+        relative_uri.setRawQuery(source_uri.getRawQuery());
     if (relative_uri.getFragment().empty())
         relative_uri.setFragment(source_uri.getFragment());
 

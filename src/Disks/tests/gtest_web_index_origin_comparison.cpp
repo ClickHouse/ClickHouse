@@ -118,6 +118,24 @@ TEST(WebIndexOriginComparison, AcceptsPercentEncodedOrdinaryPathSegmentInListing
     ASSERT_TRUE(DB::WebIndexPage::hasPathPrefix(candidate, listing));
 }
 
+TEST(WebIndexOriginComparison, InheritsRawQueryWithoutDoubleEncoding)
+{
+    ASSERT_EQ(
+        DB::WebIndexPage::getEffectiveRelativePathForDeduplication(
+            "data/2025/part1.tsv",
+            "http://example.com/data/**/part*.tsv?token=a%2Fb"),
+        "data/2025/part1.tsv?token=a%2Fb");
+}
+
+TEST(WebObjectStorage, BuildsURLWithRawQueryWithoutDoubleEncoding)
+{
+    DB::WebObjectStorage object_storage("http://example.com/data/", "?token=a%2Fb", ::getContext().context);
+
+    ASSERT_EQ(
+        object_storage.buildURLs("part1.tsv"),
+        std::vector<std::string>{"http://example.com/data/part1.tsv?token=a%2Fb"});
+}
+
 TEST(WebIndexMetadataStorage, DoesNotReportUnknownObjectSizeAsZero)
 {
     WebObjectStorageWithUnknownSizeMetadata object_storage;
