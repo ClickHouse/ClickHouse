@@ -11,11 +11,7 @@ ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_lazy_topk_pos SELECT 1, concat('/some/long/path/prefix/file_', toString(number)), concat('file_', toString(number)), cityHash64(number) % 1000000000 FROM numbers(20000);
 INSERT INTO t_lazy_topk_pos SELECT 1, concat('/some/long/path/prefix/file_', toString(number)), concat('file_', toString(number)), cityHash64(number + 1000000) % 1000000000 FROM numbers(20000);
 
--- Pin the optimization knobs at session level. clickhouse-test randomizes these;
--- a subquery-level SETTINGS clause does not override a session/CLI value, so the
--- pins must be SET statements to take effect. Without them the optimization can be
--- disabled and the regression goes untested (the EXPLAIN assertion below would still
--- pass against the buggy code). LIMIT 20 must stay below the max_limit_for_* thresholds.
+-- LIMIT 20 must stay below the max_limit_for_* thresholds.
 SET max_threads = 1;
 SET max_block_size = 8192;
 SET use_top_k_dynamic_filtering = 1;
