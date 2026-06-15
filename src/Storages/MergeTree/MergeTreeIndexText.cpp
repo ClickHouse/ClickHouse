@@ -710,12 +710,34 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
     return result;
 }
 
+void MergeTreeIndexGranuleText::setPostingsReadContext(
+    MergeTreeIndexReaderStream & postings_stream,
+    MergeTreeIndexDeserializationState & state,
+    PostingsSerialization & postings_serialization)
+{
+    postings_read_context = PostingsReadContext
+    {
+        .postings_stream = &postings_stream,
+        .state = &state,
+        .postings_serialization = &postings_serialization,
+    };
+}
+
+const MergeTreeIndexGranuleText::PostingsReadContext & MergeTreeIndexGranuleText::getPostingsReadContext() const
+{
+    if (!postings_read_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings read context is not set");
+
+    return *postings_read_context;
+}
+
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
     if (query.tokens.empty())
         return false;
 
-    return hasAnyTokensImpl(query);
+    const auto & context = getPostingsReadContext();
+    return hasAnyQueryTokensImplWithPostings(query, context);
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
@@ -773,6 +795,12 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     if (query.tokens.empty())
         return true;
 
+    const auto & context = getPostingsReadContext();
+    return hasAllQueryTokensOrEmptyImplWithPostings(query, context);
+}
+
+bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyWithoutPostings(const TextSearchQuery & query) const
+{
     const auto & query_builder = analyzer->getQueryBuilder(query);
 
     /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
@@ -803,6 +831,153 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     return true;
+}
+
+std::optional<bool> MergeTreeIndexGranuleText::tryEvaluateQueryTokensBeforeReadingPostings(const TextSearchQuery & query) const
+{
+    const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    if (query_builder.is_failed)
+        return false;
+
+    if (query_builder.is_bypassed)
+    {
+        if (!query.patterns.empty())
+            return true;
+
+        if (query.search_mode == TextSearchMode::Any)
+            return hasAnyTokensImpl(query);
+
+        return hasAllQueryTokensOrEmptyWithoutPostings(query);
+    }
+
+    if (!current_range.has_value())
+        return true;
+
+    if (!query_builder.rows_range.has_value())
+        return false;
+
+    auto intersection = query_builder.rows_range->intersectWith(*current_range);
+    if (!intersection.has_value())
+        return false;
+
+    if (current_range->end > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index doesn't support row ids larger than UINT32_MAX, got {}", current_range->end);
+
+    return {};
+}
+
+bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
+    const TextSearchQuery & query,
+    const PostingsReadContext & context) const
+{
+    if (auto result = tryEvaluateQueryTokensBeforeReadingPostings(query))
+        return *result;
+
+    const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    PostingList range_posting;
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+    std::optional<PostingList> result;
+    if (query_builder.postings)
+    {
+        result = *query_builder.postings & range_posting;
+        if (result->cardinality() > 0)
+            return true;
+    }
+
+    if (!query_builder.needReadPostings())
+        return result && result->cardinality() > 0;
+
+    auto & postings_stream = *context.postings_stream;
+    auto & state = *context.state;
+    auto & postings_serialization = *context.postings_serialization;
+
+    for (const auto & [token, token_info] : query_builder.tokens)
+    {
+        if (analyzer->hasReadPostings(token))
+            continue;
+
+        auto blocks_to_read = token_info->getBlocksToRead(*current_range);
+        if (blocks_to_read.empty())
+            continue;
+
+        PostingList token_postings;
+        for (const auto block_idx : blocks_to_read)
+        {
+            auto block = readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches);
+            token_postings |= (*block & range_posting);
+        }
+
+        if (token_postings.cardinality() == 0)
+            continue;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
+    const TextSearchQuery & query,
+    const PostingsReadContext & context) const
+{
+    if (auto finished_result = tryEvaluateQueryTokensBeforeReadingPostings(query))
+        return *finished_result;
+
+    const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    PostingList range_posting;
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+    std::optional<PostingList> result;
+    if (query_builder.postings)
+    {
+        result = *query_builder.postings & range_posting;
+        if (result->cardinality() == 0)
+            return false;
+    }
+
+    if (!query_builder.needReadPostings())
+        return result && result->cardinality() > 0;
+
+    auto & postings_stream = *context.postings_stream;
+    auto & state = *context.state;
+    auto & postings_serialization = *context.postings_serialization;
+
+    for (const auto & [token, token_info] : query_builder.tokens)
+    {
+        if (analyzer->hasReadPostings(token))
+            continue;
+
+        auto blocks_to_read = token_info->getBlocksToRead(*current_range);
+        if (blocks_to_read.empty())
+            return false;
+
+        PostingList token_postings;
+        for (const auto block_idx : blocks_to_read)
+        {
+            auto block = readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches);
+            token_postings |= (*block & range_posting);
+        }
+
+        if (token_postings.cardinality() == 0)
+            return false;
+
+        if (!result)
+        {
+            result = std::move(token_postings);
+        }
+        else
+        {
+            *result &= token_postings;
+            if (result->cardinality() == 0)
+                return false;
+        }
+    }
+
+    return result && result->cardinality() > 0;
 }
 
 

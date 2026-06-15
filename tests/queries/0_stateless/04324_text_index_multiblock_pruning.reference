@@ -1,0 +1,10 @@
+v1	500	4
+v2	500	4
+v3	500	4
+v4	500	4
+0
+Condition: true
+Granules: 1/1
+Name: idx_s
+Condition: (mode: All; tokens: ["v1", "v2", "v3", "v4"])
+Granules: 0/1
