@@ -1,3 +1,7 @@
+-- Tags: no-object-storage
+-- (no-object-storage: with_buckets writes many small per-bucket files; on S3 under ASan this times
+--  out >180s. The splitter bug is storage-agnostic, so local-only coverage loses nothing.)
+
 -- Regression test for parallel reads of `Map` primary key with `with_buckets` serialization.
 --
 -- Background: when a `Map` column is the primary key and the part uses
