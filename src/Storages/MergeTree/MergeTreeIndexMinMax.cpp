@@ -29,6 +29,14 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int TYPE_MISMATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NO_COMMON_TYPE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 namespace Setting
@@ -361,6 +369,30 @@ buildIntersectsAndContains(
     return {&intersects, &contains};
 }
 
+bool isRecoverableMinMaxBulkLoweringException(int code)
+{
+    /// Bulk lowering is optional: unsupported RPN/type shapes should fall back to the
+    /// per-granule scalar path. Most unsupported shapes return nullptr explicitly; this
+    /// allowlist is only for recoverable literal/type materialization failures that can still
+    /// escape while constructing the ActionsDAG (for example a bound Field whose tag cannot be
+    /// represented in the exact index column type).
+    ///
+    /// Do not catch resource limits, cancellation, timeouts, LOGICAL_ERROR, or unknown
+    /// exception types: those are not "bulk unsupported" signals and must fail closed rather
+    /// than being silently converted into a scalar fallback. The longer-term direction is to
+    /// harden the preconditions and non-throwing conversions enough that this try/catch can be
+    /// removed entirely, but ClickHouse's Field/DataType conversion surface is broad enough that
+    /// keeping this narrow safety net is less risky for the first version.
+    return code == ErrorCodes::BAD_GET
+        || code == ErrorCodes::CANNOT_CONVERT_TYPE
+        || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+        || code == ErrorCodes::TYPE_MISMATCH
+        || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::NO_COMMON_TYPE
+        || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND
+        || code == ErrorCodes::DECIMAL_OVERFLOW;
+}
+
 /// Try to lower the entire RPN into an ActionsDAG. On success returns non-null ExpressionActions
 /// with two outputs (can_be_true, can_be_false) and fills `minmax_input_names` with per-index-column
 /// (min_name, max_name) pairs so the evaluator knows what columns to populate.
@@ -529,9 +561,6 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     /// bulk path is never taken, so building the DAG would be wasted query-analysis work; skip
     /// it entirely and leave `minmax_actions` null, making the disabled setting a true no-op.
     ///
-    /// An unexpected Field/Type combination that escapes the explicit eligibility checks
-    /// would otherwise fail the whole query; the per-granule scalar path is correct on
-    /// every shape, so the safe fallback is to leave `minmax_actions` null.
     if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering])
     {
         try
@@ -539,9 +568,11 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
             minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
                                                    OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            /// Ok: see comment above; the per-granule scalar path is the safe fallback.
+            if (!isRecoverableMinMaxBulkLoweringException(e.code()))
+                throw;
+
             minmax_actions = nullptr;
             minmax_input_names.clear();
         }
