@@ -68,6 +68,13 @@ SELECT 'seq1_scan',    count() FROM t_sparse_seq_consistency_r1 WHERE n = 0
              use_sparsity_info_for_pruning = 'off',
              select_sequential_consistency = 1;
 
+-- Let r2 catch up to the second insert so the quorum status node clears.
+-- Without this the flaky-check rerun would see the unsatisfied-quorum marker
+-- in ZK at `/clickhouse/tables/{database}/test_04283/t/quorum/` from this run
+-- and the next run's first quorum=2 insert would fail with
+-- `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`.
 SYSTEM START FETCHES t_sparse_seq_consistency_r2;
+SYSTEM SYNC REPLICA t_sparse_seq_consistency_r2;
+
 DROP TABLE t_sparse_seq_consistency_r1 SYNC;
 DROP TABLE t_sparse_seq_consistency_r2 SYNC;
