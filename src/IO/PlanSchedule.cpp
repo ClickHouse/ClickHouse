@@ -313,7 +313,11 @@ PlanSchedule buildSchedule(
     while (cursor < request_end)
     {
         const auto res = geometry.residentAt(cursor);
-        size_t out_end = res.resident() ? res.run_end : geometry.gapEnd(cursor);
+        /// A resident step spans the maximal CONTIGUOUS resident region across ALL tiers
+        /// (`nextGapStart`), matching `serveCacheBlock`, which streams adjacent resident
+        /// runs of different tiers into one window. `res.run_end` stops at the tier-run
+        /// boundary and would split one served window into several steps.
+        size_t out_end = res.resident() ? geometry.nextGapStart(cursor) : geometry.gapEnd(cursor);
         out_end = std::min(out_end, request_end);
         const ByteRange out{cursor, out_end - cursor};
 

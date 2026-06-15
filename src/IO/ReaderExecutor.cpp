@@ -454,10 +454,23 @@ Rope ReaderExecutor::readNextWindow()
             && (!read_plan.geometry()
                 || position_phys < read_plan.geometry()->plan_start
                 || position_phys + window_size > read_plan.geometry()->plan_end))
+        {
             observeAndSchedule(position_phys);
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: a fresh plan starts at the cursor
+            shadowReconstructCursor();
+            chassert(read_plan.schedule.steps.empty()
+                || read_plan.schedule.steps.front().output.offset == position_phys);
+#endif
+        }
         if (read_plan.geometry())
             at = read_plan.geometry()->residentAt(position_phys);
     }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: track-pick parity (schedule classification vs live residency)
+    if (to_read > 0 && read_plan.geometry() && !read_plan.schedule.steps.empty()
+        && read_plan.cursor < read_plan.schedule.steps.size())
+        chassert(read_plan.schedule.steps[read_plan.cursor].require_retrieve.has_value() == !at.resident());
+#endif
 
     if (at.resident())
         rope = serveCacheBlock(position_phys, to_read);
@@ -466,6 +479,23 @@ Rope ReaderExecutor::readNextWindow()
 
     stats.add(Stats::RequestedBytes, rope.range().size);
     position += rope.range().size;
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
+    if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !rope.empty() && !reached_eof
+        && read_plan.cursor < read_plan.schedule.steps.size())
+    {
+        const size_t produced_off_phys = (position - rope.range().size) + data_start_offset;
+        const auto & step = read_plan.schedule.steps[read_plan.cursor];
+        chassert(produced_off_phys >= step.output.offset);
+        chassert(produced_off_phys + rope.range().size <= step.output.end());
+        /// Strict equality only when this window spanned the whole step (known size); a
+        /// step wider than the per-call block/window is served over several windows.
+        if (!offset_map.hasUnknownSize()
+            && produced_off_phys == step.output.offset
+            && position + data_start_offset == step.output.end())
+            chassert(rope.range().size == step.output.size);
+    }
+    shadowAdvanceCursor();
+#endif
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         rope.range().size, rope.getNodes().size(), position);
 
@@ -491,6 +521,9 @@ void ReaderExecutor::seek(size_t new_position)
         LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
             machine->requested_range.offset, machine->requested_range.end());
         position = new_position;
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: jumped within the surviving plan
+        shadowReconstructCursor();
+#endif
         return;
     }
 
@@ -508,6 +541,9 @@ void ReaderExecutor::seek(size_t new_position)
 
     position = new_position;
     reached_eof = false;
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: jumped position; reconstruct against the (possibly surviving) plan
+    shadowReconstructCursor();
+#endif
 
     maybeTriggerPrefetch();
 }
@@ -865,6 +901,9 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         /// un-joined; see `cancelMachine`).
         LOG_TRACE(log, "coverWindow: prefetch was queued, cancelling and reading from position {}", position);
         stats.add(Stats::PrefetchCancelled);
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: revoked before serving -> NotLaunched
+        shadowResetRetrieve(*m);
+#endif
         abandoned_machines.push_back(std::move(m));
         return false;
     }
@@ -907,7 +946,12 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         /// An interrupted step that produced nothing degrades to the revoke path:
         /// the connection is reclaimed (above), the caller reads synchronously.
         if (m->fetched.empty())
+        {
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: interrupted with nothing served -> NotLaunched
+            shadowResetRetrieve(*m);
+#endif
             return false;
+        }
 
         /// A prefix that cannot serve the cursor (extension-only bytes below the
         /// requested range, or a kept seek moved past it) is still BANKED in the
@@ -921,6 +965,9 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
             IntervalSet covered_unused;
             backfillBytes(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
                 /*push_to_writers=*/false, stats);
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: prefix banked but not served at the cursor -> NotLaunched
+            shadowResetRetrieve(*m);
+#endif
             schedulePutStep(std::move(m), assembled);
             return false;
         }
@@ -950,6 +997,9 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
     backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered,
         /*push_to_writers=*/false, stats);
     rope = finalizeAssembledWindow(slice_window, pin_frontier, result, reached_eof);
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: InFlight -> Ready (bytes in hand, serve proceeds)
+    shadowSetPhase(*m, RetrievePhase::Ready);
+#endif
     /// The deferred write side of this window: the put step takes the writers and
     /// the assembled rope to the background. After `finalizeAssembledWindow` - the
     /// pin was just taken from the plan's writers while they were still here.
@@ -2278,6 +2328,54 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
     }
 }
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+/// SE-2 assert spine. All of this is compiled out in release; Stage 4 makes it the
+/// real serve driver by removing the guards.
+size_t ReaderExecutor::findStepContaining(size_t pos_phys) const
+{
+    const auto & steps = read_plan.schedule.steps;
+    for (size_t i = 0; i < steps.size(); ++i)
+        if (steps[i].output.offset <= pos_phys && pos_phys < steps[i].output.end())
+            return i;
+    /// Past the materialized span (EOF / extent ceiling): clamp to the last step.
+    return steps.empty() ? 0 : steps.size() - 1;
+}
+
+void ReaderExecutor::shadowReconstructCursor()
+{
+    if (!read_plan.geometry() || read_plan.schedule.steps.empty())
+        return;
+    read_plan.cursor = findStepContaining(position + data_start_offset);
+}
+
+void ReaderExecutor::shadowAdvanceCursor()
+{
+    const size_t pos_phys = position + data_start_offset;
+    auto & cursor = read_plan.cursor;
+    const auto & steps = read_plan.schedule.steps;
+    /// A single step (a whole resident run or a whole gap) can span several windows
+    /// (`serveCacheBlock`/`coverWindow` sub-size by block/window), so advance to the
+    /// step that now contains the position rather than incrementing once per window.
+    while (cursor + 1 < steps.size() && steps[cursor].output.end() <= pos_phys)
+        ++cursor;
+}
+
+void ReaderExecutor::shadowSetPhase(const FetchMachine & m, RetrievePhase phase)
+{
+    if (m.retrieve_index < read_plan.retrieve_status.size())
+        read_plan.retrieve_status[m.retrieve_index].phase = phase;
+}
+
+void ReaderExecutor::shadowResetRetrieve(const FetchMachine & m)
+{
+    /// Reads only the immutable launch-time `retrieve_index` and writes the
+    /// foreground-private sidecar, so it is safe even on the soft-cancel path where
+    /// the worker may still own the rest of the machine payload.
+    if (m.retrieve_index < read_plan.retrieve_status.size())
+        read_plan.retrieve_status[m.retrieve_index] = {};
+}
+#endif
+
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
     /// Machine-check the threading invariant: the held read/write buffers are
@@ -2552,7 +2650,12 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// run before it streams from cache (the resident/prefetch overlap). Skip only when the
     /// plan holds no gap left to fetch (everything resident to `plan_end`).
     if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe_size}))
+    {
         observeAndSchedule(position_phys);
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: keep the cursor on the re-planned step (symmetric with readNextWindow)
+        shadowReconstructCursor();
+#endif
+    }
     const size_t gap_start = read_plan.geometry()->nextGapStart(position_phys);
     if (gap_start >= read_plan.geometry()->plan_end)
     {
@@ -2586,6 +2689,25 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// backfills the aligned `physical_window` and slices back to the request.
     const ByteRange next_physical_window = read_plan.geometry()->fetchWindowAt(ByteRange{gap_start, next_size});
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: launch parity - the live gap is covered by a scheduled Remote job
+    std::optional<size_t> debug_ri;
+    for (size_t i = 0; i < read_plan.schedule.retrieves.size(); ++i)
+    {
+        const auto & r = read_plan.schedule.retrieves[i];
+        /// `contains`, not `==`: a bridged job range (gaps merged across a hole
+        /// <= min_bytes_for_seek) is wider than this one live gap, and a prefetch/extent
+        /// clamp can make the live window narrower. Coverage, not launch-order (that is Stage 3).
+        if (r.source == PlanSchedule::Source::Remote
+            && r.range.offset <= next_physical_window.offset
+            && next_physical_window.end() <= r.range.end())
+        {
+            debug_ri = i;
+            break;
+        }
+    }
+    chassert(debug_ri.has_value());
+#endif
+
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {}) (requested gap [{}, {}))",
         next_physical_window.offset, next_physical_window.end(), gap_start, gap_start + next_size);
 
@@ -2608,6 +2730,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// `put` aligns), pins at its frontier, and slices back to the former.
     m->requested_range = ByteRange{next_logical_offset, next_size};
     m->physical_window = next_physical_window;
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: carry the retrieve index for the lifecycle shadow
+    if (debug_ri)
+        m->retrieve_index = *debug_ri;
+#endif
     /// Immutable snapshot, co-owned by design; the worker consults only its
     /// cached `pressure_level` (no cache lookup, no resident serve), so there
     /// is nothing for a foreground re-plan to race. The read extent is
@@ -2677,6 +2803,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
     }
 
     machine = std::move(m);
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: NotLaunched -> InFlight at the publish point
+    if (debug_ri)
+        read_plan.retrieve_status[*debug_ri].phase = RetrievePhase::InFlight;
+#endif
 }
 
 void ReaderExecutor::cancelMachine(bool cancelled)
@@ -2686,6 +2816,9 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     auto m = std::move(machine);
     if (!m)
         return;
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: cancelled (seek/setReadExtent) before serving -> NotLaunched
+    shadowResetRetrieve(*m);
+#endif
     /// The foreground holds no long connection while a machine is in flight (moved in
     /// at launch); a queued machine's pristine one is reclaimed below.
     chassert(!long_conn);

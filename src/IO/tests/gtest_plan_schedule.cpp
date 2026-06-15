@@ -160,6 +160,19 @@ TEST(PlanScheduleSteps, ResidentIslandSplitsSteps)
     });
 }
 
+/// Adjacent resident runs on different tiers merge into ONE hit step, matching
+/// `serveCacheBlock` which streams contiguous resident bytes across tiers in a single
+/// window. Split per-tier steps would make one served window overrun its step.
+TEST(PlanScheduleSteps, AdjacentCrossTierResidentMergesIntoOneStep)
+{
+    auto g = geometry(0, 8, {
+        tierEntry(CacheTier::PageCache, {{0, 4}}, {}),         // resident [0,4)
+        tierEntry(CacheTier::FilesystemCache, {{4, 4}}, {}),   // resident [4,8), adjacent
+    });
+    auto s = describe(g, {0, 8});
+    expectSteps(s, {{0, 8}});  // one merged hit step, not [0,4)+[4,8)
+}
+
 /// Stage 2: the worked example's one Remote retrieve and its routing.
 TEST(PlanScheduleRetrieves, DesignWorkedExample)
 {

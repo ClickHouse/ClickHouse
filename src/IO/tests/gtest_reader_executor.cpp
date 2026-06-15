@@ -4159,14 +4159,6 @@ TEST(PlanScheduleValidation, MixedGranularitiesWithBridge)
     validateScheduleMatchesReality(src, objects, {page, fs}, 512 * 1024, /*min_bytes_for_seek=*/64 * 1024);
 }
 
-/// Schedule-driven fill, seek mid-coarse-segment: seeking to 64K lands inside
-/// the slow tier's 256K segment [0,256K), whose head [0,64K) is before-slack.
-/// The schedule-driven borrow must still fill that whole segment (it owns its
-/// slack), pulling the [0,64K) head from the fetch. The fast 32K tier owns no
-/// slack here - its residency is probed only over the plan span (from 64K up),
-/// so it has no cell below 64K (the slack-not-promoted rule is a model
-/// invariant the executor geometry never exercises - the meaningful check is
-/// the hand-built `PlanScheduleRetrieves.SlackNotPromotedToFasterTier`).
 /// Stage 1 sidecar: the per-job status vector is allocated 1:1 with the
 /// schedule's jobs on every plan build, so the processing loop can index it by
 /// retrieve. A resident island leaves gaps either side, so the schedule has
@@ -4192,6 +4184,67 @@ TEST(ReaderExecutor, RetrieveStatusSizedToSchedule)
         << "retrieve_status must be 1:1 with the schedule's jobs";
 }
 
+/// Stage 2 assert spine: the shadow cursor tracks the live walk. With one block per
+/// window and one plan over the whole file, the cursor must - after every window -
+/// index the step whose output contains the current position (the invariant the
+/// schedule-driven serve will rely on). A resident island gives mixed hit/gap steps,
+/// and a prefetched gap must reach the Ready phase, exercising the lifecycle shadow.
+/// The per-window chasserts inside readNextWindow are the broader burn-in; this is the
+/// focused external check. The shadow is only maintained under DEBUG_OR_SANITIZER_BUILD,
+/// so its assertions are guarded (the read still runs in release, exercising the path).
+TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
+{
+    const size_t block = 4096;
+    const size_t file = block * 16;  // 64K
+    auto [src, objects] = srcOf(file);
+    auto cache = std::make_shared<WideGranularityMockCache>(block, "Mock");
+    cache->seedBlock(4, 'R');  // resident island [16K,24K) -> hit steps amid gaps
+    cache->seedBlock(5, 'R');
+
+    auto pool = std::make_shared<SyncPrefetchPool>();  // machine lifecycle resolves inline
+    ReaderExecutor::Options opts;
+    opts.window_size = block;            // one block per window -> the cursor walks many windows
+    opts.block_size = block;
+    opts.plan_look_ahead_window = file;  // ONE plan over the file -> the cursor spans it
+    opts.min_bytes_for_seek = 0;         // no bridging -> 1:1 gap:retrieve, clean phases
+    opts.prefetch_pool = pool;
+    ReaderExecutor executor(src, objects, {cache}, opts);
+
+    size_t windows = 0;
+    [[maybe_unused]] bool saw_ready = false;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        ++windows;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        const size_t c = executor.cursorForTest();
+        ASSERT_LT(c, executor.stepCountForTest());
+        const auto step = executor.stepOutputForTest(c);
+        const size_t pos = executor.getPosition();  // physical == logical (no encryption)
+        EXPECT_TRUE(step.offset <= pos && pos <= step.offset + step.size)
+            << "cursor step [" << step.offset << "," << step.offset + step.size
+            << ") must contain position " << pos;
+        for (size_t i = 0; i < executor.retrieveStatusSizeForTest(); ++i)
+            if (executor.retrievePhaseForTest(i) >= 2 /*Ready*/)
+                saw_ready = true;
+#endif
+    }
+    EXPECT_GT(windows, 4u) << "the file must take several windows so the cursor walks";
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    EXPECT_TRUE(saw_ready) << "a prefetched gap must reach the Ready phase";
+#endif
+}
+
+/// Schedule-driven fill, seek mid-coarse-segment: seeking to 64K lands inside
+/// the slow tier's 256K segment [0,256K), whose head [0,64K) is before-slack.
+/// The schedule-driven borrow must still fill that whole segment (it owns its
+/// slack), pulling the [0,64K) head from the fetch. The fast 32K tier owns no
+/// slack here - its residency is probed only over the plan span (from 64K up),
+/// so it has no cell below 64K (the slack-not-promoted rule is a model
+/// invariant the executor geometry never exercises - the meaningful check is
+/// the hand-built `PlanScheduleRetrieves.SlackNotPromotedToFasterTier`).
 TEST(ReaderExecutor, SchedulesFillOfSeekStraddledLowerSegment)
 {
     const size_t file = 256 * 1024;

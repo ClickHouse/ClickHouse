@@ -183,6 +183,16 @@ public:
     }
     size_t retrieveStatusSizeForTest() const { return read_plan.retrieve_status.size(); }
 
+    /// Test-only: the assert-spine shadow state (cursor / steps / per-job phase).
+    /// The cursor + phases are only MAINTAINED under DEBUG_OR_SANITIZER_BUILD, so the
+    /// shadow-walk tests assert on them only in such builds.
+    size_t cursorForTest() const { return read_plan.cursor; }
+    size_t stepCountForTest() const { return read_plan.schedule.steps.size(); }
+    ByteRange stepOutputForTest(size_t i) const { return read_plan.schedule.steps[i].output; }
+    bool stepIsHitForTest(size_t i) const { return !read_plan.schedule.steps[i].require_retrieve.has_value(); }
+    std::optional<size_t> stepRequireRetrieveForTest(size_t i) const { return read_plan.schedule.steps[i].require_retrieve; }
+    int retrievePhaseForTest(size_t i) const { return static_cast<int>(read_plan.retrieve_status[i].phase); }
+
     /// Test-only: the continuity estimator's predicted reach after the last plan
     /// feed, for verifying the wiring.
     size_t predictedReachForTest() const { return continuity_tracker.predictedReach(); }
@@ -465,6 +475,12 @@ private:
         /// connection with THIS, never the live `read_extent_end` member - a
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
+        /// SE-2 assert spine: the schedule retrieve this machine fulfills (index into the
+        /// launch-time plan's `schedule.retrieves` / `retrieve_status`). Meaningful only
+        /// while this machine is the live in-flight handle of that plan; the re-plan
+        /// barrier (`chassert(!machine)`) guarantees no machine straddles a plan rebuild.
+        /// Set and read only under the assert spine (`DEBUG_OR_SANITIZER_BUILD`).
+        size_t retrieve_index = 0;
         /// The long source connection CARRIED by this machine: moved in from the
         /// foreground at launch (a machine never opens one itself - the foreground is
         /// the sole opener), drained by the worker's fetch step instead of a one-shot
@@ -790,6 +806,20 @@ private:
     /// the planned span. Resets the in-flight pin before discarding the old
     /// plan.
     void observeAndSchedule(size_t physical_start);
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    /// SE-2 assert spine (debug/sanitizer only; compiled out in release). Shadow the
+    /// schedule's processing state alongside the live walk so a `chassert` can prove the
+    /// schedule predicts it. `cursor` = index of the step whose `output` contains the
+    /// current `position_phys`; `retrieve_status[ri].phase` mirrors the machine lifecycle.
+    /// None of this serves bytes yet - Stage 4 promotes it to the real driver by removing
+    /// the guards.
+    size_t findStepContaining(size_t pos_phys) const;
+    void shadowReconstructCursor();
+    void shadowAdvanceCursor();
+    void shadowSetPhase(const FetchMachine & m, RetrievePhase phase);
+    void shadowResetRetrieve(const FetchMachine & m);
+#endif
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
     /// retrieves, in offset order, only past `continuity_fed_end`) into

@@ -71,7 +71,7 @@ struct PlanSchedule
     /// milestone). `require_retrieve` is empty for a cache hit.
     struct Step
     {
-        ByteRange output;                             /// logical
+        ByteRange output;                             /// physical / plan coords (same space as Retrieve.range and position_phys)
         std::optional<size_t> require_retrieve;       /// index into `retrieves`
     };
 
