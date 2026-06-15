@@ -339,7 +339,6 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
-    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"

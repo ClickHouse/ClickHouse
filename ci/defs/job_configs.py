@@ -219,17 +219,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
         ),
     )
-    smoke_tests_macos = Job.Config(
-        name=JobNames.SMOKE_TEST_MACOS,
-        runs_on=RunnerLabels.MACOS_AMD_SMALL,
-        command="python3 ./ci/jobs/smoke_test.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/smoke_test.py",
-            ],
-        ),
-        requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
-    )
     tidy_build_arm_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.ARM_TIDY,
