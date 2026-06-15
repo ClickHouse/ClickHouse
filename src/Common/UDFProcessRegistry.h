@@ -18,8 +18,9 @@ namespace DB
   *
   * `ShellCommand` adds the pid at spawn and removes it when the child is
   * reaped, so idle pool workers stay registered for as long as they live.
-  * A never-reaped child stays registered: its pid stays pinned, and a zombie
-  * contributes nothing to either metric.
+  * A never-reaped child stays registered: its pid stays pinned. Once it dies
+  * it is a zombie, which has released its address space, so `/proc/<pid>/status`
+  * has no `VmRSS` line and `sample` counts it toward neither metric.
   */
 class UDFProcessRegistry
 {
