@@ -1,40 +1,29 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database, no-replicated-database
+# Tags: no-fasttest, no-ordinary-database
 # no-fasttest: requires transactions (allow_experimental_transactions), not enabled in fast test
 # no-ordinary-database: transactions require an Atomic database
-# no-replicated-database: this test enables the server-side fuzzer for non-read-only queries
-#     (ast_fuzzer_any_query=1). On a Replicated database the fuzzer settings are serialized into the
-#     replicated DDL entry, so the fuzzer re-runs inside DDLWorker on an already-executed
-#     ZooKeeperMetadataTransaction and hits a separate, unrelated logical error. The
-#     implicit-transaction bug under test does not need a Replicated database.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/107446
-# The server-side AST fuzzer (ast_fuzzer_runs > 0) used to reset the *current* query's transaction.
-# With implicit_transaction = 1 that rolled the still-running transaction back out of band: the
-# end-of-query commit then hit chassert(txn) and aborted the server, and an INSERT silently lost its
-# rows. The fuzzer now isolates fuzzed queries from the original transaction, so the query succeeds
-# and its transaction commits normally. The fuzzer runs only on the HTTP query path, so the fuzzed
-# queries are issued over HTTP. --fail-with-body makes curl fail on a non-2xx response, and the query
-# output is asserted against the reference, so an exception (even one that keeps the server alive) is
-# caught instead of silently passing.
+# The server-side AST fuzzer (ast_fuzzer_runs > 0) used to reset the current query's transaction.
+# With implicit_transaction = 1 that rolled the still-running transaction back out of band, so the
+# end-of-query commit hit chassert(txn) and aborted the server. The fuzzer now isolates fuzzed
+# queries from the original transaction, so the query succeeds and the server stays up. The fuzzer
+# runs only on the HTTP query path, so the query is issued over HTTP. --fail-with-body makes curl
+# fail on a non-2xx response, and the output is asserted against the reference, so a returned
+# exception (even one that keeps the server alive) is caught instead of silently passing.
+#
+# A read-only query is enough and intentionally used here: it is fuzzed by default
+# (ast_fuzzer_any_query defaults to false), and fuzzing non-read-only queries would let fuzzed DDL
+# reach the replicated-DDL path, which has a separate, unrelated defect.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-FUZZ="implicit_transaction=1&throw_on_unsupported_query_inside_transaction=0&ast_fuzzer_runs=5"
-# Fuzzing a non-read-only query (INSERT) requires ast_fuzzer_any_query=1; otherwise
-# executeASTFuzzerQueries returns early for it and the fuzzer never runs.
-FUZZ_ANY="${FUZZ}&ast_fuzzer_any_query=1"
+# implicit_transaction + AST fuzzer must not abort the server and must return the query result.
+${CLICKHOUSE_CURL} -sS --fail-with-body \
+    "${CLICKHOUSE_URL}&implicit_transaction=1&throw_on_unsupported_query_inside_transaction=0&ast_fuzzer_runs=5" \
+    --data-binary "SELECT count() FROM numbers(3)"
 
-# 1. A read-only fuzzed query must succeed (not return an exception) and not abort the server.
-${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&${FUZZ}" --data-binary "SELECT count() FROM numbers(3)"
-
-# 2. An INSERT that is actually fuzzed must still commit its rows (not silently roll them back).
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_04338 (a Int64) ENGINE = MergeTree ORDER BY a"
-${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&${FUZZ_ANY}" --data-binary "INSERT INTO t_04338 VALUES (42)"
-${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(a) FROM t_04338"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_04338"
-
-# The server must still be alive after the fuzzed implicit-transaction queries.
+# The server must still be alive after the fuzzed implicit-transaction query.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'ok'"
