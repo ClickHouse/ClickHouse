@@ -36,6 +36,13 @@
                 <max_size>1000000000</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </disk_s3_cache>
+            <!-- Dedicated prefix so tests that remove blobs out-of-band don't touch shared disk_s3. -->
+            <disk_s3_mv_repro>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3_mv_repro/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3_mv_repro>
         </disks>
         <policies>
             <policy_s3>
@@ -73,6 +80,13 @@
                     </main>
                 </volumes>
             </policy_s3_cache>
+            <policy_s3_mv_repro>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_mv_repro</disk>
+                    </main>
+                </volumes>
+            </policy_s3_mv_repro>
         </policies>
     </storage_configuration>
     <backups>

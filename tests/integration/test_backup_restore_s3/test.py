@@ -1185,11 +1185,12 @@ def test_backup_fails_when_mv_inner_table_object_removed(cluster):
         node.query(
             "CREATE TABLE test_mv_inner.src (x UInt64) ENGINE=MergeTree ORDER BY tuple()"
         )
-        # The inner table lives on S3, so the backup copies it from object storage (server-side
-        # CopyObject) - the exact path that fails in production.
+        # The inner table lives on a dedicated S3 disk, so the backup copies it from object storage
+        # (server-side CopyObject) - the exact path that fails in production. A dedicated prefix
+        # lets us wipe it out-of-band without touching the module-shared disk_s3 namespace.
         node.query(
             "CREATE MATERIALIZED VIEW test_mv_inner.view (x UInt64) "
-            "ENGINE=MergeTree ORDER BY tuple() SETTINGS storage_policy='policy_s3' "
+            "ENGINE=MergeTree ORDER BY tuple() SETTINGS storage_policy='policy_s3_mv_repro' "
             "AS SELECT x FROM test_mv_inner.src"
         )
         node.query("INSERT INTO test_mv_inner.src SELECT number FROM numbers(100)")
@@ -1203,11 +1204,11 @@ def test_backup_fails_when_mv_inner_table_object_removed(cluster):
             == "0"
         )
 
-        # The inner table's part data lives as objects under the S3 disk's prefix. Remove them
+        # The inner table's part data lives under this disk's dedicated prefix. Remove it
         # out-of-band, as a concurrent merge/GC on another node would.
         objects = list(
             node.cluster.minio_client.list_objects(
-                "root", "data/disks/disk_s3/", recursive=True
+                "root", "data/disks/disk_s3_mv_repro/", recursive=True
             )
         )
         assert len(objects) > 0, "the MV inner table must have objects on S3"
