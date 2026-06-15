@@ -548,7 +548,7 @@ private:
         auto * encrypted = encrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder{};
-        [[maybe_unused]] CachedKeyState ctx_key_state;
+        CachedKeyState ctx_key_state;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
