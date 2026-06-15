@@ -48,7 +48,6 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
@@ -336,6 +335,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
@@ -1081,8 +1081,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    auto thread_group = ThreadGroup::createForQuery(startup_context);
-                    ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
+                    auto query_scope = QueryScope::create(startup_context);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1115,8 +1114,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            auto thread_group = ThreadGroup::createForQuery(startup_context);
-            ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
+            auto query_scope = QueryScope::create(startup_context);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1546,6 +1544,9 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+            ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
+            : 0.0,
     };
 
     MemoryWorker memory_worker(memory_worker_config, global_context->getPageCache());
@@ -2353,9 +2354,23 @@ try
                     max_server_memory_usage_to_ram_ratio);
             }
 
-            total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+            /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
+            /// adjustment (which only sees `MemAvailable` or cgroup memory) cannot exceed
+            /// the explicit `max_server_memory_usage`, and so a config-reload change to
+            /// `max_server_memory_usage_to_ram_ratio` takes effect on the next worker tick.
+            /// `setDynamicHardLimitSettings` also installs `max_server_memory_usage` as the
+            /// new hard limit atomically with the settings update; doing it outside that call
+            /// would re-open a reload race against the worker tick.
+            /// A zero ratio disables the runtime adjustment, keeping only the static cap;
+            /// `memory_worker_dynamic_hard_limit = 0` requests exactly that.
+            memory_worker.setDynamicHardLimitSettings(
+                static_cast<Int64>(max_server_memory_usage),
+                new_server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                    ? max_server_memory_usage_to_ram_ratio
+                    : 0.0);
 
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
@@ -2575,7 +2590,7 @@ try
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStorage().loadEntities(config());
+            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
 
             if (!initial_loading)
             {
@@ -2592,9 +2607,6 @@ try
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
-
-                if (config().has("startup_scripts"))
-                    loadStartupScripts(config(), new_server_settings, global_context, log);
             }
 
             global_context->updateStorageConfiguration(config());
