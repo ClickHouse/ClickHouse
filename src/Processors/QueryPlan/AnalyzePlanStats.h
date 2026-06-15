@@ -41,7 +41,7 @@ class AnalyzeStepsStats
 {
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
 public:
-    explicit AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 total_query_time_);
+    explicit AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
 
     /// Print the stats
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix) const;

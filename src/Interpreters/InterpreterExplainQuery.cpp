@@ -480,11 +480,6 @@ struct QueryAnalyzeSettings
         .pretty = true,
     };
 
-    /// Apply query plan optimizations.
-    /// Turning off turns off ALL optimizations
-    /// You can still turn on particular optimization using query SETTINGS
-    bool optimize = true;
-
     constexpr static char name[] = "ANALYZE";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
@@ -495,7 +490,6 @@ struct QueryAnalyzeSettings
         {"sorting", query_plan_options.sorting},
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
-        {"optimize", optimize},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
