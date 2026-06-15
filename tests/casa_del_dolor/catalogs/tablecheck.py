@@ -52,7 +52,12 @@ class SparkAndClickHouseCheck:
         return True
 
     def _clickhouse_engine_matches(self, client, table: SparkTable):
-        expected = "Iceberg" if table.lake_format == LakeFormat.Iceberg else "DeltaLake"
+        expected_by_format = {
+            LakeFormat.Iceberg: "Iceberg",
+            LakeFormat.DeltaLake: "DeltaLake",
+            LakeFormat.Paimon: "Paimon",
+        }
+        expected = expected_by_format.get(table.lake_format)
         # Read the declared engine from the DDL rather than system.tables.engine:
         # with lazy_load_tables, system.tables reports StorageTableProxy's name
         # ("TableProxy") until the table is first materialized, which is not an
@@ -66,6 +71,8 @@ class SparkAndClickHouseCheck:
             # silently skip it.
             return False, ddl.strip()
         engine = match.group(1)
+        if expected is None:
+            return True, engine
         return engine.startswith(expected), engine
 
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:

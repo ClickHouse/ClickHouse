@@ -318,13 +318,13 @@ bool SQLBase::isLogFamily(const bool as_alias) const
 bool SQLBase::isSharedMergeTree(const bool as_alias) const
 {
     return (isMergeTreeFamily() && engine.isShared())
-        || (as_alias && isAliasEngine() && subengine->isMergeTreeFamily() && subengine.has_value() && subengine->isShared());
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isShared());
 }
 
 bool SQLBase::isReplicatedMergeTree(const bool as_alias) const
 {
     return (isMergeTreeFamily() && engine.isReplicated())
-        || (as_alias && isAliasEngine() && subengine->isMergeTreeFamily() && subengine.has_value() && subengine->isReplicated());
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isReplicated());
 }
 
 bool SQLBase::isReplicatedOrSharedMergeTree(const bool as_alias) const
