@@ -60,20 +60,28 @@ ALL_EVENTS = {**METRIC_EVENTS, **POOL_EVENTS}
 # or 0 (stateless: a short-lived one-shot connection per window). max_threads=8 because
 # the read pool hands each thread non-contiguous task ranges, which is where long
 # connections get abandoned (the incomplete-connection / reset regime).
-def _settings(live):
+def _settings(live, sched=False):
     return {
         "use_reader_executor": 1,
         "max_threads": 8,
         "reader_executor_use_long_connections": 1 if live else 0,
+        "reader_executor_schedule_driven": 1 if sched else 0,
     }
 
 
 # Page-cache path: a raw-S3 disk (no file cache) plus this setting makes the
 # executor route reads through the userspace page cache (block-granular, 1 MiB).
-def _pc_settings(live):
-    s = _settings(live)
+def _pc_settings(live, sched=False):
+    s = _settings(live, sched)
     s["use_page_cache_for_disks_without_file_cache"] = 1
     return s
+
+
+# Matrix modes: (label, long_connections, schedule_driven). `live`/`stateless` are the
+# live walk (long connection on/off); `sched` is the schedule-driven interpreter (long
+# connection on) - byte-identical served output, measured for its R/I/O delta. `sched`
+# shares the live mode-invariant (long connection on -> I bounded by the pool resets).
+MODES = [("live", True, False), ("stateless", False, False), ("sched", True, True)]
 
 LOADS = {
     # full-column scan -> R + I regime
@@ -104,22 +112,33 @@ LOADS = {
 # `I` bands carry a manual absolute floor: a single regen run pins selective/fragmented to
 # (0, 0), too tight for run-to-run variance (the recompute docstring flags this).
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (24, 57), "I": (6, 15), "O": (7, 27), "cost/MiB": (12.9, 38.7)},
-    ("sequential", "fragmented", "live"): {"R": (16, 50), "I": (7, 21), "O": (8, 46), "cost/MiB": (6.1, 24.4)},
-    ("selective", "cold", "live"): {"R": (19, 45), "I": (4, 10), "O": (13, 50), "cost/MiB": (32.8, 98.4)},
-    ("selective", "fragmented", "live"): {"R": (8, 25), "I": (0, 5), "O": (0, 0), "cost/MiB": (44.4, 177.7)},
-    ("aggregation", "cold", "live"): {"R": (42, 98), "I": (8, 18), "O": (28, 114), "cost/MiB": (16.5, 49.4)},
-    ("aggregation", "fragmented", "live"): {"R": (14, 44), "I": (9, 26), "O": (7, 40), "cost/MiB": (5.6, 22.4)},
-    ("prewhere", "cold", "live"): {"R": (32, 74), "I": (18, 41), "O": (33, 130), "cost/MiB": (18.2, 54.5)},
-    ("prewhere", "fragmented", "live"): {"R": (25, 75), "I": (4, 13), "O": (10, 55), "cost/MiB": (9.2, 36.7)},
-    ("sequential", "cold", "stateless"): {"R": (76, 177), "O": (7, 27), "cost/MiB": (18.0, 54.1)},
-    ("sequential", "fragmented", "stateless"): {"R": (33, 99), "O": (6, 35), "cost/MiB": (7.4, 29.8)},
-    ("selective", "cold", "stateless"): {"R": (23, 55), "O": (12, 50), "cost/MiB": (35.2, 105.6)},
-    ("selective", "fragmented", "stateless"): {"R": (8, 25), "O": (0, 0), "cost/MiB": (45.1, 180.2)},
-    ("aggregation", "cold", "stateless"): {"R": (101, 236), "O": (25, 101), "cost/MiB": (21.9, 65.6)},
-    ("aggregation", "fragmented", "stateless"): {"R": (34, 101), "O": (8, 44), "cost/MiB": (7.4, 29.5)},
-    ("prewhere", "cold", "stateless"): {"R": (34, 79), "O": (28, 110), "cost/MiB": (17.5, 52.4)},
-    ("prewhere", "fragmented", "stateless"): {"R": (24, 71), "O": (9, 49), "cost/MiB": (8.5, 34.2)},
+    ("sequential", "cold", "live"): {"R": (25, 59), "I": (6, 13), "O": (7, 30), "cost/MiB": (13.3, 39.8)},
+    ("sequential", "fragmented", "live"): {"R": (16, 50), "I": (7, 20), "O": (7, 42), "cost/MiB": (6.1, 24.5)},
+    ("selective", "cold", "live"): {"R": (18, 42), "I": (7, 17), "O": (15, 60), "cost/MiB": (34.5, 103.5)},
+    ("selective", "fragmented", "live"): {"R": (7, 22), "I": (0, 0), "O": (0, 0), "cost/MiB": (43.8, 175.1)},
+    ("aggregation", "cold", "live"): {"R": (40, 94), "I": (8, 18), "O": (24, 94), "cost/MiB": (15.8, 47.4)},
+    ("aggregation", "fragmented", "live"): {"R": (15, 45), "I": (9, 26), "O": (7, 40), "cost/MiB": (5.7, 22.8)},
+    ("prewhere", "cold", "live"): {"R": (36, 84), "I": (19, 45), "O": (36, 142), "cost/MiB": (19.1, 57.4)},
+    ("prewhere", "fragmented", "live"): {"R": (21, 64), "I": (7, 22), "O": (13, 73), "cost/MiB": (8.4, 33.5)},
+    ("sequential", "cold", "stateless"): {"R": (76, 177), "O": (7, 28), "cost/MiB": (18.1, 54.2)},
+    ("sequential", "fragmented", "stateless"): {"R": (33, 99), "O": (7, 40), "cost/MiB": (7.6, 30.2)},
+    ("selective", "cold", "stateless"): {"R": (22, 52), "O": (15, 60), "cost/MiB": (37.9, 113.8)},
+    ("selective", "fragmented", "stateless"): {"R": (7, 22), "O": (0, 0), "cost/MiB": (44.1, 176.4)},
+    ("aggregation", "cold", "stateless"): {"R": (102, 238), "O": (23, 91), "cost/MiB": (21.7, 65.1)},
+    ("aggregation", "fragmented", "stateless"): {"R": (34, 101), "O": (6, 33), "cost/MiB": (7.1, 28.6)},
+    ("prewhere", "cold", "stateless"): {"R": (37, 86), "O": (33, 132), "cost/MiB": (18.5, 55.6)},
+    ("prewhere", "fragmented", "stateless"): {"R": (20, 61), "O": (13, 74), "cost/MiB": (8.1, 32.5)},
+    # sched = the schedule-driven interpreter (long connection on). At MT scale it differs
+    # from `live` per load (e.g. selective coalesces better: lower R/O); the same served
+    # bytes and the same mode invariant (I bounded by the pool resets) hold.
+    ("sequential", "cold", "sched"): {"R": (26, 61), "I": (6, 15), "O": (6, 23), "cost/MiB": (13.2, 39.6)},
+    ("sequential", "fragmented", "sched"): {"R": (19, 56), "I": (9, 26), "O": (5, 28), "cost/MiB": (6.0, 23.9)},
+    ("selective", "cold", "sched"): {"R": (14, 33), "I": (8, 18), "O": (6, 24), "cost/MiB": (28.4, 85.3)},
+    ("selective", "fragmented", "sched"): {"R": (6, 20), "I": (0, 0), "O": (0, 0), "cost/MiB": (32.5, 129.9)},
+    ("aggregation", "cold", "sched"): {"R": (49, 115), "I": (10, 23), "O": (11, 44), "cost/MiB": (15.9, 47.8)},
+    ("aggregation", "fragmented", "sched"): {"R": (17, 52), "I": (9, 28), "O": (4, 21), "cost/MiB": (5.6, 22.6)},
+    ("prewhere", "cold", "sched"): {"R": (40, 94), "I": (22, 51), "O": (25, 101), "cost/MiB": (20.6, 61.7)},
+    ("prewhere", "fragmented", "sched"): {"R": (24, 72), "I": (8, 23), "O": (10, 56), "cost/MiB": (8.6, 34.5)},
 }
 
 
@@ -214,9 +233,9 @@ def _drop_pc():
     node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
 
-def _measure(query, live, pc=False):
+def _measure(query, live, pc=False, sched=False):
     qid = str(uuid.uuid4())
-    node.query(query, query_id=qid, settings=_pc_settings(live) if pc else _settings(live))
+    node.query(query, query_id=qid, settings=_pc_settings(live, sched) if pc else _settings(live, sched))
     node.query("SYSTEM FLUSH LOGS")
     extra = ["ReaderExecutorModeledCostMicroseconds", "ReaderExecutorRequestedBytes"]
     cols = ", ".join(f"ProfileEvents['{e}']" for e in list(ALL_EVENTS.values()) + extra)
@@ -244,12 +263,13 @@ def _warm_even_blocks(live):
     node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=_settings(live))
 
 
-def _collect_samples(query, live, state):
-    """Gather SAMPLES measurements for one (load, mode, cache-state) cell."""
+def _collect_samples(query, live, state, sched=False):
+    """Gather SAMPLES measurements for one (load, mode, cache-state) cell. Warming is
+    mode-independent (same cache content), so only the measured read carries `sched`."""
     if state == "warm":
         _drop_caches()
-        _measure(query, live)  # prime once, then measure the warm cache
-        return [_measure(query, live) for _ in range(SAMPLES)]
+        _measure(query, live, sched=sched)  # prime once, then measure the warm cache
+        return [_measure(query, live, sched=sched) for _ in range(SAMPLES)]
     if state == "fragmented":
         # Re-establish the half-warm cache per sample (measuring it would
         # otherwise populate the cold blocks and turn the cache fully warm).
@@ -257,13 +277,13 @@ def _collect_samples(query, live, state):
         for _ in range(SAMPLES):
             _drop_caches()
             _warm_even_blocks(live)
-            samples.append(_measure(query, live))
+            samples.append(_measure(query, live, sched=sched))
         return samples
     # cold
     samples = []
     for _ in range(SAMPLES):
         _drop_caches()
-        samples.append(_measure(query, live))
+        samples.append(_measure(query, live, sched=sched))
     return samples
 
 
@@ -302,11 +322,10 @@ def _check_bands(name, state, mode, st, cost_per_mib):
 def test_metric_values_and_stability(started_cluster):
     report = []
     band_violations = []
-    for live in (True, False):
-        mode = "live" if live else "stateless"
+    for mode, live, sched in MODES:
         for name, query in LOADS.items():
             for state in ("cold", "warm", "fragmented"):
-                samples = _collect_samples(query, live, state)
+                samples = _collect_samples(query, live, state, sched)
 
                 st = _stats(samples)
                 cost = sum(_cost_ms(s) for s in samples) / len(samples)
@@ -381,18 +400,17 @@ def test_page_cache_path(started_cluster):
     query = "SELECT sum(v) FROM t_pc"
     report = []
     results = {}
-    for live in (True, False):
-        mode = "live" if live else "stateless"
+    for mode, live, sched in MODES:
         for state in ("cold", "warm"):
             if state == "warm":
                 _drop_pc()
-                _measure(query, live, pc=True)  # prime, then measure the warm cache
-                samples = [_measure(query, live, pc=True) for _ in range(SAMPLES)]
+                _measure(query, live, pc=True, sched=sched)  # prime, then measure the warm cache
+                samples = [_measure(query, live, pc=True, sched=sched) for _ in range(SAMPLES)]
             else:
                 samples = []
                 for _ in range(SAMPLES):
                     _drop_pc()
-                    samples.append(_measure(query, live, pc=True))
+                    samples.append(_measure(query, live, pc=True, sched=sched))
             st = _stats(samples)
             cost_per_mib = sum(_cost_per_mib(s) for s in samples) / len(samples)
             line = (
@@ -464,11 +482,10 @@ def test_recompute_baseline(started_cluster):
         pytest.skip("manual: set RECOMPUTE_METRIC_BASELINE=1 to regenerate the BASELINE dict")
 
     lines = ["BASELINE = {"]
-    for live in (True, False):
-        mode = "live" if live else "stateless"
+    for mode, live, sched in MODES:
         for name, query in LOADS.items():
             for state in ("cold", "fragmented"):
-                samples = _collect_samples(query, live, state)
+                samples = _collect_samples(query, live, state, sched)
                 margin = RECOMPUTE_MARGIN[state]
                 cells = [("R", [s["R"] for s in samples], 0, margin)]
                 if live:  # stateless I is always 0 and gated by a separate invariant
