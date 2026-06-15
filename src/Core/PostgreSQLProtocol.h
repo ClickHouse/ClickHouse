@@ -221,6 +221,9 @@ public:
     {
         Int32 size = 0;
         readBinaryBigEndian(size, *in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} received from client, it must be at least 4", size);
         in->ignore(size - 4);
     }
 
@@ -566,6 +569,9 @@ public:
         readBinaryBigEndian(message_type, in);
         Int32 size = 0;
         readBinaryBigEndian(size, in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
         sasl_mechanism.resize(size - 4);
         in.readStrict(sasl_mechanism.data(), size - 4);
     }
