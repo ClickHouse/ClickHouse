@@ -10,7 +10,7 @@ node1 = cluster.add_instance(
     "node1",
 )
 
-TRANSFORM_COMMON_QUERY = """SELECT
+HASHMAP_QUERY = """SELECT
     number % 100000000 AS category,
     number AS value
 FROM numbers(100000000)
@@ -18,7 +18,7 @@ LIMIT 1 BY category
 FORMAT Null
 SETTINGS max_block_size=100000000, max_threads=1, max_rows_to_read=0"""
 
-TRANSFORM_INORDER_QUERY = """SELECT
+SORTED_QUERY = """SELECT
     number AS key1,
     number + 1 AS key2,
     number AS value
@@ -74,15 +74,15 @@ def run_kill_query_test(query, log_line_pattern):
     assert "QUERY_WAS_CANCELLED" in cancel_log
 
 
-def test_common_kill_query(started_cluster):
+def test_hashmap_kill_query(started_cluster):
     run_kill_query_test(
-        TRANSFORM_COMMON_QUERY,
+        HASHMAP_QUERY,
         "Transform a chunk in LimitByTransform",
     )
 
 
-def test_inorder_kill_query(started_cluster):
+def test_sorted_kill_query(started_cluster):
     run_kill_query_test(
-        TRANSFORM_INORDER_QUERY,
+        SORTED_QUERY,
         "Transform a chunk in LimitBySortedStreamTransform",
     )
