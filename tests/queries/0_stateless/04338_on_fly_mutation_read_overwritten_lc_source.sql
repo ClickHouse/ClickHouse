@@ -134,3 +134,44 @@ LIMIT 4
 SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_dotted_physical SYNC;
+
+-- The exclusion must be ordered per step, not chain-wide. Here the overwriting step
+-- (`UPDATE v = toString(id + 100)`) comes BEFORE the consumer (`UPDATE b = materialize(v)`),
+-- and the overwrite expression itself reads the old `v` (`if(cond, _CAST(expr), v)`). The
+-- on-disk `'x'` is unconvertible to the post-`MODIFY` `UInt64`, so it must stay skipped: the
+-- consumer reads the value the UPDATE produced, not the on-disk one. Forcing the conversion
+-- because some step consumes `v` raises `CANNOT_PARSE_TEXT` on the discarded `'x'`.
+DROP TABLE IF EXISTS t_overwrite_before_consume SYNC;
+
+CREATE TABLE t_overwrite_before_consume
+(
+    id UInt64,
+    v String,
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_overwrite_before_consume SELECT number, 'x', 0 FROM numbers(10);
+
+SYSTEM STOP MERGES t_overwrite_before_consume;
+
+ALTER TABLE t_overwrite_before_consume
+    UPDATE v = toString(id + 100) WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_overwrite_before_consume
+    UPDATE b = isNotNull(materialize(v)) WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_overwrite_before_consume
+    MODIFY COLUMN v UInt64
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT v, b
+FROM t_overwrite_before_consume
+ORDER BY id
+LIMIT 2
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_overwrite_before_consume SYNC;

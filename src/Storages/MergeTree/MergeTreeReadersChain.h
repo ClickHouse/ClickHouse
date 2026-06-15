@@ -88,10 +88,11 @@ private:
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 
-    /// Storage names of columns consumed as a function input by an on-fly MUTATION step's
-    /// action. Such columns must be converted to the post-`MODIFY` metadata type even when
-    /// an on-fly mutation overwrites them, otherwise the consuming action sees a type/storage
-    /// mismatch. Query PREWHERE steps are excluded (they convert at their own turn).
+    /// Storage names of overwritten columns that an on-fly MUTATION step consumes as a
+    /// function input BEFORE any step overwrites them. They must still be converted to the
+    /// post-`MODIFY` metadata type, otherwise the consuming action sees a type/storage
+    /// mismatch. Columns consumed only by (or within) their own overwriting step stay
+    /// skipped; query PREWHERE steps are excluded (they convert at their own turn).
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
