@@ -298,7 +298,10 @@ public:
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
-    SnapshotFileInfoPtr detachSnapshotForRemoval(uint64_t log_idx);
+    /// Detach `log_idx` and any tracked same-index recovery copies, marking them retired and
+    /// returning the pins WITHOUT unlinking — the caller's drop triggers the deleter (Phase 4,
+    /// outside `snapshots_lock`, in the create path).
+    std::vector<SnapshotFileInfoPtr> detachSnapshotForRemoval(uint64_t log_idx);
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
     std::vector<SnapshotFileInfoPtr> detachOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
     std::vector<SnapshotMoveCandidate> selectSnapshotsToMove();
@@ -319,6 +322,10 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
+    /// Same-index recovery copies kept on disk at startup but NOT registered in
+    /// `existing_snapshots` (retained-window duplicates + re-point orphans), keyed by log index.
+    /// `detachSnapshotForRemoval` retires them with their index so they age out without a restart.
+    std::unordered_map<uint64_t, std::vector<SnapshotFileInfoPtr>> retained_duplicate_snapshots;
     /// See `setProtectedSnapshotIndex` / `setProtectedPendingSnapshotIndex`. Both checked by
     /// `detachOutdatedSnapshotsIfNeeded`.
     uint64_t protected_snapshot_log_idx = 0;

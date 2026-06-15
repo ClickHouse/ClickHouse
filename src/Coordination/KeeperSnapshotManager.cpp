@@ -885,6 +885,10 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
                 duplicate.up_to_log_idx,
                 registered->disk->getName(),
                 duplicate.disk->getName());
+            /// Track the now-unreferenced original so retention reclaims it with this index.
+            const DiskPtr orphaned_disk = registered->disk;
+            retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
+                makeManagedSnapshotFileInfo(registered->path, orphaned_disk, duplicate.up_to_log_idx));
             registered->disk = duplicate.disk;
         }
         else
@@ -898,6 +902,9 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
                 duplicate.up_to_log_idx,
                 registered->path,
                 registered->disk->getName());
+            /// Track the kept duplicate so it ages out with its index (as the message promises).
+            retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
+                makeManagedSnapshotFileInfo(duplicate.path, duplicate.disk, duplicate.up_to_log_idx));
         }
     }
 
@@ -1189,16 +1196,33 @@ void KeeperSnapshotManager<Storage>::setProtectedPendingSnapshotIndex(uint64_t l
 }
 
 template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::detachSnapshotForRemoval(uint64_t log_idx)
+std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::detachSnapshotForRemoval(uint64_t log_idx)
 {
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
 
+    std::vector<SnapshotFileInfoPtr> retired;
     auto snapshot_file_info = itr->second;
     snapshot_file_info->retired_for_removal.store(true, std::memory_order_release);
     existing_snapshots.erase(itr);
-    return snapshot_file_info;
+    retired.push_back(std::move(snapshot_file_info));
+
+    /// Also retire tracked same-index recovery copies, returned (not unlinked here) so the
+    /// caller's pin drop unlinks them in Phase 4, off `snapshots_lock`. The corrupt-latest
+    /// recovery path erases the registry entry directly without calling this, keeping these
+    /// copies so the operator can still boot from a duplicate.
+    if (auto dup_it = retained_duplicate_snapshots.find(log_idx); dup_it != retained_duplicate_snapshots.end())
+    {
+        for (auto & duplicate : dup_it->second)
+        {
+            duplicate->retired_for_removal.store(true, std::memory_order_release);
+            retired.push_back(std::move(duplicate));
+        }
+        retained_duplicate_snapshots.erase(dup_it);
+    }
+
+    return retired;
 }
 
 template<typename Storage>
@@ -1221,7 +1245,9 @@ std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::detachOutdatedS
             continue;
         }
         auto to_remove = candidate++;
-        retired_snapshots.push_back(detachSnapshotForRemoval(to_remove->first));
+        auto detached = detachSnapshotForRemoval(to_remove->first);
+        retired_snapshots.insert(
+            retired_snapshots.end(), std::make_move_iterator(detached.begin()), std::make_move_iterator(detached.end()));
     }
     return retired_snapshots;
 }
@@ -1276,8 +1302,9 @@ SnapshotMaintenanceTasks KeeperSnapshotManager<Storage>::prepareSnapshotMaintena
 template<typename Storage>
 void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
 {
-    auto detached = detachSnapshotForRemoval(log_idx);
-    detached.reset();
+    /// Tests/tools only: the dropped pins unlink synchronously here; the server reclaims
+    /// via the deferred Phase 4 path.
+    detachSnapshotForRemoval(log_idx);
 }
 
 template<typename Storage>

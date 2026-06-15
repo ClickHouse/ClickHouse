@@ -2280,6 +2280,35 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
     }
 }
 
+TEST(KeeperSnapshotManagerCleanupTest, RetainedDuplicateAgesOutWithoutRestart)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest rocks("./rocksdb");
+
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    auto buf_80 = makeSingleNodeSnapshotBuffer(ctx, 80, "/kept80", "from_80");
+    auto buf_90 = makeSingleNodeSnapshotBuffer(ctx, 90, "/kept90", "from_90");
+
+    auto disk = ctx->getSnapshotDisk();
+    /// Retained non-latest index (2 indexes, keep = 3): the startup scan keeps both same-index
+    /// copies — one registered, one redundant recovery copy.
+    writeSnapshotBufferToFile(disk, "snapshot_80_aaaaaaaa.bin.zstd", buf_80);
+    writeSnapshotBufferToFile(disk, "snapshot_80_bbbbbbbb.bin.zstd", buf_80);
+    writeSnapshotBufferToFile(disk, "snapshot_90_cccccccc.bin.zstd", buf_90);
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    EXPECT_EQ(manager.totalSnapshots(), 2);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
+
+    /// Age idx 80 out WITHOUT a restart. Both the registered copy and the tracked duplicate
+    /// must be unlinked together. Before the fix the unregistered duplicate was invisible to
+    /// retention and leaked until the next restart, leaving size() == 1 here.
+    manager.removeSnapshot(80);
+    EXPECT_EQ(manager.totalSnapshots(), 1);
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 80, /*include_tmp_markers=*/true).empty());
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 90).size(), 1);
+}
+
 TEST(KeeperSnapshotManagerCleanupTest, QueuePushFailureCleansSnapshotAndCallsWhenDone)
 {
     ChangelogDirTest snapshots("./snapshots");

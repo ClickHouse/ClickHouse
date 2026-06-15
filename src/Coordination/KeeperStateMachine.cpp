@@ -1074,6 +1074,9 @@ typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMac
     {
         /// A saved-but-not-applied install already registered this index — legitimate.
         /// Adopt the registered entry (state-equivalent by Raft log matching), retire our file.
+        /// Adopted WITHOUT an existence probe (this replaces the removed
+        /// SameIndexCreateFailsClosedOnMissingRegisteredFile test): the pending install is pinned
+        /// by `protected_pending_snapshot_log_idx`, so retention can't unlink it before apply.
         snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
         outcome.loser_to_remove = written_file_info;
         advanceLatestSnapshotMeta(written_snapshot_meta);
@@ -1171,7 +1174,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                         }
                         LOG_INFO(
                             log,
-                            "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
+                            "Will not create a snapshot with last log idx {} because a snapshot with last log idx >= {} is already "
                             "created",
                             requested_idx,
                             latest_snapshot_meta->get_last_log_idx());
@@ -1280,9 +1283,20 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     }
 
     LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
-    /// `push` leaves the argument intact on `false` (queue finished) and on throw; on
-    /// throw the SCOPE_EXIT above destroys the snapshot under the storage lock.
-    if (snapshots_queue.push(std::move(snapshot_task)))
+    /// `push` leaves `snapshot_task` intact on both `false` (queue finished) and throw
+    /// (`emplaceImpl` can throw before the noexcept move). Route both no-enqueue outcomes to the
+    /// same inline cleanup so `when_done(false)` fires once instead of leaving it unfulfilled.
+    bool pushed = false;
+    try
+    {
+        pushed = snapshots_queue.push(std::move(snapshot_task));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to push snapshot task into queue");
+    }
+
+    if (pushed)
     {
         snapshot_cleanup_transferred = true;
     }

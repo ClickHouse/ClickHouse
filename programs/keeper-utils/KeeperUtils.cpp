@@ -111,8 +111,11 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     500   // storage_tick_time
                 );
 
+                // Deserialize the exact named file, not by parsed index: with retained
+                // same-index duplicates, an index lookup could read a different sibling.
+                SnapshotFileInfo selected_snapshot{std::filesystem::path(full_path).filename().string(), keeper_context->getSnapshotDisk()};
                 auto result = snapshot_manager.deserializeSnapshotFromBuffer(
-                    snapshot_manager.deserializeSnapshotBufferFromDisk(getSnapshotPathUpToLogIdx(full_path)),
+                    snapshot_manager.deserializeSnapshotBufferFromDisk(selected_snapshot),
                     full_storage);
 
                 if (!result.storage)
