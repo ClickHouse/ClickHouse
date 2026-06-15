@@ -54,6 +54,8 @@ struct StorageObjectStorageQuerySettings
     size_t list_object_keys_size;
     bool throw_on_zero_files_match;
     bool ignore_non_existent_file;
+    /// Number of threads used to list a globbed path in parallel (1 = serial listing).
+    size_t list_object_parallelism = 1;
 };
 
 

@@ -196,6 +196,9 @@
     M(ObjectStorageS3Threads, "Number of threads in the S3ObjectStorage thread pool.") \
     M(ObjectStorageS3ThreadsActive, "Number of threads in the S3ObjectStorage thread pool running a task.") \
     M(ObjectStorageS3ThreadsScheduled, "Number of queued or active jobs in the S3ObjectStorage thread pool.") \
+    M(ObjectStorageParallelListingThreads, "Number of threads in the object storage parallel listing thread pool.") \
+    M(ObjectStorageParallelListingThreadsActive, "Number of threads in the object storage parallel listing thread pool running a task.") \
+    M(ObjectStorageParallelListingThreadsScheduled, "Number of queued or active jobs in the object storage parallel listing thread pool.") \
     M(StorageObjectStorageThreads, "Number of threads in the remote table engines thread pools.") \
     M(StorageObjectStorageThreadsActive, "Number of threads in the remote table engines thread pool running a task.") \
     M(StorageObjectStorageThreadsScheduled, "Number of queued or active jobs in remote table engines thread pool.") \

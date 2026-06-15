@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool s3_create_new_file_on_insert;
     extern const SettingsBool s3_ignore_file_doesnt_exist;
     extern const SettingsUInt64 s3_list_object_keys_size;
+    extern const SettingsUInt64 s3_list_object_parallelism;
     extern const SettingsBool s3_skip_empty_files;
     extern const SettingsBool s3_truncate_on_insert;
     extern const SettingsBool s3_throw_on_zero_files_match;
@@ -157,6 +158,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
         .list_object_keys_size = settings[Setting::s3_list_object_keys_size],
         .throw_on_zero_files_match = settings[Setting::s3_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::s3_ignore_file_doesnt_exist],
+        .list_object_parallelism = settings[Setting::s3_list_object_parallelism],
     };
 }
 

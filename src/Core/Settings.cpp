@@ -573,6 +573,13 @@ Max number of requests that can be issued simultaneously before hitting request 
     DECLARE(UInt64, s3_list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
+    DECLARE(UInt64, s3_list_object_parallelism, 1, R"(
+Number of concurrent `ListObjects` requests used to list files of the `s3` table function when the path contains globs.
+
+When greater than `1`, the matching files are listed by walking the "directory" tree (the common prefixes formed by the `/` delimiter) with this many threads in parallel, instead of paginating the whole prefix in a single serial stream. This can dramatically speed up queries over buckets with millions of objects, especially for hierarchically partitioned layouts (e.g. `year=*/month=*/`), where whole non-matching subtrees are pruned during the walk.
+
+A value of `1` (the default) keeps the previous serial listing behavior. Recursive globs (`**`) always use serial listing.
+)", 0) \
     DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.

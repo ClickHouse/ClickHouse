@@ -101,6 +101,15 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
+    bool supportsDelimitedListing() const override { return true; }
+
+    ObjectStorageListResult listObjectsSingleLevel(
+        const std::string & path_prefix,
+        const std::string & delimiter,
+        size_t max_keys,
+        bool with_tags,
+        const std::string & continuation_token) const override;
+
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 

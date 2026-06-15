@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -10,6 +11,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -250,6 +252,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 local_context,
                 is_archive ? nullptr : read_keys,
                 query_settings.list_object_keys_size,
+                query_settings.list_object_parallelism,
                 query_settings.throw_on_zero_files_match,
                 with_tags,
                 file_progress_callback);
@@ -1276,6 +1279,85 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     return impl;
 }
 
+namespace
+{
+
+/// Splits a path into its non-empty components separated by '/'.
+std::vector<std::string> splitPathComponents(const std::string & path)
+{
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    while (pos < path.size())
+    {
+        size_t next = path.find('/', pos);
+        if (next == std::string::npos)
+            next = path.size();
+        if (next > pos)
+            parts.emplace_back(path.substr(pos, next - pos));
+        pos = next + 1;
+    }
+    return parts;
+}
+
+/// Builds the predicate used by the parallel listing walk to decide whether a discovered
+/// "directory" (a common prefix, always ending with '/') can possibly contain a key matching
+/// `glob_path`, so that whole non-matching subtrees are pruned instead of listed.
+///
+/// Each '/'-separated glob segment is compiled into a matcher for a single path component (glob
+/// wildcards '*'/'?' never cross '/'). A directory at depth d is descended into iff each of its d
+/// components matches the corresponding glob segment and there is room below it for the file-name
+/// segment (d < number of glob segments).
+///
+/// The predicate is intentionally conservative: it returns `true` whenever it cannot be sure a
+/// directory is irrelevant (e.g. a '{...}' selector that spans a '/'), because the per-file regexp
+/// `FullMatch` in `nextUnlocked` still guarantees that only truly matching keys are emitted.
+/// `glob_path` must not contain the recursive wildcard "**".
+std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path)
+{
+    auto glob_segments = splitPathComponents(glob_path);
+
+    /// If a '{...}' selector spans a '/', the per-component split is not meaningful: descend always.
+    for (const auto & segment : glob_segments)
+    {
+        if (std::count(segment.begin(), segment.end(), '{') != std::count(segment.begin(), segment.end(), '}'))
+            return [](const std::string &) { return true; };
+    }
+
+    if (glob_segments.empty())
+        return [](const std::string &) { return true; };
+
+    auto segment_matchers = std::make_shared<std::vector<std::shared_ptr<const re2::RE2>>>();
+    segment_matchers->reserve(glob_segments.size());
+    for (const auto & segment : glob_segments)
+    {
+        auto re = std::make_shared<const re2::RE2>(makeRegexpPatternFromGlobs(segment));
+        if (!re->ok())
+            return [](const std::string &) { return true; };
+        segment_matchers->push_back(std::move(re));
+    }
+
+    const size_t num_segments = glob_segments.size();
+    return [segment_matchers, num_segments](const std::string & common_prefix) -> bool
+    {
+        auto components = splitPathComponents(common_prefix);
+        const size_t depth = components.size();
+
+        /// Files under a directory at `depth` levels have at least `depth + 1` components, while a
+        /// matching key has exactly `num_segments` components; so there must be room below.
+        if (depth >= num_segments)
+            return false;
+
+        for (size_t i = 0; i < depth; ++i)
+        {
+            if (!re2::RE2::FullMatch(components[i], *(*segment_matchers)[i]))
+                return false;
+        }
+        return true;
+    };
+}
+
+}
+
 StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -1285,6 +1367,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ContextPtr context_,
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
+    size_t list_object_parallelism,
     bool throw_on_zero_files_match_,
     bool with_tags,
     std::function<void(FileProgress)> file_progress_callback_)
@@ -1305,8 +1388,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
-
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
         {
@@ -1314,6 +1395,38 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs.path == "/**";
+
+        /// List the matching files in parallel by walking the "directory" tree (the common prefixes
+        /// formed by the '/' delimiter), unless disabled or the path uses the recursive wildcard "**"
+        /// (which can match across '/', so it cannot be pruned per directory level and would degrade
+        /// to one request per directory).
+        const bool use_parallel_listing =
+            list_object_parallelism > 1
+            && object_storage->supportsDelimitedListing()
+            && key_with_globs.path.find("**") == std::string::npos;
+
+        if (use_parallel_listing)
+        {
+            LOG_DEBUG(log, "Listing {} in parallel with {} threads", key_with_globs.path, list_object_parallelism);
+
+            /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
+            auto list_level = [storage = object_storage, list_object_keys_size, with_tags]
+                (const std::string & prefix, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, /* delimiter */ "/", list_object_keys_size, with_tags, continuation_token);
+            };
+
+            object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
+                key_prefix,
+                list_object_parallelism,
+                /* max_buffered_keys */ list_object_keys_size * list_object_parallelism * 2,
+                std::move(list_level),
+                makeShouldDescendPredicate(key_with_globs.path));
+        }
+        else
+        {
+            object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
+        }
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());

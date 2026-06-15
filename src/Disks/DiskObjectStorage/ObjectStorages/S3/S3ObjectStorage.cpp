@@ -379,6 +379,59 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     } while (outcome.GetResult().GetIsTruncated());
 }
 
+ObjectStorageListResult S3ObjectStorage::listObjectsSingleLevel(
+    const std::string & path_prefix,
+    const std::string & delimiter,
+    size_t max_keys,
+    bool with_tags,
+    const std::string & continuation_token) const
+{
+    auto settings_ptr = s3_settings.get();
+
+    S3::ListObjectsV2Request request;
+    request.SetBucket(uri.bucket);
+    request.SetPrefix(path_prefix);
+    request.SetDelimiter(delimiter);
+    if (max_keys)
+        request.SetMaxKeys(static_cast<int>(max_keys));
+    else
+        request.SetMaxKeys(static_cast<int>(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]));
+    if (!continuation_token.empty())
+        request.SetContinuationToken(continuation_token);
+
+    ProfileEvents::increment(ProfileEvents::S3ListObjects);
+    ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+
+    auto outcome = client.get()->ListObjectsV2(request);
+    throwIfError(outcome, "while listing objects in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path_prefix, disk_name);
+
+    const auto & result = outcome.GetResult();
+
+    ObjectStorageListResult res;
+    for (const auto & object : result.GetContents())
+    {
+        ObjectMetadata metadata{
+            .size_bytes = static_cast<uint64_t>(object.GetSize()),
+            .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+            .etag = object.GetETag(),
+            .tags = {},
+            .attributes = {},
+        };
+        if (with_tags)
+            metadata.tags = S3::getObjectTags(*client.get(), uri.bucket, object.GetKey());
+        res.objects.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+    }
+
+    for (const auto & common_prefix : result.GetCommonPrefixes())
+        res.common_prefixes.push_back(common_prefix.GetPrefix());
+
+    res.is_truncated = result.GetIsTruncated();
+    if (res.is_truncated)
+        res.next_continuation_token = result.GetNextContinuationToken();
+
+    return res;
+}
+
 void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
