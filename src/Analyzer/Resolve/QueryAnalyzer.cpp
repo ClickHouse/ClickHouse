@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -5089,6 +5090,23 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
+
+        /** Suppress the hybrid SQL-standard short-name fallback for the duration of
+          * `USING` identifier resolution (issue #87022 and friends). The USING list
+          * downstream matches columns by `ColumnNode::getColumnName`, which still returns
+          * the canonical dotted name for a short-name-resolved column. Allowing
+          * short-name to bind in USING context would let USING accept e.g. `f1` against
+          * a left side that only exposes `b.f1` via short name and a right side with a
+          * real `f1`, then silently fail to merge them — the worst kind of regression.
+          *
+          * Use `SCOPE_EXIT` so the restore happens on every code path, including the
+          * many `throw` statements inside the loop body.
+          */
+        const bool saved_short_name_fallback_enabled = identifier_resolver.short_name_fallback_enabled;
+        identifier_resolver.short_name_fallback_enabled = false;
+        SCOPE_EXIT({
+            identifier_resolver.short_name_fallback_enabled = saved_short_name_fallback_enabled;
+        });
 
         for (auto & join_using_node : join_using_list.getNodes())
         {

@@ -554,11 +554,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
         return true;
 
-    /// Hybrid short-name fallback (issue #87022 and friends): the short-name map is empty
-    /// unless `analyzer_enable_short_column_names_from_subquery` is on for the scope's
-    /// context, so this check is free in the default-off case.
-    if (table_expression_data.canBindShortName(IdentifierView(identifier)))
-        return true;
+    /// NOTE: short-name binding is intentionally NOT consulted here. This predicate is used
+    /// from `qualifyColumnNodesWithProjectionNames` and from `tryResolveIdentifierFromStorage`'s
+    /// qualifier-stripping logic to decide projection-name qualification — pulling the
+    /// short-name map into it would over-qualify / shift `SELECT *` headers (and similar)
+    /// even for queries that never reference the short name. The actual identifier resolution
+    /// still considers short-name via `tryResolveIdentifierFromTableExpression` /
+    /// `tryResolveIdentifierFromStorage`, gated on `short_name_fallback_enabled`.
 
     if (identifier.getPartsSize() == 1)
         return false;
@@ -685,16 +687,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     /// a subquery / CTE whose projection has a column with canonical name
     /// `<source>.<short>`, resolve to that column via its short name.
     ///
-    /// Placed strictly AFTER `tryResolveIdentifierAsNestedPrefix` so that a projection
-    /// list shaped like `f1.x Array(...), f1.y Array(...), b.f1` keeps the existing
-    /// Nested-prefix collapse for outer `f1` instead of being silently rerouted to
-    /// `b.f1`. The setting's contract is additive: enabling it must never change the
-    /// resolution target of an identifier that already resolves successfully on
-    /// master, and the nested-prefix path is one of those successful resolutions.
+    /// Placed strictly AFTER `tryResolveIdentifierAsNestedPrefix` (and gated on the
+    /// resolver's `short_name_fallback_enabled` flag, which is `false` during pass 1
+    /// of the two-pass join-tree resolution and during JOIN USING resolution) so that
+    /// any existing canonical / Nested-prefix match anywhere in the scope wins. The
+    /// setting's contract is additive: enabling it must never change the resolution
+    /// target of an identifier that already resolves successfully on master.
     ///
     /// The map is empty unless `analyzer_enable_short_column_names_from_subquery` is on,
     /// so there is no extra cost in the default-off case.
-    if (!result_expression && identifier_without_column_qualifier.getPartsSize() == 1)
+    if (short_name_fallback_enabled && !result_expression && identifier_without_column_qualifier.getPartsSize() == 1)
     {
         if (auto short_name_node = table_expression_data.tryGetShortNameColumnNode(identifier_full_name))
             result_expression = short_name_node;
@@ -704,6 +706,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (can_be_not_found)
             return {};
+
+        /** Two-pass join-tree resolution (issue #87022 and friends): when the resolver is
+          * in the "short-name fallback disabled" pass and the identifier did not match
+          * canonically, soft-fail so the second pass (with the fallback enabled) gets a
+          * chance to resolve via the short-name index. The throw below produces the
+          * user-visible "cannot be resolved" error, which we want only on the final pass.
+          *
+          * For the explicitly-disabled JOIN USING context (no two-pass retry, see
+          * `tryResolveIdentifierFromJoinTree`), the caller checks for a null result and
+          * throws a more targeted "USING identifier ... cannot be resolved from left/right
+          * table expression" error, which is strictly nicer than the generic message here.
+          */
+        if (!short_name_fallback_enabled)
+            return {};
+
         std::unordered_set<Identifier> valid_identifiers;
         TypoCorrection::collectTableExpressionValidIdentifiers(
             identifier,
@@ -847,10 +864,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     /** Hybrid short-name fallback for single-part identifiers (issue #87022 and friends).
       * Triggers only when `analyzer_enable_short_column_names_from_subquery` is on AND the
       * subquery/CTE has an unambiguous short-name entry for this identifier; otherwise the
-      * short-name map is empty and `canBindShortName` is a constant false. The actual
-      * lookup happens inside `tryResolveIdentifierFromStorage` after the canonical miss.
+      * short-name map is empty and `canBindShortName` is a constant false.
+      *
+      * Additionally gated on `short_name_fallback_enabled`, which is set to `false` during:
+      *   - pass 1 of two-pass join-tree resolution (so any canonical / Nested-prefix match
+      *     elsewhere in the join tree wins),
+      *   - JOIN USING resolution (so USING never matches a short-name-resolved column whose
+      *     stored `getColumnName()` is still the dotted canonical form).
+      *
+      * The actual lookup happens inside `tryResolveIdentifierFromStorage` after the canonical miss.
       */
-    if (table_expression_data.canBindShortName(IdentifierView(identifier)))
+    if (short_name_fallback_enabled && table_expression_data.canBindShortName(IdentifierView(identifier)))
     {
         auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
         if (lookup_result.resolved_identifier)
@@ -1715,15 +1739,42 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
         return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
+    const QueryTreeNodePtr * join_tree_node_ptr = nullptr;
     if (scope.expression_join_tree_node)
-        return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, scope.expression_join_tree_node, scope);
-
-    auto * query_scope_node = scope.scope_node->as<QueryNode>();
-    if (!query_scope_node || !query_scope_node->getJoinTree())
+    {
+        join_tree_node_ptr = &scope.expression_join_tree_node;
+    }
+    else if (auto * query_scope_node = scope.scope_node->as<QueryNode>(); query_scope_node && query_scope_node->getJoinTree())
+    {
+        join_tree_node_ptr = &query_scope_node->getJoinTree();
+    }
+    else
+    {
         return {};
+    }
 
-    const auto & join_tree_node = query_scope_node->getJoinTree();
-    return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
+    /** Two-pass join-tree resolution for the hybrid SQL-standard short-name fallback
+      * (issue #87022 and friends). When the resolver enters with the short-name fallback
+      * enabled, we do an initial pass with it temporarily disabled so that any existing
+      * canonical / Nested-prefix match anywhere in the join tree wins. We only retry with
+      * the fallback enabled when the first pass found nothing — guaranteeing the additive
+      * contract: enabling `analyzer_enable_short_column_names_from_subquery` cannot change
+      * the resolution target of an identifier that already resolves on master.
+      *
+      * If the resolver entered with the fallback already disabled (e.g. JOIN USING
+      * resolution explicitly disabled it), we don't retry — that disabled state is the
+      * caller's intent and must be preserved.
+      */
+    const bool retry_with_short_name_fallback = short_name_fallback_enabled;
+    short_name_fallback_enabled = false;
+    auto result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, *join_tree_node_ptr, scope);
+    if (!result.resolved_identifier && retry_with_short_name_fallback)
+    {
+        short_name_fallback_enabled = true;
+        result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, *join_tree_node_ptr, scope);
+    }
+    short_name_fallback_enabled = retry_with_short_name_fallback;
+    return result;
 }
 
 }

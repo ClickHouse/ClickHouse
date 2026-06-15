@@ -19,6 +19,12 @@
 1	1
 -- on: existing Nested-prefix resolution wins over the new short-name fallback
 [(1,'a')]
+-- on: existing Nested-prefix wins across a CROSS JOIN sibling that offers short-name
+[(1,'a')]
+-- on: JOIN USING does not match a short-name-resolved column
+-- on: SELECT * from sibling with `b.f1` does not over-qualify the existing `f1` projection
+f1	b.f1
+1	2
 -- on: explicit canonical alias shadows the short name
 10
 -- on: explicit dotted projection in subquery (related: #94558)

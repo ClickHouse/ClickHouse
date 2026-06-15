@@ -154,6 +154,26 @@ private:
 
     /// Global expression node to projection name map
     std::unordered_map<QueryTreeNodePtr, ProjectionName> & node_to_projection_name;
+
+public:
+    /** Hybrid SQL-standard short-name fallback for subquery / CTE projection columns
+      * (issue #87022 and friends). When `false`, `tryResolveIdentifierFromStorage` and
+      * `tryResolveIdentifierFromTableExpression` skip the short-name index entirely and
+      * behave exactly like master regardless of whether the
+      * `analyzer_enable_short_column_names_from_subquery` setting populated the index.
+      *
+      * Used for two purposes:
+      *   1. Two-pass join-tree resolution: pass 1 disables short-name so that any
+      *      existing canonical / Nested-prefix match anywhere in the join tree wins;
+      *      pass 2 re-enables it only when pass 1 found no resolution. This keeps the
+      *      setting's "additive" contract — enabling it cannot change the resolution
+      *      target of an identifier that already resolves on master.
+      *   2. JOIN USING resolution: short-name is suppressed there because a USING column
+      *      list matches by `ColumnNode::getColumnName`, which still returns the canonical
+      *      dotted name. Allowing short-name in USING context would make USING accept
+      *      mismatched left/right column names and then silently fail to merge them.
+      */
+    bool short_name_fallback_enabled = true;
 };
 
 }

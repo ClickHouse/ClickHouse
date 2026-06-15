@@ -133,6 +133,36 @@ SELECT '-- on: existing Nested-prefix resolution wins over the new short-name fa
 -- short-name fallback is suppressed for `f1` here.
 SELECT f1 FROM (SELECT [1] AS `f1.x`, ['a'] AS `f1.y`, 42 AS `b.f1`);
 
+SELECT '-- on: existing Nested-prefix wins across a CROSS JOIN sibling that offers short-name';
+
+-- Same additivity guarantee, this time across a join boundary. The left subquery offers
+-- `f1` only via the short-name fallback (canonical `b.f1`); the right subquery offers
+-- `f1` via the existing Nested-prefix collapse of `f1.x` / `f1.y`. The two-pass
+-- resolution at the join-tree level disables short-name fallback in pass 1 so the
+-- right side's Nested-prefix wins, regardless of `single_join_prefer_left_table`.
+SELECT f1 FROM (SELECT 42 AS `b.f1`) AS l CROSS JOIN (SELECT [1] AS `f1.x`, ['a'] AS `f1.y`) AS r;
+
+SELECT '-- on: JOIN USING does not match a short-name-resolved column';
+
+-- Bot finding (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3410399567):
+-- A short-name-resolved `ColumnNode` still reports its canonical dotted name through
+-- `getColumnName`, so a `USING (f1)` list cannot reliably merge a left key whose
+-- canonical name is `b.f1` with a right key whose canonical name is `f1`. We therefore
+-- suppress the short-name fallback during USING resolution, restoring master-equivalent
+-- failure semantics for this corner case (the user can still resolve via the dotted
+-- name or an explicit alias).
+WITH t1 AS (SELECT 1 AS f1), t2 AS (SELECT 1 AS f1)
+SELECT *
+FROM (SELECT b.f1 FROM t1 AS a JOIN t2 AS b ON a.f1 = b.f1) AS q
+JOIN (SELECT 1 AS f1) AS r USING (f1); -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT '-- on: SELECT * from sibling with `b.f1` does not over-qualify the existing `f1` projection';
+
+-- Bot finding: enabling the setting should not change `SELECT *` output column names
+-- for queries that don't reference the short-name. Removing the predicate-level
+-- short-name binding (which was driving qualifier decisions) keeps headers stable.
+SELECT * FROM (SELECT 1 AS f1) AS a, (SELECT 2 AS `b.f1`) AS q FORMAT TSVWithNames;
+
 SELECT '-- on: explicit canonical alias shadows the short name';
 
 WITH t1 AS (SELECT 1 AS f1, 2 AS f2),
