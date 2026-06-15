@@ -410,6 +410,11 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override { return delegate->tryGetS3StorageClient(); }
 #endif
 
+    bool hasSameDelegateAndPath(const DiskPtr & other_delegate, const String & other_path) const
+    {
+        return delegate == other_delegate && disk_path == other_path;
+    }
+
 private:
     String wrappedPath(const String & path) const
     {

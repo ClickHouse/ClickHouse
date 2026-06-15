@@ -187,8 +187,13 @@ namespace
     }
 
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
-    void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
-                                  DiskPtr & out_disk, String & out_path)
+    void getDiskAndPathFromConfig(
+        const String & encrypted_disk_name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const DisksMap & map,
+        DiskPtr & out_disk,
+        String & out_path)
     {
         String disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
@@ -205,6 +210,17 @@ namespace
         out_path = config.getString(config_prefix + ".path", "");
         if (!out_path.empty() && (out_path.back() != '/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
+
+        for (const auto & [name, disk] : map)
+        {
+            /// The map contains this disk itself while applying settings on configuration reload.
+            if (name == encrypted_disk_name)
+                continue;
+
+            auto * encrypted_disk = typeid_cast<DiskEncrypted *>(disk.get());
+            if (encrypted_disk && encrypted_disk->hasSameDelegateAndPath(out_disk, out_path))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path '{}' is conflicted with other encrypted disk '{}'", quoteString(out_path), encrypted_disk->getName());
+        }
     }
 
     /// Parses the settings of an encrypted disk from the configuration.
@@ -250,7 +266,7 @@ namespace
 
             DiskPtr wrapped_disk;
             String disk_path;
-            getDiskAndPathFromConfig(config, config_prefix, disk_map, wrapped_disk, disk_path);
+            getDiskAndPathFromConfig(disk_name, config, config_prefix, disk_map, wrapped_disk, disk_path);
             res->wrapped_disk = wrapped_disk;
             res->disk_path = disk_path;
 
