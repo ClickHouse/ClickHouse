@@ -4694,3 +4694,58 @@ TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
     EXPECT_GE(ex.incompleteConnectionsForTest(), 1u);
     EXPECT_EQ(limit->getActiveCount(), 1u);        /// the reopened connection holds the slot
 }
+
+TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
+{
+    /// The channel bound is the predicted forward reach, not the current read extent, so a
+    /// confirmed forward run extends ONE GET past the reader's advancing right boundary
+    /// instead of reopening at each mark range. A cold scan advances the extent
+    /// 200 -> 300 -> 400; once the estimator has seen the run, the channel opened at 200 is
+    /// bounded to the object end (400) - past the then-current extent (300) - and spans the
+    /// rest, so the whole 400-byte file is served by TWO GETs, not one per extent.
+    const size_t window = 100;
+    const size_t size = 4 * window;                /// 400; one window per quarter
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 4096;
+    opts.long_connection_limit = limit;
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    String got;
+    auto read_to = [&](size_t extent)
+    {
+        ex.setReadExtent(extent);
+        while (ex.getPosition() < extent)
+        {
+            auto w = ex.readNextWindow();
+            if (w.empty())
+                break;
+            got += ropeBytes(w);
+        }
+    };
+
+    read_to(2 * window);                           /// [0,200): channel opens at 0, bound 200, drains clean
+    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);
+
+    read_to(3 * window);                           /// [200,300): a fresh channel opens at 200...
+    EXPECT_EQ(ex.sourceRequestsForTest(), 2u);
+    EXPECT_TRUE(ex.hasLongConnForTest());
+    EXPECT_EQ(ex.longConnBoundForTest(), size);    /// ...bounded to the OBJECT END, past the extent (300)
+
+    read_to(4 * window);                           /// [300,400): served by the SAME channel, no reopen
+    EXPECT_EQ(got, content);
+    EXPECT_EQ(ex.sourceRequestsForTest(), 2u);     /// two GETs total, not one per extent
+    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);
+    EXPECT_FALSE(ex.hasLongConnForTest());         /// exhausted at the object end
+    EXPECT_EQ(limit->getActiveCount(), 0u);
+}

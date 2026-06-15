@@ -329,7 +329,8 @@ private:
     /// the open stream (`skipForward`); a read it cannot continue reopens. Move-only
     /// so it can ride the `FetchMachine` payload as a SINGLE owner (foreground member
     /// <-> machine payload, never shared across threads). Offsets are OBJECT-LOCAL (a
-    /// GET streams one object); `read_until` is the read-extent bound, set ONCE.
+    /// GET streams one object); `read_until` is the predicted-reach bound (>= the read
+    /// extent), set ONCE.
     struct LongConnection
     {
         std::unique_ptr<ReadBufferFromFileBase> buffer;
@@ -641,8 +642,9 @@ private:
     bool shouldOpenLong(size_t phys_off) const;
 
     /// The long-connection bound (object-local) for an open at physical `phys_offset`:
-    /// the read extent clamped to the object end. See the definition for why the bound
-    /// is the extent, not the predicted reach.
+    /// the predicted forward reach, floored at the current read extent and capped at the
+    /// object end, so a forward run extends the channel past the current right boundary.
+    /// See the definition.
     size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const;
 
     /// Foreground open hook: when `shouldOpenLong(phys_offset)` and a slot can be
@@ -653,12 +655,12 @@ private:
     void openLongIfWarranted(const StoredObject & object, size_t object_offset,
         size_t phys_offset, size_t want, Stats & out_stats);
 
-    /// Open a bounded GET over `object` at object-local `offset`, bounded at
-    /// object-local `read_until`, taking the already-acquired `slot`; store it in
-    /// `conn`. The ONLY place a long connection is opened, and only on the foreground
+    /// Open a bounded GET over `object` for the object-local range `[offset, read_end)`,
+    /// taking the already-acquired `slot`; store it in `conn` (its `read_until` bound is
+    /// `read_end`). The ONLY place a long connection is opened, and only on the foreground
     /// - a machine never calls this.
     void openLong(std::optional<LongConnection> & conn, const StoredObject & object,
-        size_t offset, size_t read_until, LongConnectionSlot slot, Stats & out_stats) const;
+        size_t offset, size_t read_end, LongConnectionSlot slot, Stats & out_stats) const;
 
     /// Serve a read at object-local `offset` from `conn` (caller has checked
     /// `servesObject` + `canContinue`): bridge a forward gap by discarding it

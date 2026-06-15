@@ -1768,20 +1768,23 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
 
 size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
 {
-    /// The channel bound, in object-local coordinates. Bound to the read extent - how
-    /// far the reader will consume this pass - clamped to the object end. A full-scan
-    /// extent lets the channel span the whole object, so `serveFromLong` bridges cached
-    /// gaps up to `min_bytes_for_seek` (over-read) and the channel breaks - leaving an
-    /// incomplete connection - only at wider gaps; a bounded read (one reverse chunk)
-    /// keeps the channel from over-running, so it drains cleanly at the chunk end. The
-    /// predicted reach decides only WHETHER to open (`shouldOpenLong`), never how far: it
-    /// reflects only the current look-ahead and would strand the channel mid-run.
+    /// The channel bound, in object-local coordinates: the predicted forward reach,
+    /// floored at the current read extent and capped at the object end. The reach term
+    /// (`clampReach(predictedReach())`) lets a confirmed forward run extend the channel
+    /// PAST the reader's current right boundary toward the file end, so one GET spans
+    /// several advancing mark ranges instead of reopening at each. The extent floor keeps
+    /// a bounded read - one reverse chunk, or a run broken by a wide cached gap - from
+    /// stranding the channel before its real end: there the reach equals the chunk and the
+    /// channel drains cleanly. The object end caps a GET to the single object it streams.
     const size_t object_base = phys_offset - object_offset;
-    size_t phys_bound = std::numeric_limits<size_t>::max();
-    if (!hasUnknownSize())
-        phys_bound = object_base + object.bytes_size;
-    if (read_extent_end)
-        phys_bound = std::min(phys_bound, *read_extent_end + data_start_offset);
+    const size_t object_end = hasUnknownSize()
+        ? std::numeric_limits<size_t>::max()
+        : object_base + object.bytes_size;
+    const size_t extent = read_extent_end
+        ? std::min<size_t>(*read_extent_end + data_start_offset, object_end)
+        : object_end;
+    const size_t reach = clampReach(continuity_tracker.predictedReach(), phys_offset);
+    const size_t phys_bound = std::min(object_end, std::max(extent, reach));
     return phys_bound - object_base;
 }
 
@@ -1808,22 +1811,22 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
 }
 
 void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const StoredObject & object,
-    size_t offset, size_t read_until, LongConnectionSlot slot, Stats & out_stats) const
+    size_t offset, size_t read_end, LongConnectionSlot slot, Stats & out_stats) const
 {
-    /// The foreground is the sole opener. Open a bounded GET and store it; the first
-    /// `readInto` issues the lazy request.
+    /// The foreground is the sole opener. Open a bounded GET over [offset, read_end) and
+    /// store it; the first `readInto` issues the lazy request.
     auto opened = source->open(object);
     if (offset > 0)
         opened->seek(offset, SEEK_SET);
     if (opened->supportsRightBoundedReads())
-        opened->setReadUntilPosition(read_until);
+        opened->setReadUntilPosition(read_end);
 
     conn.emplace(LongConnection{
         .buffer = std::move(opened),
         .object_path = object.remote_path,
         .opened_at = offset,
         .current_position = offset,
-        .read_until = read_until,
+        .read_until = read_end,
         .slot = std::move(slot),
     });
     out_stats.add(Stats::SourceRequests);
@@ -1901,11 +1904,11 @@ void ReaderExecutor::openLongForTest(size_t phys_offset, size_t reach)
     const auto & pr = ranges.front();
     const size_t obj_file_offset = phys_offset - pr.object_offset;
     const size_t phys_bound = std::min<size_t>(clampReach(reach, phys_offset), obj_file_offset + pr.object.bytes_size);
-    const size_t read_until = phys_bound - obj_file_offset;
+    const size_t read_end = phys_bound - obj_file_offset;
     LongConnectionSlot slot = long_connection_limit
         ? long_connection_limit->tryAcquire(long_connection_limit)
         : LongConnectionSlot{};
-    openLong(long_conn, pr.object, pr.object_offset, read_until, std::move(slot), stats);
+    openLong(long_conn, pr.object, pr.object_offset, read_end, std::move(slot), stats);
 }
 
 Rope ReaderExecutor::serveFromLongForTest(size_t phys_offset, size_t want)
