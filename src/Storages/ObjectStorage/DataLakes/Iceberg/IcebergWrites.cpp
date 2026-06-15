@@ -161,12 +161,15 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         /// ClickHouse type whose value `getAvroType` maps to Avro `int`/`long` — most importantly
         /// `icebergBucket`, which returns `UInt32`. The underlying value decodes into the `Field` as a
         /// signed integer, so read it generically (the `Field`'s storage signedness need not match the
-        /// resolved type) and serialize it like the corresponding signed case.
+        /// resolved type) and serialize it at the width of the corresponding signed Avro type: the
+        /// `int`-mapped types must emit 4 bytes (like the `Int32` path) and only the `long`-mapped
+        /// `UInt64` may emit 8, otherwise the manifest bound has the wrong encoded width.
         case TypeIndex::UInt8:
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
         case TypeIndex::UInt32:
+            return dumpValue(static_cast<Int32>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field)));
         case TypeIndex::UInt64:
             return dumpValue(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field));
         case TypeIndex::DateTime64:

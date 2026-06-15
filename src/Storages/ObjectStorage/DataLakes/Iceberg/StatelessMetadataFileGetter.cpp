@@ -203,12 +203,18 @@ ManifestFileCacheKeys getManifestList(
                 content_type = Iceberg::ManifestFileContentType(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
-            /// partition_spec_id is a required manifest-list field in all format versions, but guard
-            /// defensively (this is the universal read path) and fall back to the initial spec (0).
-            Int32 partition_spec_id = 0;
-            if (manifest_list_deserializer.hasPath(f_partition_spec_id))
-                partition_spec_id = static_cast<Int32>(
-                    manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
+            /// partition_spec_id is a required manifest-list field in all format versions. Fail closed
+            /// when it is absent instead of defaulting to the initial spec (0): a silent fallback would
+            /// let a partition-evolved table resolve manifests under the wrong spec and corrupt the
+            /// partition tuples/pruning metadata rather than surfacing the invalid manifest list.
+            if (!manifest_list_deserializer.hasPath(f_partition_spec_id))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} is missing required field '{}'",
+                    i,
+                    f_partition_spec_id);
+            Int32 partition_spec_id = static_cast<Int32>(
+                manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
                 partition_spec_id);

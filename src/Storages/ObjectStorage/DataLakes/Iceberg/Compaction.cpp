@@ -39,6 +39,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Setting
@@ -404,6 +405,17 @@ static bool writeConsolidatedManifestFile(
     const DataLakeStorageSettings & data_lake_settings)
 {
     auto log = getLogger("IcebergManifestConsolidation");
+
+    /// Validate the format version on the freshly-fetched metadata, not on the version captured when
+    /// the table object was created. `compactIcebergManifests` deliberately re-fetches the latest
+    /// metadata, so a table created as v2 and later upgraded to v3 by another writer would otherwise
+    /// slip past the caller's guard and reach `generateManifestFile`, which accepts v3 but writes it
+    /// with the v2 manifest schema — dropping the row-lineage `first_row_id` this guard protects.
+    if (metadata_object->getValue<Int32>(Iceberg::f_format_version) >= 3)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
+            "row-lineage 'first_row_id' round-trip is not implemented");
 
     // Derive current snapshot info directly from the metadata file.
     if (!metadata_object->has(Iceberg::f_current_snapshot_id))
