@@ -4176,6 +4176,9 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (!stat.condition.empty())
                 format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
 
+            if (!stat.state.empty())
+                format_settings.out << prefix << indent << indent << "State: " << stat.state << '\n';
+
             format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after;
             if (i)
                 format_settings.out << '/' << index_stats[i - 1].num_parts_after;
@@ -4249,6 +4252,9 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 
             if (!stat.condition.empty())
                 index_map->add("Condition", stat.condition);
+
+            if (!stat.state.empty())
+                index_map->add("State", stat.state);
 
             auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
             if (!search_algorithm.empty())

@@ -437,6 +437,7 @@ static std::string formatTokens(const Tokens & tokens)
     {
         if (i > 0)
             result += ", ";
+
         result += fmt::format("\"{}\"", tokens[i]);
     }
     return result;
@@ -458,16 +459,16 @@ static std::string formatTextSearchQueries(const std::vector<TextSearchQueryPtr>
             result += " | ";
 
         const auto & query = queries[i];
-        result += fmt::format("(search_mode: {}, direct_read: {}, tokens: [", query->search_mode, query->direct_read_mode);
+        result += fmt::format("(search mode: {}, direct read: {}, tokens: [", query->search_mode, query->direct_read_mode);
         result += formatTokens(query->tokens);
         result += "])";
     }
     return result;
 }
 
-std::string MergeTreeIndexConditionText::getDescription(const std::vector<MergeTreeIndexGranulePtr> & granules) const
+std::string MergeTreeIndexConditionText::getDescription() const
 {
-    /// Per-query part: print the RPN of the condition as a tree of text search queries.
+    /// Print the RPN of the condition as a tree of text search queries.
     std::vector<std::string> stack;
 
     for (const auto & element : rpn)
@@ -526,9 +527,12 @@ std::string MergeTreeIndexConditionText::getDescription(const std::vector<MergeT
         }
     }
 
-    std::string description = stack.size() == 1 ? std::move(stack.front()) : "unknown";
+    return stack.size() == 1 ? std::move(stack.front()) : "unknown";
+}
 
-    /// Global part: the overall search mode plus, for each search token, in how many of the analyzed parts it was
+std::string MergeTreeIndexConditionText::getStateDescription(const std::vector<MergeTreeIndexGranulePtr> & granules) const
+{
+    /// The overall search mode plus, for each search token, in how many of the analyzed parts it was
     /// resolved during index analysis (postings folded) rather than deferred to the runtime direct read in PREWHERE.
     std::vector<const TextIndexAnalyzer *> analyzers;
     analyzers.reserve(granules.size());
@@ -541,7 +545,7 @@ std::string MergeTreeIndexConditionText::getDescription(const std::vector<MergeT
 
     /// Without any granule (e.g. all parts were pruned before this index ran) we cannot tell the tokens apart.
     if (analyzers.empty())
-        return fmt::format("{}; global: (search_mode: {}, all_search_tokens: [{}])", description, global_search_mode, formatTokens(all_search_tokens));
+        return fmt::format("(global search mode: {}, all tokens: [{}])", global_search_mode, formatTokens(all_search_tokens));
 
     std::string tokens_str;
     if (all_search_tokens.size() > 20)
@@ -570,7 +574,7 @@ std::string MergeTreeIndexConditionText::getDescription(const std::vector<MergeT
         }
     }
 
-    return fmt::format("{}; global: (search_mode: {}, tokens: [{}])", description, global_search_mode, tokens_str);
+    return fmt::format("(global search mode: {}, all tokens: [{}])", global_search_mode, tokens_str);
 }
 
 bool MergeTreeIndexConditionText::hasSearchPatterns() const

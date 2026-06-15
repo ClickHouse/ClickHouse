@@ -1,3 +1,3 @@
 ['astes',' fastes','est o','ap da','lap da','olap da',' olap da','est olap da','tabas','atabas','databas']
 ClickHouse is the fastest OLAP database
-Condition: (search_mode: All, direct_read: Hint, tokens: [" fastes", "databas", "est olap da"]); global: (search_mode: All, tokens: [" fastes" (analyzed in 2/2 parts), "databas" (analyzed in 2/2 parts), "est olap da" (analyzed in 2/2 parts)])
+Condition: (search mode: All, direct read: Hint, tokens: [" fastes", "databas", "est olap da"])

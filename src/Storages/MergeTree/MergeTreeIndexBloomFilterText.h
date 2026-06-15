@@ -74,7 +74,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription(const std::vector<MergeTreeIndexGranulePtr> & /*granules*/) const override { return ""; }
+    std::string getDescription() const override { return ""; }
 
 private:
     struct KeyTuplePositionMapping
