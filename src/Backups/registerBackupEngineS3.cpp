@@ -19,6 +19,7 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString http_client;
@@ -104,6 +105,9 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::use_environment_credentials]
                 = collection->getOrDefault<bool>("use_environment_credentials", false);
             auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);
+            /// Carry the `session_token` part of an explicit temporary (STS) key triplet, so a collection with
+            /// temporary credentials is signed with the token (matches the s3 table function / S3 engine).
+            auth[S3AuthSetting::session_token] = collection->getOrDefault<String>("session_token", "");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;
             auth[S3AuthSetting::external_id] = external_id;

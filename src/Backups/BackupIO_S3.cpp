@@ -59,6 +59,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -220,7 +221,7 @@ private:
             settings.auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             std::move(credentials_configuration),
-            /*session_token=*/"",
+            settings.auth_settings[S3AuthSetting::session_token],
             shared_cache);
     }
 
