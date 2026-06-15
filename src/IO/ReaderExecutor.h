@@ -446,7 +446,7 @@ private:
         /// Per-retrieve runtime status, 1:1 with `schedule.retrieves`, allocated at
         /// plan build and reset on re-plan/seek. The assert spine maintains it as a
         /// debug shadow; the schedule-driven interpreter maintains and serves from it.
-        std::vector<RetrieveStatus> retrieve_status;
+        VectorWithMemoryTracking<RetrieveStatus> retrieve_status;
 
         /// The step interpreter's loop authority - an index into `schedule.steps`,
         /// reconstructed from `position` on re-plan/seek.
