@@ -74,7 +74,7 @@ class EnumCcpSub
     using Graph = TQueryGraph;
     using Uint = TUint;
 public:
-    EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_);
+    EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_);
     UInt64 n() const { return nr_relations; }
     void initDPTable(Dptable & dp_table, const Graph & query_graph);
     bool isConnected(const Dptable & dp_table, const Uint S1, const Uint S2) const;
@@ -82,13 +82,15 @@ public:
     void enumerate(Consumer & consumer, AcceptorFn acceptor, const Graph & query_graph);
 private:
     UInt64 nr_relations{0};
+    UInt64 budget{0}; // budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
     LoggerPtr log;
 };
 
 
 template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
-EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_)
+EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_)
     : nr_relations(nr_relations_)
+    , budget(budget_)
     , log(log_)
 {
 }
@@ -119,12 +121,12 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::initDPTable(TDptable &
         LOG_TEST(log, "Initializing DP table with edge between relations {} and {}", toBinaryString(left_mask), toBinaryString(right_mask));
 
         dp_table[left_mask].neighbor |= right_mask;
-        dp_table[left_mask].estimated_rows = query_graph.relation_stats[relations[0]].estimated_rows.value_or(1);
+        dp_table[left_mask].estimated_rows = query_graph.relation_stats[relations[0]].estimated_rows;
         dp_table[left_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
         dp_table[left_mask].column_stats = query_graph.relation_stats[relations[0]].column_stats;
 
         dp_table[right_mask].neighbor |= left_mask;
-        dp_table[right_mask].estimated_rows = query_graph.relation_stats[relations[1]].estimated_rows.value_or(1);
+        dp_table[right_mask].estimated_rows = query_graph.relation_stats[relations[1]].estimated_rows;
         dp_table[right_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
         dp_table[right_mask].column_stats = query_graph.relation_stats[relations[1]].column_stats;
     }
@@ -165,6 +167,10 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & 
     {
         if (std::popcount(s) <= 1)
             continue;
+
+        // If the query is large/complex break out of the optimization early
+        if (consumer.dptable().noCcp() > budget)
+            return;
 
         NonEmptySubmasks<TUint> subsets(s);
         for (auto s_iter : subsets)

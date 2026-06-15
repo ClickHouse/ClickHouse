@@ -757,7 +757,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
  */
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
-    using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
+    using Bitvector = UInt64; // choose UInt64 or even UInt128 for larger sets
+    // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
+    // This budget cap is obtained from empirical testing using different queries and join graphs.
+    static constexpr UInt64 max_nr_ccps = 60'000;
+
     struct DPEntry {
         Bitvector neighbor{0};
         Bitvector left{0};
@@ -775,24 +779,24 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 
     const size_t n = query_graph.relation_stats.size();
     Checker checker(n, *this);
-    Enumerator enumerator(n, log);
+    Enumerator enumerator(n, max_nr_ccps, log);
     enumerator.enumerate(checker, &Checker::accept, query_graph);
 
     const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
     const auto & dptable = checker.dptable();
 
-    /// The full set is assembled only if the join graph is connected. When it is not — e.g.
+    /// 1. If the join graph is too complex we break early (we don't do time check limits here)
+    /// thus final plan will be missing.
+    /// 2. The full set is assembled only if the join graph is connected. When it is not — e.g.
     /// cross products, or predicates that reference a single relation or a constant and thus
     /// create no binary edge (`... LEFT JOIN t ON t.x = 5`) — DPsub cannot stitch the
     /// disconnected components, so the full-set entry is missing (or was never given a join).
-    /// Fall back to the greedy solver, which combines components via cross products and still
-    /// attaches the residual single-relation predicates correctly.
     const bool full_built = dptable.map().contains(full_set)
-        && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
+                            && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
     if (!full_built)
     {
-        LOG_TRACE(log, "DPsub: join graph is disconnected, falling back to greedy for cross-product stitching");
-        return solveGreedy();
+        LOG_TRACE(log, "DPsub: join graph is too complex or disconnected!");
+        return nullptr;
     }
 
     return buildPhysicalPlan(dptable, full_set);
