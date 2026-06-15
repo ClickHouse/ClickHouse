@@ -1548,6 +1548,28 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
+    DECLARE(UInt64, output_format_image_width, 1024, R"(
+The width of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(UInt64, output_format_image_height, 1024, R"(
+The height of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(String, output_format_image_terminal_mode, "", R"(
+For image output formats such as `PNG`, output the image directly to the terminal using an inline image protocol instead of writing the raw image bytes.
+
+Possible values:
+- `` (empty) — write the raw image bytes (the default).
+- `iterm` — use the iTerm2 inline image protocol.
+- `kitty` — use the Kitty graphics protocol.
+- `sixel` — use the Sixel protocol.
+- `auto` — if the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes.
+
+Default value: `` (empty).
+)", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
