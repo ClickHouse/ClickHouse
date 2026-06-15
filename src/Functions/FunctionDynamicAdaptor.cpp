@@ -31,6 +31,17 @@ namespace ErrorCodes
     extern const int NO_COMMON_TYPE;
 }
 
+/// Expand a function result back to pre-filter size. The nested function may return an input column
+/// unchanged (e.g. concat of one String arg), so `column` can alias a subcolumn of the source
+/// Dynamic's backing ColumnVariant; mutate() clones it when shared, unlike assumeMutable() which
+/// would expand the shared subcolumn in place and leave the source ColumnVariant malformed.
+static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UInt8> & filter)
+{
+    auto mutable_column = IColumn::mutate(std::move(column));
+    mutable_column->expand(filter, false);
+    return mutable_column;
+}
+
 ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
     size_t dynamic_argument_index_)
@@ -272,7 +283,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         if (!isDynamic(result_type))
         {
             /// Expand filtered result. If it's already Nullable, it will be filled with NULLs.
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// If result wasn't Nullable, create null-mask from filter and make it Nullable.
             if (!nested_result_type->isNullable() && nested_result_type->canBeInsideNullable())
             {
@@ -312,7 +323,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         /// and cast to the result Dynamic type (it can have different max_types parameter).
         if (isDynamic(nested_result_type))
         {
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
         }
 

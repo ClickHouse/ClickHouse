@@ -1879,8 +1879,17 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    ColumnPtr input_column = in_column->convertToFullIfNeeded();
-    DataTypePtr input_type = recursiveRemoveLowCardinality(in_type);
+    /// Strip only outer-level wrappers (Const/Replicated/Sparse/LowCardinality), symmetrically with
+    /// `removeLowCardinality` on the type. `convertToFullIfNeeded` must not be used here: it recurses
+    /// into subcolumns and strips inner `LowCardinality`, which `removeLowCardinality` keeps, producing a
+    /// column/type mismatch for inner LC (e.g. `Variant(LowCardinality(String), Int)`) and a `typeid_cast`
+    /// failure in `FunctionCast` wrappers. This mirrors `applyFunctionChainToColumn` above.
+    ColumnPtr input_column = in_column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfReplicated()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
+    DataTypePtr input_type = removeLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
@@ -1888,8 +1897,12 @@ static bool applyDeterministicDagToColumn(
     /// - strip Nullable/LowCardinality wrappers to get the actual column
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        column = column->convertToFullIfNeeded();
-        type = recursiveRemoveLowCardinality(type);
+        column = column
+            ->convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+        type = removeLowCardinality(type);
 
         if (column->isNullable())
         {
