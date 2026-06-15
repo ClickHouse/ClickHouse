@@ -24,6 +24,7 @@ Autocomplete::getPossibleNextWords<replxx::Replxx::completions_t>(const String &
     }
     chassert(isLastCharSpace(prefix, word_break_characters));
     Lexer lexer(prefix.data(), prefix.data() + prefix.size());
+    std::lock_guard lock(mutex);
     auto result = model.predictNextWords(lexer);
     return replxx::Replxx::completions_t(result.begin(), result.end());
 }
@@ -38,11 +39,18 @@ Autocomplete::getPossibleNextWords<replxx::Replxx::hints_t>(const String & prefi
     }
     chassert(isLastCharSpace(prefix, word_break_characters));
     Lexer lexer(prefix.data(), prefix.data() + prefix.size());
+    std::lock_guard lock(mutex);
     auto result = model.predictNextWords(lexer);
     return replxx::Replxx::hints_t(result.begin(), result.end());
 }
 
 void Autocomplete::addQuery(const String & query)
+{
+    std::lock_guard lock(mutex);
+    addQueryToModel(query);
+}
+
+void Autocomplete::addQueryToModel(const String & query)
 {
     Lexer lexer(query.data(), query.data() + query.size());
     model.addQuery(lexer);
@@ -118,7 +126,7 @@ void Autocomplete::load(ContextPtr context, const ConnectionParameters & connect
                     {
                         WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                         out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
-                        out.next();
+                        out.finalize();
                     }
                 }
                 catch (...)
@@ -126,7 +134,7 @@ void Autocomplete::load(ContextPtr context, const ConnectionParameters & connect
                     last_error = getCurrentExceptionCode();
                     WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                     out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
-                    out.next();
+                    out.finalize();
                 }
 
                 break;
@@ -161,13 +169,11 @@ void Autocomplete::fillQueriesFromBlock(const Block & block)
 
     size_t rows = block.rows();
 
-    std::vector<std::string> new_queries;
-    new_queries.reserve(rows);
     std::lock_guard lock(mutex);
     for (size_t i = 0; i < rows; ++i)
     {
         history_queries.emplace_back(column[i].safeGet<String>());
-        addQuery(history_queries.back());
+        addQueryToModel(history_queries.back());
     }
 }
 

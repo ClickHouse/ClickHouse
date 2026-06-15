@@ -3813,12 +3813,26 @@ void ClientBase::runInteractive()
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
-    autocomplete.emplace();
-    /// Only seed the autocomplete from query history when connected to a server.
-    /// In clickhouse-local there is no persistent `system.query_log` to query, so we skip it
-    /// (the transformer and the base Markov models still provide predictions without history).
-    if (load_autocomplete && global_context->getApplicationType() == Context::ApplicationType::CLIENT)
-        autocomplete->load<Connection>(global_context, connection_parameters);
+    /// The transformer and the base Markov models predict even without server history, so the
+    /// autocomplete is constructed (and registered below) whenever the feature is enabled. When it
+    /// is disabled (`disable_autocomplete`, non-interactive, or an old server) it is left empty so
+    /// we do not pay for loading the embedded model nor register the completion callback.
+    if (load_autocomplete)
+    {
+        autocomplete.emplace();
+        /// Seed the autocomplete from query history only when connected to a server. In
+        /// clickhouse-local (and embedded clients) there is no persistent `system.query_log` to
+        /// query, so we skip seeding but still mark the model ready, otherwise `getPossibleNextWords`
+        /// would return nothing forever and the transformer/base Markov predictions would be lost.
+        ///
+        /// Note: `client_context` (not `global_context`) carries `query_kind = INITIAL_QUERY`, which
+        /// the server requires in a Query packet; using `global_context` here made the seeding query
+        /// fail with `Unexpected query kind in Query packet: 0`.
+        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+            autocomplete->load<Connection>(client_context, connection_parameters);
+        else
+            autocomplete->markLoaded();
+    }
 
     if (home_path.empty())
     {

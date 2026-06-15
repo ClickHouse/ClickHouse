@@ -155,7 +155,11 @@ std::vector<String> Client::loadWarningMessages()
         return {};
 
     std::vector<String> messages;
-    auto client_info_copy = global_context->getClientInfo();
+    /// Use `client_context` (not `global_context`): it carries `query_kind = INITIAL_QUERY`, which
+    /// the server requires in a Query packet. With `global_context` (`query_kind = NO_QUERY`) the
+    /// server rejects this query with `Unexpected query kind in Query packet: 0`, and the exception
+    /// is silently swallowed by `showWarnings`, so the startup `Warnings:` banner disappears.
+    auto client_info_copy = client_context->getClientInfo();
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,

@@ -11,7 +11,7 @@
 #include <Columns/ColumnString.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Parsers/Lexer.h>
-#include "AutocompleteModel.h"
+#include <Client/AutocompleteModel.h>
 
 /// TODO: remove everything in cpp + static/const where possible
 
@@ -57,6 +57,12 @@ public:
 
     void addQuery(const String & query);
 
+    /// Mark the model as ready without seeding it from server history (e.g. clickhouse-local, where
+    /// there is no persistent `system.query_log`). The transformer and the base Markov models can
+    /// still predict; without this the `loading_finished` flag would stay `false` forever and every
+    /// completion request would return an empty result.
+    void markLoaded() { loading_finished = true; }
+
     void
     fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
 
@@ -67,7 +73,12 @@ public:
     void fillQueriesFromBlock(const Block & block);
 
 private:
-    AutocompleteModel model = AutocompleteModel();
+    /// Adds a single query to the model. `mutex` must be held: the background history loader and
+    /// foreground queries (`ClientBase` calls `addQuery` after every successful query) both mutate
+    /// `model`, whose Markov maps and transformer cache are not thread-safe.
+    void addQueryToModel(const String & query) TSA_REQUIRES(mutex);
+
+    AutocompleteModel model TSA_GUARDED_BY(mutex) = AutocompleteModel();
 
     std::vector<std::string> history_queries TSA_GUARDED_BY(mutex);
 
