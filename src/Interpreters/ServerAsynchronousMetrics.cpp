@@ -228,7 +228,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     try
     {
         const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
-        new_values["ExecutableUserDefinedFunctionMemoryResident"] = { udf_processes_sample.memory_resident_bytes,
+        new_values["ExecutableUserDefinedFunctionMemoryResidentBytes"] = { udf_processes_sample.memory_resident_bytes,
             "Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined"
             " functions and their descendant processes, in bytes. Idle executable_pool workers are included."
             " Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique"
