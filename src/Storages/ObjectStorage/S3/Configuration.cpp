@@ -368,6 +368,11 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     StorageURL::Body tmp_body;
     size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, headers_from_ast, tmp_body, context);
 
+    if (!tmp_body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is supported only by the 'url' table function, not by S3.");
+
     ASTs key_value_asts;
     if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
         first_key_value_arg_it != args.end())
@@ -749,6 +754,11 @@ static void addStructureAndFormatToArgsIfNeededS3(
 
         StorageURL::Body tmp_body;
         size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, tmp_headers, tmp_body, context);
+
+        if (!tmp_body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is supported only by the 'url' table function, not by S3.");
 
         ASTs key_value_asts;
         auto first_key_value_arg_it = getFirstKeyValueArgument(args);
