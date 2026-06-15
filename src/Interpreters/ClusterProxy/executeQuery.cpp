@@ -50,6 +50,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool cluster_function_distributed_read;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsUInt64 limit;
@@ -116,6 +117,13 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings {settings};
     new_settings[Setting::queue_max_wait_ms] = Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]);
+
+    /// This is a plain Distributed / remote() / clusterAllReplicas broadcast: we send the inner query
+    /// to shards but we do not install a cluster-function read-task iterator for them. If that inner
+    /// query contains a nested `*Cluster` table function, the worker must read it locally rather than
+    /// request read tasks back (there is no iterator), otherwise it throws "Distributed task iterator
+    /// is not initialized" (issue #91736). Clear the flag on the secondary query to signal that.
+    new_settings[Setting::cluster_function_distributed_read] = false;
 
     /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.
     if (is_remote_function)
@@ -528,6 +536,12 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
+
+    /// Parallel replicas read from the MergeTree coordinator, not from a cluster-function read-task
+    /// iterator. If the query reads a nested `*Cluster` table function on each replica, the worker
+    /// must read it locally instead of requesting read tasks back (there is no such iterator),
+    /// otherwise it throws "Distributed task iterator is not initialized" (issue #91736).
+    context_mutable->setSetting("cluster_function_distributed_read", Field{false});
 
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)

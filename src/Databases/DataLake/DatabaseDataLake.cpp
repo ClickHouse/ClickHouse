@@ -701,13 +701,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         return storage_cluster;
     }
 
-    /// Unlike table functions (s3, url, etc.), DataLake tables are queried as
-    /// `SELECT * FROM catalog.table` — the query sent to shards cannot be rewritten
-    /// into a Cluster table function variant. So when the initiator created a
-    /// StorageObjectStorageCluster (the branch above) and the shard is collaborating
-    /// with it, we need distributed_processing=true to use the task iterator.
+    /// Only enable task-based reading when the initiator installed a cluster-function read-task
+    /// iterator for us. A plain Distributed / parallel-replicas broadcast sets
+    /// collaborate_with_initiator but installs no iterator, so a ReadTaskRequest would hit a
+    /// LOGICAL_ERROR ("Distributed task iterator is not initialized", issue #91736).
     const bool distributed_processing =
-        context_->getClientInfo().collaborate_with_initiator
+        context_->canUseClusterFunctionDistributedRead()
         && can_use_parallel_replicas;
 
     auto result_storage = std::make_shared<StorageObjectStorage>(

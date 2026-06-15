@@ -7483,6 +7483,9 @@ The timeout in milliseconds for connecting to a remote replica during query exec
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
+    DECLARE(Bool, cluster_function_distributed_read, true, R"(
+Internal. Whether a `*Cluster` table function (`s3Cluster`, `urlCluster`, `fileCluster`, ...) running as a secondary query may read its data distributed via the initiator's read-task iterator. The server clears it on the inner secondary query of a plain `Distributed` / parallel-replicas broadcast (e.g. `clusterAllReplicas(..., s3Cluster(...))`), where the initiator installed no such iterator, so the nested cluster function degrades to a local read instead of throwing `Distributed task iterator is not initialized`. Not intended to be set by users.
+)", 0) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \

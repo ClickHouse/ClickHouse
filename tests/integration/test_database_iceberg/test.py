@@ -838,6 +838,55 @@ def test_cluster_select(started_cluster):
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
 
 
+def test_cluster_select_nested(started_cluster):
+    # Regression for issue #91736 on the DataLakeCatalog path.
+    # A DataLake table read on a parallel-replicas worker must not enable object-storage
+    # distributed_processing unless the initiator actually installed a cluster-function
+    # read-task iterator for it. Here the initiator distributes a plain parallel-replicas
+    # read of a local MergeTree table and joins the DataLake table on each replica. The
+    # secondary query carries a parallel_reading_coordinator but no cluster-function task
+    # iterator, yet the worker still sees collaborate_with_initiator together with the
+    # forwarded parallel_replicas_for_cluster_engines/cluster_for_parallel_replicas
+    # settings. The DataLake stack reaches the read-task iterator through a different gate
+    # (DatabaseDataLake::tryGetTableImpl) than the *Cluster table functions, so before the
+    # fix the worker sent a ReadTaskRequest back to an initiator with no iterator and the
+    # server aborted with "Distributed task iterator is not initialized". The read must
+    # instead fall back to a local read and complete.
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_nested_cluster_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    driver_table = f"{test_ref}_driver"
+
+    load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node1, root_namespace, table_name, "(x String)")
+    node1.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('pablo');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
+
+    # Local MergeTree driver table present on both replicas so parallel replicas can
+    # coordinate over it; its read of the DataLake table runs on each worker replica.
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE IF EXISTS {driver_table} SYNC")
+        node.query(f"CREATE TABLE {driver_table} (x String) ENGINE = MergeTree ORDER BY x")
+    node1.query(f"INSERT INTO {driver_table} VALUES ('pablo')")
+    node2.query(f"INSERT INTO {driver_table} VALUES ('pablo')")
+
+    assert node1.query(
+        f"SELECT DISTINCT d.x FROM {driver_table} AS d WHERE d.x IN (SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`)",
+        settings={
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "max_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": "cluster_simple",
+            "parallel_replicas_for_cluster_engines": 1,
+            "parallel_replicas_for_non_replicated_merge_tree": 1,
+            "prefer_localhost_replica": 0,
+        },
+    ) == 'pablo\n'
+
+
 def test_used_storages_in_query_log(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]

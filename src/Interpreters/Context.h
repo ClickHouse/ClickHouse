@@ -1764,6 +1764,12 @@ public:
     void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
     bool hasClusterFunctionReadTaskCallback() const;
 
+    /// Whether a *Cluster table function running as a secondary query on this worker may
+    /// enable distributed (task-based) reading. Gated on the `cluster_function_distributed_read`
+    /// setting, which the initiator clears on the inner secondary query of a plain Distributed /
+    /// parallel-replicas broadcast (where no cluster-function read-task iterator was installed).
+    bool canUseClusterFunctionDistributedRead() const;
+
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 

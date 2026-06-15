@@ -45,9 +45,11 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
 
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        bool can_use_distributed_iterator =
-            client_info.collaborate_with_initiator &&
-            context->hasClusterFunctionReadTaskCallback();
+        /// Only enable task-based reading when the initiator installed a cluster-function read-task
+        /// iterator for us. When this cluster function is nested under a plain Distributed /
+        /// parallel-replicas broadcast the initiator has no such iterator, so a ReadTaskRequest
+        /// would hit a LOGICAL_ERROR ("Distributed task iterator is not initialized", issue #91736).
+        bool can_use_distributed_iterator = context->canUseClusterFunctionDistributedRead();
 
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(

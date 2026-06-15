@@ -1,0 +1,14 @@
+--- clusterAllReplicas(urlCluster(SELECT 1)) ---
+1
+--- clusterAllReplicas(urlCluster(...)) with WHERE ---
+1
+--- clusterAllReplicas(fileCluster(...)) ---
+1
+--- clusterAllReplicas(s3Cluster(...)) ---
+1
+--- top-level urlCluster still works ---
+1
+--- INSERT INTO distributed SELECT FROM urlCluster reads each task once ---
+3
+--- server alive ---
+1

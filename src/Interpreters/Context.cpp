@@ -281,6 +281,7 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
+    extern const SettingsBool cluster_function_distributed_read;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
     extern const SettingsBool enable_filesystem_cache;
@@ -7470,6 +7471,27 @@ void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback
 bool Context::hasClusterFunctionReadTaskCallback() const
 {
     return next_task_callback.has_value();
+}
+
+bool Context::canUseClusterFunctionDistributedRead() const
+{
+    /// A read-task callback must exist for us to request tasks at all. It is installed for every
+    /// secondary query, so on its own it cannot tell a legitimate cluster-function distribution
+    /// from a nested one.
+    if (!hasClusterFunctionReadTaskCallback())
+        return false;
+
+    /// The precise signal is the `cluster_function_distributed_read` setting. It defaults to true and
+    /// is cleared by the initiator (in ClusterProxy::updateSettingsAndClientInfoForCluster and
+    /// updateContextForParallelReplicas) on the inner secondary query of a plain Distributed /
+    /// parallel-replicas broadcast - exactly the case where no cluster-function read-task iterator was
+    /// installed, so requesting tasks would throw "Distributed task iterator is not initialized"
+    /// (issue #91736). A top-level *Cluster table function and INSERT INTO distributed SELECT FROM
+    /// *Cluster build their own secondary-query context that does not clear the setting, so they keep
+    /// reading each task once. An older initiator that does not know the setting leaves it at its
+    /// default (true): the pre-existing nested-case crash from such an initiator is unchanged and is
+    /// fixed once it upgrades, while every legitimate path keeps working on mixed-version clusters.
+    return getSettingsRef()[Setting::cluster_function_distributed_read];
 }
 
 
