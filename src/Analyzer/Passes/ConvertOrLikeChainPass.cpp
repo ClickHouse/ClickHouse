@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include <Common/likePatternToRegexp.h>
+#include <Common/isValidUTF8.h>
 
 #include <Core/Field.h>
 
@@ -210,6 +211,21 @@ struct PatternInfo
             if (checker.isSlow(p.regexp))
                 return true;
         return false;
+    }
+
+    /// Returns true if every regexp is valid UTF-8. `multiMatchAny` compiles its patterns with
+    /// Hyperscan's `HS_FLAG_UTF8` and throws (`CANNOT_COMPILE_REGEXP` / `BAD_ARGUMENTS`) for a
+    /// pattern that is not valid UTF-8, whereas the original `match` uses RE2, which accepts such
+    /// patterns (matching them as Latin-1 — see `04311_text_index_non_utf8_needle_no_prune`). So
+    /// when any pattern is not valid UTF-8 we must not emit `multiMatchAny`; the combined-`match`
+    /// fallback (also RE2) preserves behavior. Only the regexp path is affected: pure-substring
+    /// patterns go to the byte-oriented `multiSearchAny*` path, which has no such restriction.
+    bool allRegexpsValidUTF8() const
+    {
+        for (const auto & p : patterns)
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(p.regexp.data()), p.regexp.size()))
+                return false;
+        return true;
     }
 };
 
@@ -420,15 +436,16 @@ public:
             }
             else if (!too_few_patterns && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
             {
-                if (allow_hyperscan && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
+                if (allow_hyperscan && info.allRegexpsValidUTF8() && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
                 {
                     /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
                     /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
                     /// and falls back to RE2 alternation otherwise.
                     /// `multiMatchAny` enforces `max_hyperscan_regexp_length`,
                     /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`
-                    /// at execution time, so we pre-check those guards; that way the rewrite cannot
-                    /// turn a previously-working query into a `BAD_ARGUMENTS` /
+                    /// at execution time, and compiles patterns as UTF-8, so we pre-check those guards
+                    /// and that all patterns are valid UTF-8; that way the rewrite cannot turn a
+                    /// previously-working query into a `BAD_ARGUMENTS` / `CANNOT_COMPILE_REGEXP` /
                     /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure.
                     match_function = std::make_shared<FunctionNode>("multiMatchAny");
                     match_function->getArguments().getNodes().push_back(key_data.key);
@@ -438,8 +455,9 @@ public:
                 }
                 else if (info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                 {
-                    /// Fall back to `match` with combined alternation when Hyperscan is disabled or the
-                    /// patterns would be rejected as expensive. `combinedRegexpFitsHyperscanLimits`
+                    /// Fall back to `match` with combined alternation when Hyperscan is disabled, the
+                    /// patterns would be rejected as expensive, or some pattern is not valid UTF-8
+                    /// (which `multiMatchAny` cannot compile but RE2 accepts). `combinedRegexpFitsHyperscanLimits`
                     /// accounts for the `(`, `)` and `|` overhead added by `getCombinedRegexp` so
                     /// `max_hyperscan_regexp_total_length` is a strict upper bound on the emitted
                     /// regexp, and we cannot blow up RE2 compile limits here.

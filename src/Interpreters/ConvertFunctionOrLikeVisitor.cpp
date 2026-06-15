@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
 #include <Common/likePatternToRegexp.h>
+#include <Common/isValidUTF8.h>
 #include <Common/typeid_cast.h>
 
 #include "config.h"
@@ -190,6 +191,22 @@ struct PatternInfo
                 return true;
         return false;
     }
+
+    /// Returns true if every regexp is valid UTF-8. `multiMatchAny` compiles its patterns with
+    /// Hyperscan's `HS_FLAG_UTF8` and throws (`CANNOT_COMPILE_REGEXP` / `BAD_ARGUMENTS`) for a
+    /// pattern that is not valid UTF-8, whereas the original `match` uses RE2, which accepts such
+    /// patterns (matching them as Latin-1 — see `04311_text_index_non_utf8_needle_no_prune`). So
+    /// when any pattern is not valid UTF-8 we must not emit `multiMatchAny`; the combined-`match`
+    /// fallback (also RE2) preserves behavior. Only the regexp path is affected: pure-substring
+    /// patterns go to the byte-oriented `multiSearchAny*` path, which has no such restriction.
+    /// Used by `multiMatchAny` when ClickHouse is built with Vectorscan.
+    [[maybe_unused]] bool allRegexpsValidUTF8() const
+    {
+        for (const auto & p : patterns)
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(p.regexp.data()), p.regexp.size()))
+                return false;
+        return true;
+    }
 };
 
 }
@@ -363,6 +380,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
 #if USE_VECTORSCAN
                     const bool can_use_multi_match = allow_hyperscan
                         && fits_limits
+                        && info.allRegexpsValidUTF8()
                         && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp());
 #else
                     constexpr bool can_use_multi_match = false;
@@ -380,8 +398,10 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                     else if (info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                     {
                         /// Fall back to `match` with combined alternation when Vectorscan is not
-                        /// compiled in, `allow_hyperscan` is off, or the patterns would be rejected
-                        /// as expensive. `combinedRegexpFitsHyperscanLimits` accounts for the `(`,
+                        /// compiled in, `allow_hyperscan` is off, the patterns would be rejected
+                        /// as expensive, or some pattern is not valid UTF-8 (which `multiMatchAny`
+                        /// cannot compile but RE2 accepts).
+                        /// `combinedRegexpFitsHyperscanLimits` accounts for the `(`,
                         /// `)` and `|` overhead added by `getCombinedRegexp`, so
                         /// `max_hyperscan_regexp_total_length` is a strict upper bound on the
                         /// emitted regexp and we cannot blow up RE2 compile limits here.
