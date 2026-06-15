@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-This script reads the vendored Jieba dictionary, processes it, and serializes it into
-a binary file suitable for use with a Double-Array Trie (darts-clone), then zstd-compresses it.
+This script downloads the Jieba dictionary from a pinned cppjieba commit,
+verifies its SHA-256 checksum, processes it, and serializes it into a binary
+file suitable for use with a Double-Array Trie (darts-clone), then
+zstd-compresses it.
 
-The input file `jieba.dict.utf8` is a snapshot of
-https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/jieba.dict.utf8
-vendored alongside this script so the build is reproducible without network access
-and independent of the (archived) upstream cppjieba repository.
+The source URL points to a specific commit (not a branch ref), and the
+response is verified against a hard-coded SHA-256 before use, so regeneration
+is fully reproducible and resistant to upstream tampering even though the
+cppjieba repository is archived.
 
 Processing steps:
-1. Read the dictionary lines from the vendored file.
+1. Download the dictionary lines from the pinned cppjieba commit and verify
+   the SHA-256 checksum.
 2. Parse each line into a word and its optional weight (default 1.0).
 3. Keep only BMP characters (codepoints <= 0xFFFF) so each rune fits in `uint16_t`
    (matching the runtime `Rune` type in `jieba_common.h`).
@@ -50,18 +53,40 @@ Binary file layout (uncompressed `dict_le.dat`):
 +--------+----------------+-------------------------------------------+
 """
 
-import numpy as np
-import struct
+import hashlib
 import math
 import os
+import struct
 import sys
+import urllib.request
+
+import numpy as np
 import zstandard
 from dartsclone import DoubleArray
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_PATH = os.path.join(SCRIPT_DIR, "jieba.dict.utf8")
-with open(INPUT_PATH, "r", encoding="utf-8") as f:
-    lines = f.read().splitlines()
+
+# Pin to a specific cppjieba commit so regeneration is reproducible and the
+# downloaded bytes are auditable. The cppjieba repository is archived, so this
+# commit will not change underneath us; the checksum below is the additional
+# defense against the upstream repository being tampered with.
+CPPJIEBA_COMMIT = "eed6bfe483105d1db4bfbebaf796f60c173d6e84"
+DICT_URL = f"https://raw.githubusercontent.com/yanyiwu/cppjieba/{CPPJIEBA_COMMIT}/dict/jieba.dict.utf8"
+DICT_SHA256 = "6f7d4350e8861ef4139b2e3a6fad05430c19ae71f4b8378190edecac8aae2e6a"
+
+
+def fetch_verified(url, expected_sha256):
+    with urllib.request.urlopen(url) as f:
+        data = f.read()
+    actual_sha256 = hashlib.sha256(data).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(
+            f"SHA-256 mismatch for {url}: expected {expected_sha256}, got {actual_sha256}"
+        )
+    return data
+
+
+lines = fetch_verified(DICT_URL, DICT_SHA256).decode("utf-8").splitlines()
 
 
 def encode_rune(cp):

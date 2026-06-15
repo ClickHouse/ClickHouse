@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Read the vendored cppjieba `hmm_model.utf8` and produce a C++ header with:
+Download the cppjieba `hmm_model.utf8` from a pinned commit, verify its
+SHA-256 checksum, and produce a C++ header with:
  - constexpr double Z = -3.14e+100;
  - start_prob as single-line std::array<double,4>
  - trans_prob as single-line std::array<std::array<double,4>,4>
@@ -9,16 +10,25 @@ Read the vendored cppjieba `hmm_model.utf8` and produce a C++ header with:
    entries not present in the source are output as Z (the symbol), and
    present entries use the original numeric literal from the file.
 
-The input file `hmm_model.utf8` is a snapshot of
-https://raw.githubusercontent.com/yanyiwu/cppjieba/refs/heads/master/dict/hmm_model.utf8
-vendored alongside this script so the build is reproducible without network access
-and independent of the (archived) upstream cppjieba repository.
+The source URL points to a specific commit (not a branch ref), and the
+response is verified against a hard-coded SHA-256 before use, so regeneration
+is fully reproducible and resistant to upstream tampering even though the
+cppjieba repository is archived.
 """
+import hashlib
 import os
 import sys
+import urllib.request
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_PATH = os.path.join(SCRIPT_DIR, "hmm_model.utf8")
+
+# Pin to a specific cppjieba commit so regeneration is reproducible and the
+# downloaded bytes are auditable. The cppjieba repository is archived, so this
+# commit will not change underneath us; the checksum below is the additional
+# defense against the upstream repository being tampered with.
+CPPJIEBA_COMMIT = "eed6bfe483105d1db4bfbebaf796f60c173d6e84"
+HMM_URL = f"https://raw.githubusercontent.com/yanyiwu/cppjieba/{CPPJIEBA_COMMIT}/dict/hmm_model.utf8"
+HMM_SHA256 = "f17790586ac86dd048c8adffed052c4bd2b28ed0682972c1275e59040c0589a7"
 
 STATE_ORDER = ["B", "E", "M", "S"]
 STATE_COUNT = 4
@@ -27,10 +37,16 @@ Z_LITERAL = "Z"  # symbol to output for missing values
 Z_VALUE = "-3.14e+100"  # numeric value used in original model (kept as comment)
 
 
-def read_lines(path):
-    with open(path, "r", encoding="utf-8") as f:
-        # preserve original lines without altering spacing
-        return f.read().splitlines()
+def fetch_verified_lines(url, expected_sha256):
+    with urllib.request.urlopen(url) as f:
+        data = f.read()
+    actual_sha256 = hashlib.sha256(data).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(
+            f"SHA-256 mismatch for {url}: expected {expected_sha256}, got {actual_sha256}"
+        )
+    # preserve original lines without altering spacing
+    return data.decode("utf-8").splitlines()
 
 
 def parse_model(lines):
@@ -164,7 +180,7 @@ def format_cpp(start_prob, trans_prob, emit_maps, out_path):
 
 def main():
     try:
-        lines = read_lines(INPUT_PATH)
+        lines = fetch_verified_lines(HMM_URL, HMM_SHA256)
         start_prob, trans_prob, emit_maps = parse_model(lines)
         out_path = os.path.join(SCRIPT_DIR, "jieba_hmm_model.dat")
         format_cpp(start_prob, trans_prob, emit_maps, out_path)

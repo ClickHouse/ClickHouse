@@ -1,0 +1,15 @@
+-- hasAnyTokens with chinese tokenizer (no index, brute force)
+1
+0
+1
+-- hasAllTokens with chinese tokenizer
+1
+1
+0
+-- fine_grained granularity via factory syntax
+0
+1
+1
+-- needle tokenization matches the tokenizer (hasAnyTokens with String needle is tokenized)
+1
+-- tokensForLikePattern rejects chinese (declared unsupported in the function doc)

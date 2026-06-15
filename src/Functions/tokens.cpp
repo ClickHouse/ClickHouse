@@ -371,10 +371,17 @@ Unlike the `tokens` function, this function is aware of LIKE pattern semantics
 (such as leading and trailing wildcard characters) and applies tokenizer-specific
 rules to extract meaningful tokens for pattern matching.
 
-It supports the same argument sets as the `tokens` function; additional
-arguments after `tokenizer` are interpreted according to the selected
-tokenizer (for example, `n` for `ngrams`, `separators` for `splitByString`,
-and `min_length` / `max_length` [/ `min_cutoff_length`] for `sparseGrams`).
+It supports the same argument sets as the `tokens` function, with one
+exception: the `chinese` tokenizer is not supported here. Tokenization of
+LIKE patterns is only meaningful for tokenizers that explicitly opt into
+LIKE semantics (`supportsStringLike()`), and the `chinese` tokenizer does
+not. Calling `tokensForLikePattern(value, 'chinese')` throws
+`BAD_ARGUMENTS`; use plain `tokens(value, 'chinese')` instead.
+
+Additional arguments after `tokenizer` are interpreted according to the
+selected tokenizer (for example, `n` for `ngrams`, `separators` for
+`splitByString`, and `min_length` / `max_length` [/ `min_cutoff_length`]
+for `sparseGrams`).
 
 This function is primarily intended for debugging and testing purposes,
 and is used internally to analyze tokenization behavior for LIKE patterns.
