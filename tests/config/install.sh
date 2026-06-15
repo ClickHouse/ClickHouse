@@ -17,6 +17,7 @@ EXPORT_S3_STORAGE_POLICIES=1
 USE_AZURE_STORAGE_FOR_MERGE_TREE=${USE_AZURE_STORAGE_FOR_MERGE_TREE:0}
 USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
+PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 WASM_ENGINE=""
@@ -39,6 +40,7 @@ while [[ "$#" -gt 0 ]]; do
 
         --async-insert) USE_ASYNC_INSERT=1 ;;
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
+        --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
         --wasm-engine) WASM_ENGINE=$2 && shift ;;
@@ -453,16 +455,13 @@ if [ ! -z "$WASM_ENGINE" ]; then
     sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
 fi
 
-if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sed -i "/<use_xid_64>1<\/use_xid_64>/d" $DEST_SERVER_PATH/config.d/zookeeper.xml
-
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()
     {
         sed -i "/<$1>$2<\/$1>/d" $DEST_SERVER_PATH/config.d/keeper_port.xml
     }
 
-    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
-    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
+    remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then
