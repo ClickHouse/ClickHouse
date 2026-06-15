@@ -1,6 +1,7 @@
 #include <Processors/Transforms/LimitByTransform.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
@@ -87,6 +88,9 @@ ChunkRowRange shrinkRunToLimitWindow(
         = group_rows_seen_after_offset < group_limit_end ? group_limit_end - group_rows_seen_after_offset : 0;
 
     const UInt64 rows_kept_from_run = std::min(run_row_count - offset_rows_in_run, remaining_rows_until_limit_end);
+
+    chassert(offset_rows_in_run + rows_kept_from_run <= run_row_count);
+
     return {run_start_row + offset_rows_in_run, rows_kept_from_run};
 }
 
@@ -100,6 +104,24 @@ UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt
     UInt64 output_row_count = 0;
     for (const auto & slice : slices)
         output_row_count += slice.length;
+
+    chassert(!slices.empty());
+    chassert(output_row_count <= source_row_count);
+#ifndef NDEBUG
+    {
+        for (const auto & column : source_columns)
+            chassert(column->size() == source_row_count);
+
+        UInt64 previous_slice_end = 0;
+        for (const auto & slice : slices)
+        {
+            chassert(slice.length > 0);
+            chassert(slice.start >= previous_slice_end);
+            chassert(slice.start + slice.length <= source_row_count);
+            previous_slice_end = slice.start + slice.length;
+        }
+    }
+#endif
 
     const UInt64 first_slice_start = slices.front().start;
     const UInt64 last_slice_end = slices.back().start + slices.back().length;
@@ -151,6 +173,9 @@ UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt
 
     Columns output_columns;
     output_columns.reserve(source_columns.size());
+
+    chassert(countBytesInFilter(mask) == output_row_count);
+
     /// For `ColumnConst`, `filter` would work too, but it would scan the mask
     /// again to count selected rows. We already know `output_row_count`, so use `cut`.
     for (const auto & column : source_columns)
@@ -181,6 +206,7 @@ LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UI
 
 void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
 {
+    chassert(group_idx < group_counts.size());
     const UInt64 group_rows_seen_before_run = group_counts[group_idx];
     if (group_rows_seen_before_run >= group_limit_end)
         return;
@@ -212,7 +238,11 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
         }
         else /// Existing grouping key
+        {
             row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
+
+            chassert(row_group_idx < group_counts.size());
+        }
 
         if (row_idx == 0)
             current_run_group_idx = row_group_idx;
@@ -230,6 +260,8 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
 void LimitByTransform::transform(Chunk & chunk)
 {
+    chassert(output_slices.empty());
+
     const UInt64 row_count = chunk.getNumRows();
     if (row_count == 0)
         return;
@@ -343,6 +375,8 @@ void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_r
 
 void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
+    chassert(output_slices.empty());
+
     const UInt64 row_count = chunk.getNumRows();
     if (row_count == 0)
         return;
