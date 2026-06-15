@@ -108,7 +108,7 @@ class SparkAndClickHouseCheck:
                 ).collect()
                 snapshots = [r.snapshot_id for r in result]
                 timestamps = [r.committed_at for r in result]
-            else:
+            elif table.lake_format == LakeFormat.DeltaLake:
                 result = spark.sql(
                     f"DESCRIBE HISTORY {table.get_table_full_path()};"
                 ).collect()
