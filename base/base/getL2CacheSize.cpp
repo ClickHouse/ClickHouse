@@ -2,6 +2,12 @@
 
 #if defined(__x86_64__)
 #    include <cpuid.h>
+#elif defined(OS_DARWIN)
+#    include <sys/sysctl.h>
+#elif defined(OS_LINUX)
+#    include <filesystem>
+#    include <fstream>
+#    include <string>
 #endif
 
 namespace
@@ -53,6 +59,64 @@ namespace
         }
         return 0;
     }
+#elif defined(OS_DARWIN)
+    /// Apple Silicon does not expose CPUID; the kernel reports the size via sysctl.
+    size_t readL2FromSysctl()
+    {
+        uint64_t value = 0;
+        size_t size = sizeof(value);
+        if (sysctlbyname("hw.l2cachesize", &value, &size, nullptr, 0) == 0)
+            return static_cast<size_t>(value);
+        return 0;
+    }
+#elif defined(OS_LINUX)
+    /// Non-x86 Linux (e.g. aarch64): read the cache geometry the kernel exposes
+    /// under sysfs. Iterate the per-CPU cache descriptors and pick the L2
+    /// data/unified one, mirroring the level/type filtering done for CPUID.
+    size_t readL2FromSysfs()
+    {
+        namespace fs = std::filesystem;
+        const fs::path base = "/sys/devices/system/cpu/cpu0/cache";
+
+        std::error_code ec;
+        for (unsigned index = 0; ; ++index)
+        {
+            const fs::path dir = base / ("index" + std::to_string(index));
+            if (!fs::exists(dir, ec))
+                break;
+
+            unsigned level = 0;
+            {
+                std::ifstream level_file(dir / "level");
+                if (!(level_file >> level))
+                    continue;
+            }
+            if (level != 2)
+                continue;
+
+            std::string type;
+            {
+                std::ifstream type_file(dir / "type");
+                std::getline(type_file, type);
+            }
+            if (type != "Data" && type != "Unified")
+                continue;
+
+            /// "size" is a number with an optional unit suffix, e.g. "2048K" or "1M".
+            size_t value = 0;
+            char suffix = 0;
+            {
+                std::ifstream size_file(dir / "size");
+                size_file >> value >> suffix;
+            }
+            if (suffix == 'K' || suffix == 'k')
+                value *= 1024;
+            else if (suffix == 'M' || suffix == 'm')
+                value *= 1024 * 1024;
+            return value;
+        }
+        return 0;
+    }
 #endif
 
     size_t getL2CacheSizeImpl()
@@ -60,9 +124,15 @@ namespace
 #if defined(__x86_64__)
         if (size_t v = readL2FromCPUID())
             return v;
+#elif defined(OS_DARWIN)
+        if (size_t v = readL2FromSysctl())
+            return v;
+#elif defined(OS_LINUX)
+        if (size_t v = readL2FromSysfs())
+            return v;
 #endif
         /// No `sysconf(_SC_LEVEL2_CACHE_SIZE)` fallback: it is x86-only in glibc
-        /// and unimplemented in musl. 256 KiB is a safe default on non-x86.
+        /// and unimplemented in musl. 256 KiB is a safe default if probing fails.
         return default_l2_size;
     }
 }
