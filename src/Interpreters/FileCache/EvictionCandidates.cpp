@@ -372,11 +372,9 @@ void EvictionCandidates::evict()
 
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
-    if (after_evict_write_func)
-    {
-        after_evict_write_func(lock);
-        after_evict_write_func = {};
-    }
+    for (auto & func : after_evict_write_funcs)
+        func(lock);
+    after_evict_write_funcs.clear();
 }
 
 void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
@@ -395,11 +393,9 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
         queue_entries_to_invalidate.pop_back();
     }
 
-    if (after_evict_state_func)
-    {
-        after_evict_state_func(lock);
-        after_evict_state_func = {};
-    }
+    for (auto & func : after_evict_state_funcs)
+        func(lock);
+    after_evict_state_funcs.clear();
 }
 
 }

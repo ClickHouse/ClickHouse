@@ -168,6 +168,16 @@ public:
         size_t file_segments_limit,
         const UserID & user_id);
 
+    /// Cache-only / must-exist lookup: returns existing segments covering [offset, offset + size)
+    /// contiguously with a sufficient downloaded prefix, otherwise an EMPTY holder. Never fills holes,
+    /// synthesizes DETACHED placeholders or creates segments. State is deliberately not checked:
+    /// a committed Ephemeral segment stays PARTIALLY_DOWNLOADED (DOWNLOADED requires !is_unbound).
+    FileSegmentsHolderPtr getDownloadedContiguousOrEmpty(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const UserID & user_id);
+
     FileSegmentsHolderPtr set(
         const Key & key,
         size_t offset,
@@ -342,10 +352,15 @@ private:
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
     /// file segments.
+    /// If `ignore_bypass_threshold` is true, the `enable_bypass_cache_with_threshold`
+    /// short-circuit is skipped, so the actual cached segments are inspected even for
+    /// large ranges. This is required by callers that need to know what is really
+    /// downloaded (e.g. `getDownloadedContiguousOrEmpty`).
     FileSegments getImpl(
         const LockedKey & locked_key,
         const FileSegment::Range & range,
-        size_t file_segments_limit) const;
+        size_t file_segments_limit,
+        bool ignore_bypass_threshold = false) const;
 
     /// Split range into subranges by max_file_segment_size,
     /// each subrange size must be less or equal to max_file_segment_size.

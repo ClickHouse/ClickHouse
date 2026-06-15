@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -18,6 +20,11 @@ using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ProtocolBinary;
+
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
@@ -69,10 +76,18 @@ void MySQLOutputFormat::writePrefix()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
+    LOG_TEST(getLogger("MySQLOutputFormat"), "Consume a chunk");
+
+    if (isCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
     if (!use_binary_result_set)
     {
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
             ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
         }
@@ -81,6 +96,9 @@ void MySQLOutputFormat::consume(Chunk chunk)
     {
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
             ProtocolBinary::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
         }

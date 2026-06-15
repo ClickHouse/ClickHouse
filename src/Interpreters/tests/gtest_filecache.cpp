@@ -24,7 +24,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
-#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -89,6 +89,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
+    extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
 void printRanges(const auto & segments)
@@ -1127,6 +1129,62 @@ catch (...)
     throw;
 }
 
+/// `getDownloadedContiguousOrEmpty` must inspect the actually downloaded segments even when
+/// `enable_bypass_cache_with_threshold` is on and the requested range exceeds the threshold.
+/// Otherwise getImpl() would return a synthetic DETACHED placeholder and the helper would
+/// wrongly report present-but-large data (e.g. distributed-cache temporary data) as missing.
+TEST_F(FileCacheTest, GetDownloadedContiguousIgnoresBypassThreshold)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t bypass_threshold = 100;
+    const size_t chunk = bypass_threshold; /// each cached segment stays at/below the threshold
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = chunk;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// Any read larger than `bypass_threshold` bytes would normally bypass the cache.
+    settings[FileCacheSetting::enable_bypass_cache_with_threshold] = true;
+    settings[FileCacheSetting::bypass_cache_threshold] = bypass_threshold;
+
+    DB::FileCache file_cache("bypass-temp", settings);
+    file_cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("bypass_temp_key");
+
+    /// Populate several contiguous segments, each no larger than the bypass threshold (a single
+    /// write larger than the threshold would itself bypass the cache and never be stored). The
+    /// downloaded data covers a range that, when read at once, exceeds the threshold.
+    const size_t num_chunks = 3;
+    const size_t downloaded_size = num_chunks * chunk;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        auto holder = file_cache.getOrSet(key, i * chunk, chunk, downloaded_size, CreateFileSegmentSettings{}, 0, user);
+        download(holder);
+    }
+
+    const auto & user_id = user.user_id;
+
+    /// The whole downloaded range is larger than the threshold but must still be reported present.
+    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size, user_id)->empty());
+    /// A sub-range that also exceeds the threshold is present too.
+    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 10, downloaded_size - 10, user_id)->empty());
+    /// A range past the downloaded data is correctly reported as missing.
+    EXPECT_TRUE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size + 1, user_id)->empty());
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
+}
+
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1260,6 +1318,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 }
 
 TEST_F(FileCacheTest, SLRUPolicy)
+try
 {
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -1468,6 +1527,11 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << "\n";
+    throw;
 }
 
 TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)

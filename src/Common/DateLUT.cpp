@@ -197,9 +197,23 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impls.emplace(time_zone, nullptr).first;
-    if (!it->second)
-        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+    auto [it, inserted] = impls.emplace(time_zone, nullptr);
+    if (inserted)
+    {
+        try
+        {
+            it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+        }
+        catch (...)
+        {
+            /// `DateLUTImpl` construction throws for an unknown time zone. Erase the just-inserted
+            /// empty slot; otherwise a stream of distinct invalid time zone names (which can come from
+            /// untrusted input, e.g. binary type decoding or `toDateTime(x, '<garbage>')`) would grow
+            /// this cache without bound, since entries are never evicted.
+            impls.erase(it);
+            throw;
+        }
+    }
 
     return *it->second;
 }
