@@ -5,15 +5,13 @@
 #include <Storages/NATS/INATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Poco/Timer.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INVALID_STATE;
-}
+static const int64_t DRAIN_TIMEOUT_MS = 5000;
 
 INATSConsumer::INATSConsumer(
     NATSConnectionPtr connection_,
@@ -37,6 +35,27 @@ bool INATSConsumer::isSubscribed() const
 }
 void INATSConsumer::unsubscribe()
 {
+    if (stopped)
+    {
+        received.finish();
+
+        for (auto & subscription : subscriptions)
+        {
+            auto status = natsSubscription_DrainTimeout(subscription.get(), DRAIN_TIMEOUT_MS);
+            if (status != NATS_OK)
+            {
+                LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
+                    static_cast<void *>(this), natsStatus_GetText(status));
+                continue;
+            }
+
+            status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
+            if (status != NATS_OK)
+                LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
+                    static_cast<void *>(this), natsStatus_GetText(status));
+        }
+    }
+
     subscriptions.clear();
 
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
@@ -78,23 +97,44 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
     /// For core NATS there is no ack, so it is destroyed right away.
     NatsMsgPtr owned_msg(nats_consumer->needsAck() ? msg : nullptr, &natsMsg_Destroy);
 
-    const int msg_length = natsMsg_GetDataLength(msg);
-    if (msg_length)
+    try
     {
-        MessageData data = {
-            .message = std::string(natsMsg_GetData(msg), msg_length),
-            .subject = natsMsg_GetSubject(msg),
-            .msg = std::move(owned_msg),
-        };
-        if (!nats_consumer->received.push(std::move(data)))
-            throw Exception(ErrorCodes::INVALID_STATE, "Could not push to received queue");
+        const int msg_length = natsMsg_GetDataLength(msg);
+        if (msg_length)
+        {
+            String message_received = std::string(natsMsg_GetData(msg), msg_length);
+            String subject = natsMsg_GetSubject(msg);
+
+            MessageData data = {
+                .message = message_received,
+                .subject = subject,
+                .msg = std::move(owned_msg),
+            };
+            if (!nats_consumer->received.push(std::move(data)))
+            {
+                LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
+                nats_consumer->nackMessage(msg);
+            }
+        }
+        else if (nats_consumer->needsAck())
+        {
+            /// empty JetStream message: ack so it is not redelivered
+            natsMsg_Ack(msg, nullptr);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(nats_consumer->log, "Could not push to received queue");
+        nats_consumer->nackMessage(msg);
     }
 
     if (!nats_consumer->needsAck())
-        natsMsg_Destroy(msg);                 /// core NATS
-    else if (msg_length == 0)
-        natsMsg_Ack(owned_msg.get(), nullptr); /// empty JetStream message: ack so it is not redelivered
-    /// else JetStream with payload: ownership moved into the queue, acked after insertion
+        natsMsg_Destroy(msg);
+}
+
+void INATSConsumer::nackMessage(natsMsg *)
+{
+    /// Core NATS has no acknowledgements. Nothing to do.
 }
 
 }

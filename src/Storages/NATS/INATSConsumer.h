@@ -75,6 +75,8 @@ protected:
 
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
+    virtual void nackMessage(natsMsg * msg);
+
     virtual bool needsAck() const { return false; }
 
 private:
