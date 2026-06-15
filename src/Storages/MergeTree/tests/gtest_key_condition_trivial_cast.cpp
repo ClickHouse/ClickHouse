@@ -3,6 +3,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -91,11 +92,10 @@ CastShape buildEqualsWithCast(
     /// `isTrivialCast` checks (a) that this is a COLUMN node and (b) that the
     /// literal value equals the source-child's `result_type->getName()`.
     auto type_name = target_type->getName();
-    ColumnWithTypeAndName type_literal_column{
+    const auto & type_literal_node = dag.addColumn(
         DataTypeString().createColumnConst(0, type_name),
         std::make_shared<DataTypeString>(),
-        "'" + type_name + "'_String"};
-    const auto & type_literal_node = dag.addColumn(type_literal_column);
+        "'" + type_name + "'_String");
 
     /// Build the cast `FunctionBase` and add it as a `FUNCTION` node. We use
     /// `createInternalCast` for the `_CAST` shape (the analyzer-internal
@@ -121,7 +121,7 @@ CastShape buildEqualsWithCast(
         auto resolver = FunctionFactory::instance().get("CAST", context);
         ColumnsWithTypeAndName arguments{
             {nullptr, value_node.result_type, value_node.result_name},
-            {type_literal_column.column, type_literal_column.type, type_literal_column.name},
+            {type_literal_node.column, type_literal_node.result_type, type_literal_node.result_name},
         };
         cast_function = resolver->build(arguments);
     }
@@ -129,7 +129,7 @@ CastShape buildEqualsWithCast(
     const auto & cast_node = dag.addFunction(
         cast_function,
         {&value_node, &type_literal_node},
-        cast_function->getName() + "(" + value_node.result_name + ", " + type_literal_column.name + ")");
+        cast_function->getName() + "(" + value_node.result_name + ", " + type_literal_node.result_name + ")");
 
     /// Since `value_child` is an `INPUT` (non-const), `addFunctionImpl`'s
     /// `all_const` branch is not taken and `getConstantResultForNonConstArguments`

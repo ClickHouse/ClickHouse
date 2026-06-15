@@ -2,7 +2,7 @@ dictGet = default, missing key, no rewrite (default -1 = -1) - plan
 SELECT
     __table1.id AS id,
     dictGet(\'dict_int_default_minus1\', \'from\', toUInt64(__table1.id)) AS a,
-    dictGet(\'dict_int_default_minus1\', \'from\', toUInt64(__table1.id)) = -1 AS pred
+    equals(dictGet(\'dict_int_default_minus1\', \'from\', toUInt64(__table1.id)), -1) AS pred
 FROM default.data_int AS __table1
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -12,7 +12,7 @@ dictGet = default, Nullable source, no rewrite (default -1 = -1) - plan
 SELECT
     __table1.id AS id,
     dictGet(\'dict_int_nullable_default_minus1\', \'from\', toUInt64(__table1.id)) AS a,
-    dictGet(\'dict_int_nullable_default_minus1\', \'from\', toUInt64(__table1.id)) = -1 AS pred
+    equals(dictGet(\'dict_int_nullable_default_minus1\', \'from\', toUInt64(__table1.id)), -1) AS pred
 FROM default.data_int AS __table1
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -21,7 +21,7 @@ dictGet = default, Nullable source, no rewrite (default -1 = -1)
 dictGetOrNull = const, no rewrite (dictGetOrNull is not supported by the optimization) - plan
 SELECT
     __table1.id AS id,
-    dictGetOrNull(\'dict_string\', \'name\', __table1.id) = \'abc\' AS pred
+    equals(dictGetOrNull(\'dict_string\', \'name\', __table1.id), \'abc\') AS pred
 FROM default.data_str AS __table1
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -32,35 +32,35 @@ dictGetOrNull = const, no rewrite (dictGetOrNull is not supported by the optimiz
 dictGet != non-default, no rewrite (default empty string != abc) - plan
 SELECT count() AS `count()`
 FROM default.data_str AS __table1
-WHERE dictGet(\'dict_string\', \'name\', __table1.id) != \'abc\'
+WHERE notEquals(dictGet(\'dict_string\', \'name\', __table1.id), \'abc\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 dictGet != non-default, no rewrite (default empty string != abc)
 2
 dictGet LIKE %, no rewrite (default empty string LIKE %) - plan
 SELECT count() AS `count()`
 FROM default.data_str AS __table1
-WHERE dictGet(\'dict_string\', \'name\', __table1.id) LIKE \'%\'
+WHERE like(dictGet(\'dict_string\', \'name\', __table1.id), \'%\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 dictGet LIKE %, no rewrite (default empty string LIKE %)
 3
 Nullable key, dictGetString != abc, no rewrite (default empty string != abc) - plan
 SELECT count() AS `count()`
 FROM default.data_str_nullable AS __table1
-WHERE dictGetString(\'dict_string\', \'name\', __table1.id) != \'abc\'
+WHERE notEquals(dictGetString(\'dict_string\', \'name\', __table1.id), \'abc\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 Nullable key, dictGetString != abc, no rewrite (default empty string != abc)
 1
 LC(Nullable) simple key, dictGetString != abc, no rewrite (default empty string != abc) - plan
 SELECT count() AS `count()`
 FROM default.data_str_lc_nullable AS __table1
-WHERE dictGetString(\'dict_string\', \'name\', __table1.id) != \'abc\'
+WHERE notEquals(dictGetString(\'dict_string\', \'name\', __table1.id), \'abc\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 LC(Nullable) simple key, dictGetString != abc, no rewrite (default empty string != abc)
 1
 Composite key, Nullable component, no rewrite (skip to preserve dictGet throw on NULL component) - plan
 SELECT
     __table1.k1 AS k1,
-    dictGetString(\'dict_complex_str\', \'name\', (__table1.k1, __table1.k2)) = \'abc\' AS pred
+    equals(dictGetString(\'dict_complex_str\', \'name\', tuple(__table1.k1, __table1.k2)), \'abc\') AS pred
 FROM default.data_complex AS __table1
 ORDER BY __table1.k1 ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -70,7 +70,7 @@ Composite key, Nullable component, no rewrite (skip to preserve dictGet throw on
 Composite key, LC(Nullable) component, no rewrite (skip to preserve throw) - plan
 SELECT
     __table1.k1 AS k1,
-    dictGetString(\'dict_complex_str\', \'name\', (__table1.k1, __table1.k2)) = \'abc\' AS pred
+    equals(dictGetString(\'dict_complex_str\', \'name\', tuple(__table1.k1, __table1.k2)), \'abc\') AS pred
 FROM default.data_complex_lc_nullable AS __table1
 ORDER BY __table1.k1 ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -80,21 +80,21 @@ Composite key, LC(Nullable) component, no rewrite (skip to preserve throw)
 Composite key, dict declares Nullable key, Nullable data, no rewrite - plan
 SELECT count() AS `count()`
 FROM default.data_complex_nullable_dict_key AS __table1
-WHERE dictGetString(\'dict_complex_nullable_dict_key\', \'name\', (__table1.k1, __table1.k2)) = \'nullhit\'
+WHERE equals(dictGetString(\'dict_complex_nullable_dict_key\', \'name\', tuple(__table1.k1, __table1.k2)), \'nullhit\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 Composite key, dict declares Nullable key, Nullable data, no rewrite
 1
 Nullable(Tuple(Nullable(K))), no rewrite - plan
 SELECT count() AS `count()`
 FROM default.data_outer_nullable_tuple AS __table1
-WHERE dictGetString(\'dict_complex_nullable_dict_key\', \'name\', __table1.t) = \'nullhit\'
+WHERE equals(dictGetString(\'dict_complex_nullable_dict_key\', \'name\', __table1.t), \'nullhit\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 Nullable(Tuple(Nullable(K))), no rewrite
 1
 Nullable attr with stored NULL, isNull(predicate), no rewrite - plan
 SELECT __table1.id AS id
 FROM default.data_str AS __table1
-WHERE isNull(dictGet(\'dict_nullable_attr_stored\', \'name\', __table1.id) = \'abc\')
+WHERE isNull(equals(dictGet(\'dict_nullable_attr_stored\', \'name\', __table1.id), \'abc\'))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 Nullable attr with stored NULL, isNull(predicate), no rewrite
@@ -102,61 +102,61 @@ Nullable attr with stored NULL, isNull(predicate), no rewrite
 op equals, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetUInt64(\'dict_ops\', \'n\', __table1.id) = 0
+WHERE equals(dictGetUInt64(\'dict_ops\', \'n\', __table1.id), 0)
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op notEquals, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_ops\', \'name\', __table1.id) != \'zzz\'
+WHERE notEquals(dictGetString(\'dict_ops\', \'name\', __table1.id), \'zzz\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op less, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetUInt64(\'dict_ops\', \'n\', __table1.id) < 100
+WHERE less(dictGetUInt64(\'dict_ops\', \'n\', __table1.id), 100)
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op lessOrEquals, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetUInt64(\'dict_ops\', \'n\', __table1.id) <= 0
+WHERE lessOrEquals(dictGetUInt64(\'dict_ops\', \'n\', __table1.id), 0)
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op greater, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE \'apple\' > dictGetString(\'dict_ops\', \'name\', __table1.id)
+WHERE greater(\'apple\', dictGetString(\'dict_ops\', \'name\', __table1.id))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op greaterOrEquals, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetUInt64(\'dict_ops\', \'n\', __table1.id) >= 0
+WHERE greaterOrEquals(dictGetUInt64(\'dict_ops\', \'n\', __table1.id), 0)
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op like, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_ops\', \'name\', __table1.id) LIKE \'%\'
+WHERE like(dictGetString(\'dict_ops\', \'name\', __table1.id), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op notLike, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_ops\', \'name\', __table1.id) NOT LIKE \'a%\'
+WHERE notLike(dictGetString(\'dict_ops\', \'name\', __table1.id), \'a%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op ilike, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_ops\', \'name\', __table1.id) ILIKE \'%\'
+WHERE ilike(dictGetString(\'dict_ops\', \'name\', __table1.id), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op notILike, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_ops\', \'name\', __table1.id) NOT ILIKE \'A%\'
+WHERE notILike(dictGetString(\'dict_ops\', \'name\', __table1.id), \'A%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 op match, no rewrite
@@ -168,53 +168,53 @@ SETTINGS optimize_inverse_dictionary_lookup = 1
 layout Flat, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_flat\', \'name\', __table1.id) LIKE \'%\'
+WHERE like(dictGetString(\'dict_flat\', \'name\', __table1.id), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 layout Hashed, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_hashed\', \'name\', __table1.id) LIKE \'%\'
+WHERE like(dictGetString(\'dict_hashed\', \'name\', __table1.id), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 layout HashedArray, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_hashed_array\', \'name\', __table1.id) LIKE \'%\'
+WHERE like(dictGetString(\'dict_hashed_array\', \'name\', __table1.id), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 layout SparseHashed, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_sparse_hashed\', \'name\', __table1.id) LIKE \'%\'
+WHERE like(dictGetString(\'dict_sparse_hashed\', \'name\', __table1.id), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 layout ComplexKeyHashed, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_complex\', \'name\', (__table1.id, \'a\')) LIKE \'%\'
+WHERE like(dictGetString(\'dict_complex\', \'name\', tuple(__table1.id, \'a\')), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 layout ComplexHashedArray, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_complex_array\', \'name\', (__table1.id, \'a\')) LIKE \'%\'
+WHERE like(dictGetString(\'dict_complex_array\', \'name\', tuple(__table1.id, \'a\')), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 layout ComplexKeySparseHashed, no rewrite
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE dictGetString(\'dict_complex_sparse\', \'name\', (__table1.id, \'a\')) LIKE \'%\'
+WHERE like(dictGetString(\'dict_complex_sparse\', \'name\', tuple(__table1.id, \'a\')), \'%\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: equals on non-default - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_hashed\') AS __table1
-    WHERE __table1.name = \'red\'
-)
+    WHERE equals(__table1.name, \'red\')
+))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: equals on non-default
@@ -224,11 +224,11 @@ rewrite: equals on non-default, opt off
 rewrite: greater than non-default - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.n > 100
-)
+    WHERE greater(__table1.n, 100)
+))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: greater than non-default
@@ -236,11 +236,11 @@ rewrite: greater than non-default, opt off
 rewrite: != default (numeric) - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.n != 0
-)
+    WHERE notEquals(__table1.n, 0)
+))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: != default (numeric)
@@ -250,11 +250,11 @@ rewrite: != default (numeric), opt off
 rewrite: NOT LIKE default (string) - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.name NOT LIKE \'\'
-)
+    WHERE notLike(__table1.name, \'\')
+))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: NOT LIKE default (string)
@@ -264,11 +264,11 @@ rewrite: NOT LIKE default (string), opt off
 rewrite: NOT ILIKE default (string) - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.name NOT ILIKE \'\'
-)
+    WHERE notILike(__table1.name, \'\')
+))
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: NOT ILIKE default (string)
@@ -278,11 +278,11 @@ rewrite: NOT ILIKE default (string), opt off
 rewrite: plain key - plan
 SELECT count() AS `count()`
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.name = \'apple\'
-)
+    WHERE equals(__table1.name, \'apple\')
+))
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: plain key
 1
@@ -291,11 +291,11 @@ rewrite: plain key, opt off
 rewrite: Nullable(K) key - plan
 SELECT count() AS `count()`
 FROM default.data_str_nullable AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_string\') AS __table1
-    WHERE __table1.name = \'abc\'
-)
+    WHERE equals(__table1.name, \'abc\')
+))
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: Nullable(K) key
 1
@@ -304,10 +304,10 @@ rewrite: Nullable(K) key, opt off
 rewrite: LC(Nullable(K)) key - plan
 SELECT count() AS `count()`
 FROM default.data_str_lc_nullable AS __table1
-WHERE _CAST((__table1.id IN (
+WHERE _CAST(in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_string\') AS __table1
-    WHERE __table1.name = \'abc\'
+    WHERE equals(__table1.name, \'abc\')
 )), \'LowCardinality(Nullable(UInt8))\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: LC(Nullable(K)) key
@@ -321,23 +321,23 @@ short-circuited bad-regex match: optimization on, returns 0, opt off
 short-circuited bad-regex match, no rewrite - plan
 SELECT count() AS `count()`
 FROM default.data_ops AS __table1
-WHERE (__table1.id < 0) AND match(dictGetString(\'dict_ops\', \'name\', __table1.id), \'[unclosed\')
+WHERE and(less(__table1.id, 0), match(dictGetString(\'dict_ops\', \'name\', __table1.id), \'[unclosed\'))
 SETTINGS optimize_inverse_dictionary_lookup = 1
 max_rows_in_set + break, no rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
 FROM default.data_set_limit AS __table1
-WHERE dictGetString(\'dict_set_limit\', \'name\', __table1.id) = \'hit\'
+WHERE equals(dictGetString(\'dict_set_limit\', \'name\', __table1.id), \'hit\')
 SETTINGS optimize_inverse_dictionary_lookup = 1, max_rows_in_set = 1, set_overflow_mode = \'break\'
 max_rows_in_set + break, no rewrite
 [1,2]
 max_rows_in_set + throw, rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
 FROM default.data_set_limit AS __table1
-WHERE __table1.id IN (
+WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_set_limit\') AS __table1
-    WHERE __table1.name = \'hit\'
-)
+    WHERE equals(__table1.name, \'hit\')
+))
 SETTINGS optimize_inverse_dictionary_lookup = 1, max_rows_in_set = 1, set_overflow_mode = \'throw\'
 max_rows_in_set + throw: execution raises SET_SIZE_LIMIT_EXCEEDED
 max_bytes_in_set + break, no rewrite
