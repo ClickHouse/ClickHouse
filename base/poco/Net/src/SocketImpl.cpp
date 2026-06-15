@@ -496,6 +496,12 @@ bool SocketImpl::secure() const
 }
 
 
+bool SocketImpl::supportsExternalPolling() const
+{
+	return true;
+}
+
+
 bool SocketImpl::pollImpl(Poco::Timespan& remainingTime, int mode)
 {
 	poco_socket_t sockfd = _sockfd;
