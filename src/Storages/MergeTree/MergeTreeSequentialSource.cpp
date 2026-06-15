@@ -248,9 +248,10 @@ try
         {
             chassert(read_task_info->merged_part_offsets->isFinalized());
 
-            result_column = result_column->convertToFullColumnIfSparse();
-            auto & column = result_column->assumeMutableRef();
-            auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
+            /// Use `IColumn::mutate` instead of `assumeMutableRef` so the column is cloned
+            /// when it is shared. Mutating a shared column in place is a copy-on-write violation.
+            auto mutable_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
+            auto & offset_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
             if (read_task_info->merged_part_offsets->isMappingEnabled())
             {
                 for (auto & offset : offset_data)
@@ -261,8 +262,14 @@ try
                 for (auto & offset : offset_data)
                     offset += read_task_info->part_starting_offset_in_query;
             }
+            result_column = std::move(mutable_column);
         }
-        result_column->assumeMutableRef().shrinkToFit();
+
+        /// `shrinkToFit` reallocates the column's data. Go through `IColumn::mutate` so a shared
+        /// column is cloned first: mutating a column still referenced elsewhere is a use-after-free hazard.
+        auto mutable_column = IColumn::mutate(std::move(result_column));
+        mutable_column->shrinkToFit();
+        result_column = std::move(mutable_column);
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
