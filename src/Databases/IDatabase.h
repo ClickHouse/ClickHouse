@@ -55,7 +55,7 @@ struct LightWeightTableDetails
 struct TablesFilter
 {
     /// Namespace prefix (dot-separated, without trailing dot), as extracted
-    /// from `name = '<ns>.<table>'` or `name LIKE '<ns>.%'` predicates.
+    /// from `name = 'ns.table'` or `name LIKE 'ns.%'` predicates.
     std::optional<String> namespace_hint;
 };
 
