@@ -1116,9 +1116,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const bool allTables = rg.nextMediumNumber() < 4;
     const auto & level_rels = this->levels[this->current_level].rels;
     const auto has_dictionary_lambda
-        = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
+        = [&](const SQLDictionary & d) { return d.isAttached() && (d.isDeterministic() || this->allow_not_deterministic); };
     const auto has_join_table_lambda = [&](const SQLTable & t)
-    { return t.isAttached() && (allTables || t.isJoinEngine()) && (t.is_deterministic || this->allow_not_deterministic); };
+    { return t.isAttached() && (allTables || t.isJoinEngine()) && (t.isDeterministic() || this->allow_not_deterministic); };
 
     /// expMask[static_cast<size_t>(ExpOp::Literal)] = true;
     /// expMask[static_cast<size_t>(ExpOp::ColumnRef)] = true;

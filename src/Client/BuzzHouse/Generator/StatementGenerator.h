@@ -882,18 +882,18 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
         return t.isAttached() && !t.isNotTruncableEngine() && t.engine.value != TableEngineValues::CollapsingMergeTree
-            && t.engine.value != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
+            && t.engine.value != TableEngineValues::VersionedCollapsingMergeTree && t.isDeterministic();
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
-        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };
+        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.isDeterministic(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
-        = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
+        = [](const SQLDictionary & d) { return d.isAttached() && d.isDeterministic(); };
     const std::function<bool(const SQLView &)> attached_views_to_compare_content
-        = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
+        = [](const SQLView & v) { return v.isAttached() && v.isDeterministic(); };
     bool rowPolicyForOracle(const SQLPolicy & p) const;
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
@@ -909,8 +909,8 @@ public:
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
     {
-        const bool b_is_deterministic = b.is_deterministic;
-        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.is_deterministic || !b_is_deterministic); };
+        const bool b_is_deterministic = b.isDeterministic();
+        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.isDeterministic() || !b_is_deterministic); };
     }
 
     template <TableRequirement req>

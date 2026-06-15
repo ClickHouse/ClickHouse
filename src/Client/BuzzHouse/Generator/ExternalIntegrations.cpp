@@ -67,7 +67,7 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 quoteIdentifier(entry.getBottomName()),
-                columnTypeAsString(rg, t.is_deterministic, tp),
+                columnTypeAsString(rg, t.isDeterministic(), tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
@@ -1704,7 +1704,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         escapeJSON(t.getDatabaseName()),
         escapeJSON(t.getBaseName(false)),
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
-        t.is_deterministic ? "1" : "0");
+        t.isDeterministic() ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(

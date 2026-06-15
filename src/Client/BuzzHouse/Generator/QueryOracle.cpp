@@ -674,7 +674,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
         const SQLTable & t = gen.lookupTable(policy.table_key);
 
         t.setName(jtf2->mutable_tof()->mutable_est(), false);
-        jtf2->set_final(t.supportsFinal());
+        jtf2->set_final(t.supportsFinal(true));
     }
     else
     {
@@ -872,7 +872,7 @@ void QueryOracle::dumpTableContent(
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
     switch (strategy)
     {
         case DumpOracleStrategy::REINSERT_TABLE:
@@ -1070,7 +1070,7 @@ void QueryOracle::generateExportQuery(
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
 }
 
 void QueryOracle::dumpOracleIntermediateSteps(
@@ -1976,7 +1976,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
         insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-        jtf->set_final(t.supportsFinal());
+        jtf->set_final(t.supportsFinal(true));
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {

@@ -301,8 +301,13 @@ bool TableEngineDescriptor::areInsertsAppends() const
 
 void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
 {
-    b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
-    b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
+    b.engine.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
+    b.random_engine = !b.engine.is_deterministic && rg.nextMediumNumber() < 6;
+}
+
+bool SQLBase::isDeterministic() const
+{
+    return engine.isDeterministic() && (!subengine.has_value() || subengine->isDeterministic());
 }
 
 bool SQLBase::isMergeTreeFamily(const bool as_alias) const
@@ -634,7 +639,7 @@ bool SQLBase::isAnotherRelationalDatabaseEngine() const
 
 bool SQLBase::hasDatabasePeer() const
 {
-    chassert(is_deterministic || peer_table == PeerTableDatabase::None);
+    chassert(isDeterministic() || peer_table == PeerTableDatabase::None);
     return peer_table != PeerTableDatabase::None;
 }
 

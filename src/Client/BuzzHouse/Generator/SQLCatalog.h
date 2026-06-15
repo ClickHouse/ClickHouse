@@ -212,6 +212,7 @@ struct TableEngineDescriptor
 {
     TableEngineValues value = TableEngineValues::Null;
     std::optional<TableEngineOption> option;
+    bool is_deterministic = false;
 
     TableEngineDescriptor() = default;
     explicit TableEngineDescriptor(const TableEngineValues value_)
@@ -234,6 +235,8 @@ struct TableEngineDescriptor
     bool hasVersionColumn() const;
 
     bool areInsertsAppends() const;
+
+    bool isDeterministic() const { return is_deterministic; }
 };
 
 struct SQLBase : WithCluster
@@ -241,7 +244,6 @@ struct SQLBase : WithCluster
 public:
     uint32_t counter = 0;
     bool is_temp = false;
-    bool is_deterministic = false;
     bool has_partition_by = false;
     bool has_order_by = false;
     bool random_engine = false;
@@ -278,6 +280,8 @@ public:
     SQLBase & operator=(SQLBase &&) = default;
 
     static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
+
+    bool isDeterministic() const;
 
     bool isMergeTreeFamily(bool as_alias = false) const;
 
