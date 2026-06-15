@@ -22,13 +22,14 @@ size_t getRatio(size_t total, double ratio)
 }
 
 SplitFileCachePriority::SplitFileCachePriority(
+    QueueType queue_type_,
     CachePriorityCreatorFunction creator_function,
     size_t max_size_,
     size_t max_elements_,
     double size_ratio,
     double system_segment_size_ratio_,
     const std::string & description_)
-    : IFileCachePriority(max_size_, max_elements_)
+    : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , system_segment_size_ratio(system_segment_size_ratio_)
     , max_data_segment_size(getRatio(max_size_, (1 - system_segment_size_ratio)))
     , max_data_segment_elements(getRatio(max_elements_, (1 - system_segment_size_ratio)))
@@ -37,12 +38,14 @@ SplitFileCachePriority::SplitFileCachePriority(
     , log(getLogger("SplitFileCachePriority(" + description_ + ")"))
 {
     priorities_holder[std::to_underlying(SegmentType::Data)] = creator_function(
+        queue_type_,
         max_data_segment_size,
         max_data_segment_elements,
         size_ratio,
         0, // Overcommit available only for CH Cloud
         description_ + "_" + getKeyTypePrefix(SegmentType::Data));
     priorities_holder[static_cast<uint8_t>(SegmentType::System)] = creator_function(
+        queue_type_,
         max_system_segment_size,
         max_system_segment_elements,
         size_ratio,
