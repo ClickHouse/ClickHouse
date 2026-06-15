@@ -8,6 +8,7 @@
 #include <Common/Arena.h>
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -354,6 +355,28 @@ bool AggregateFunctionTuple::haveSameStateRepresentationImpl(const IAggregateFun
         if (!nested_functions[i]->haveSameStateRepresentation(*rhs_tuple->nested_functions[i]))
             return false;
     return true;
+}
+
+DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
+{
+    /// Unlike `-Array` / `-If`, the `-Tuple` state is a concatenation of per-element nested states,
+    /// so we cannot delegate to a single nested function. Two tuple states that differ only in
+    /// finalization parameters (for example quantile levels) have the same state representation and
+    /// must normalize to the same type, so callers that need a common type can unify them
+    /// (`UNION ALL` of `quantilesTDigestTupleState(0.5)` and `quantilesTDigestTupleState(0.9)`).
+    /// The nested function name is identical across elements and already excludes parameters, so it
+    /// is enough to normalize the shared parameters using the nested function's own normalization
+    /// (e.g. `quantile*` collapses the level to `1`) and the argument types like the base
+    /// implementation, while keeping the tuple wrapper.
+    DataTypes normalized_argument_types;
+    normalized_argument_types.reserve(argument_types.size());
+    for (const auto & argument_type : argument_types)
+        normalized_argument_types.emplace_back(argument_type->getNormalizedType());
+
+    const auto & nested_normalized_state = assert_cast<const DataTypeAggregateFunction &>(
+        *nested_functions.front()->getNormalizedStateType());
+    return std::make_shared<DataTypeAggregateFunction>(
+        shared_from_this(), normalized_argument_types, nested_normalized_state.getParameters());
 }
 
 namespace

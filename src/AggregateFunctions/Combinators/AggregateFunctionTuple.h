@@ -102,6 +102,7 @@ public:
     bool isState() const override;
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
+    DataTypePtr getNormalizedStateType() const override;
 
 private:
     /// Delegating constructor: receives the pre-built nested functions and result type

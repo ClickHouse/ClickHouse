@@ -183,3 +183,28 @@ FROM
     SELECT quantilesTDigestTupleState(0.25)(tuple(toFloat64(number))) AS s
     FROM numbers(100)
 );
+
+-- Parametric tuple states that differ only in finalization parameters share one state representation
+-- and must resolve to a common type, so `UNION ALL` can unify them. This exercises the
+-- `getNormalizedStateType` override (the least-supertype / type-equality path), as opposed to the
+-- `-Merge` path above which goes through `haveSameStateRepresentationImpl`. Without parameter
+-- normalization the two `AggregateFunction(quantilesTDigestTuple(...), ...)` types would compare as
+-- different and there would be no common type, while the non-`Tuple` `quantilesTDigestState` already
+-- unifies the same way.
+SELECT 'quantilesTDigestTuple common type';
+-- The least supertype keeps the first branch's parameter (here `0.5`), like the non-`Tuple` version.
+SELECT DISTINCT toTypeName(s)
+FROM
+(
+    SELECT quantilesTDigestTupleState(0.5)(tuple(toFloat64(number))) AS s FROM numbers(10)
+    UNION ALL
+    SELECT quantilesTDigestTupleState(0.9)(tuple(toFloat64(number))) AS s FROM numbers(10)
+);
+-- The unified column finalizes end to end across both differently-parameterised branches.
+SELECT quantilesTDigestTupleMerge(0.5)(s)
+FROM
+(
+    SELECT quantilesTDigestTupleState(0.5)(tuple(toFloat64(number))) AS s FROM numbers(10)
+    UNION ALL
+    SELECT quantilesTDigestTupleState(0.9)(tuple(toFloat64(number))) AS s FROM numbers(10)
+);

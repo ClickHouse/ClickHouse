@@ -83,3 +83,6 @@ all only-null elements
 quantilesTDigestTupleMerge
 ([8])
 ([49,89])
+quantilesTDigestTuple common type
+AggregateFunction(quantilesTDigestTuple(0.5), Tuple(Float64))
+([4])
