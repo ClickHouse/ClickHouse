@@ -908,7 +908,7 @@ void generateExistingManifestFile(
         /// corrupt the manifest, so refuse instead.
         if (!parsed.parsed_snapshot_id.has_value())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Cannot re-emit Iceberg manifest entry as EXISTING: snapshot_id is missing");
         set_versioned_field(*parsed.parsed_snapshot_id, Iceberg::f_snapshot_id);
 
