@@ -31,7 +31,17 @@ if __name__ == "__main__":
         )
         commits = raw.splitlines()
 
+        # Drop commits newer than the one under test (they may have been pushed
+        # after this run was triggered) so that commits[0] is the current commit.
         while commits and commits[0] != info.sha:
+            commits.pop(0)
+
+        # Drop the current commit itself so the performance test compares against
+        # the previous commit on master (commit-to-commit). Otherwise the job picks
+        # the current commit's own build as the baseline and compares it against
+        # itself, so a red status could never point at the commit that introduced
+        # a regression.
+        if commits and commits[0] == info.sha:
             commits.pop(0)
 
         info.store_kv_data("master_track_commits_sha", commits)
