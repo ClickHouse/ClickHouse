@@ -179,10 +179,10 @@ DB::Names HiveCatalog::getTables(const std::string & namespace_name) const
         return ICatalog::getTables(namespace_name);
 
     DB::Names current_tables;
-    {
-        std::lock_guard lock(client_mutex);
-        client.get_all_tables(current_tables, namespace_name);
-    }
+    /// Use the same reconnect/retry wrapper as the unscoped `getTables` path, so a
+    /// transient `TTransportException` is retried instead of bubbling up and being
+    /// turned into an empty table list by the caller.
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, namespace_name); });
     DB::Names result;
     result.reserve(current_tables.size());
     for (const auto & table : current_tables)

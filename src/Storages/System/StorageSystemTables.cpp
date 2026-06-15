@@ -150,27 +150,34 @@ std::optional<String> extractNamespaceHint(const ActionsDAG::Node * predicate)
         const auto * lhs = conjunct->children[0];
         const auto * rhs = conjunct->children[1];
 
-        /// Accept either `name <op> 'lit'` or `'lit' <op> name`.
         bool lhs_is_name = (lhs->type == ActionsDAG::ActionType::INPUT && lhs->result_name == "name");
         bool rhs_is_name = (rhs->type == ActionsDAG::ActionType::INPUT && rhs->result_name == "name");
         if (!lhs_is_name && !rhs_is_name)
-            continue;
-        const auto * lit_node = lhs_is_name ? rhs : lhs;
-
-        auto literal = tryReadConstString(lit_node);
-        if (!literal)
             continue;
 
         std::optional<String> hint;
         if (fn_name == "equals")
         {
-            hint = namespacePrefixBeforeLastDot(*literal);
+            /// `equals` is symmetric, so the literal may be on either side.
+            if (auto literal = tryReadConstString(lhs_is_name ? rhs : lhs))
+                hint = namespacePrefixBeforeLastDot(*literal);
         }
         else if (fn_name == "like")
         {
-            auto literal_prefix = getLiteralPrefixOfLikePattern(*literal);
-            if (literal_prefix)
-                hint = namespacePrefixBeforeLastDot(*literal_prefix);
+            /// `like` is NOT symmetric: only `name LIKE 'pattern'` constrains
+            /// `name` by the literal pattern. In the reversed form
+            /// `'literal' LIKE name`, `name` is the pattern and the literal is the
+            /// subject, so deriving a namespace from the literal would wrongly
+            /// narrow the catalog request (e.g. `'a.b' LIKE name` can match rows
+            /// whose name is a pattern like `%.%`). Accept only the former.
+            if (lhs_is_name)
+            {
+                if (auto literal = tryReadConstString(rhs))
+                {
+                    if (auto literal_prefix = getLiteralPrefixOfLikePattern(*literal))
+                        hint = namespacePrefixBeforeLastDot(*literal_prefix);
+                }
+            }
         }
 
         if (hint && !hint->empty())

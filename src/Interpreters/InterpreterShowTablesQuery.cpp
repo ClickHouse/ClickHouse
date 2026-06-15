@@ -264,9 +264,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
             << DB::quote << (namespace_like_prefix + query.like);
 
-        /// A NOT LIKE filter alone does not restrict the result to the
-        /// namespace — add an explicit anchor when both are present.
-        if (query.not_like && !namespace_prefix.empty())
+        /// The namespace prefix comes from the `FROM` clause and must match
+        /// exactly. A plain case-sensitive `LIKE` already anchors it, but when
+        /// the user pattern is negated (`NOT LIKE`) or case-insensitive (`ILIKE`)
+        /// the namespace would no longer be pinned: `NOT LIKE` does not restrict
+        /// to the namespace at all, and `ILIKE 'foo.%'` would also match `Foo.%`.
+        /// Add an explicit case-sensitive anchor to keep the namespace bound exact.
+        if (!namespace_prefix.empty() && (query.not_like || query.case_insensitive_like))
             rewritten_query
                 << " AND name LIKE "
                 << DB::quote << (namespace_like_prefix + "%");
