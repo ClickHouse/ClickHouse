@@ -397,3 +397,25 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.orc', 'O
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.orc', 'ORC', 'c0 LowCardinality(Nullable(String))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_lc_string;
+
+-- LowCardinality(Nullable(String)) hint WITH physical nulls: Arrow nulls must be preserved, not turned into empty strings
+DROP TABLE IF EXISTS test_nullable_tuple_lcn_nulls;
+CREATE TABLE test_nullable_tuple_lcn_nulls (id UInt64, x Nullable(String)) ENGINE = Memory;
+INSERT INTO test_nullable_tuple_lcn_nulls VALUES (1, NULL), (2, 'x');
+
+-- Arrow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_lcn.arrow', 'Arrow') SELECT id, x FROM test_nullable_tuple_lcn_nulls;
+SELECT id, x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.arrow', 'Arrow', 'id UInt64, x LowCardinality(Nullable(String))') ORDER BY id;
+
+-- ArrowStream
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_lcn.arrowstream', 'ArrowStream') SELECT id, x FROM test_nullable_tuple_lcn_nulls;
+SELECT id, x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.arrowstream', 'ArrowStream', 'id UInt64, x LowCardinality(Nullable(String))') ORDER BY id;
+
+-- ORC
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_lcn.orc', 'ORC') SELECT id, x FROM test_nullable_tuple_lcn_nulls;
+SELECT id, x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.orc', 'ORC', 'id UInt64, x LowCardinality(Nullable(String))') ORDER BY id;
+
+-- ORC legacy
+SELECT id, x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.orc', 'ORC', 'id UInt64, x LowCardinality(Nullable(String))') ORDER BY id SETTINGS input_format_orc_use_fast_decoder = 0;
+
+DROP TABLE test_nullable_tuple_lcn_nulls;
