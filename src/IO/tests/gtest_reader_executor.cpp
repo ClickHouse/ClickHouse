@@ -4699,12 +4699,19 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
 {
     /// The channel bound is the predicted forward reach, not the current read extent, so a
     /// confirmed forward run extends ONE GET past the reader's advancing right boundary
-    /// instead of reopening at each mark range. A cold scan advances the extent
-    /// 200 -> 300 -> 400; once the estimator has seen the run, the channel opened at 200 is
-    /// bounded to the object end (400) - past the then-current extent (300) - and spans the
-    /// rest, so the whole 400-byte file is served by TWO GETs, not one per extent.
+    /// instead of reopening at each mark range. A cold scan advances the extent in 100-byte
+    /// steps (200 -> 300 -> 400 -> 500 - the reader's `setReadUntilPosition` per mark range).
+    /// Once the estimator has seen the run, the channel opened at 200 is bounded to 500 -
+    /// the predicted reach, PAST the extent it opened under (300) and short of the object end
+    /// (600), proving the bound is the reach not the file size - and serves [200,500) across
+    /// BOTH the 300->400 and 400->500 advances and three lookup windows on ONE GET. So
+    /// [0,500) is two GETs (start-up + the spanning channel), not one per window (5) or per
+    /// extent (4). The scan stops at 500 (a reader that consumed five mark ranges); the
+    /// unread tail [500,600) is left off so the assertions stay on the spanning channel and
+    /// avoid the one-shot the local-file mock cannot right-bound (it would miscount as an
+    /// incomplete connection - a mock limitation, not executor behavior).
     const size_t window = 100;
-    const size_t size = 4 * window;                /// 400; one window per quarter
+    const size_t size = 6 * window;                /// 600; the scan reads only [0,500)
     String content(size, 0);
     for (size_t i = 0; i < size; ++i)
         content[i] = static_cast<char>('A' + (i % 26));
@@ -4724,7 +4731,7 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
     String got;
     auto read_to = [&](size_t extent)
     {
-        ex.setReadExtent(extent);
+        ex.setReadExtent(extent);                  /// the executor side of setReadUntilPosition
         while (ex.getPosition() < extent)
         {
             auto w = ex.readNextWindow();
@@ -4734,18 +4741,25 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
         }
     };
 
-    read_to(2 * window);                           /// [0,200): channel opens at 0, bound 200, drains clean
+    read_to(2 * window);                           /// [0,200): start-up channel, bound 200, drains clean
     EXPECT_EQ(ex.sourceRequestsForTest(), 1u);
 
-    read_to(3 * window);                           /// [200,300): a fresh channel opens at 200...
+    read_to(3 * window);                           /// [200,300): the spanning channel opens at 200...
     EXPECT_EQ(ex.sourceRequestsForTest(), 2u);
     EXPECT_TRUE(ex.hasLongConnForTest());
-    EXPECT_EQ(ex.longConnBoundForTest(), size);    /// ...bounded to the OBJECT END, past the extent (300)
+    EXPECT_EQ(ex.longConnBoundForTest(), 5 * window);   /// ...bounded to 500 - the reach, past the extent (300)
 
-    read_to(4 * window);                           /// [300,400): served by the SAME channel, no reopen
-    EXPECT_EQ(got, content);
-    EXPECT_EQ(ex.sourceRequestsForTest(), 2u);     /// two GETs total, not one per extent
-    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);
-    EXPECT_FALSE(ex.hasLongConnForTest());         /// exhausted at the object end
+    read_to(4 * window);                           /// [300,400): SAME channel across the 300->400 advance
+    EXPECT_EQ(ex.sourceRequestsForTest(), 2u);          /// no reopen
+    EXPECT_TRUE(ex.hasLongConnForTest());
+    EXPECT_EQ(ex.longConnBoundForTest(), 5 * window);   /// bound unchanged -> still the same connection
+    EXPECT_EQ(ex.longConnPositionForTest(), 4 * window);
+
+    read_to(5 * window);                           /// [400,500): same channel across the 400->500 advance
+    EXPECT_EQ(ex.sourceRequestsForTest(), 2u);          /// ONE GET served three windows ([200,500))
+    EXPECT_FALSE(ex.hasLongConnForTest());              /// drained at its bound (500)
+
+    EXPECT_EQ(got, content.substr(0, 5 * window));      /// [0,500) served byte-exact
+    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);   /// every channel drained at its bound
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
