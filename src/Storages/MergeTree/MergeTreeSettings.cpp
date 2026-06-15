@@ -208,6 +208,12 @@ namespace ErrorCodes
     skipped, because the read path would evaluate the expression instead of
     returning the type-default that was explicitly inserted. Patch parts
     (used by lightweight UPDATE) are also excluded.
+    This optimization records the skipped columns in the part's
+    `serialization.json` using the `with_skipped_columns` format version, so it
+    only takes effect when `serialization_info_version` is set to
+    `with_skipped_columns`. With a lower version (for example pinned to a lower
+    value for a rolling upgrade so older servers can read freshly written parts)
+    no columns are skipped.
     )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
     If the file name for column is too long (more than 'max_file_name_length'

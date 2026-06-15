@@ -684,6 +684,19 @@ static void skipEmptyColumnsOnInsert(
     if (!(*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] || is_patch)
         return;
 
+    /// The skipped-columns marker is recorded in serialization.json using the
+    /// WITH_SKIPPED_COLUMNS format version. Respect the configured
+    /// serialization_info_version: when it is lower than WITH_SKIPPED_COLUMNS
+    /// (e.g. pinned to 'basic' for a rolling upgrade so that older servers can
+    /// read freshly written parts), do not skip any columns. Otherwise
+    /// SerializationInfoByName::getVersion would silently upgrade the part to a
+    /// format those servers reject with CORRUPTED_DATA. The populating step is
+    /// authoritative about the version, so getVersion returning
+    /// WITH_SKIPPED_COLUMNS only happens when skipping is actually allowed.
+    const MergeTreeSerializationInfoVersion serialization_version = (*data_settings)[MergeTreeSetting::serialization_info_version];
+    if (serialization_version < MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS)
+        return;
+
     const auto & columns_description = metadata_snapshot->getColumns();
     NameSet empty_columns;
     for (const auto & [col_name, type] : columns)
