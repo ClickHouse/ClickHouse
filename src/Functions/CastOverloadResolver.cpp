@@ -244,7 +244,7 @@ protected:
             return type;
 
         if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
+            && canContainNull(*arguments.front().type)
             && canBeInsideNullableWithSettings(*type, getContext()->getSettingsRef()))
             return makeNullableAllowingArray(type);
 
