@@ -1,0 +1,136 @@
+-- A later `UPDATE a = 'x'` puts `a` in the on-fly chain's overwritten set, while an
+-- earlier `UPDATE b = isNotNull(materialize(a))` step still reads `a` as a function
+-- input. When the query reads `a` too (so the `UPDATE a` is not dropped), `a` must
+-- still be converted to the post-`MODIFY` `LowCardinality(Nullable(String))` type the
+-- `materialize(a)` action expects. Without the fix `materialize` aborts with
+-- `LOGICAL_ERROR: Unexpected return type from materialize`.
+
+DROP TABLE IF EXISTS t_read_overwritten_lc SYNC;
+
+CREATE TABLE t_read_overwritten_lc
+(
+    id UInt64,
+    a Nullable(String),
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_read_overwritten_lc
+SELECT number, if(number % 2 = 0, NULL, toString(number)), 0
+FROM numbers(100);
+
+SYSTEM STOP MERGES t_read_overwritten_lc;
+
+ALTER TABLE t_read_overwritten_lc
+    UPDATE b = isNotNull(materialize(a)) WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_read_overwritten_lc
+    UPDATE a = 'x' WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_read_overwritten_lc
+    MODIFY COLUMN a LowCardinality(Nullable(String))
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+-- Reads both `b` and `a`: `UPDATE a` survives, putting `a` in the overwritten set,
+-- but `materialize(a)` in the `UPDATE b` step still consumes `a`.
+SELECT sum(b), any(a)
+FROM t_read_overwritten_lc
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+SELECT a, b
+FROM t_read_overwritten_lc
+ORDER BY id
+LIMIT 4
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+SELECT sum(b)
+FROM t_read_overwritten_lc
+WHERE a IS NOT NULL
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_read_overwritten_lc SYNC;
+
+-- The forced conversion must apply ONLY to on-fly mutation steps, not to trailing query
+-- PREWHERE steps. Here `v` holds an unconvertible on-disk value `'x'`, `UPDATE v = '100'`
+-- overwrites it before `MODIFY COLUMN v UInt64`, and a query `PREWHERE v > 50` consumes `v`.
+-- The on-disk `'x'` must be discarded by the UPDATE, NOT pre-cast to `UInt64`: forcing the
+-- query PREWHERE consumption to convert `v` would raise `CANNOT_PARSE_TEXT`.
+DROP TABLE IF EXISTS t_overwrite_then_prewhere SYNC;
+
+CREATE TABLE t_overwrite_then_prewhere
+(
+    id UInt64,
+    v String,
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_overwrite_then_prewhere SELECT number, 'x', number % 2 FROM numbers(10);
+
+SYSTEM STOP MERGES t_overwrite_then_prewhere;
+
+ALTER TABLE t_overwrite_then_prewhere
+    UPDATE v = '100' WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_overwrite_then_prewhere
+    MODIFY COLUMN v UInt64
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT sum(b) FROM t_overwrite_then_prewhere PREWHERE v > 50
+SETTINGS apply_mutations_on_fly = 1;
+
+SELECT v, sum(b) FROM t_overwrite_then_prewhere GROUP BY v
+SETTINGS apply_mutations_on_fly = 1;
+
+DROP TABLE t_overwrite_then_prewhere SYNC;
+
+-- Same chain as the first table, but the consumed/overwritten column is a PHYSICAL column
+-- whose name literally contains a dot (`info.name`, not a Tuple subcolumn). The consumed-set
+-- key must be the column's storage name (`info.name`), matching the skip set. Keying it by
+-- the part before the first dot (`info`) would miss it and skip the conversion, reproducing
+-- `LOGICAL_ERROR: Unexpected return type from materialize`.
+DROP TABLE IF EXISTS t_dotted_physical SYNC;
+
+CREATE TABLE t_dotted_physical
+(
+    id UInt64,
+    `info.name` Nullable(String),
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_dotted_physical
+SELECT number, if(number % 2 = 0, NULL, toString(number)), 0
+FROM numbers(100);
+
+SYSTEM STOP MERGES t_dotted_physical;
+
+ALTER TABLE t_dotted_physical
+    UPDATE b = isNotNull(materialize(`info.name`)) WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_dotted_physical
+    UPDATE `info.name` = 'x' WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_dotted_physical
+    MODIFY COLUMN `info.name` LowCardinality(Nullable(String))
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT sum(b), any(`info.name`)
+FROM t_dotted_physical
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+SELECT `info.name`, b
+FROM t_dotted_physical
+ORDER BY id
+LIMIT 4
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_dotted_physical SYNC;

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -11,10 +12,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
+
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
     , patches_results(patch_readers.size())
+    , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
     , is_initialized(true)
 {
 }
@@ -54,6 +58,89 @@ static std::optional<UInt64> getMaxPatchVersionForStep(const MergeTreeRangeReade
 {
     const auto * prewhere_info = reader.getPrewhereInfo();
     return prewhere_info ? prewhere_info->mutation_version : std::nullopt;
+}
+
+/// Storage names of INPUT columns that an on-fly MUTATION step in the chain CONSUMES,
+/// i.e. columns that feed a FUNCTION argument of some mutation step's action DAG.
+///
+/// Used to refine the on-fly conversion skip set in `executeActionsBeforePrewhere`. A
+/// column the chain overwrites is normally exempt from `performRequiredConversions` (its
+/// on-disk value is about to be discarded, and pre-casting it could fail on a value the
+/// UPDATE replaces, e.g. `CAST('x', UInt64)` before `UPDATE v = '100'`). But conversion
+/// happens once, in the reader that first reads the column from disk, while the value can
+/// be consumed by a function in a LATER mutation step (e.g. `materialize(a)` from
+/// `UPDATE b = isNotNull(materialize(a))` while a subsequent `UPDATE a = ...` puts `a` in
+/// the overwritten set). A mutation step's action DAG is always built against the
+/// post-`MODIFY` metadata type, so a column it reads must arrive converted even though it
+/// is overwritten; otherwise the action sees the on-disk class while its INPUT declares
+/// the post-`MODIFY` type and aborts.
+///
+/// Only on-fly mutation steps (`perform_alter_conversions == false`) are scanned. Query
+/// PREWHERE / row-level-filter steps run AFTER the whole mutation chain has produced the
+/// final, correctly typed column and perform conversion at their own turn; counting their
+/// consumption would force a premature conversion of the about-to-be-discarded on-disk
+/// value (e.g. `PREWHERE v > 50` casting on-disk `'x'` to `UInt64` before `UPDATE v='100'`
+/// replaces it). A plain `UPDATE v = '100'` only outputs `v` from a constant CAST and does
+/// not consume the on-disk `v`, so `v` is not collected and stays skipped.
+///
+/// Each consumed column is keyed by `NameAndTypePair::getNameInStorage`, the same
+/// subcolumn-aware key the skip set in `executeActionsBeforePrewhere` compares against. A
+/// physical column whose name contains dots (e.g. `info.name`) keeps its exact name, while
+/// a real subcolumn (`info.name` where `info` is a Tuple/Nested column) maps to its parent
+/// storage column `info`. Splitting on the first dot unconditionally would key a physical
+/// `info.name` as `info` and miss it in the skip set, reintroducing the type mismatch.
+static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers)
+{
+    /// Map each column's read name to its storage-name key, so a function-input name from
+    /// an action DAG resolves to the same key the skip set uses.
+    std::unordered_map<String, String> name_in_storage_by_read_name;
+    for (const auto & reader : range_readers)
+    {
+        if (const auto * merge_tree_reader = reader.getReader())
+            for (const auto & name_and_type : merge_tree_reader->getColumns())
+                name_in_storage_by_read_name.emplace(name_and_type.name, name_and_type.getNameInStorage());
+    }
+
+    NameSet consumed;
+    for (const auto & reader : range_readers)
+    {
+        const auto * prewhere_info = reader.getPrewhereInfo();
+        if (!prewhere_info || !prewhere_info->actions)
+            continue;
+
+        /// Skip query PREWHERE / row-level-filter steps: they convert at their own turn.
+        if (prewhere_info->perform_alter_conversions)
+            continue;
+
+        for (const auto & node : prewhere_info->actions->getActionsDAG().getNodes())
+        {
+            /// `arrayJoin` is rejected for mutations in `MutationsInterpreter` (it changes the
+            /// row count), so a mutation step's DAG never contains an ARRAY_JOIN node.
+            chassert(node.type != ActionsDAG::ActionType::ARRAY_JOIN);
+
+            if (node.type != ActionsDAG::ActionType::FUNCTION)
+                continue;
+
+            for (const auto * arg : node.children)
+            {
+                /// A mutation step's DAG binds a function argument directly to its source
+                /// node (INPUT, another FUNCTION, or COLUMN); ALIAS nodes only appear as a
+                /// step's named output, never as a function argument. So the column behind a
+                /// function argument is the argument node itself when it is an INPUT, with no
+                /// ALIAS chain to unwrap.
+                chassert(arg->type != ActionsDAG::ActionType::ALIAS);
+
+                if (arg->type != ActionsDAG::ActionType::INPUT)
+                    continue;
+
+                /// Resolve via the reader/skip-set storage key. Fall back to the raw input
+                /// name when it is not a read column: then it is already a physical name.
+                auto it = name_in_storage_by_read_name.find(arg->result_name);
+                consumed.insert(it != name_in_storage_by_read_name.end() ? it->second : arg->result_name);
+            }
+        }
+    }
+    return consumed;
 }
 
 /// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
@@ -247,6 +334,14 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// skipped, then restore them so the step's action sees them in their on-disk form.
     /// An empty skip set means the chain has nothing to skip, so the conversion is a
     /// no-op for this step and we leave the columns untouched.
+    ///
+    /// A column is exempt from conversion ONLY when its on-disk value is about to be
+    /// discarded and replaced by this step's own action. If the step's action also
+    /// READS the column as an input (e.g. `UPDATE b = isNotNull(materialize(a))` while
+    /// a later `UPDATE a = ...` puts `a` in the overwritten set), the action expects it
+    /// in the post-`MODIFY` type, so it must still be converted. Keep such columns out
+    /// of the skip set: the conversion to the metadata type is the only thing that keeps
+    /// the action's declared input type and the column's storage class in sync.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
         merge_tree_reader->performRequiredConversions(read_columns);
@@ -256,11 +351,20 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         const auto & reader_columns = merge_tree_reader->getColumns();
         const auto & skip = prewhere_info->columns_overwritten_by_chain;
 
+        /// A column the on-fly chain overwrites is normally exempt from conversion here.
+        /// But a LATER on-fly mutation step may read it as a function input (e.g.
+        /// `materialize(a)` from `UPDATE b = isNotNull(materialize(a))` while a subsequent
+        /// `UPDATE a = ...` puts `a` in the overwritten set). That mutation action was built
+        /// against the post-`MODIFY` type, so the value flowing into it must be converted.
+        /// `columns_consumed_by_chain_actions` holds the columns consumed by mutation steps
+        /// (query PREWHERE steps are excluded: they convert at their own turn); keep these
+        /// out of the skip so the conversion still runs.
         Columns saved(read_columns.size());
         size_t pos = 0;
         for (const auto & name_and_type : reader_columns)
         {
-            if (skip.contains(name_and_type.getNameInStorage()))
+            const auto name_in_storage = name_and_type.getNameInStorage();
+            if (skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage))
             {
                 saved[pos] = read_columns[pos];
                 read_columns[pos] = nullptr;
@@ -273,7 +377,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         pos = 0;
         for (const auto & name_and_type : reader_columns)
         {
-            if (skip.contains(name_and_type.getNameInStorage()))
+            const auto name_in_storage = name_and_type.getNameInStorage();
+            if (skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage))
                 read_columns[pos] = std::move(saved[pos]);
             ++pos;
         }
