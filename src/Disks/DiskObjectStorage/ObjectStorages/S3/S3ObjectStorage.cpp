@@ -384,6 +384,7 @@ ObjectStorageListResult S3ObjectStorage::listObjectsSingleLevel(
     const std::string & delimiter,
     size_t max_keys,
     bool with_tags,
+    const std::string & start_after,
     const std::string & continuation_token) const
 {
     auto settings_ptr = s3_settings.get();
@@ -396,8 +397,12 @@ ObjectStorageListResult S3ObjectStorage::listObjectsSingleLevel(
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
         request.SetMaxKeys(static_cast<int>(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]));
+    /// `StartAfter` and `ContinuationToken` are mutually exclusive: the token already encodes the
+    /// resume position, so `StartAfter` is only meaningful on the first request of a listing.
     if (!continuation_token.empty())
         request.SetContinuationToken(continuation_token);
+    else if (!start_after.empty())
+        request.SetStartAfter(start_after);
 
     ProfileEvents::increment(ProfileEvents::S3ListObjects);
     ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);

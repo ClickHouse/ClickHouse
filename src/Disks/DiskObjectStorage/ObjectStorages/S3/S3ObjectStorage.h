@@ -108,6 +108,7 @@ public:
         const std::string & delimiter,
         size_t max_keys,
         bool with_tags,
+        const std::string & start_after,
         const std::string & continuation_token) const override;
 
     /// Uses `DeleteObjectRequest`.

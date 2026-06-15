@@ -224,12 +224,16 @@ public:
     /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
     /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
     /// under the prefix together with the immediate sub-"directories" (common prefixes).
-    /// One call corresponds to one page; pass the returned continuation token back to fetch the next page.
+    /// `start_after` (when not empty) resumes listing strictly after that key; it is only honored on
+    /// the first request of a listing (when `continuation_token` is empty), and lets a caller list an
+    /// arbitrary sub-range of the keyspace. One call corresponds to one page; pass the returned
+    /// continuation token back to fetch the next page.
     virtual ObjectStorageListResult listObjectsSingleLevel(
         const std::string & path_prefix,
         const std::string & delimiter,
         size_t max_keys,
         bool with_tags,
+        const std::string & start_after,
         const std::string & continuation_token) const;
 
     /// Get object metadata if supported. It should be possible to receive at least size of object

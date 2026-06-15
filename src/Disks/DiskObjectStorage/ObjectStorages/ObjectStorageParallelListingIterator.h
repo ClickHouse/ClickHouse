@@ -18,35 +18,37 @@
 namespace DB
 {
 
-/// Lists an object storage prefix in parallel by walking the "directory" tree formed by a delimiter.
+/// Lists an object storage prefix in parallel.
 ///
-/// Instead of paginating a single prefix in one serial stream (which is bound by the per-request
-/// latency of `ListObjectsV2`), several worker threads list different sub-"directories" (common
-/// prefixes) concurrently. Each worker takes a prefix from a shared work queue, lists exactly one
-/// level (grouping by the delimiter), enqueues the discovered sub-directories for further listing,
-/// and pushes the keys it finds to the consumer. Sub-directories that cannot contain a matching key
-/// are skipped via the `should_descend` predicate, so whole subtrees are pruned instead of listed.
+/// Two sources of parallelism, both expressed as a tree of "ranges" walked by a pool of workers:
+///
+///  1. Hierarchical layouts: a prefix listed with the '/' delimiter exposes sub-"directories"
+///     (common prefixes), which are walked concurrently; subtrees that cannot contain a matching key
+///     are pruned via `should_descend`.
+///
+///  2. Big flat directories: a prefix that is truncated but has no '/' sub-directories is split by
+///     keyspace. Its remaining range is tiled into contiguous `(start_after, end)` sub-ranges whose
+///     boundaries are derived from the byte alphabet observed in the listed page, and each sub-range
+///     is listed concurrently. Because the sub-ranges are *contiguous* they tile the interval with no
+///     gaps — a key whose byte is not in the sampled alphabet still falls into the range that brackets
+///     it — so the split is complete regardless of the key distribution or character set.
 ///
 /// The order in which keys are produced is unspecified (it depends on thread scheduling).
 ///
-/// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (which lists a
-/// single delimited level of one prefix, one page per call) and a `should_descend` callback (which
-/// decides which discovered sub-directories are worth listing). Both must be thread-safe.
+/// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
+/// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
 class ObjectStorageParallelListingIterator final : public IObjectStorageIterator
 {
 public:
-    /// Lists a single delimited level of `prefix`, one page per call. The first call for a prefix is
-    /// made with an empty `continuation_token`; if the returned result `is_truncated`, it is called
-    /// again with the returned `next_continuation_token`, and so on.
-    using ListLevelFunction
-        = std::function<ObjectStorageListResult(const std::string & prefix, const std::string & continuation_token)>;
+    /// Lists a single delimited page. `start_after` (honored only on the first call of a listing, i.e.
+    /// when `continuation_token` is empty) resumes strictly after that key; `continuation_token`
+    /// resumes pagination. Returns objects + common prefixes + truncation/next-token.
+    using ListLevelFunction = std::function<ObjectStorageListResult(
+        const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)>;
 
-    /// `should_descend(common_prefix)` decides whether a discovered sub-"directory" (which always
-    /// ends with the listing delimiter) might contain a key the caller is interested in. It may be
-    /// called concurrently from several worker threads. Returning `true` when unsure is safe (the
-    /// caller is expected to filter keys afterwards); it only costs extra listing requests.
-    ///
-    /// `max_buffered_keys` bounds (softly) how many keys may be buffered ahead of the consumer.
+    /// `should_descend(common_prefix)` decides whether a discovered sub-"directory" might contain a key
+    /// of interest. It may be called concurrently. Returning `true` when unsure is safe.
+    /// `max_buffered_keys` softly bounds how many keys may be buffered ahead of the consumer.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -65,49 +67,52 @@ public:
     size_t getAccumulatedSize() const override;
 
 private:
-    /// Worker-thread main loop: pull prefixes from the work queue and list them.
+    /// A half-open keyspace range `(start_after, end)` of keys under `prefix` left to list.
+    struct ListRange
+    {
+        std::string prefix;        /// S3 Prefix.
+        std::string start_after;   /// Exclusive lower bound; empty = from the beginning of `prefix`.
+        std::string end;           /// Inclusive upper bound key; empty = unbounded.
+        size_t split_pos = 0;      /// Byte position to split at if this range needs a flat (keyspace) split.
+        size_t split_budget = 0;   /// How many more times this branch may flat-split (0 = paginate serially).
+        bool use_delimiter = true; /// List with the '/' delimiter (discover sub-dirs) vs. raw keyspace range.
+    };
+
     void worker();
-    /// List a single prefix completely (paginating one level), pushing keys to the result queue and
-    /// child common prefixes to the work queue. Returns false if an exception was stored and the walk
-    /// must stop.
-    bool listPrefix(const std::string & prefix);
+    /// Lists one range completely (paginating, splitting flat sub-trees). Returns false if an exception
+    /// was stored and the walk must stop.
+    bool listRange(const ListRange & range);
+    /// Tiles `(last_key, range.end)` into contiguous sub-ranges using boundaries derived from the byte
+    /// alphabet of `sample`. Returns empty if the range cannot be usefully split (caller paginates).
+    std::vector<ListRange> splitFlatRange(const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample) const;
 
-    /// Pops the next ready batch, blocking until one is available or the walk is finished.
-    /// Returns nullopt only when the walk is finished and no more batches will arrive.
-    /// Rethrows the first worker exception, if any. Requires `lock` to be held on `mutex`.
     std::optional<RelativePathsWithMetadata> popBatch(std::unique_lock<std::mutex> & lock);
-
-    /// Lazily starts the worker threads on first use. Requires `lock` to be held on `mutex`.
     void ensureStarted(std::unique_lock<std::mutex> & lock);
-
-    /// Moves the consumer cursor to the next batch (blocking via `popBatch`). Requires `lock` held.
     void advanceLocked(std::unique_lock<std::mutex> & lock);
+    /// Enqueue ranges and emit a batch atomically; updates the outstanding-range counter. Requires lock.
+    void enqueueLocked(std::vector<ListRange> & new_ranges, RelativePathsWithMetadata & batch, std::unique_lock<std::mutex> & lock);
 
     const size_t num_threads;
-    /// Soft upper bound on the number of keys buffered in `ready_batches` (backpressure).
     const size_t max_buffered_objects;
     const ListLevelFunction list_level;
     const std::function<bool(const std::string & common_prefix)> should_descend;
 
     mutable std::mutex mutex;
-    std::condition_variable work_available; /// A prefix is available to list, or the walk finished.
-    std::condition_variable result_available; /// A batch of keys is available, or the walk finished.
-    std::condition_variable space_available; /// Buffered keys dropped below the limit (backpressure).
+    std::condition_variable work_available;
+    std::condition_variable result_available;
+    std::condition_variable space_available;
 
-    std::deque<std::string> prefixes_to_list;
-    /// Number of prefixes that have been enqueued but not yet fully listed. When it reaches zero the
-    /// walk is complete. Guarded by `mutex`.
-    size_t outstanding_prefixes = 0;
+    std::deque<ListRange> ranges_to_list;
+    size_t outstanding_ranges = 0;
 
     std::deque<RelativePathsWithMetadata> ready_batches;
     size_t buffered_objects = 0;
 
     bool started = false;
-    bool finished = false; /// The walk produced everything (or failed) and no more batches will arrive.
-    bool stop = false; /// Destructor requested shutdown.
+    bool finished = false;
+    bool stop = false;
     std::exception_ptr first_exception;
 
-    /// Consumer-side cursor over the batch handed out by the iterator interface.
     bool is_initialized = false;
     bool consumer_finished = false;
     RelativePathsWithMetadata current_batch;

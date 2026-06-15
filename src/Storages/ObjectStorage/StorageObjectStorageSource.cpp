@@ -1411,9 +1411,9 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
             /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
             auto list_level = [storage = object_storage, list_object_keys_size, with_tags]
-                (const std::string & prefix, const std::string & continuation_token)
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
             {
-                return storage->listObjectsSingleLevel(prefix, /* delimiter */ "/", list_object_keys_size, with_tags, continuation_token);
+                return storage->listObjectsSingleLevel(prefix, delimiter, list_object_keys_size, with_tags, start_after, continuation_token);
             };
 
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
