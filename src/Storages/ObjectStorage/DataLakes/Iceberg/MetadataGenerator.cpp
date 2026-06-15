@@ -237,8 +237,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     }
 
     /// Position deletes
-    if (const auto * summary_overwrite = snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-        summary_overwrite && summary_overwrite->added_delete_files > 0)
+    if (snapshot_summary.getOperation() == Iceberg::SnapshotSummaryOperation::OVERWRITE
+        && snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>().added_delete_files > 0)
     {
         if (!metadata_object->has(Iceberg::f_properties))
         {

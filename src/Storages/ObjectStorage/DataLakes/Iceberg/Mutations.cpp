@@ -385,9 +385,9 @@ static bool writeMetadataFiles(
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
-    Int64 total_rows = 0;
-    Int64 total_bytes = 0;
-    Int64 total_files = 0;
+    UInt64 total_rows = 0;
+    UInt64 total_bytes = 0;
+    UInt64 total_files = 0;
     for (const auto & [_, delete_filename] : delete_filenames.delete_file)
     {
         total_rows += delete_filename.total_rows;
