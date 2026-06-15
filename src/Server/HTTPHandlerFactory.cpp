@@ -446,7 +446,7 @@ void addDefaultHandlersFactory(
     /// builds via `addCommonDefaultHandlersFactory`). The interserver port has a
     /// different (HMAC) trust model and is typically less-firewalled inside the
     /// cluster, so exposing an interactive PTY shell there would punch a hole
-    /// through that boundary even when the experimental gate is open.
+    /// through that boundary even when `enable_webterminal` is set.
     auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
     webterminal_handler->attachNonStrictPath("/webterminal");
     webterminal_handler->allowGetAndHeadRequest();

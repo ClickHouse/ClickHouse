@@ -5,6 +5,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Interpreters/MaterializedCTE.h>
@@ -2346,7 +2347,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -3120,6 +3121,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 ? mat_subquery->as<QueryNode>()->getProjectionColumns()
                                 : mat_subquery->as<UnionNode>()->computeProjectionColumns();
 
+
                             NamesAndTypesList columns;
                             for (const auto & col : proj_cols)
                                 columns.emplace_back(col.name, col.type);
@@ -3386,26 +3388,30 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     /// Lambda can be inside the aggregate function, so we should check parent scopes.
     /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
-    bool in_aggregate_function_scope = false;
+    bool in_aggregate_or_grouping_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
     {
-        in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+        in_aggregate_or_grouping_function_scope
+            = in_aggregate_or_grouping_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
 
         /// Check parent scopes until find current query scope.
         if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
             break;
     }
 
-    if (!in_aggregate_function_scope)
+    if (!in_aggregate_or_grouping_function_scope)
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            auto it = scope_ptr->nullable_group_by_keys.find(node);
-            if (it != scope_ptr->nullable_group_by_keys.end())
+            if (!scope_ptr->nullable_group_by_keys.empty())
             {
-                node = it->node->clone();
-                node->convertToNullable();
-                break;
+                auto it = scope_ptr->nullable_group_by_keys.find(node);
+                if (it != scope_ptr->nullable_group_by_keys.end())
+                {
+                    node = it->node->clone();
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// Check parent scopes until find current query scope.
@@ -4603,6 +4609,43 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
+        /// If the identifier resolved to a same-named column of a table that participates
+        /// in the ARRAY JOIN's input join tree (e.g. an `ALIAS` column shadowing a Nested
+        /// prefix like `loc` vs `loc.x`/`loc.y`) and the resulting type is not Array/Map,
+        /// retry by expanding the identifier as a Nested prefix over the per-field columns
+        /// of that same source table. This restores the legacy analyzer's behavior for
+        /// `ARRAY JOIN <nested_prefix>` when an `ALIAS` column occupies the same name.
+        if (auto * resolved_column_node = array_join_expression->as<ColumnNode>())
+        {
+            auto current_result_type = resolved_column_node->getResultType();
+            if (current_result_type && !isArray(current_result_type) && !isMap(current_result_type))
+            {
+                auto column_source = resolved_column_node->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE)
+                {
+                    auto data_it = scope.table_expression_node_to_data.find(column_source);
+                    if (data_it != scope.table_expression_node_to_data.end())
+                    {
+                        Identifier column_identifier(resolved_column_node->getColumnName());
+                        if (auto nested_function_node = IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
+                                column_identifier, data_it->second, scope.context))
+                        {
+                            /// The regular identifier-resolver path would call
+                            /// `convertJoinedColumnTypeToNullIfNeeded` on the `nested(...)`
+                            /// produced from storage. We don't replicate that here because
+                            /// the join-side nullability transform is a no-op for the
+                            /// per-field columns of a Nested prefix: a Nested prefix only
+                            /// matches when every per-field column is `Array(...)`, and
+                            /// `Nullable(Array(...))` is not allowed, so
+                            /// `canBecomeNullable` returns false and the conversion exits
+                            /// at its `need_nullable` check.
+                            array_join_expression = std::move(nested_function_node);
+                        }
+                    }
+                }
+            }
+        }
+
         auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
             auto result_type = expression->getResultType();
@@ -4704,7 +4747,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
     for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is no any duplicates because it will lead to broken result
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication)"
+                            "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication) "
                             "While processing '{}'", join_node.formatASTForErrorMessage());
 }
 
