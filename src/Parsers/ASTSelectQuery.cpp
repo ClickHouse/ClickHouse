@@ -684,7 +684,16 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
             this->setExpression(expr, std::move(child));
     };
 
-    setExpr("with", Expression::WITH);
+    /// These clauses are parser-owned `ASTExpressionList`s that `formatImpl` formats via
+    /// `as<ASTExpressionList &>()` (the multiline paths) and analysis iterates as lists, so a scalar
+    /// node from malformed `clickhouse_json` would reach an internal cast. Restore them with a typed read.
+    auto setExprList = [&](const char * key, ASTSelectQuery::Expression expr)
+    {
+        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+            this->setExpression(expr, std::move(child));
+    };
+
+    setExprList("with", Expression::WITH);
     setExpr("select", Expression::SELECT);
 
     /// `tables` is a parser-owned `ASTTablesInSelectQuery`. SELECT analysis and helpers
@@ -698,14 +707,14 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExpr("cte_aliases", Expression::CTE_ALIASES);
     setExpr("prewhere", Expression::PREWHERE);
     setExpr("where", Expression::WHERE);
-    setExpr("group_by", Expression::GROUP_BY);
+    setExprList("group_by", Expression::GROUP_BY);
     setExpr("having", Expression::HAVING);
-    setExpr("window", Expression::WINDOW);
+    setExprList("window", Expression::WINDOW);
     setExpr("qualify", Expression::QUALIFY);
-    setExpr("order_by", Expression::ORDER_BY);
+    setExprList("order_by", Expression::ORDER_BY);
     setExpr("limit_by_offset", Expression::LIMIT_BY_OFFSET);
     setExpr("limit_by_length", Expression::LIMIT_BY_LENGTH);
-    setExpr("limit_by", Expression::LIMIT_BY);
+    setExprList("limit_by", Expression::LIMIT_BY);
     setExpr("limit_offset", Expression::LIMIT_OFFSET);
     setExpr("limit_length", Expression::LIMIT_LENGTH);
     setExpr("settings", Expression::SETTINGS);
@@ -718,6 +727,13 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing SELECT list during AST JSON deserialization");
     if (!select_list->as<ASTExpressionList>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "SELECT list must be an expression list during AST JSON deserialization");
+
+    /// Every ORDER BY element is parser-produced as an `ASTOrderByElement`; `formatImpl` and sort-key
+    /// extraction downcast them. Reject any other child type from malformed `clickhouse_json`.
+    if (auto order_by_list = orderBy())
+        for (const auto & order_by_element : order_by_list->children)
+            if (!order_by_element || !order_by_element->as<ASTOrderByElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY elements must be order-by elements during AST JSON deserialization");
 
     /// `order_by_all` is only meaningful together with an ORDER BY clause, because
     /// `formatImpl` recovers the sort direction and null ordering from the first

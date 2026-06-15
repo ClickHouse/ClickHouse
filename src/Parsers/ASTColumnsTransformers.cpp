@@ -492,6 +492,18 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     if (!lambda_arg.empty() && !has_lambda_mode)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with a lambda argument requires a lambda during AST JSON deserialization");
+
+    /// `transform` reads the lambda body as `lambda->as<const ASTFunction &>().arguments->children.at(1)`,
+    /// so the lambda must carry the parser-produced shape: a non-null `arguments` list with at least the
+    /// argument tuple and the body. Reject a function-shaped lambda missing them, which would otherwise
+    /// fail later as an internal null-deref / out-of-range access instead of `BAD_ARGUMENTS`.
+    if (has_lambda_mode)
+    {
+        const auto & lambda_function = lambda->as<const ASTFunction &>();
+        if (!lambda_function.arguments || lambda_function.arguments->children.size() < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsApplyTransformer lambda must have an argument tuple and a body during AST JSON deserialization");
+    }
 }
 
 void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)

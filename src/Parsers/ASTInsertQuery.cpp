@@ -7,6 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -149,7 +150,10 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(settings_ast);
     }
 
-    child = r.readChild("select");
+    /// `select` is parser-produced as an `ASTSelectWithUnionQuery` (`INSERT ... SELECT`). Insert
+    /// execution downcasts it (`applyTrivialInsertSelectOptimization`, the distributed-insert paths),
+    /// so reject any other node type from malformed `clickhouse_json` here.
+    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
     {
         select = child;

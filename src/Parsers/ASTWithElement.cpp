@@ -43,10 +43,14 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' during AST JSON deserialization");
     is_materialized = r.getBool("is_materialized");
 
-    /// `clone` and `formatImpl` both dereference `subquery` unconditionally.
+    /// `clone` and `formatImpl` both dereference `subquery` unconditionally, and `formatImpl` does
+    /// `dynamic_cast<const ASTWithAlias &>(*subquery)` — so the child must derive from `ASTWithAlias`
+    /// (the parser produces an `ASTSubquery`). Reject any other node type at the JSON boundary.
     subquery = r.readChild("subquery");
     if (!subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'subquery' during AST JSON deserialization");
+    if (!dynamic_cast<const ASTWithAlias *>(subquery.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` 'subquery' must be a subquery (an ASTWithAlias node) during AST JSON deserialization");
     children.push_back(subquery);
 
     aliases = r.readChild("aliases");

@@ -1,4 +1,5 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -51,11 +52,21 @@ void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json
 {
     JSONObjectReader r(json);
 
+    /// `ParserDictionaryAttributeDeclaration` always requires a non-empty attribute name followed by
+    /// `ParserDataType`, so both are mandatory and `attr_type` must be a data-type node. (`as<T>` is
+    /// exact-type, so use `dynamic_cast` to also accept the `ASTDataType` subclasses `ASTEnumDataType`/
+    /// `ASTTupleDataType`.) Reject malformed `clickhouse_json` here instead of failing later in
+    /// dictionary configuration.
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
 
     type = r.readChild("attr_type");
-    if (type)
-        children.push_back(type);
+    if (!type)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'attr_type' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
+    if (!dynamic_cast<const ASTDataType *>(type.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DictionaryAttributeDeclaration` 'attr_type' must be a data type during AST JSON deserialization");
+    children.push_back(type);
 
     default_value = r.readChild("default_value");
     if (default_value)

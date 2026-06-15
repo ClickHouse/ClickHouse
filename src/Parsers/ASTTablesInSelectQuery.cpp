@@ -1,6 +1,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -447,21 +448,24 @@ void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    auto child = r.readChild("table_join");
+    /// These slots are parser-owned concrete nodes that `formatImpl` and SELECT helpers downcast
+    /// (`table_join->as<ASTTableJoin &>()`, etc.). Restore them with `readChildOfType` so a wrong
+    /// node type from malformed `clickhouse_json` is rejected here instead of at a later cast.
+    auto child = r.readChildOfType<ASTTableJoin>("table_join");
     if (child)
     {
         table_join = child;
         children.push_back(table_join);
     }
 
-    child = r.readChild("table_expression");
+    child = r.readChildOfType<ASTTableExpression>("table_expression");
     if (child)
     {
         table_expression = child;
         children.push_back(table_expression);
     }
 
-    child = r.readChild("array_join");
+    child = r.readChildOfType<ASTArrayJoin>("array_join");
     if (child)
     {
         array_join = child;
@@ -485,7 +489,10 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     final = r.getBool("final");
 
-    auto child = r.readChild("database_and_table_name");
+    /// `database_and_table_name` is parser-produced as an `ASTTableIdentifier`: default-database
+    /// injection visits only `ASTTableIdentifier`, and `StorageID(const ASTPtr &)` throws
+    /// `LOGICAL_ERROR` for any other node. Reject a wrong type from malformed `clickhouse_json` here.
+    auto child = r.readChildOfType<ASTTableIdentifier>("database_and_table_name");
     if (child)
     {
         database_and_table_name = child;
