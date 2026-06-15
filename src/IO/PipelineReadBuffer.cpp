@@ -29,19 +29,19 @@ bool PipelineReadBuffer::nextImpl()
         watch.emplace(clock_type);
 
     /// Consume what the previous span exposed, then refill from the executor when the
-    /// current window's rope is exhausted. An empty window means EOF.
-    rope.advance(working_buffer.size());
-    if (rope.atEnd())
+    /// current window's chain is exhausted. An empty window means EOF.
+    chain.advance(working_buffer.size());
+    if (chain.atEnd())
     {
-        rope = executor->readNextWindow();
-        if (rope.atEnd())
+        chain = executor->readNextWindow();
+        if (chain.atEnd())
         {
-            LOG_TRACE(log, "nextImpl: EOF at {}", read_position);
+            LOG_TEST(log, "nextImpl: EOF at {}", read_position);
             return false;
         }
     }
 
-    auto span = rope.peek();
+    auto span = chain.peek();
 
     /// Report the read so `MergeTreeReadPool`'s slow-read backoff still sees it.
     if (profile_callback)
@@ -53,7 +53,7 @@ bool PipelineReadBuffer::nextImpl()
         profile_callback(info);
     }
 
-    /// The span points into a buffer `rope` owns; it stays valid until the next advance.
+    /// The span points into a buffer `chain` owns; it stays valid until the next advance.
     internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
@@ -86,7 +86,7 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
     LOG_DEBUG(log, "seek to {}", new_pos);
 
     resetWorkingBuffer();
-    rope = Rope{};
+    chain = ChainedBuffers{};
     executor->seek(new_pos);
     read_position = new_pos;
     return new_pos;
@@ -109,7 +109,7 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
     {
         const size_t current = read_position - available();
         resetWorkingBuffer();
-        rope = Rope{};
+        chain = ChainedBuffers{};
         executor->seek(current);
         read_position = current;
     }

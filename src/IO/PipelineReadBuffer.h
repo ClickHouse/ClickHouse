@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <Common/Logger.h>
 
 #include <memory>
@@ -13,7 +13,7 @@ namespace DB
 class ReaderExecutor;
 
 /// Thin `ReadBufferFromFileBase` over a `ReaderExecutor` (experimental
-/// `use_reader_executor` path). `nextImpl` streams the executor's `Rope` windows,
+/// `use_reader_executor` path). `nextImpl` streams the executor's `ChainedBuffers` windows,
 /// pointing `working_buffer` at the current span; `seek` delegates to the executor.
 /// Legacy callers see a normal seekable file buffer.
 class PipelineReadBuffer : public ReadBufferFromFileBase
@@ -42,10 +42,10 @@ private:
     bool nextImpl() override;
 
     std::unique_ptr<ReaderExecutor> executor;
-    /// The rope-with-cursor currently being streamed; empty between windows.
+    /// The chain-with-cursor currently being streamed; empty between windows.
     /// `nextImpl` advances it by `working_buffer.size()`, then refills from the
     /// executor when exhausted. Reset on seek / read-bound re-anchor.
-    Rope rope;
+    ChainedBuffers chain;
     /// Logical offset just past the last byte exposed via `working_buffer`;
     /// `getPosition` subtracts `available` from it.
     size_t read_position = 0;

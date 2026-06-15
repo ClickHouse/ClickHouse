@@ -94,7 +94,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.get(Stats::RequestedBytes), stats.get(Stats::WorkMicroseconds));
 }
 
-Rope ReaderExecutor::readNextWindow()
+ChainedBuffers ReaderExecutor::readNextWindow()
 {
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
@@ -142,7 +142,7 @@ Rope ReaderExecutor::readNextWindow()
     if (object_offset > 0)
         buffer->seek(static_cast<off_t>(object_offset), SEEK_SET);
 
-    auto block = std::make_shared<OwnedRopeBuffer>(want);
+    auto block = std::make_shared<OwnedChainedBuffer>(want);
     const size_t got = buffer->read(block->data(), want);
 
     /// One open+read per window; requested bytes equal source bytes until caches/over-read land.
@@ -167,10 +167,10 @@ Rope ReaderExecutor::readNextWindow()
             got, want, position, object->remote_path, object->bytes_size);
     }
 
-    Rope rope;
-    rope.append(RopeNode{std::move(block), 0, got, position});
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{std::move(block), 0, got, position});
     position += got;
-    return rope;
+    return chain;
 }
 
 void ReaderExecutor::seek(size_t new_position)

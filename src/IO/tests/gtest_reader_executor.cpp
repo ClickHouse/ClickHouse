@@ -86,13 +86,13 @@ protected:
         return obj;
     }
 
-    /// Drain the executor and return all bytes it serves, streaming each window's rope.
+    /// Drain the executor and return all bytes it serves, streaming each window's chain.
     static std::vector<char> drain(ReaderExecutor & ex)
     {
         std::vector<char> out;
         while (true)
         {
-            Rope w = ex.readNextWindow();
+            ChainedBuffers w = ex.readNextWindow();
             if (w.atEnd())
                 break;
             while (!w.atEnd())
@@ -130,7 +130,7 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
     size_t windows = 0;
     while (true)
     {
-        Rope w = ex.readNextWindow();
+        ChainedBuffers w = ex.readNextWindow();
         if (w.atEnd())
             break;
         EXPECT_LE(w.totalBytes(), 100u);
@@ -150,7 +150,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ex.seek(500);
     EXPECT_EQ(ex.getPosition(), 500u);
 
-    Rope w = ex.readNextWindow();
+    ChainedBuffers w = ex.readNextWindow();
     ASSERT_FALSE(w.atEnd());
     auto span = w.peek();
     EXPECT_EQ(span.logical_offset, 500u);
@@ -158,7 +158,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
 
     /// Seek backward and re-read.
     ex.seek(10);
-    Rope w2 = ex.readNextWindow();
+    ChainedBuffers w2 = ex.readNextWindow();
     ASSERT_FALSE(w2.atEnd());
     auto span2 = w2.peek();
     EXPECT_EQ(span2.logical_offset, 10u);
@@ -176,7 +176,7 @@ TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
     while (true)
     {
         size_t pos = ex.getPosition();
-        Rope w = ex.readNextWindow();
+        ChainedBuffers w = ex.readNextWindow();
         if (w.atEnd())
             break;
         if (pos < 300)

@@ -2,7 +2,7 @@
 
 #include <IO/OffsetMap.h>
 #include <IO/IFileBasedSourceReader.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -19,7 +19,7 @@ namespace DB
 class ReadBufferFromFileBase;
 
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves
-/// bytes from an `IFileBasedSourceReader` as a `Rope`, one block at a time.
+/// bytes from an `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time.
 /// Drives the experimental `use_reader_executor` read path. One instance per
 /// column-stream; not thread-safe.
 class ReaderExecutor
@@ -35,9 +35,9 @@ public:
     ~ReaderExecutor();
 
     /// Read the next block (<= `block_size`, clamped to the current object's end for
-    /// known-size objects) into a fresh rope buffer and advance the position by the bytes
-    /// read. Returns a single-node `Rope` at the current position; an empty `Rope` is EOF.
-    Rope readNextWindow();
+    /// known-size objects) into a fresh chain buffer and advance the position by the bytes
+    /// read. Returns a single-node `ChainedBuffers` at the current position; an empty `ChainedBuffers` is EOF.
+    ChainedBuffers readNextWindow();
 
     void seek(size_t new_position);
 

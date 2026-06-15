@@ -1,4 +1,4 @@
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <Common/Allocator.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -11,7 +11,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric ReaderExecutorRopeBytes;
+    extern const Metric ReaderExecutorChainedBufferBytes;
 }
 
 namespace DB
@@ -24,33 +24,37 @@ namespace ErrorCodes
 
 namespace
 {
-    Allocator<false, false> rope_allocator;
+    Allocator<false, false> chained_buffer_allocator;
 
     /// SIMD-padded allocation size, with the same overflow check `Memory::withPadding` uses.
     size_t paddedSize(size_t size)
     {
         size_t res = 0;
         if (common::addOverflow<size_t>(size, PADDING_FOR_SIMD, res))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "OwnedRopeBuffer size {} is too big to pad", size);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "OwnedChainedBuffer size {} is too big to pad", size);
         return res;
     }
 }
 
-OwnedRopeBuffer::OwnedRopeBuffer(size_t size)
-    : buf_data(static_cast<char *>(rope_allocator.alloc(paddedSize(size))))
+OwnedChainedBuffer::OwnedChainedBuffer(size_t size)
+    /// Allocate with SIMD over-read padding, but keep `buf_size` the logical
+    /// (usable) size: `size()` and every node / coverage bound must exclude the
+    /// `PADDING_FOR_SIMD` bytes, or a read would expose them and the
+    /// `ReaderExecutorChainedBufferBytes` gauge would over-count live memory.
+    : buf_data(static_cast<char *>(chained_buffer_allocator.alloc(paddedSize(size))))
     , buf_size(size)
 {
-    CurrentMetrics::add(CurrentMetrics::ReaderExecutorRopeBytes, buf_size);
+    CurrentMetrics::add(CurrentMetrics::ReaderExecutorChainedBufferBytes, buf_size);
 }
 
-OwnedRopeBuffer::~OwnedRopeBuffer()
+OwnedChainedBuffer::~OwnedChainedBuffer()
 {
-    CurrentMetrics::sub(CurrentMetrics::ReaderExecutorRopeBytes, buf_size);
+    CurrentMetrics::sub(CurrentMetrics::ReaderExecutorChainedBufferBytes, buf_size);
     /// `paddedSize` succeeded in the ctor, so `buf_size + PADDING_FOR_SIMD` cannot overflow.
-    rope_allocator.free(buf_data, buf_size + PADDING_FOR_SIMD);
+    chained_buffer_allocator.free(buf_data, buf_size + PADDING_FOR_SIMD);
 }
 
-ByteRange Rope::range() const
+ByteRange ChainedBuffers::range() const
 {
     if (intervals.empty())
         return {0, 0};
@@ -59,11 +63,11 @@ ByteRange Rope::range() const
     return {start, end - start};
 }
 
-Rope::Span Rope::peek() const
+ChainedBuffers::Span ChainedBuffers::peek() const
 {
     if (nodes.empty())
         return {};
-    const RopeNode & n = nodes.front();
+    const ChainedBufferNode & n = nodes.front();
     return Span{
         const_cast<char *>(n.data()) + front_offset,
         n.size - front_offset,
@@ -71,23 +75,7 @@ Rope::Span Rope::peek() const
     };
 }
 
-void Rope::shrinkIntervalsFront(size_t bytes)
-{
-    if (bytes == 0 || intervals.empty())
-        return;
-    ByteRange & first = intervals.front();
-    if (bytes >= first.size)
-    {
-        intervals.erase(intervals.begin());
-    }
-    else
-    {
-        first.offset += bytes;
-        first.size -= bytes;
-    }
-}
-
-void Rope::extendIntervalsFront(size_t bytes)
+void ChainedBuffers::extendIntervalsFront(size_t bytes)
 {
     if (bytes == 0)
         return;
@@ -97,10 +85,10 @@ void Rope::extendIntervalsFront(size_t bytes)
     intervals.front().size += bytes;
 }
 
-void Rope::advance(size_t bytes)
+void ChainedBuffers::advance(size_t bytes)
 {
     /// advance(0) must stay a pure no-op: anchoring `consumed_pos` to the front without
-    /// consuming anything would make a fresh rope reject legal out-of-order appends.
+    /// consuming anything would make a fresh chain reject legal out-of-order appends.
     if (bytes == 0 || nodes.empty())
         return;
 
@@ -128,7 +116,7 @@ void Rope::advance(size_t bytes)
         : 0;
 }
 
-bool Rope::tryRewind(size_t new_position)
+bool ChainedBuffers::tryRewind(size_t new_position)
 {
     if (nodes.empty())
         return false;
@@ -141,30 +129,32 @@ bool Rope::tryRewind(size_t new_position)
     if (new_position < reachable_lo || new_position > reachable_hi)
         return false;
 
-    const RopeNode & front = nodes.front();
+    const ChainedBufferNode & front = nodes.front();
     const size_t front_end = front.logical_offset + front.size;
+    const size_t cur = front.logical_offset + front_offset;
 
     if (new_position < front_end)
     {
-        /// Inside the front node — just adjust `front_offset`. Going
-        /// backward extends `intervals.front()` so coverage queries
-        /// report the rewound-into bytes; going forward shrinks it.
-        const size_t new_front_offset = new_position - front.logical_offset;
-        if (new_front_offset > front_offset)
-            shrinkIntervalsFront(new_front_offset - front_offset);
-        else if (new_front_offset < front_offset)
-            extendIntervalsFront(front_offset - new_front_offset);
-        front_offset = new_front_offset;
-        consumed_pos = new_position;
+        /// Inside the front node. A forward move reuses `advance` (it trims the
+        /// front interval and updates `front_offset` / `consumed_pos`); a backward
+        /// move re-opens the rewound-into coverage by extending the front interval,
+        /// which `advance` cannot do.
+        if (new_position >= cur)
+            advance(new_position - cur);
+        else
+        {
+            extendIntervalsFront(cur - new_position);
+            front_offset = new_position - front.logical_offset;
+            consumed_pos = new_position;
+        }
         return true;
     }
 
     /// Past the front node: reject a position landing in a gap, else let `advance` move
     /// the cursor there by logical distance.
-    const size_t cur = front.logical_offset + front_offset;
     for (size_t i = 1; i < nodes.size(); ++i)
     {
-        const RopeNode & node = nodes[i];
+        const ChainedBufferNode & node = nodes[i];
         if (new_position < node.logical_offset)
             return false;
         if (new_position < node.logical_offset + node.size)
@@ -179,7 +169,7 @@ bool Rope::tryRewind(size_t new_position)
     return true;
 }
 
-void Rope::mergeInterval(ByteRange iv)
+void ChainedBuffers::mergeInterval(ByteRange iv)
 {
     if (iv.size == 0)
         return;
@@ -204,16 +194,16 @@ void Rope::mergeInterval(ByteRange iv)
     intervals.insert(pos, ByteRange{merged_start, merged_end - merged_start});
 }
 
-void Rope::append(RopeNode node)
+void ChainedBuffers::append(ChainedBufferNode node)
 {
     /// Drop zero-size nodes -- not merged into `intervals`, they would leave a non-empty
-    /// rope whose `peek` span is empty (hanging a drain loop).
+    /// chain whose `peek` span is empty (hanging a drain loop).
     if (node.size == 0)
         return;
 
     /// Never insert behind the consumed frontier: drop a node entirely behind it, trim one
     /// straddling it. This keeps consumed bytes from being re-covered and keeps `front_offset`
-    /// applying to the front node. A fresh rope has `consumed_pos == 0`, so out-of-order
+    /// applying to the front node. A fresh chain has `consumed_pos == 0`, so out-of-order
     /// appends are unaffected.
     if (node.logical_offset + node.size <= consumed_pos)
         return;
@@ -229,12 +219,12 @@ void Rope::append(RopeNode node)
     /// equal-offset nodes keep insertion order).
     ByteRange node_range = node.range();
     auto it = std::upper_bound(nodes.begin(), nodes.end(), node.logical_offset,
-        [](size_t v, const RopeNode & n) { return v < n.logical_offset; });
+        [](size_t v, const ChainedBufferNode & n) { return v < n.logical_offset; });
     nodes.insert(it, std::move(node));
     mergeInterval(node_range);
 }
 
-void Rope::append(Rope && other)
+void ChainedBuffers::append(ChainedBuffers && other)
 {
     if (other.nodes.empty())
         return;
@@ -262,9 +252,9 @@ void Rope::append(Rope && other)
     other.intervals.clear();
 }
 
-Rope Rope::slice(ByteRange req) const
+ChainedBuffers ChainedBuffers::slice(ByteRange req) const
 {
-    Rope result;
+    ChainedBuffers result;
     /// Bytes before the consumed frontier are not slice-able; clamp every node to it (with
     /// overlap a later node can start before it too, not just the front).
     const size_t cursor = consumed_pos;
@@ -296,7 +286,7 @@ Rope Rope::slice(ByteRange req) const
         size_t overlap_end = std::min(node_end, req_end);
         size_t trim_front = overlap_start - node_start;
 
-        RopeNode sliced;
+        ChainedBufferNode sliced;
         sliced.buffer = node.buffer;
         sliced.buffer_offset = effective_buffer_offset + trim_front;
         sliced.size = overlap_end - overlap_start;
@@ -307,7 +297,7 @@ Rope Rope::slice(ByteRange req) const
     return result;
 }
 
-size_t Rope::totalBytes() const
+size_t ChainedBuffers::totalBytes() const
 {
     if (nodes.empty())
         return 0;
@@ -317,7 +307,7 @@ size_t Rope::totalBytes() const
     return total - front_offset;
 }
 
-size_t Rope::coveredBytes(ByteRange req) const
+size_t ChainedBuffers::coveredBytes(ByteRange req) const
 {
     if (req.size == 0)
         return 0;
@@ -336,7 +326,7 @@ size_t Rope::coveredBytes(ByteRange req) const
     return total;
 }
 
-VectorWithMemoryTracking<ByteRange> Rope::gaps(ByteRange req) const
+VectorWithMemoryTracking<ByteRange> ChainedBuffers::gaps(ByteRange req) const
 {
     VectorWithMemoryTracking<ByteRange> result;
     if (req.size == 0)
@@ -356,7 +346,7 @@ VectorWithMemoryTracking<ByteRange> Rope::gaps(ByteRange req) const
     return result;
 }
 
-bool Rope::covers(ByteRange req) const
+bool ChainedBuffers::covers(ByteRange req) const
 {
     if (req.size == 0)
         return true;
@@ -368,24 +358,24 @@ bool Rope::covers(ByteRange req) const
     return it != intervals.end() && it->offset <= req.offset && it->end() >= req.end();
 }
 
-Rope Rope::extract(ByteRange req) const
+ChainedBuffers ChainedBuffers::extract(ByteRange req) const
 {
     chassert(covers(req)); /// caller's invariant
     return slice(req);
 }
 
-void Rope::shift(ssize_t delta)
+void ChainedBuffers::shift(ssize_t delta)
 {
     for (auto & node : nodes)
         node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
     for (auto & iv : intervals)
         iv.offset = static_cast<size_t>(static_cast<ssize_t>(iv.offset) + delta);
     /// `consumed_pos` is a logical coordinate too; re-base it (clamped at 0 so a fresh
-    /// rope's 0 with a negative delta doesn't underflow).
+    /// chain's 0 with a negative delta doesn't underflow).
     consumed_pos = static_cast<size_t>(std::max<ssize_t>(0, static_cast<ssize_t>(consumed_pos) + delta));
 }
 
-size_t Rope::copyTo(char * dst, ByteRange req) const
+size_t ChainedBuffers::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
     /// Flatten assumes non-overlapping nodes; overlap would double-write `dst` / over-count.

@@ -17,25 +17,25 @@ struct ByteRange
     size_t end() const { return offset + size; }
 };
 
-/// Abstract backing memory for a rope node.
-class RopeBuffer
+/// Abstract backing memory for a chain node.
+class ChainedBuffer
 {
 public:
-    virtual ~RopeBuffer() = default;
+    virtual ~ChainedBuffer() = default;
     virtual char * data() = 0;
     virtual const char * data() const = 0;
     virtual size_t size() const = 0;
 };
 
 /// Owns a block of memory.
-class OwnedRopeBuffer : public RopeBuffer
+class OwnedChainedBuffer : public ChainedBuffer
 {
 public:
-    explicit OwnedRopeBuffer(size_t size);
-    ~OwnedRopeBuffer() override;
+    explicit OwnedChainedBuffer(size_t size);
+    ~OwnedChainedBuffer() override;
 
-    OwnedRopeBuffer(const OwnedRopeBuffer &) = delete;
-    OwnedRopeBuffer & operator=(const OwnedRopeBuffer &) = delete;
+    OwnedChainedBuffer(const OwnedChainedBuffer &) = delete;
+    OwnedChainedBuffer & operator=(const OwnedChainedBuffer &) = delete;
 
     char * data() override { return buf_data; }
     const char * data() const override { return buf_data; }
@@ -47,10 +47,10 @@ private:
 };
 
 
-/// Single node in a rope. References a slice of a RopeBuffer.
-struct RopeNode
+/// Single node in a chain. References a slice of a ChainedBuffer.
+struct ChainedBufferNode
 {
-    std::shared_ptr<RopeBuffer> buffer;
+    std::shared_ptr<ChainedBuffer> buffer;
     size_t buffer_offset = 0;
     size_t size = 0;
     size_t logical_offset = 0;
@@ -60,7 +60,7 @@ struct RopeNode
     ByteRange range() const { return {logical_offset, size}; }
 };
 
-/// Sequence of RopeNodes covering a logical range, with a built-in
+/// Sequence of ChainedBufferNodes covering a logical range, with a built-in
 /// consumption cursor.
 ///
 /// Two invariants maintained on every `append`:
@@ -89,12 +89,12 @@ struct RopeNode
 /// Overlap: `append` tolerates overlapping / duplicate nodes (the merged `intervals` is
 /// the unique coverage). Streaming (`peek` / `advance`) works by absolute position,
 /// dropping behind nodes, so it serves the union once despite overlap; `copyTo` (flatten)
-/// requires a non-overlapping rope and asserts it.
-class Rope
+/// requires a non-overlapping chain and asserts it.
+class ChainedBuffers
 {
 public:
-    void append(RopeNode node);
-    void append(Rope && other);
+    void append(ChainedBufferNode node);
+    void append(ChainedBuffers && other);
 
     // ─── Streaming consumption ──────────────────────────────────────────
 
@@ -105,7 +105,7 @@ public:
         size_t  logical_offset = 0;
     };
 
-    /// True iff there is no more data to read at-or-after the cursor.
+    /// True if there is no more data to read at-or-after the cursor.
     bool atEnd() const { return nodes.empty(); }
 
     /// The span starting at the cursor (= unconsumed prefix of the front
@@ -118,11 +118,11 @@ public:
     /// the remaining reachable bytes — extra bytes are silently clamped.
     void advance(size_t bytes);
 
-    /// Move the cursor to `new_position`. Succeeds iff `new_position` is
+    /// Move the cursor to `new_position`. Succeeds if `new_position` is
     /// inside the currently-held nodes, i.e. in
     /// `[nodes.front().logical_offset, nodes.back().end())`. Backward
     /// moves restore intervals so coverage queries report the rewound
-    /// bytes. Returns true on success; false leaves the rope unchanged.
+    /// bytes. Returns true on success; false leaves the chain unchanged.
     bool tryRewind(size_t new_position);
 
     // ─── Coverage queries (reflect still-reachable bytes) ───────────────
@@ -145,28 +145,28 @@ public:
     size_t totalBytes() const;
 
     /// Alias for `atEnd()`; kept for readability at call sites that mean
-    /// "is there anything in this rope at all".
+    /// "is there anything in this chain at all".
     bool empty() const { return nodes.empty(); }
 
     // ─── Slicing / flattening ───────────────────────────────────────────
 
-    /// Extract the parts of this rope that overlap `req`. Partial coverage
-    /// is fine; non-overlapping nodes are dropped. The returned Rope's
+    /// Extract the parts of this chain that overlap `req`. Partial coverage
+    /// is fine; non-overlapping nodes are dropped. The returned ChainedBuffers's
     /// cursor starts at the front of its first node. Operates on the
-    /// rope's still-reachable bytes (post-advance).
-    Rope slice(ByteRange req) const;
+    /// chain's still-reachable bytes (post-advance).
+    ChainedBuffers slice(ByteRange req) const;
 
-    /// Same as `slice(req)` but asserts the rope fully covers `req`.
-    Rope extract(ByteRange req) const;
+    /// Same as `slice(req)` but asserts the chain fully covers `req`.
+    ChainedBuffers extract(ByteRange req) const;
 
-    /// Flatten this rope's coverage of `req` into `dst`. Asserts `covers(req)` and (debug)
-    /// that the rope is non-overlapping. Returns bytes written.
+    /// Flatten this chain's coverage of `req` into `dst`. Asserts `covers(req)` and (debug)
+    /// that the chain is non-overlapping. Returns bytes written.
     size_t copyTo(char * dst, ByteRange req) const;
 
     // ─── Diagnostics / shifting ─────────────────────────────────────────
 
     /// Shift every node's `logical_offset` (and every interval's
-    /// `offset`) by `delta`. Used when relocating a rope's logical
+    /// `offset`) by `delta`. Used when relocating a chain's logical
     /// coordinates (e.g. stripping the encryption header).
     void shift(ssize_t delta);
 
@@ -174,7 +174,7 @@ public:
     /// The first node's `data()` is the buffer start; the cursor is at
     /// `data() + front_offset_for_test()`. No non-`const` overload —
     /// mutating the deque would silently break the sort invariant.
-    const DequeWithMemoryTracking<RopeNode> & getNodes() const { return nodes; }
+    const DequeWithMemoryTracking<ChainedBufferNode> & getNodes() const { return nodes; }
 
     /// Read-only view of the disjoint coverage intervals. Mostly for
     /// tests; production callers should use `covers` / `gaps` / `range`.
@@ -188,17 +188,12 @@ private:
     /// touching existing intervals.
     void mergeInterval(ByteRange iv);
 
-    /// Drop `bytes` from the front of `intervals` (used by `advance` /
-    /// `tryRewind`). The dropped bytes must be at the front of
-    /// `intervals.front()`.
-    void shrinkIntervalsFront(size_t bytes);
-
     /// Extend `intervals.front()` backward by `bytes` (used by
     /// `tryRewind` going backward). Asserts the front interval's offset
     /// is at least `bytes` (so we don't underflow).
     void extendIntervalsFront(size_t bytes);
 
-    DequeWithMemoryTracking<RopeNode> nodes;
+    DequeWithMemoryTracking<ChainedBufferNode> nodes;
     VectorWithMemoryTracking<ByteRange> intervals;
 
     /// Bytes inside `nodes.front()` that have already been consumed by
@@ -212,7 +207,7 @@ private:
     /// `advance` / `tryRewind`; a backward rewind lowers it, re-opening bytes).
     /// `append` / `slice` clamp against it -- unlike
     /// `front().logical_offset + front_offset`, it stays correct after `advance`
-    /// drops the front node into a gap. `0` on a fresh rope, so out-of-order appends work.
+    /// drops the front node into a gap. `0` on a fresh chain, so out-of-order appends work.
     size_t consumed_pos = 0;
 };
 

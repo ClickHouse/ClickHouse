@@ -14,7 +14,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric ReaderExecutorRopeBytes;
+    extern const Metric ReaderExecutorChainedBufferBytes;
 }
 
 using namespace DB;
@@ -234,21 +234,21 @@ TEST_F(PipelineReadBufferTest, ExtendReadUntilAfterTrimContinues)
         ASSERT_EQ(static_cast<unsigned char>(rest[i]), patternByte(200 + i)) << "at logical " << (200 + i);
 }
 
-TEST_F(PipelineReadBufferTest, RopeBytesReturnToBaselineAtEOF)
+TEST_F(PipelineReadBufferTest, ChainedBufferBytesReturnToBaselineAtEOF)
 {
     /// One window buffer is alive at a time while streaming, and EOF releases the last
     /// one: window memory must not accumulate across refills.
-    const auto baseline = CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes);
+    const auto baseline = CurrentMetrics::get(CurrentMetrics::ReaderExecutorChainedBufferBytes);
     auto buf = makeBuffer({makeFile("a.bin", 1024)}, /*block_size=*/256);
 
     std::vector<char> data(256);
     for (size_t window = 0; window < 4; ++window)
     {
         buf->readStrict(data.data(), data.size());
-        EXPECT_LE(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes) - baseline, 256);
+        EXPECT_LE(CurrentMetrics::get(CurrentMetrics::ReaderExecutorChainedBufferBytes) - baseline, 256);
     }
     EXPECT_TRUE(buf->eof());
-    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes), baseline);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorChainedBufferBytes), baseline);
 }
 
 }
