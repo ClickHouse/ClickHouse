@@ -600,6 +600,10 @@ public:
 
     unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
+    unsigned toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+
+    unsigned toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+
     unsigned toMinute(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)

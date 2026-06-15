@@ -832,6 +832,12 @@ For AvroConfluent format: send timeout in seconds for the Confluent Schema Regis
     DECLARE(UInt64, format_avro_schema_registry_receive_timeout, 1, R"(
 For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
 )", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_max_retries, 5, R"(
+For AvroConfluent format: maximum number of retries for transient failures when communicating with the Confluent Schema Registry (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429). Set to 0 to disable retries. The maximum allowed value is 20. Schema validation errors (HTTP 409, malformed Avro JSON) are not retried.
+)", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_retry_initial_backoff_ms, 100, R"(
+For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0 and less than or equal to 60000.
+)", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
 )", 0) \
@@ -1357,6 +1363,11 @@ Enabled by default
     DECLARE(Bool, output_format_pretty_row_numbers, true, R"(
 Add row numbers before each row for pretty output format
 )", 0) \
+    DECLARE(Bool, output_format_pretty_use_nbsp_for_padding, false, R"(
+If enabled, padding in `Pretty` output formats is rendered with `U+00A0` instead of an ASCII space.
+The output remains visually identical in monospace, but the padding survives tools that compress or trim runs of regular spaces.
+Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
+)", 0) \
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.
 )", 0) \
@@ -1529,6 +1540,28 @@ Set the quoting rule for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
+)", 0) \
+    DECLARE(UInt64, output_format_image_width, 1024, R"(
+The width of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(UInt64, output_format_image_height, 1024, R"(
+The height of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(String, output_format_image_terminal_mode, "", R"(
+For image output formats such as `PNG`, output the image directly to the terminal using an inline image protocol instead of writing the raw image bytes.
+
+Possible values:
+- `` (empty) — write the raw image bytes (the default).
+- `iterm` — use the iTerm2 inline image protocol.
+- `kitty` — use the Kitty graphics protocol.
+- `sixel` — use the Sixel protocol.
+- `auto` — if the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes.
+
+Default value: `` (empty).
 )", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
