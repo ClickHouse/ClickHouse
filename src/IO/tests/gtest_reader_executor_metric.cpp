@@ -344,6 +344,10 @@ public:
     /// one-shot connection (the stateless path).
     size_t buffer_slots = 10;
 
+    /// Run `readNextWindow` as the schedule-driven interpreter (the "sched" matrix column)
+    /// instead of the live walk. Served bytes are unchanged; this measures the R/I/O delta.
+    bool schedule_driven = false;
+
     /// A list of reads, each (offset, optional size); a nullopt size reads to the end
     /// of the file (FILE_SIZE - offset).
     using ReadList = std::vector<std::pair<size_t, std::optional<size_t>>>;
@@ -375,6 +379,7 @@ public:
         executor_options.log_file_path = {};
         executor_options.max_tail_for_drain = MAX_TAIL_FOR_DRAIN;
         executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(buffer_slots);
+        executor_options.schedule_driven = schedule_driven;
         ReaderExecutor executor(src, objects, std::move(caches), executor_options);
 
         size_t total = 0;
@@ -435,6 +440,12 @@ public:
     /// connection) and stateless (no budget -> a short-lived connection per window).
     static constexpr size_t LIVE_SLOTS = 10;
 
+    /// The matrix columns: {label, buffer_slots, schedule_driven}. `live`/`stateless` are
+    /// the live walk (long-conn on/off); `sched` is the schedule-driven interpreter (long-conn
+    /// on) - byte-identical served output, measured for its R/I/O delta vs `live`.
+    inline static const std::array<std::tuple<const char *, size_t, bool>, 3> MODES{{
+        {"live", LIVE_SLOTS, false}, {"stateless", 0, false}, {"sched", LIVE_SLOTS, true}}};
+
     /// Run a scenario — `warm_ranges` to initialise the cache state, then `reads` as
     /// the read pattern — under BOTH budget modes on a fresh cache each, printing both.
     /// This is the matrix axis: every cache-state x read-pattern case is measured live
@@ -447,20 +458,28 @@ public:
         StoredObjects objects;
         objects.emplace_back("obj", "", FILE_SIZE);
 
-        std::pair<CostVector, CostVector> out;
-        const std::array<std::pair<const char *, size_t>, 2> modes{{{"live", LIVE_SLOTS}, {"stateless", 0}}};
-        for (size_t i = 0; i < modes.size(); ++i)
+        std::array<CostVector, 3> out;
+        for (size_t i = 0; i < MODES.size(); ++i)
         {
-            buffer_slots = modes[i].second;
-            auto fc = makeFileCache(name + "_" + modes[i].first, SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+            buffer_slots = std::get<1>(MODES[i]);
+            schedule_driven = std::get<2>(MODES[i]);
+            auto fc = makeFileCache(name + "_" + std::get<0>(MODES[i]), SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
             if (!warm_ranges.empty())
                 warmCache(fc, data, objects, warm_ranges);
-            const CostVector r = measure(fc, data, objects, reads);
-            std::cout << "[" << name << "/" << modes[i].first << "] " << r.str() << "\n";
-            (i == 0 ? out.first : out.second) = r;
+            out[i] = measure(fc, data, objects, reads);
+            std::cout << "[" << name << "/" << std::get<0>(MODES[i]) << "] " << out[i].str() << "\n";
         }
-        results[name] = {out.first, out.second};
-        return out;
+        schedule_driven = false;
+        results[name] = out;
+        /// Re-baseline guard: the schedule-driven interpreter (out[2], "sched") matches the
+        /// live walk's R/I/O on every FileCache scenario, and serves the same bytes (checked
+        /// by executeReads' EXPECT_EQ(total, want_total) on each run). The only intended
+        /// divergence is the block-granular pc_gaps case (see runMatrixPageCache); a mismatch
+        /// here is a regression in the interpreter.
+        EXPECT_EQ(out[2].requests, out[0].requests) << name << ": sched R == live R";
+        EXPECT_EQ(out[2].incomplete, out[0].incomplete) << name << ": sched I == live I";
+        EXPECT_EQ(out[2].over_read, out[0].over_read) << name << ": sched O == live O";
+        return {out[0], out[1]};
     }
 
     /// Like runMatrix, but the cache is an in-memory block-granular PageCache (not
@@ -474,28 +493,45 @@ public:
         StoredObjects objects;
         objects.emplace_back("obj", "", FILE_SIZE);
 
-        std::pair<CostVector, CostVector> out;
-        const std::array<std::pair<const char *, size_t>, 2> modes{{{"live", LIVE_SLOTS}, {"stateless", 0}}};
-        for (size_t i = 0; i < modes.size(); ++i)
+        std::array<CostVector, 3> out;
+        for (size_t i = 0; i < MODES.size(); ++i)
         {
-            buffer_slots = modes[i].second;
+            buffer_slots = std::get<1>(MODES[i]);
+            schedule_driven = std::get<2>(MODES[i]);
             page_cache = makePageCache();
             if (!warm_ranges.empty())
                 warmCache({}, data, objects, warm_ranges);
-            const CostVector r = measure({}, data, objects, reads);
-            std::cout << "[" << name << "/" << modes[i].first << "] " << r.str() << "\n";
-            (i == 0 ? out.first : out.second) = r;
+            out[i] = measure({}, data, objects, reads);
+            std::cout << "[" << name << "/" << std::get<0>(MODES[i]) << "] " << out[i].str() << "\n";
         }
         page_cache.reset();
-        results[name] = {out.first, out.second};
-        return out;
+        schedule_driven = false;
+        results[name] = out;
+        /// pc_gaps is the ONE intended coalescing shift of the schedule-driven interpreter:
+        /// it reads the coalesced job through its block-sized cached holes in one cleanly-
+        /// draining connection - fewer GETs and ZERO incomplete connections vs the live
+        /// walk's reach-bounded reopens (live R=9/I=7), at a little more over-read. Served
+        /// bytes unchanged. Other PageCache scenarios (none today) would match live.
+        if (name == "pc_gaps")
+        {
+            EXPECT_LE(out[2].requests, out[0].requests) << "pc_gaps sched: coalesces at least as well (live R=9)";
+            EXPECT_EQ(out[2].incomplete, 0u) << "pc_gaps sched: job-bounded connection drains cleanly (live I=7)";
+            EXPECT_GE(out[2].over_read, out[0].over_read) << "pc_gaps sched: coalesced cached holes read as over-read";
+        }
+        else
+        {
+            EXPECT_EQ(out[2].requests, out[0].requests) << name << ": sched R == live R";
+            EXPECT_EQ(out[2].incomplete, out[0].incomplete) << name << ": sched I == live I";
+            EXPECT_EQ(out[2].over_read, out[0].over_read) << name << ": sched O == live O";
+        }
+        return {out[0], out[1]};
     }
 
     /// Per-scenario results (live, stateless), filled by runMatrix and printed as one
     /// table by TearDownTestSuite after all ReaderExecutorMetric.* tests run: a full run
     /// shows the whole matrix, a subset only its rows. Recorded BEFORE each cell's
     /// assertions, so a value that changed still appears in the table.
-    inline static std::unordered_map<String, std::pair<CostVector, CostVector>> results;
+    inline static std::unordered_map<String, std::array<CostVector, 3>> results;
 
     static String fmtCell(const CostVector & m)
     {
@@ -517,16 +553,18 @@ public:
             "cold_seq", "warm_seq", "checkerboard", "small_gaps", "pc_gaps", "prefix_hit", "suffix_hit",
             "interior_hole", "sparse_cold", "midseg", "random_scattered",
             "random_runs", "reverse_seq"};
-        auto print_row = [](const String & name, const std::pair<CostVector, CostVector> & r)
+        auto print_row = [](const String & name, const std::array<CostVector, 3> & r)
         {
             std::cout << std::left << std::setw(16) << name << " | "
-                      << std::setw(50) << fmtCell(r.first) << " | " << fmtCell(r.second) << "\n";
+                      << std::setw(50) << fmtCell(r[0]) << " | "
+                      << std::setw(50) << fmtCell(r[1]) << " | " << fmtCell(r[2]) << "\n";
         };
         std::cout << "\n=== ReaderExecutorMetric: cache-state x read-pattern x budget ===\n"
                   << "cost = 30ms*R + 5ms*I + 20ms*S_MiB + 0.1ms*Wc + 0.05ms*Rc (S = bytes from source,\n"
                   << "byte counters rescaled by COMPRESSION); /MiB = cost per MiB requested (load-independent KPI)\n"
+                  << "live/stateless = live walk (long-conn on/off); sched = schedule-driven interpreter\n"
                   << std::left << std::setw(16) << "scenario" << " | "
-                  << std::setw(50) << "live" << " | stateless\n";
+                  << std::setw(50) << "live" << " | " << std::setw(50) << "stateless" << " | sched\n";
         for (const auto & name : order)
             if (auto it = results.find(name); it != results.end())
                 print_row(name, it->second);
