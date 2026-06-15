@@ -33,7 +33,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_num_consumers = N,]
     [rabbitmq_num_queues = N,]
     [rabbitmq_queue_base = 'queue',]
-    [rabbitmq_deadletter_exchange = 'dl-exchange',]
     [rabbitmq_persistent = 0,]
     [rabbitmq_skip_broken_messages = N,]
     [rabbitmq_max_block_size = N,]
@@ -69,7 +68,7 @@ Optional parameters:
 - `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
 - `rabbitmq_address` - Address for connection. Use ether this setting or `rabbitmq_host_port`.
-- `rabbitmq_vhost` - RabbitMQ vhost. Default: `'\'`.
+- `rabbitmq_vhost` - RabbitMQ vhost. Default: `'/'`.
 - `rabbitmq_queue_consume` - Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings. Default: `false`.
 - `rabbitmq_username` - RabbitMQ username.
 - `rabbitmq_password` - RabbitMQ password.

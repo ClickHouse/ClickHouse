@@ -67,6 +67,25 @@ def check_duplicate_includes(file_path):
     return ""
 
 
+def _embedded_doc_lines(lines):
+    """Return the set of 0-based indices of lines covered by R"DOCS_MD( ... )DOCS_MD"
+    raw-string literals (verbatim Markdown documentation embedded into source files)."""
+    exempt = set()
+    in_raw = False
+    for i, line in enumerate(lines):
+        if not in_raw:
+            idx = line.find('R"DOCS_MD(')
+            if idx != -1:
+                exempt.add(i)
+                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD('):]:
+                    in_raw = True
+        else:
+            exempt.add(i)
+            if ')DOCS_MD"' in line:
+                in_raw = False
+    return exempt
+
+
 def check_whitespaces(files) -> str:
     """
     Returns True if all files pass (no ugly double spaces after comma
@@ -98,9 +117,18 @@ def check_whitespaces(files) -> str:
             violations.append(f"{file}: could not read file: {e}")
             continue
 
+        # Skip the verbatim Markdown documentation embedded as R"DOCS_MD( ... )DOCS_MD"
+        # raw-string literals in the format source files: it contains aligned Markdown
+        # tables that legitimately have double spaces.
+        embedded_doc = _embedded_doc_lines(lines)
+
         # Need previous and next line for alignment checks, so skip first/last
         for i in range(1, len(lines) - 1):
             line = lines[i]
+
+            # Skip lines inside embedded documentation raw strings
+            if i in embedded_doc:
+                continue
 
             # Skip exception lines entirely
             if any(p.search(line) for p in EXCEPTIONS):

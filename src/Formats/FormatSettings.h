@@ -72,9 +72,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat : uint8_t
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -572,6 +572,13 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump{};
+
+    struct
+    {
+        UInt64 width = 1024;
+        UInt64 height = 1024;
+        String terminal_mode;
+    } image{};
 
     struct
     {

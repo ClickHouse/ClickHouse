@@ -6817,6 +6817,30 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
+    /// A batch that mixes settings and comments (e.g. MODIFY SETTING ..., MODIFY COMMENT ...)
+    /// matches neither single-type predicate above. Apply it locally like both of them combined
+    /// instead of writing a replicated log entry, so it stays consistent with the DDLWorker
+    /// routing (ASTAlterQuery::isSettingsOrCommentAlter) that sends it to every replica.
+    if (commands.areNonReplicatedAlterCommands())
+    {
+        merge_strategy_picker.refreshState();
+        changeSettings(future_metadata.settings_changes, table_lock_holder);
+
+        /// changeSettings is the sole writer of the setting-derived escape fields and has
+        /// already committed them; carry them into future_metadata so the comment commit
+        /// below does not revert the index filename policy (commands.apply never sets them).
+        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+        future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+        for (auto & index : future_metadata.secondary_indices)
+            index.escape_filenames = committed_metadata->escape_index_filenames;
+
+        setInMemoryMetadata(future_metadata);
+
+        /// It is safe to ignore exceptions here as only settings and comments are changed, neither of which is validated in `alterTable`
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        return;
+    }
+
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);

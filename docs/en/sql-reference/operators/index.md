@@ -186,6 +186,49 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
+### `SOME` / `ALL` on arrays {#some-all-on-arrays}
+
+In addition to the subquery form described above, the right-hand side of `SOME` / `ALL` can be an array expression (an array literal, an array-typed column, or any expression returning an array). This is the PostgreSQL-style array quantifier syntax. It is recognised at parse time and rewritten to array functions, so no manual rewrite is required:
+
+| Syntax | Rewritten to |
+|--------|--------------|
+| `expr = SOME(arr)` | `has(arr, expr)` |
+| `expr <> ALL(arr)` | `NOT has(arr, expr)` |
+| `expr OP SOME(arr)` (any other comparison operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other comparison operator) | `arrayAll(x -> expr OP x, arr)` |
+
+`SOME` is the existential quantifier (the SQL synonym for `ANY`). `=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
+
+The array form is recognised only for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, and `>=`. Other operators that accept an array on the right — for example `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, and `IN` — are **not** rewritten to the array quantifier and keep their ordinary meaning. For instance, `'abc' LIKE SOME(['a%', 'b%'])` is not the array quantifier syntax; use `arrayExists` / `arrayAll` directly for those cases.
+
+:::note `ANY` is not supported for the array form
+Only `SOME` and `ALL` accept an array right-hand side. `ANY` is excluded because `any` is also an aggregate function, so an expression of the shape `expr = any(x)` keeps its function-call meaning. Use `SOME` for the array quantifier.
+:::
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+:::note `NULL` handling differs from the subquery form
+Because the array form is rewritten in the parser (where query settings such as `transform_null_in` are not available, and a per-row array column cannot use the analyzer's null-safe `IN` path), it uses the two-valued semantics of `has` (for `=` / `<>`) and `arrayExists` / `arrayAll` (which fold an unknown `NULL` comparison result to `0`). This can differ from the subquery form, whose `NULL` handling is lowered through `IN` / `NOT IN` and depends on `transform_null_in`:
+
+```sql
+SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+```
+:::
+
 ## Operators for Working with Dates and Times {#operators-for-working-with-dates-and-times}
 
 ### EXTRACT {#extract}

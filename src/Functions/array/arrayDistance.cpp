@@ -100,7 +100,7 @@ struct L2Distance
 
         constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             if constexpr (is_float32)
             {
@@ -136,7 +136,7 @@ struct L2Distance
 
         constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
             __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
@@ -298,7 +298,7 @@ struct CosineDistance
 
         constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             if constexpr (is_float32)
             {
@@ -346,7 +346,7 @@ struct CosineDistance
 
         constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             __m512 x = _mm512_loadu_ps(data_x + i_x);
             __m512 y = _mm512_loadu_ps(data_y + i_y);
