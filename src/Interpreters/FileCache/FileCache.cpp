@@ -1783,8 +1783,32 @@ void FileCache::loadMetadataImpl()
         key_dirs_queue.finish();
     };
 
+    /// Load enqueued key directories until the queue is exhausted and finished.
+    /// pop() blocks when the queue is empty until either a new item is pushed by a listing
+    /// thread or finish() is called (after all listing threads stopped producing).
+    auto drain_queue = [&]()
+    {
+        std::pair<fs::path, OriginInfo> item;
+        while (key_dirs_queue.pop(item))
+        {
+            if (stop_loading_metadata)
+                return;
+            try
+            {
+                loadMetadataForKey(item.first, item.second);
+            }
+            catch (...)
+            {
+                handle_exception();
+                return;
+            }
+        }
+    };
+
     /// Listing threads: each picks up key_prefix_dirs in parallel and enqueues individual key dirs.
-    /// The last listing thread to finish calls finish() on the queue.
+    /// Once all prefixes are listed, the last listing thread calls finish() on the queue, and every
+    /// listing thread then joins the loading threads in draining it (so all threads load the - usually
+    /// dominant - remaining keys instead of sitting idle once listing is done).
     std::vector<ThreadFromGlobalPool> listing_threads;
     for (UInt64 i = 0; i < num_listing_threads; ++i)
     {
@@ -1844,6 +1868,9 @@ void FileCache::loadMetadataImpl()
 
                 if (listing_threads_remaining.fetch_sub(1) == 1)
                     key_dirs_queue.finish();
+
+                /// Listing is done for this thread; help load the remaining enqueued keys.
+                drain_queue();
             });
         }
         catch (...)
@@ -1859,26 +1886,7 @@ void FileCache::loadMetadataImpl()
     {
         try
         {
-            loading_threads.emplace_back([&]
-            {
-                /// pop() blocks when the queue is empty until either a new item is pushed
-                /// by a listing thread or finish() is called (after all listing threads exit).
-                std::pair<fs::path, OriginInfo> item;
-                while (key_dirs_queue.pop(item))
-                {
-                    if (stop_loading_metadata)
-                        return;
-                    try
-                    {
-                        loadMetadataForKey(item.first, item.second);
-                    }
-                    catch (...)
-                    {
-                        handle_exception();
-                        return;
-                    }
-                }
-            });
+            loading_threads.emplace_back([&] { drain_queue(); });
         }
         catch (...)
         {
