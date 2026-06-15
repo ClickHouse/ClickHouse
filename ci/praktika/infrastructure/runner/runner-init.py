@@ -293,6 +293,10 @@ class Runner:
             self.total_errors += 1
             log(f"Failed to register runner: {e}")
             self.collect_logs("registration")
+            # Intentionally fall through without registering: `run.sh` exits
+            # fast without a `.runner` config, `run_job` counts that as an
+            # error, and the loop terminates once `max_total_errors` is hit.
+            return
         log("Runner registered successfully")
 
     def run(self) -> None:
@@ -989,16 +993,17 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.deploy:
-        if config.init_environment not in (Environment.TEST, Environment.MACOS):
+        if config.init_environment != Environment.TEST:
             try:
                 rv = EC2.get_remote_init_version()
-                if config.version <= rv:
-                    log(
-                        f"The local script version {config.version} <= remote version {rv}, aborting deploy"
-                    )
-                    sys.exit(1)
             except Exception as e:
-                log(f"Cannot get remote version: {e}, proceeding with deploy")
+                log(f"Cannot get remote version: {e}, aborting deploy")
+                sys.exit(1)
+            if config.version <= rv:
+                log(
+                    f"The local script version {config.version} <= remote version {rv}, aborting deploy"
+                )
+                sys.exit(1)
         EC2.upload_init_script()
         sys.exit(0)
 
