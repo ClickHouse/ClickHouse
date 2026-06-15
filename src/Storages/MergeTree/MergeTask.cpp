@@ -813,6 +813,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
+    NameSet source_skipped_columns;
     for (const auto & part : global_ctx->future_part->parts)
     {
         if (!info_settings.isAlwaysDefault())
@@ -829,7 +830,38 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
+        /// Collect the union of columns that were skipped on INSERT (their values
+        /// were all type-defaults and no data files were written) across all
+        /// source parts. Collected unconditionally — even when serialization info
+        /// is otherwise always-default — because dropping the marker would change
+        /// the data read back after a later ALTER MODIFY COLUMN ... DEFAULT.
+        for (const auto & name : part->getSerializationInfos().getSkippedColumns())
+            source_skipped_columns.insert(name);
+
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+    }
+
+    /// Carry the skipped-columns marker through the merge for any skipped source
+    /// column that ends up absent from the merged part. A column stays absent
+    /// when it is missing from every source part and has no DEFAULT expression at
+    /// merge time, in which case it was added to expired_columns and removed from
+    /// storage_columns above. If instead the column is materialized during the
+    /// merge (present in the final column list — for example because another part
+    /// holds real data, or it gained a DEFAULT expression), the type-defaults are
+    /// written to disk and the marker is no longer needed.
+    if (!source_skipped_columns.empty())
+    {
+        NameSet final_columns;
+        for (const auto & column : global_ctx->storage_columns)
+            final_columns.insert(column.name);
+
+        NameSet skipped_in_merged;
+        for (const auto & name : source_skipped_columns)
+            if (!final_columns.contains(name))
+                skipped_in_merged.insert(name);
+
+        if (!skipped_in_merged.empty())
+            infos.setSkippedColumns(std::move(skipped_in_merged));
     }
 
     if (global_ctx->new_data_part->info.isPatch())
