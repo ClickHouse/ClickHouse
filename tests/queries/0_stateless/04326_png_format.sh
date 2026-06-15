@@ -166,9 +166,19 @@ python3 "${DECODER}" "${OUT}/px_binary.png" 0,0 1,0
 $CLICKHOUSE_LOCAL --query "INSERT INTO FUNCTION file('${OUT}/append.png', 'PNG') SELECT toUInt8(0) AS v FROM numbers(1)" 2>&1 1>/dev/null
 $CLICKHOUSE_LOCAL --query "INSERT INTO FUNCTION file('${OUT}/append.png', 'PNG') SELECT toUInt8(0) AS v FROM numbers(1)" 2>&1 1>/dev/null | grep -oE "CANNOT_APPEND_TO_FILE" | head -1
 
-# Dimension above the PNG 31-bit limit -> exception (not silently truncated)
+# Dimension far above any supported size -> exception (not silently truncated)
 ${CLICKHOUSE_CLIENT} --output_format_image_width=4294967297 --query "
     SELECT toUInt8(0) AS v FROM numbers(1) FORMAT PNG
+" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+
+# Dimension above the encoder's per-dimension limit but below the 31-bit range -> exception, not a libpng failure
+${CLICKHOUSE_CLIENT} --output_format_image_width=10000000 --output_format_image_height=1 --query "
+    SELECT toUInt8(number % 256) AS v FROM numbers(1) FORMAT PNG
+" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+
+# Same for the height (the limit applies to each dimension independently)
+${CLICKHOUSE_CLIENT} --output_format_image_width=1 --output_format_image_height=10000000 --query "
+    SELECT toUInt8(number % 256) AS v FROM numbers(1) FORMAT PNG
 " 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
 
 # Unknown column -> exception
