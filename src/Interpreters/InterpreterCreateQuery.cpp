@@ -191,6 +191,15 @@ namespace ErrorCodes
 
 namespace fs = std::filesystem;
 
+static void throwIfReservedSystemTableNameWhenDetached(std::string_view database_name, std::string_view table_name)
+{
+    if (DatabaseCatalog::isReservedSystemTableNameWhenDetached(database_name, table_name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is reserved for the filtered user query log view",
+            StorageID(String(database_name), String(table_name)).getFullTableName());
+}
+
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
 {
@@ -1556,6 +1565,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
+
+    if (!create.isTemporary())
+        throwIfReservedSystemTableNameWhenDetached(database_name, create.getTable());
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);

@@ -536,6 +536,9 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
     {
         if (database_name == SYSTEM_DATABASE)
         {
+            if (isReservedSystemTableNameWhenDetached(database_name, table_name))
+                return true;
+
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
@@ -567,6 +570,11 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
     }
 
     return check_database_and_table_name(table_id.getDatabaseName(), table_id.getTableName());
+}
+
+bool DatabaseCatalog::isReservedSystemTableNameWhenDetached(std::string_view database_name, std::string_view table_name)
+{
+    return database_name == SYSTEM_DATABASE && table_name == "user_query_log";
 }
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
