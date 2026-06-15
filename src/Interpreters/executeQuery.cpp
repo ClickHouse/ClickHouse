@@ -2099,10 +2099,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-        context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
         /// Declare contexts outside try block so we can reset transactions on all paths.
         /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
         /// which uses getCurrentExceptionCode with bare `throw;` - that only works
@@ -2122,6 +2118,11 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             fuzz_session_context = Context::createCopy(context);
             fuzz_session_context->makeSessionContext();
+
+            /// Don't let the fuzzer touch the original query's transaction. The copy only references
+            /// it and does not own it, so clearing here does not roll it back; each fuzzed query then
+            /// begins its own transaction. See issue #107446.
+            fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
