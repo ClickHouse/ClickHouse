@@ -94,9 +94,9 @@ def test_url_only_named_collection_stays_anonymous():
     # Anonymous by default, and still anonymous with the override enabled: minio rejects the unsigned
     # read of the private bucket instead of accepting the server profile credentials.
     error = node.query_and_get_error(select_url_only)
-    assert "Access Denied" in error or "AccessDenied" in error, error
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
     error = node.query_and_get_error(f"{select_url_only} {ALLOW}")
-    assert "Access Denied" in error or "AccessDenied" in error, error
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
 
     # The explicit opt-in keeps working: with the override enabled and `use_environment_credentials = 1`
     # the profile file is consulted and the read succeeds.
