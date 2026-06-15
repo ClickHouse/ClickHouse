@@ -215,12 +215,14 @@ class JobConfigs:
         # a hook cannot fail the job. Both are idempotent and fail-closed (setup skips
         # an already-present alias and aborts on failure; teardown skips an absent
         # alias and sets rc=1 on a failed removal); the fast_test.py exit code is kept.
+        # No literal { } in the command: parametrize() runs str.format(PARAMETER=...)
+        # on it, so the teardown uses if/then/fi, not a { ...; } group.
         command=(
             'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " '
             "|| sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done; "
             "python3 ./ci/jobs/fast_test.py; rc=$?; "
-            'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " '
-            "&& { sudo ifconfig lo0 -alias 127.0.0.$i || rc=1; }; done; "
+            'for i in $(seq 2 16); do if ifconfig lo0 | grep -qF "127.0.0.$i "; then '
+            "sudo ifconfig lo0 -alias 127.0.0.$i || rc=1; fi; done; "
             "exit $rc"
         ),
         digest_config=darwin_fast_test_digest_config,
