@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, use-rocksdb, no-random-settings, no-msan, no-random-detach
+# Tags: long, no-ordinary-database, use-rocksdb, no-random-settings, no-msan, no-random-detach
 # no-random-detach: test checks profile events
+# long: bulk `RocksDB` inserts are slow under thread sanitizer (a single run regularly exceeds 180s), which trips the `Test runs too long` limit, especially under the parallel contention of the flaky check.
 # msan: too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
