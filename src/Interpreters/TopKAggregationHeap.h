@@ -58,6 +58,42 @@ struct TopKAggregationHeap
     /// hash-table pruning must be skipped in this mode.
     bool is_prefix_mode = false;
 
+    /// A heap that has observed many rows without ever skipping one or
+    /// evicting a key is pure overhead — e.g. when the number of distinct
+    /// keys does not exceed the LIMIT, every row pays the boundary comparison
+    /// and none is ever rejected.  In that state the hash table holds every
+    /// group with a complete aggregate state, exactly as if the heap had been
+    /// off, so it is safe to freeze it: the caller stops consulting and
+    /// feeding the heap (routing to the `top_k = false` code path), which
+    /// preserves the invariant for the rest of the aggregation.
+    bool frozen = false;
+    UInt64 observed_rows = 0;
+    UInt64 skipped_rows = 0;
+    UInt64 evicted_keys = 0;
+
+    static constexpr UInt64 freeze_observation_threshold = 256 * 1024;
+
+    bool shouldFreeze() const
+    {
+        return !frozen
+            && heap_column
+            && observed_rows >= freeze_observation_threshold
+            && skipped_rows == 0
+            && evicted_keys == 0
+            /// Only freeze when full: a heap below capacity does not run
+            /// boundary checks, and keeping it allows the optimization to
+            /// engage if the key cardinality grows later.
+            && heap_indices.size() >= capacity;
+    }
+
+    void freeze()
+    {
+        frozen = true;
+        heap_column = nullptr;
+        heap_indices = {};
+        skip_bitmap = {};
+    }
+
     TopKAggregationHeap() = default;
     TopKAggregationHeap(const TopKAggregationHeap &) = delete;
     TopKAggregationHeap & operator=(const TopKAggregationHeap &) = delete;
@@ -127,6 +163,24 @@ struct TopKAggregationHeap
         return shouldSkip(source_columns, source_row);
     }
 
+    /// Batched variant of the typed-numeric skip check: fills
+    /// `skip_bitmap[begin..end)` against the current boundary with a single
+    /// indirect call instead of one per row.  Decisions stay valid under
+    /// mid-block boundary movement because the boundary only improves (a push
+    /// displaces it with a better key, a trim pops the worst entries): a row
+    /// marked skippable remains skippable, and a row marked admissible is at
+    /// worst admitted unnecessarily.  Returns nullptr when no typed fast path
+    /// is available; the caller falls back to the per-row check.
+    const UInt8 * fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
+    {
+        if (!fill_skip_bitmap_fn || !source_typed_data)
+            return nullptr;
+        chassert(!heap_indices.empty());
+        skip_bitmap.resize(end);
+        fill_skip_bitmap_fn(*this, source_typed_data, begin, end, skip_bitmap.data());
+        return skip_bitmap.data();
+    }
+
     /// Push a new key from `source_columns[source_row]` into the heap.
     void push(const ColumnRawPtrs & source_columns, size_t source_row)
     {
@@ -193,6 +247,7 @@ struct TopKAggregationHeap
             on_evict(candidate);
             ++evicted_count;
         }
+        evicted_keys += evicted_count;
 
         /// Compact the `heap_column`: filter out dead slots and remap indices.
         const size_t col_size = heap_column->size();
@@ -305,6 +360,7 @@ private:
         /// Composite keys never use the typed numeric fast paths.
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
+        fill_skip_bitmap_fn = nullptr;
     }
 
     /// Compare a row in `source_column` against a row in `heap_column` (single-column case).
@@ -393,6 +449,14 @@ private:
     using NumericCmpFn = bool (*)(const TopKAggregationHeap &, size_t, size_t);
     NumericCmpFn numeric_cmp_fn = nullptr;
 
+    /// Type-erased function pointer for the batched skip check; resolved
+    /// alongside the other numeric fast paths.
+    using FillSkipBitmapFn = void (*)(const TopKAggregationHeap &, const void *, size_t, size_t, UInt8 *);
+    FillSkipBitmapFn fill_skip_bitmap_fn = nullptr;
+
+    /// Reused across batches by `fillSkipBitmap`.
+    std::vector<UInt8> skip_bitmap;
+
     /// Typed implementation of the numeric skip comparison.
     /// `ActualKeyType` is the real column element type (e.g., `Int32` for `RegionID`).
     /// The source data pointer is reinterpreted from the hash key type (always unsigned)
@@ -415,12 +479,28 @@ private:
         return self.directions[0] * CompareHelper<ActualKeyType>::compare(data[a], data[b], self.nulls_directions[0]) < 0;
     }
 
-    /// Install both numeric fast paths for the given column element type.
+    /// Typed implementation of the batched skip check.  The boundary is loaded
+    /// once and the loop is free of indirect calls, so the compiler can keep
+    /// it tight (and vectorize it for types with branchless comparison).
+    template <typename ActualKeyType>
+    static void fillSkipBitmapImpl(const TopKAggregationHeap & self, const void * source_data, size_t begin, size_t end, UInt8 * bitmap)
+    {
+        const auto * src = reinterpret_cast<const ActualKeyType *>(source_data);
+        const auto & heap_data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
+        const ActualKeyType boundary = heap_data[self.heap_indices.front()];
+        const int direction = self.directions[0];
+        const int nulls_direction = self.nulls_directions[0];
+        for (size_t i = begin; i < end; ++i)
+            bitmap[i] = direction * CompareHelper<ActualKeyType>::compare(src[i], boundary, nulls_direction) > 0;
+    }
+
+    /// Install the numeric fast paths for the given column element type.
     template <typename ActualKeyType>
     void resolveNumericFastPath()
     {
         should_skip_numeric_fn = &shouldSkipNumericImpl<ActualKeyType>;
         numeric_cmp_fn = &heapCompareNumericImpl<ActualKeyType>;
+        fill_skip_bitmap_fn = &fillSkipBitmapImpl<ActualKeyType>;
     }
 
     /// Resolve the typed numeric fast paths for `shouldSkip` and the heap comparator.
@@ -430,6 +510,7 @@ private:
     {
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
+        fill_skip_bitmap_fn = nullptr;
         if (collators[0])
             return;
 

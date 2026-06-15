@@ -58,6 +58,7 @@ namespace ProfileEvents
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
     extern const Event AggregationTopKRowsSkipped;
     extern const Event AggregationTopKKeysEvicted;
+    extern const Event AggregationTopKHeapsFrozen;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
@@ -1028,7 +1029,18 @@ void Aggregator::executeImpl(
     /// (`FixedHashTable`-based ones) must not use the heap in that mode.
     constexpr bool can_prune
         = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); };
-    const bool top_k = params.top_k_keys > 0 && (can_prune || !params.top_k_requires_pruning);
+
+    /// A heap that never rejected anything is pure overhead - freeze it and
+    /// route to the regular aggregation path (see `TopKAggregationHeap::freeze`).
+    if (params.top_k_keys > 0 && method.top_k_heap.shouldFreeze())
+    {
+        method.top_k_heap.freeze();
+        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+    }
+
+    const bool top_k = params.top_k_keys > 0
+        && (can_prune || !params.top_k_requires_pruning)
+        && !method.top_k_heap.frozen;
 
     if (top_k)
         method.top_k_heap.initIfNeeded(
@@ -1335,6 +1347,13 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else if (!no_more_keys)
         {
+            [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
+            if constexpr (top_k)
+            {
+                if (method.top_k_heap.size() >= params.top_k_keys)
+                    skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
+            }
+
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
@@ -1351,8 +1370,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
-                    if (method.top_k_heap.size() >= params.top_k_keys
-                            && heap_should_skip(i))
+                    if (skip_bitmap
+                        ? bool(skip_bitmap[i])
+                        : (method.top_k_heap.size() >= params.top_k_keys && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1392,7 +1412,11 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
 
         if constexpr (top_k)
+        {
             ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
+            method.top_k_heap.observed_rows += row_end - row_begin;
+            method.top_k_heap.skipped_rows += top_k_rows_skipped;
+        }
         return;
     }
 
@@ -1439,6 +1463,13 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     if (!no_more_keys)
     {
+        [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
+        if constexpr (top_k)
+        {
+            if (method.top_k_heap.size() >= params.top_k_keys)
+                skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
+        }
+
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
@@ -1459,8 +1490,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (top_k)
             {
-                if (method.top_k_heap.size() >= params.top_k_keys
-                    && heap_should_skip(i))
+                if (skip_bitmap
+                    ? bool(skip_bitmap[i])
+                    : (method.top_k_heap.size() >= params.top_k_keys && heap_should_skip(i)))
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;
@@ -1557,7 +1589,11 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// kept/skipped rows, so it must not see a null place either: when the sole
     /// constant key was skipped, there is nothing to aggregate at all.
     if constexpr (top_k)
+    {
         ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
+        method.top_k_heap.observed_rows += key_end - key_start;
+        method.top_k_heap.skipped_rows += top_k_rows_skipped;
+    }
 
     const bool has_only_one_value = top_k ? false : state.hasOnlyOneValueSinceLastReset();
     const bool use_jit = use_compiled_functions && !top_k;
