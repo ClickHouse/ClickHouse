@@ -17,6 +17,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
+#include <array>
 #include <chrono>
 #include <memory>
 

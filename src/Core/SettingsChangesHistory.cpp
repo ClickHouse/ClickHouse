@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"enable_join_runtime_filter_shared_fixed_hash_table", false, true, "New setting to share the hash join's FixedHashMap as the runtime filter for the probe side, replacing the Set/BloomFilter built upstream by the runtime filter framework."},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
@@ -65,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
         });
+
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},

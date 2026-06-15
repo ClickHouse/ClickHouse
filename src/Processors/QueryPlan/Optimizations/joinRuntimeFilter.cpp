@@ -360,6 +360,16 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
                 build_filter_node = new_build_filter_node;
             }
+
+            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
+            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
+            /// otherwise the Set/BloomFilter stays as fallback.
+            if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
+                && !check_left_does_not_contain)
+            {
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(
+                    filter_name, join_key_build_side.name);
+            }
         }
 
         if (all_filter_conditions.size() == 1)
