@@ -3,7 +3,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Parsers/Lexer.h>
-#include "ggml.h"
+#include <ggml.h>
 
 #include <cstddef>
 #include <map>
@@ -36,12 +36,12 @@ class GPTJModel
 private:
     struct GptjHparams
     {
-        int32_t n_vocab;
-        int32_t n_ctx;
-        int32_t n_embd;
-        int32_t n_head;
-        int32_t n_layer;
-        int32_t n_rot;
+        int32_t n_vocab = 0;
+        int32_t n_ctx = 0;
+        int32_t n_embd = 0;
+        int32_t n_head = 0;
+        int32_t n_layer = 0;
+        int32_t n_rot = 0;
         int32_t ftype = 1;
         float eps = 1e-5f;
     };
@@ -72,22 +72,22 @@ private:
         GptjHparams hparams;
 
         // normalization
-        struct ggml_tensor * ln_f_g;
-        struct ggml_tensor * ln_f_b;
+        struct ggml_tensor * ln_f_g = nullptr;
+        struct ggml_tensor * ln_f_b = nullptr;
 
-        struct ggml_tensor * wte; // position embedding
+        struct ggml_tensor * wte = nullptr; // position embedding
 
-        struct ggml_tensor * lmh_g; // language model head
-        struct ggml_tensor * lmh_b; // language model bias
+        struct ggml_tensor * lmh_g = nullptr; // language model head
+        struct ggml_tensor * lmh_b = nullptr; // language model bias
 
         std::vector<GptjLayer> layers;
 
         // key + value memory
-        struct ggml_tensor * memory_k;
-        struct ggml_tensor * memory_v;
+        struct ggml_tensor * memory_k = nullptr;
+        struct ggml_tensor * memory_v = nullptr;
 
         //
-        struct ggml_context * ctx;
+        struct ggml_context * ctx = nullptr;
         std::map<std::string, struct ggml_tensor *> tensors;
     };
 
@@ -96,7 +96,7 @@ private:
     GptVocab vocab;
     int n_threads = std::min(4u, std::thread::hardware_concurrency());
     //int n_batch = 32;
-    int n_past;
+    int n_past = 0;
     bool model_loaded = false;
     bool eval_success = true;
     size_t mem_per_token = 0;

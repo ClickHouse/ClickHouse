@@ -1,5 +1,6 @@
-#include "Client/AutocompleteModel.h"
-#include "Parsers/Lexer.h"
+#include <Client/AutocompleteModel.h>
+#include <Examples/clickhouse_examples.h>
+#include <Parsers/Lexer.h>
 
 #include <filesystem>
 #include <fstream>
@@ -8,7 +9,7 @@
 #include <vector>
 
 
-std::vector<std::string> preprocessStringQuery(const std::string & query, AutocompleteModel & model)
+static std::vector<std::string> preprocessStringQuery(const std::string & query, AutocompleteModel & model)
 {
     auto lexer = DB::Lexer(query.data(), query.data() + query.size(), query.size());
 

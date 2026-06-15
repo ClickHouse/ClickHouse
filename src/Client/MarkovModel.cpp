@@ -161,7 +161,7 @@ bool NGram::contains(std::span<const std::string> span_key) const
 
 bool NGram::contains(const std::vector<std::string> & key) const
 {
-    return map.find(key) != map.end();
+    return map.contains(key);
 }
 
 size_t NGram::size() const
@@ -393,7 +393,7 @@ std::pair<long double, long double> KneserNey::calcAlphaGamma(const std::string 
         total_count = pair.second;
     }
     long double alpha = std::max(word_continuation_count - discount, 0.0l) / total_count;
-    gamma = discount * static_cast<long double>(prefixTypesCounts(context)) / total_count;
+    gamma = discount * prefixTypesCounts(context) / total_count;
     return {alpha, gamma};
 }
 

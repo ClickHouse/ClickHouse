@@ -1,5 +1,5 @@
-#include "TransformerModel.h"
-#include "ggml.h"
+#include <Client/TransformerModel.h>
+#include <ggml.h>
 
 
 #include <algorithm>
@@ -69,12 +69,11 @@ bool GPTJModel::loadModel(const std::string & file_name)
     out_err.next();
 
     auto fin = DB::ReadBufferFromString({reinterpret_cast<const char *>(ggml_model_f32_data), sizeof(ggml_model_f32_data)});
-    size_t ignore = 0;
 
     // verify magic
     {
-        uint32_t magic;
-        ignore = fin.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+        uint32_t magic = 0;
+        fin.readStrict(reinterpret_cast<char *>(&magic), sizeof(magic));
         if (magic != GGML_FILE_MAGIC)
         {
             out_err << fmt::format("{}: invalid model file '{}' (bad magic)\n", __func__, file_name);
@@ -87,13 +86,13 @@ bool GPTJModel::loadModel(const std::string & file_name)
     {
         auto & hparams = model.hparams;
 
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_vocab), sizeof(hparams.n_vocab));
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_ctx), sizeof(hparams.n_ctx));
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_embd), sizeof(hparams.n_embd));
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_head), sizeof(hparams.n_head));
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_layer), sizeof(hparams.n_layer));
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_rot), sizeof(hparams.n_rot));
-        ignore = fin.read(reinterpret_cast<char *>(&hparams.ftype), sizeof(hparams.ftype));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.n_vocab), sizeof(hparams.n_vocab));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.n_ctx), sizeof(hparams.n_ctx));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.n_embd), sizeof(hparams.n_embd));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.n_head), sizeof(hparams.n_head));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.n_layer), sizeof(hparams.n_layer));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.n_rot), sizeof(hparams.n_rot));
+        fin.readStrict(reinterpret_cast<char *>(&hparams.ftype), sizeof(hparams.ftype));
 
         //const int32_t qntvr = hparams.ftype / GGML_QNT_VERSION_FACTOR;
 
@@ -112,7 +111,7 @@ bool GPTJModel::loadModel(const std::string & file_name)
     // load vocab
     {
         int32_t n_vocab = 0;
-        ignore = fin.read(reinterpret_cast<char *>(&n_vocab), sizeof(n_vocab));
+        fin.readStrict(reinterpret_cast<char *>(&n_vocab), sizeof(n_vocab));
 
         if (n_vocab != model.hparams.n_vocab)
         {
@@ -127,11 +126,11 @@ bool GPTJModel::loadModel(const std::string & file_name)
 
         for (int i = 0; i < n_vocab; i++)
         {
-            uint32_t len;
-            ignore = fin.read(reinterpret_cast<char *>(&len), sizeof(len));
+            uint32_t len = 0;
+            fin.readStrict(reinterpret_cast<char *>(&len), sizeof(len));
 
             buf.resize(len);
-            ignore = fin.read(reinterpret_cast<char *>(buf.data()), len);
+            fin.readStrict(reinterpret_cast<char *>(buf.data()), len);
             word.assign(buf.data(), len);
 
             vocab.token_to_id[word] = i;
@@ -291,31 +290,28 @@ bool GPTJModel::loadModel(const std::string & file_name)
     {
         while (true)
         {
-            int32_t n_dims;
-            int32_t length;
-            int32_t ttype;
+            int32_t n_dims = 0;
+            int32_t length = 0;
+            int32_t ttype = 0;
 
-            ignore = fin.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
-            ignore = fin.read(reinterpret_cast<char *>(&length), sizeof(length));
-            ignore = fin.read(reinterpret_cast<char *>(&ttype), sizeof(ttype));
-
-            if (fin.eof())
-            {
+            /// A zero-length read marks the end of the weights section (and of the model file).
+            if (fin.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims)) == 0)
                 break;
-            }
+            fin.readStrict(reinterpret_cast<char *>(&length), sizeof(length));
+            fin.readStrict(reinterpret_cast<char *>(&ttype), sizeof(ttype));
 
             int32_t nelements = 1;
             int32_t ne[2] = {1, 1};
             for (int i = 0; i < n_dims; ++i)
             {
-                ignore = fin.read(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
+                fin.readStrict(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
                 nelements *= ne[i];
             }
 
             std::string name(length, 0);
-            ignore = fin.read(name.data(), length);
+            fin.readStrict(name.data(), length);
 
-            if (model.tensors.find(name) == model.tensors.end())
+            if (!model.tensors.contains(name))
             {
                 out_err << fmt::format("{}: unknown tensor '{}' in model file\n", __func__, name);
                 out_err.next();
@@ -358,11 +354,9 @@ bool GPTJModel::loadModel(const std::string & file_name)
                 return false;
             }
 
-            ignore = fin.read(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
+            fin.readStrict(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
         }
     }
-
-    UNUSED(ignore);
 
     return true;
 }
@@ -377,7 +371,7 @@ std::vector<GptVocab::id> GPTJModel::tokens2Ids(const std::vector<std::string> &
 
     for (const auto & token : tokens)
     {
-        if (vocab.token_to_id.find(token) == vocab.token_to_id.end())
+        if (!vocab.token_to_id.contains(token))
         {
             ids.push_back(vocab.token_to_id.at(unk));
             continue;
@@ -391,6 +385,11 @@ std::vector<GptVocab::id> GPTJModel::tokens2Ids(const std::vector<std::string> &
 bool GPTJModel::gptjEval(const std::vector<GptVocab::id> & ids_input, std::vector<float> & logits)
 {
     const size_t n = ids_input.size();
+
+    /// There is nothing to evaluate for an empty input, and `n` is later used as a divisor when
+    /// computing `mem_per_token`, so bail out early to avoid a division by zero.
+    if (n == 0)
+        return false;
 
     const auto & hparams = model.hparams;
 
@@ -447,7 +446,7 @@ bool GPTJModel::gptjEval(const std::vector<GptVocab::id> & ids_input, std::vecto
 
     for (int il = 0; il < n_layer; ++il)
     {
-        struct ggml_tensor * cur;
+        struct ggml_tensor * cur = nullptr;
 
         // norm
         {
