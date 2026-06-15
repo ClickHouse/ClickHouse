@@ -263,16 +263,16 @@ void LimitByTransform::transform(Chunk & chunk)
 {
     chassert(output_slices.empty());
 
-    const UInt64 row_count = chunk.getNumRows();
-    if (row_count == 0)
-        return;
-
     /// `output_slices` is a member scratch buffer reused across chunks. If anything
     /// below throws (e.g. MEMORY_LIMIT_EXCEEDED while growing the grouping hash table),
     /// `ISimpleTransform::work` keeps this transform alive and may call `transform`
-    /// again on the next chunk, so the buffer must be cleared on every exit path, not
-    /// only on success.
+    /// again on the next chunk, so the buffer must be cleared on every exit path,
+    /// including the empty-chunk early return below.
     SCOPE_EXIT({ output_slices.clear(); });
+
+    const UInt64 row_count = chunk.getNumRows();
+    if (row_count == 0)
+        return;
 
     auto chunk_columns = chunk.detachColumns();
 
@@ -385,15 +385,15 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
     chassert(output_slices.empty());
 
-    const UInt64 row_count = chunk.getNumRows();
-    if (row_count == 0)
-        return;
-
     /// `output_slices` is a member scratch buffer reused across chunks. If anything
     /// below throws, `ISimpleTransform::work` keeps this transform alive and may call
     /// `transform` again on the next chunk, so the buffer must be cleared on every exit
-    /// path, not only on success.
+    /// path, including the empty-chunk early return below.
     SCOPE_EXIT({ output_slices.clear(); });
+
+    const UInt64 row_count = chunk.getNumRows();
+    if (row_count == 0)
+        return;
 
     auto chunk_columns = chunk.detachColumns();
 
