@@ -74,9 +74,6 @@ namespace DB
     M(KEEPER_RESPONSE, "KeeperResponse") \
     M(KEEPER_SNAPSHOT, "KeeperSnapshot") \
     M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
-    M(KEEPER_COMMIT, "KeeperCommit") \
-    M(KEEPER_APPEND, "KeeperAppend") \
-    M(KEEPER_READ, "KeeperRead") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
@@ -164,7 +161,6 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
-    M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
 
 
 enum class ThreadName : uint8_t

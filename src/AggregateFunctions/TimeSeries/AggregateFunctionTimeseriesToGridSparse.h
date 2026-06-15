@@ -3,8 +3,13 @@
 #include <cstddef>
 #include <cstring>
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 
@@ -129,19 +134,14 @@ public:
         }
 
         /// Fill the data for missing buckets
+        TimestampType current_timestamp = Base::start_timestamp;
+
         bool has_previous_value = false;
         ValueType previous_value = {};
         TimestampType previous_timestamp = {};
 
-        for (size_t i = 0; i < Base::bucket_count; ++i)
+        for (size_t i = 0; i < Base::bucket_count; ++i, current_timestamp += Base::step)
         {
-            /// Compute `current_timestamp` via `Base::timestampAtIndex` rather than with a
-            /// loop-carried `current_timestamp += Base::step`. The accumulator form performed
-            /// one final, unused `+=` on the last iteration which signed-overflowed
-            /// `TimestampType` (e.g. `Decimal<Int64>::operator+=`) when `start_timestamp` was
-            /// near `INT64_MIN` and `step` was near `INT64_MAX`, triggering UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
-
             /// Current bucket has a value?
             if (!nulls[i])
             {
@@ -149,7 +149,7 @@ public:
                 previous_value = values[i];
                 previous_timestamp = timestamps[i];
             }
-            else if (has_previous_value && !Base::isSampleOutOfWindow(previous_timestamp, current_timestamp))
+            else if (has_previous_value && (previous_timestamp + Base::window > current_timestamp))
             {
                 /// Use the previous value if the current timestamp is missing and the previous one is not stale
                 values[i] = previous_value;

@@ -53,12 +53,11 @@ catch (const DB::Exception &)
 }
 
 StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
-    : IStorageSystemOneBlock(storage_id_, columns_description_)
+    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_description_);
-    storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(storage_metadata);
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
 }
 
 ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
@@ -100,15 +99,6 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created."},
         {"comment", std::make_shared<DataTypeString>(), "Text of the comment to dictionary."}
     };
-}
-
-VirtualColumnsDescription StorageSystemDictionaries::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    return desc;
 }
 
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const

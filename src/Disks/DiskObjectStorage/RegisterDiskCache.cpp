@@ -1,6 +1,6 @@
-#include <Interpreters/FileCache/FileCacheSettings.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
@@ -12,8 +12,6 @@
 namespace DB
 {
 
-void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -24,7 +22,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsString path;
 }
 
-static std::pair<FileCachePtr, FileCacheSettings> getCache(
+std::pair<FileCachePtr, FileCacheSettings> getCache(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,

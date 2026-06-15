@@ -7,6 +7,8 @@ title: 'LowCardinality(T)'
 doc_type: 'reference'
 ---
 
+# LowCardinality(T)
+
 Changes the internal representation of other data types to be dictionary-encoded.
 
 ## Syntax {#syntax}
