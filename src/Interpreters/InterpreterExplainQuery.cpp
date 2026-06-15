@@ -555,7 +555,8 @@ bool explainQueryTree(
     ASTPtr explained_query,
     ContextPtr query_context,
     const QueryTreeSettings & settings,
-    WriteBuffer & buf)
+    WriteBuffer & buf,
+    bool format_ast_as_syntax)
 {
     if (explained_query->as<ASTSelectWithUnionQuery>() == nullptr)
         return false;
@@ -602,7 +603,17 @@ bool explainQueryTree(
         IAST::FormatSettings format_settings(settings.ast_one_line);
         format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
 
-        query_tree->toAST()->format(buf, format_settings);
+        ConvertToASTOptions ast_options;
+        /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
+        /// rendered as their source expressions and function calls are preferred over operator syntax.
+        /// `EXPLAIN QUERY TREE` (dump_ast) must show the query as it actually is after the query tree passes,
+        /// so neither source-expression rendering nor operator-to-function conversion is applied there.
+        ast_options.use_source_expression_for_constants = format_ast_as_syntax;
+
+        IAST::FormatState format_state;
+        IAST::FormatStateStacked format_frame;
+        format_frame.allow_operators = !format_ast_as_syntax;
+        query_tree->toAST(ast_options)->format(buf, format_settings, format_state, format_frame);
     }
 
     return true;
@@ -670,7 +681,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     .dump_ast = true,
                     .passes = settings.query_tree_passes,
                     .ast_one_line = settings.oneline,
-                }, buf);
+                }, buf, /*format_ast_as_syntax=*/ true);
 
                 if (explain_ok)
                     break;
@@ -682,7 +693,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
+            IAST::FormatSettings format_settings(settings.oneline);
+            IAST::FormatState format_state;
+            IAST::FormatStateStacked format_frame;
+            format_frame.allow_operators = false;
+            ast.getExplainedQuery()->format(buf, format_settings, format_state, format_frame);
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -695,7 +710,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
 
-            if (!explainQueryTree(ast.getExplainedQuery(), query_context, settings, buf))
+            if (!explainQueryTree(ast.getExplainedQuery(), query_context, settings, buf, /*format_ast_as_syntax=*/ false))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             break;
