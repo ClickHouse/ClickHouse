@@ -123,5 +123,26 @@ ALTER TABLE t_104463_amt MODIFY COMMENT 'cmt', ADD COLUMN extra2 Int;
 ALTER TABLE t_104463_mt  MODIFY COLUMN key SimpleAggregateFunction(any, Int32); -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
 ALTER TABLE t_104463_amt MODIFY COLUMN key SimpleAggregateFunction(any, Int32); -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
 
+-- `MODIFY ORDER BY` that swaps one key column for another of the SAME type leaves the
+-- resolved type list unchanged but changes the key column list, so the gate must still
+-- fire. An explicit short primary key lets the new suspicious column join the sorting key
+-- without tripping the "primary key must be a prefix" check first.
+DROP TABLE IF EXISTS t_104463_swap;
+SET allow_suspicious_primary_key = 1;
+CREATE TABLE t_104463_swap
+(
+    key   Int32,
+    value SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+PRIMARY KEY key
+ORDER BY (key, value);
+
+SET allow_suspicious_primary_key = 0;
+ALTER TABLE t_104463_swap
+    ADD COLUMN value2 SimpleAggregateFunction(sum, UInt64),
+    MODIFY ORDER BY (key, value2); -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
+
+DROP TABLE t_104463_swap;
 DROP TABLE t_104463_mt;
 DROP TABLE t_104463_amt;

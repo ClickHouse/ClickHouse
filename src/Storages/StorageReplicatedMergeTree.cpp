@@ -6850,11 +6850,11 @@ void StorageReplicatedMergeTree::alter(
     /// sorting key (e.g. column codec changes, column placement modifiers, etc.) would
     /// otherwise reject those ALTERs on tables that were created with
     /// `allow_suspicious_primary_key = 1` once that setting is no longer in effect. Compare
-    /// the resolved sorting-key data types directly so the check fires only when the key
+    /// the resolved sorting key (columns and types) so the check fires only when the key
     /// would observe a different verdict than it did at CREATE time. `StorageMergeTree::alter`
     /// performs the same check in the same position.
     if (!query_settings[Setting::allow_suspicious_primary_key]
-        && MergeTreeData::sortingKeyTypesChanged(old_sorting_key, future_metadata.sorting_key))
+        && MergeTreeData::sortingKeyChanged(old_sorting_key, future_metadata.sorting_key))
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }

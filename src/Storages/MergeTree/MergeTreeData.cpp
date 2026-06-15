@@ -11208,14 +11208,21 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
     }
 }
 
-bool MergeTreeData::sortingKeyTypesChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key)
+bool MergeTreeData::sortingKeyChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key)
 {
+    /// The key column/expression list must be compared, not just the data types: a
+    /// `MODIFY ORDER BY` that swaps one key column for another of the same type (e.g.
+    /// `(key, value)` -> `(key, value2)` where both are `SimpleAggregateFunction(sum, UInt64)`)
+    /// leaves the type list unchanged while introducing a new suspicious key column.
+    if (old_sorting_key.column_names != new_sorting_key.column_names)
+        return true;
+
     /// `IDataType::equals` is implemented by underlying-type identity (e.g.
     /// `DataTypeNumber<Int32>::equals` only compares `typeid`), and it does not
     /// distinguish custom-named types like `SimpleAggregateFunction(any, Int32)`
     /// from the plain `Int32` they wrap. Compare the printed type names so a
     /// `MODIFY COLUMN key SimpleAggregateFunction(any, Int32)` on a key column
-    /// that was previously `Int32` is correctly detected as a key-types change
+    /// that was previously `Int32` is correctly detected as a key change
     /// and `verifySortingKey` is allowed to reject the new suspicious type.
     const auto & old_types = old_sorting_key.data_types;
     const auto & new_types = new_sorting_key.data_types;
