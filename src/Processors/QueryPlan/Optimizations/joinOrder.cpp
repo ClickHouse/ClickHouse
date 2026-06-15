@@ -428,6 +428,22 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edg
         return info;
     }
 
+    if (op == JoinConditionOperator::NullSafeEquals)
+    {
+        /// `NullSafeEquals` (`a.k IS NOT DISTINCT FROM b.k`) yields a valid row-count
+        /// selectivity - it matches equal keys plus the `NULL = NULL` case - so it is
+        /// estimated below like a plain equality. However, the NDV tightening in the
+        /// `DPJoinEntry` constructor and the equivalence classes in
+        /// `buildColumnEquivalences` only handle `JoinConditionOperator::Equals`, so a
+        /// null-safe join leaves its key NDVs unreduced in the propagated column stats.
+        /// A parent equi-join on one of those keys would then read the stale (un-tightened)
+        /// NDV as if it had been reduced and underestimate its cardinality. Until the NDV
+        /// model covers null-safe equality, demote the estimate to untrusted so it cannot
+        /// drive upstream join ordering / build-side decisions (mirrors the residual-filter
+        /// and mixed-NDV cases).
+        info.trusted = false;
+    }
+
     UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
     if (lhs_ndv > 0 && rhs_ndv > 0)
