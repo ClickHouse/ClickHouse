@@ -955,7 +955,7 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     is_pipeline_created = true;
     for (auto & proc : processors)
         proc->inheritQueryPlanStepFromParent(*this, expanded_group);
-        
+
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
