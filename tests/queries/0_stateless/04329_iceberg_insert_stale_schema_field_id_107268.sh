@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
+# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option).
+# - no-parallel: the repro deliberately relies on a warmed entry in the
+#   server-global Iceberg metadata files cache surviving between the warm-up
+#   SELECT and the INSERT, so that INSERT analysis serves the stale schema
+#   while the sink force-reads the latest one. A concurrent test running
+#   `SYSTEM DROP ICEBERG METADATA CACHE`, or LRU eviction under parallel cache
+#   pressure, would drop that entry; the INSERT would then take the fresh-read
+#   path, the stale-vs-latest disagreement would vanish, and the regression
+#   would silently stop firing. Unique table names isolate values but not the
+#   shared cache.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
