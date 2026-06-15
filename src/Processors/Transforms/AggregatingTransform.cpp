@@ -467,7 +467,7 @@ public:
             inputs.emplace_back(out.getHeader(), this);
             connect(out, inputs.back());
             inputs.back().setNeeded();
-            source->setQueryPlanStep(getQueryPlanStep(), expanded_processors);
+            source->inheritQueryPlanStepFromParent(*this, expanded_processors);
         }
 
         return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
@@ -954,8 +954,8 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     connect(out, inputs.back());
     is_pipeline_created = true;
     for (auto & proc : processors)
-        proc->setQueryPlanStep(getQueryPlanStep(), expanded_group);
-
+        proc->inheritQueryPlanStepFromParent(*this, expanded_group);
+        
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 

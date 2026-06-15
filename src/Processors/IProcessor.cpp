@@ -48,6 +48,15 @@ void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
     }
 }
 
+void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group)
+{
+    query_plan_step = parent.query_plan_step;
+    query_plan_step_group = group;
+    plan_step_name = parent.plan_step_name;
+    plan_step_description = parent.plan_step_description;
+    step_uniq_id = parent.step_uniq_id;
+}
+
 IProcessor::Status IProcessor::prepare()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());

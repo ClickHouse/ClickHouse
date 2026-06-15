@@ -301,8 +301,13 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    /// Step of QueryPlan from which processor was created.
+    /// Step of QueryPlan from which processor was created
     void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+
+    /// Copy the query step fields from parent processor to child processor
+    /// The group can be adjusted manually, since even though the processors can be
+    /// coming from the same step, they can belong to different groups (stages) 
+    void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
