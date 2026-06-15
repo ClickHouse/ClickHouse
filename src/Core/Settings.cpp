@@ -8173,7 +8173,7 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
 If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
-Minimum number of rows to install a JOIN runtime filter. Skip filter installation for tiny probes to reduce overhead. Set to 0 to always install.
+If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
 )", EXPERIMENTAL) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
