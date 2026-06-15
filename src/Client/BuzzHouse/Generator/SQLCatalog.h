@@ -279,83 +279,83 @@ public:
 
     static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
 
-    bool isMergeTreeFamily(const bool as_alias = false) const;
+    bool isMergeTreeFamily(bool as_alias = false) const;
 
-    bool isLogFamily(const bool as_alias = false) const;
+    bool isLogFamily(bool as_alias = false) const;
 
-    bool isSharedMergeTree(const bool as_alias = false) const;
+    bool isSharedMergeTree(bool as_alias = false) const;
 
-    bool isReplicatedMergeTree(const bool as_alias = false) const;
+    bool isReplicatedMergeTree(bool as_alias = false) const;
 
-    bool isReplicatedOrSharedMergeTree(const bool as_alias = false) const;
+    bool isReplicatedOrSharedMergeTree(bool as_alias = false) const;
 
-    bool isShared(const bool as_alias = false) const;
+    bool isShared(bool as_alias = false) const;
 
-    bool isFileEngine(const bool as_alias = false) const;
+    bool isFileEngine(bool as_alias = false) const;
 
-    bool isJoinEngine(const bool as_alias = false) const;
+    bool isJoinEngine(bool as_alias = false) const;
 
-    bool isNullEngine(const bool as_alias = false) const;
+    bool isNullEngine(bool as_alias = false) const;
 
-    bool isSetEngine(const bool as_alias = false) const;
+    bool isSetEngine(bool as_alias = false) const;
 
-    bool isBufferEngine(const bool as_alias = false) const;
+    bool isBufferEngine(bool as_alias = false) const;
 
-    bool isRocksEngine(const bool as_alias = false) const;
+    bool isRocksEngine(bool as_alias = false) const;
 
-    bool isMemoryEngine(const bool as_alias = false) const;
+    bool isMemoryEngine(bool as_alias = false) const;
 
-    bool isMySQLEngine(const bool as_alias = false) const;
+    bool isMySQLEngine(bool as_alias = false) const;
 
-    bool isPostgreSQLEngine(const bool as_alias = false) const;
+    bool isPostgreSQLEngine(bool as_alias = false) const;
 
-    bool isSQLiteEngine(const bool as_alias = false) const;
+    bool isSQLiteEngine(bool as_alias = false) const;
 
-    bool isMongoDBEngine(const bool as_alias = false) const;
+    bool isMongoDBEngine(bool as_alias = false) const;
 
-    bool isRedisEngine(const bool as_alias = false) const;
+    bool isRedisEngine(bool as_alias = false) const;
 
-    bool isS3Engine(const bool as_alias = false) const;
+    bool isS3Engine(bool as_alias = false) const;
 
-    bool isS3QueueEngine(const bool as_alias = false) const;
+    bool isS3QueueEngine(bool as_alias = false) const;
 
-    bool isAnyS3Engine(const bool as_alias = false) const;
+    bool isAnyS3Engine(bool as_alias = false) const;
 
-    bool isAzureEngine(const bool as_alias = false) const;
+    bool isAzureEngine(bool as_alias = false) const;
 
-    bool isAzureQueueEngine(const bool as_alias = false) const;
+    bool isAzureQueueEngine(bool as_alias = false) const;
 
-    bool isAnyAzureEngine(const bool as_alias = false) const;
+    bool isAnyAzureEngine(bool as_alias = false) const;
 
-    bool isAnyQueueEngine(const bool as_alias = false) const;
+    bool isAnyQueueEngine(bool as_alias = false) const;
 
-    bool isHudiEngine(const bool as_alias = false) const;
+    bool isHudiEngine(bool as_alias = false) const;
 
-    bool isDeltaLakeS3Engine(const bool as_alias = false) const;
+    bool isDeltaLakeS3Engine(bool as_alias = false) const;
 
-    bool isDeltaLakeAzureEngine(const bool as_alias = false) const;
+    bool isDeltaLakeAzureEngine(bool as_alias = false) const;
 
-    bool isDeltaLakeLocalEngine(const bool as_alias = false) const;
+    bool isDeltaLakeLocalEngine(bool as_alias = false) const;
 
-    bool isAnyDeltaLakeEngine(const bool as_alias = false) const;
+    bool isAnyDeltaLakeEngine(bool as_alias = false) const;
 
-    bool isIcebergS3Engine(const bool as_alias = false) const;
+    bool isIcebergS3Engine(bool as_alias = false) const;
 
-    bool isIcebergAzureEngine(const bool as_alias = false) const;
+    bool isIcebergAzureEngine(bool as_alias = false) const;
 
-    bool isIcebergLocalEngine(const bool as_alias = false) const;
+    bool isIcebergLocalEngine(bool as_alias = false) const;
 
-    bool isAnyIcebergEngine(const bool as_alias = false) const;
+    bool isAnyIcebergEngine(bool as_alias = false) const;
 
-    bool isPaimonS3Engine(const bool as_alias = false) const;
+    bool isPaimonS3Engine(bool as_alias = false) const;
 
-    bool isPaimonAzureEngine(const bool as_alias = false) const;
+    bool isPaimonAzureEngine(bool as_alias = false) const;
 
-    bool isPaimonLocalEngine(const bool as_alias = false) const;
+    bool isPaimonLocalEngine(bool as_alias = false) const;
 
-    bool isAnyPaimonEngine(const bool as_alias = false) const;
+    bool isAnyPaimonEngine(bool as_alias = false) const;
 
-    bool isAnyLakeEngine(const bool as_alias = false) const;
+    bool isAnyLakeEngine(bool as_alias = false) const;
 
     bool isOnS3() const;
 
@@ -363,27 +363,27 @@ public:
 
     bool isOnLocal() const;
 
-    bool isMergeEngine(const bool as_alias = false) const;
+    bool isMergeEngine(bool as_alias = false) const;
 
-    bool isDistributedEngine(const bool as_alias = false) const;
+    bool isDistributedEngine(bool as_alias = false) const;
 
-    bool isDictionaryEngine(const bool as_alias = false) const;
+    bool isDictionaryEngine(bool as_alias = false) const;
 
-    bool isGenerateRandomEngine(const bool as_alias = false) const;
+    bool isGenerateRandomEngine(bool as_alias = false) const;
 
-    bool isURLEngine(const bool as_alias = false) const;
+    bool isURLEngine(bool as_alias = false) const;
 
-    bool isKeeperMapEngine(const bool as_alias = false) const;
+    bool isKeeperMapEngine(bool as_alias = false) const;
 
-    bool isExternalDistributedEngine(const bool as_alias = false) const;
+    bool isExternalDistributedEngine(bool as_alias = false) const;
 
-    bool isMaterializedPostgreSQLEngine(const bool as_alias = false) const;
+    bool isMaterializedPostgreSQLEngine(bool as_alias = false) const;
 
-    bool isArrowFlightEngine(const bool as_alias = false) const;
+    bool isArrowFlightEngine(bool as_alias = false) const;
 
-    bool isAliasEngine(const bool as_alias = false) const;
+    bool isAliasEngine(bool as_alias = false) const;
 
-    bool isKafkaEngine(const bool as_alias = false) const;
+    bool isKafkaEngine(bool as_alias = false) const;
 
     bool isNotTruncableEngine() const;
 
@@ -450,13 +450,13 @@ public:
 
     size_t numberOfInsertableColumns(bool all) const;
 
-    bool supportsFinal(const bool as_alias = false) const;
+    bool supportsFinal(bool as_alias = false) const;
 
-    bool hasSignColumn(const bool as_alias = false) const;
+    bool hasSignColumn(bool as_alias = false) const;
 
-    bool hasVersionColumn(const bool as_alias = false) const;
+    bool hasVersionColumn(bool as_alias = false) const;
 
-    bool areInsertsAppends(const bool as_alias = false) const;
+    bool areInsertsAppends(bool as_alias = false) const;
 };
 
 struct SQLView : SQLBase

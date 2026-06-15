@@ -68,8 +68,9 @@ class SparkAndClickHouseCheck:
         match = re.search(r"ENGINE\s*=\s*([A-Za-z0-9_]+)", ddl)
         if not match:
             # Could not determine the engine: proceed with the check rather than
-            # silently skip it.
-            return False, ddl.strip()
+            # silently skip it. An unparseable SHOW CREATE shape is a diagnostic
+            # gap, not evidence that the engine is wrong.
+            return True, ddl.strip()
         engine = match.group(1)
         if expected is None:
             return True, engine
