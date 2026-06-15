@@ -146,6 +146,14 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     buf.write(buffer, result);
 }
 
+template <typename T>
+requires is_floating_point<T>
+void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings);
+
+extern template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
+extern template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings);
+extern template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings);
+
 
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
@@ -481,7 +489,12 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeChar('"', ostr);
 
     if (is_finite)
-        writeText(x, ostr);
+    {
+        if constexpr (is_floating_point<T>)
+            writeFloatText(x, ostr, settings);
+        else
+            writeText(x, ostr);
+    }
     else if (!settings.json.quote_denormals)
         writeCString("null", ostr);
     else
