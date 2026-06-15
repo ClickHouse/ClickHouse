@@ -529,10 +529,13 @@ target_link_libraries (clickhouse_compression
         PRIVATE
             ch_contrib::lz4
             ch_contrib::roaring
-            ch_contrib::iguana
 )
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
+endif()
+# Iguana is optional: the submodule is not present in some minimal builds (e.g. Fast test).
+if (TARGET ch_contrib::iguana)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::iguana)
 endif()
 
 target_link_libraries(clickhouse_common_io

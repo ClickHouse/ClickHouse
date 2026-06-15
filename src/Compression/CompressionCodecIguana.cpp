@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_IGUANA
+
 #include <Compression/CompressionCodecIguana.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
@@ -19,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
-    extern const int CANNOT_DECOMPRESS;
 }
 
 /// Extra bytes the encoder may add on top of the input size: the serialized frequency table
@@ -119,3 +122,5 @@ void registerCodecIguana(CompressionCodecFactory & factory)
 }
 
 }
+
+#endif
