@@ -13,6 +13,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 
+#include <Common/Arena.h>
 #include <Common/logger_useful.h>
 
 
@@ -77,7 +78,13 @@ void populatePartAggregationCache(
                 alter_conversions,
                 /* merged_part_offsets = */ nullptr,
                 columns_to_read,
-                /* mark_ranges = */ std::nullopt,
+                /// Read only the marks `ReadFromMergeTree` selected for this part (primary key and
+                /// skip-index analysis), not the whole part. Passing `std::nullopt` here would scan
+                /// and aggregate every row of each selected part on a cold cache, causing severe
+                /// first-run regressions for selective `GROUP BY` queries. It is also more robust:
+                /// the residual `WHERE`/`PREWHERE` filter is applied below, so reading exactly the
+                /// selected ranges reproduces what the normal pipeline aggregates.
+                /* mark_ranges = */ part.ranges,
                 /* filtered_rows_count = */ nullptr,
                 /* apply_deleted_mask = */ true,
                 /* read_with_direct_io = */ false,
@@ -136,8 +143,21 @@ void populatePartAggregationCache(
                 if (block.rows() == 0)
                     continue;
 
+                /// `Aggregator` resolves the key and aggregate-argument column positions from
+                /// `aggregator_header` once at construction, and `executeOnBlock` then consumes the
+                /// passed columns positionally (`columns.at(keys_positions[i])`). The block produced
+                /// here is not guaranteed to be in `aggregator_header` order: `columns_to_read` is
+                /// sorted, and an intermediate `ExpressionStep` emits columns in its own output order.
+                /// Project the block onto `aggregator_header` by name so the positions line up;
+                /// otherwise a key and an aggregate argument could be swapped, silently storing wrong
+                /// states in the global cache (or throwing on a type mismatch).
+                Columns aggregator_columns;
+                aggregator_columns.reserve(aggregator_header.columns());
+                for (const auto & header_column : aggregator_header)
+                    aggregator_columns.push_back(block.getByName(header_column.name).column);
+
                 aggregator.executeOnBlock(
-                    block.getColumns(), 0, block.rows(),
+                    std::move(aggregator_columns), 0, block.rows(),
                     data_variants, key_columns, aggregate_columns, no_more_keys);
             }
 
@@ -163,6 +183,16 @@ void populatePartAggregationCache(
             /// zero rows after filtering still register as cache hits on subsequent queries.
             /// Otherwise selective predicates over many historical parts would always re-scan.
             Block result_block;
+
+            /// Memory retained by the cached states that `block.allocatedBytes()` does not see.
+            /// `convertToChunks(final = false)` attaches `data_variants.aggregates_pools` to the
+            /// `ColumnAggregateFunction` columns as foreign arenas, and
+            /// `ColumnAggregateFunction::allocatedBytes` counts only the pointer array, not those
+            /// arenas. The arenas hold the actual state data (almost all of the memory for states
+            /// such as `uniqExact` or `groupArray`), so charge them to the cache budget explicitly.
+            /// Only meaningful when there are chunks: an empty result block keeps no arenas alive.
+            size_t state_arena_bytes = 0;
+
             if (chunks.empty())
             {
                 result_block = intermediate_header.cloneEmpty();
@@ -180,10 +210,13 @@ void populatePartAggregationCache(
                         result_block.getByPosition(i).column = std::move(mut_col);
                     }
                 }
+
+                for (const auto & pool : data_variants.aggregates_pools)
+                    state_arena_bytes += pool->allocatedBytes();
             }
 
             size_t cached_rows = result_block.rows();
-            cache->set(key, std::move(result_block));
+            cache->set(key, std::move(result_block), state_arena_bytes);
 
             LOG_DEBUG(log, "Cached aggregation state for part {} ({} rows)",
                 part.data_part->name, cached_rows);

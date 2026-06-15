@@ -104,7 +104,11 @@ static constexpr size_t MIN_ENTRY_SIZE_IN_BYTES = 256;
 
 size_t PartAggregationCache::Entry::sizeInBytes() const
 {
-    return std::max<size_t>(block.allocatedBytes(), MIN_ENTRY_SIZE_IN_BYTES);
+    /// `block.allocatedBytes()` undercounts aggregate-state columns: their state data lives in
+    /// foreign arenas that `ColumnAggregateFunction::allocatedBytes` does not count. Add the
+    /// retained arena memory measured by the populator (`state_arena_bytes`) so the LRU budget
+    /// reflects the real footprint.
+    return std::max<size_t>(block.allocatedBytes() + state_arena_bytes, MIN_ENTRY_SIZE_IN_BYTES);
 }
 
 PartAggregationCache::PartAggregationCache(size_t max_size_in_bytes_)
@@ -125,9 +129,9 @@ PartAggregationCache::EntryPtr PartAggregationCache::get(const Key & key) const
     return it->second.entry;
 }
 
-void PartAggregationCache::set(const Key & key, Block block)
+void PartAggregationCache::set(const Key & key, Block block, size_t state_arena_bytes)
 {
-    auto new_entry = std::make_shared<Entry>(Entry{.block = std::move(block)});
+    auto new_entry = std::make_shared<Entry>(Entry{.block = std::move(block), .state_arena_bytes = state_arena_bytes});
     size_t entry_bytes = new_entry->sizeInBytes();
 
     std::lock_guard lock(mutex);

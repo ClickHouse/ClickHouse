@@ -47,6 +47,14 @@ public:
     {
         Block block;
 
+        /// Memory retained by the aggregate states that `block.allocatedBytes()` does not account
+        /// for. The non-final blocks store `ColumnAggregateFunction` columns whose state data lives
+        /// in foreign arenas (attached by `Aggregator::convertToChunks`), and
+        /// `ColumnAggregateFunction::allocatedBytes` counts only the pointer array, not those arenas.
+        /// The populator measures the retained arena memory and passes it here so the LRU budget
+        /// reflects the real footprint.
+        size_t state_arena_bytes = 0;
+
         size_t sizeInBytes() const;
     };
 
@@ -61,7 +69,9 @@ public:
     explicit PartAggregationCache(size_t max_size_in_bytes_);
 
     EntryPtr get(const Key & key) const;
-    void set(const Key & key, Block block);
+    /// `state_arena_bytes` is the foreign-arena memory retained by the block's aggregate-state
+    /// columns (see `Entry::state_arena_bytes`); it is added to the charged size of the entry.
+    void set(const Key & key, Block block, size_t state_arena_bytes = 0);
     void clear();
     void invalidateByPartName(const String & part_name);
 
