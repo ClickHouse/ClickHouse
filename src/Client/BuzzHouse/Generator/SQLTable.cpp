@@ -1338,7 +1338,7 @@ void StatementGenerator::generateEngineDetails(
                   te->add_params()->mutable_database()->set_value(ntable.schema_name);
                   te->add_params()->mutable_table()->set_value(ntable.table_name);
                   /// Something as a placeholder
-                  b.subengine = TableEngineDescriptor{MergeTree};
+                  b.setSyntheticSubengine(MergeTree);
               }},
              {dist_empty,
               [&]
@@ -1346,7 +1346,7 @@ void StatementGenerator::generateEngineDetails(
                   /// Empty database/table — no underlying entity
                   te->add_params()->mutable_database()->set_value("");
                   te->add_params()->mutable_table()->set_value("");
-                  b.subengine = TableEngineDescriptor{MergeTree};
+                  b.setSyntheticSubengine(MergeTree);
               }}});
 
         if (bt && tt)
@@ -2069,7 +2069,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         std::uniform_int_distribution<uint32_t> engine_range(1, static_cast<uint32_t>(TableEngineValues_MAX));
 
         b.engine.value = static_cast<TableEngineValues>(engine_range(rg.generator));
-        b.subengine = TableEngineDescriptor{static_cast<TableEngineValues>(engine_range(rg.generator))};
+        b.setSyntheticSubengine(static_cast<TableEngineValues>(engine_range(rg.generator)));
         return;
     }
     /// Make sure `is_determistic is already set`
@@ -2309,8 +2309,8 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
-        b.subengine = TableEngineDescriptor{
-            (allow_mysql_tbl && allow_postgresql_tbl) ? (rg.nextBool() ? PostgreSQL : MySQL) : (allow_mysql_tbl ? MySQL : PostgreSQL)};
+        b.setSyntheticSubengine(
+            (allow_mysql_tbl && allow_postgresql_tbl) ? (rg.nextBool() ? PostgreSQL : MySQL) : (allow_mysql_tbl ? MySQL : PostgreSQL));
     }
 }
 

@@ -281,6 +281,15 @@ public:
 
     static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
 
+    /// Assign a synthetic sub-engine that does not correspond to a concrete target table
+    /// (Distributed placeholder, ExternalDistributed remote kind, random engine). It inherits this
+    /// table's determinism so isDeterministic() is not dragged to false by the descriptor default.
+    void setSyntheticSubengine(const TableEngineValues sub_value)
+    {
+        subengine = TableEngineDescriptor{sub_value};
+        subengine->is_deterministic = engine.is_deterministic;
+    }
+
     bool isDeterministic() const;
 
     bool isMergeTreeFamily(bool as_alias = false) const;
