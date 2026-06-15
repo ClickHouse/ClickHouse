@@ -30,45 +30,18 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
     if (!type)
         return type;
 
-    /// In each branch below, return the original type when nothing changed,
-    /// to preserve custom names (e.g. `LineString` vs `Ring` ->
-    /// both are `Array(Tuple(Float64, Float64))`).
-
     /// To support entering Nullable(Tuple)
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        const auto & nested = nullable_type->getNestedType();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
-        if (nested_no_lc.get() == nested.get())
-            return type;
-        return std::make_shared<DataTypeNullable>(std::move(nested_no_lc));
-    }
+        return std::make_shared<DataTypeNullable>(recursiveRemoveLowCardinality(nullable_type->getNestedType()));
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-    {
-        const auto & nested = array_type->getNestedType();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
-        if (nested_no_lc.get() == nested.get())
-            return type;
-        return std::make_shared<DataTypeArray>(std::move(nested_no_lc));
-    }
+        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
-        const auto & old_elements = tuple_type->getElements();
-        DataTypes elements = old_elements;
-        bool changed = false;
+        DataTypes elements = tuple_type->getElements();
         for (auto & element : elements)
-        {
-            auto element_no_lc = recursiveRemoveLowCardinality(element);
-            if (element_no_lc.get() != element.get())
-            {
-                element = std::move(element_no_lc);
-                changed = true;
-            }
-        }
-        if (!changed)
-            return type;
+            element = recursiveRemoveLowCardinality(element);
 
         if (tuple_type->hasExplicitNames())
             return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
@@ -77,13 +50,8 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        const auto & key = map_type->getKeyType();
-        const auto & value = map_type->getValueType();
-        auto key_no_lc = recursiveRemoveLowCardinality(key);
-        auto value_no_lc = recursiveRemoveLowCardinality(value);
-        if (key_no_lc.get() == key.get() && value_no_lc.get() == value.get())
-            return type;
-        return std::make_shared<DataTypeMap>(std::move(key_no_lc), std::move(value_no_lc));
+        return std::make_shared<DataTypeMap>(
+            recursiveRemoveLowCardinality(map_type->getKeyType()), recursiveRemoveLowCardinality(map_type->getValueType()));
     }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
