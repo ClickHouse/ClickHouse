@@ -18,7 +18,6 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
 #include <atomic>
@@ -80,10 +79,11 @@ static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
 /// `PR_SET_VMA_ANON_NAME` was introduced in Linux 5.17. On older kernels
 /// `prctl` returns EINVAL and the `MemoryThreadStacks*` async metrics will
-/// not populate. The log warning is emitted once per process to avoid log
-/// spam, and `g_stack_vma_naming_unsupported` is exposed via
-/// `isThreadStackVMANamingUnsupported` so `ServerAsynchronousMetrics` can
-/// surface the limitation in `system.warnings` too.
+/// not populate. We only record the unsupported state silently here;
+/// `ServerAsynchronousMetrics` (which knows whether the user actually opted
+/// into heavy metrics) is responsible for emitting the log warning and
+/// the `system.warnings` row. That avoids startup-log noise on default
+/// servers running on old kernels — they never asked for these metrics.
 #ifndef PR_SET_VMA
 #define PR_SET_VMA 0x53564d41
 #endif
@@ -115,23 +115,14 @@ static void nameCurrentThreadStackVMA() noexcept
         if (pthread_attr_getstack(&attr, &addr, &size) != 0 || addr == nullptr)
             return;
 
-        if (prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, addr, size, THREAD_STACK_VMA_NAME.data()) == 0)
+        if (prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, addr, size, THREAD_STACK_VMA_NAME) == 0)
             return;
 
-        /// Older kernels (< 5.17) return EINVAL. Set the global flag so the
-        /// metrics layer can publish a `system.warnings` entry, and emit a
-        /// log warning once process-wide.
+        /// Older kernels (< 5.17) return EINVAL. Flip the global flag so the
+        /// metrics layer can surface this once via `system.warnings` and a
+        /// single log line. Stay silent here.
         if (errno == EINVAL)
-        {
             g_stack_vma_naming_unsupported.store(true, std::memory_order_relaxed);
-            static std::atomic<bool> warned{false};
-            bool expected = false;
-            if (warned.compare_exchange_strong(expected, true))
-                LOG_WARNING(
-                    getLogger("setThreadName"),
-                    "PR_SET_VMA_ANON_NAME is not supported by the kernel; MemoryThreadStacks* async metrics will not populate. "
-                    "This feature requires Linux 5.17 or newer.");
-        }
     }
     catch (...) /// NOLINT(bugprone-empty-catch) Ok, stack-naming is best-effort.
     {

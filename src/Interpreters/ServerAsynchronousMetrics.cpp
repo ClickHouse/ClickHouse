@@ -648,12 +648,19 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
     if (isThreadStackVMANamingUnsupported())
     {
         /// Pre-5.17 kernel: `prctl(PR_SET_VMA_ANON_NAME)` returned EINVAL, so
-        /// no smaps entry will ever carry the tag. Surface it in `system.warnings`.
+        /// no smaps entry will ever carry the tag. Surface it once in
+        /// `system.warnings` and the server log (we only get here when the
+        /// user opted into heavy metrics).
+        constexpr const char * msg
+            = "MemoryThreadStacks* async metrics require Linux 5.17 or newer "
+              "(PR_SET_VMA_ANON_NAME). Detected an older kernel; the metrics will not populate.";
         getContext()->addOrUpdateWarningMessage(
             Context::WarningType::MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
-            PreformattedMessage::create(
-                "MemoryThreadStacks* async metrics require Linux 5.17 or newer "
-                "(PR_SET_VMA_ANON_NAME). Detected an older kernel; the metrics will not populate."));
+            PreformattedMessage::create(msg));
+        static std::atomic<bool> logged{false};
+        bool expected = false;
+        if (logged.compare_exchange_strong(expected, true))
+            LOG_WARNING(log, "{}", msg);
         return;
     }
 
