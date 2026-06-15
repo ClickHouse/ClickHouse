@@ -10,6 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BASE_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 DB="${CLICKHOUSE_DATABASE}"
 
+# Temporary files for compressed downloads. `CLICKHOUSE_TMP` is a per-test directory, so these
+# names do not collide across parallel or flaky-check runs.
+HITS_GZ="${CLICKHOUSE_TMP}/04245_hits.csv.gz"
+COMPRESS_GZ="${CLICKHOUSE_TMP}/04245_compress.gz"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}.hits (a UInt32, b String) ENGINE=Memory"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.hits VALUES (1,'one'),(2,'two'),(3,'three')"
@@ -28,7 +33,8 @@ echo "-- /hits.CSV"
 http_get "${BASE_URL}/${DB}/hits.CSV"
 
 echo "-- /hits.CSV.gz (compressed payload, decompressed):"
-http_get -o /tmp/04245_hits.csv.gz "${BASE_URL}/${DB}/hits.CSV.gz" && zcat /tmp/04245_hits.csv.gz
+# Use `gzip -dc` rather than `zcat`: BSD `zcat` (macOS) only handles `.Z` files and fails on `.gz`.
+http_get -o "${HITS_GZ}" "${BASE_URL}/${DB}/hits.CSV.gz" && gzip -dc "${HITS_GZ}"
 
 echo "===== http_allow_database_as_path ====="
 echo "-- /<db>/hits"
@@ -107,7 +113,7 @@ http_get "${BASE_URL}/${DB}/hits.CSV?default_format=JSONEachRow"
 
 echo "===== compression setting ====="
 echo "-- compression=gz on /?query (decompressed):"
-http_get -o /tmp/04245_compress.gz "${BASE_URL}/?query=SELECT+1&compression=gz" && zcat /tmp/04245_compress.gz
+http_get -o "${COMPRESS_GZ}" "${BASE_URL}/?query=SELECT+1&compression=gz" && gzip -dc "${COMPRESS_GZ}"
 
 echo "===== Content-Disposition: attachment for binary/compressed ====="
 echo "-- /hits.Native (binary):"
@@ -160,4 +166,4 @@ http_get "${BASE_URL}/api/v1?query=SELECT+1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"
 
-rm -f /tmp/04245_hits.csv.gz /tmp/04245_compress.gz
+rm -f "${HITS_GZ}" "${COMPRESS_GZ}"
