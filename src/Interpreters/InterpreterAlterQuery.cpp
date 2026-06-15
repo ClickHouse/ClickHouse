@@ -19,6 +19,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/MutationPredicateColumnsAccess.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -577,6 +578,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::UPDATE:
         {
             required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
+            addPredicateColumnsSelectAccess(required_access, command.predicate, database, table);
             break;
         }
         case ASTAlterCommand::ADD_COLUMN:
@@ -723,6 +725,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::FORGET_PARTITION:
         {
             required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
+            addPredicateColumnsSelectAccess(required_access, command.predicate, database, table);
             break;
         }
         case ASTAlterCommand::MOVE_PARTITION:

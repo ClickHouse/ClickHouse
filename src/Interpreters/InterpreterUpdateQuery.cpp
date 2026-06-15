@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MutationPredicateColumnsAccess.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTUpdateQuery.h>
@@ -83,6 +84,7 @@ BlockIO InterpreterUpdateQuery::execute()
 
     AccessRightsElements required_access;
     required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    addPredicateColumnsSelectAccess(required_access, update_query.predicate.get(), update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {

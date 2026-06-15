@@ -11,7 +11,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
+#include <Interpreters/MutationPredicateColumnsAccess.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
@@ -67,7 +69,10 @@ BlockIO InterpreterDeleteQuery::execute()
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
-    getContext()->checkAccess(AccessType::ALTER_DELETE, table_id);
+    AccessRightsElements required_access;
+    required_access.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+    addPredicateColumnsSelectAccess(required_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name);
+    getContext()->checkAccess(required_access);
     const auto & settings = getContext()->getSettingsRef();
 
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);

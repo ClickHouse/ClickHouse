@@ -1,0 +1,13 @@
+-- Without SELECT(id): WHERE on id must be denied
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- WHERE on a readable column (name) is allowed
+OK
+OK
+-- With SELECT(id): WHERE on id is allowed
+OK
+OK
+OK
+OK
