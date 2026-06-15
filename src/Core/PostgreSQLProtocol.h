@@ -519,6 +519,9 @@ public:
         readNullTerminated(auth_method, in);
         Int32 size_sasl_mechanism = 0;
         readBinaryBigEndian(size_sasl_mechanism, in);
+        if (size_sasl_mechanism < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be negative", size_sasl_mechanism);
         sasl_mechanism.resize(size_sasl_mechanism);
         in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
     }
@@ -776,6 +779,9 @@ public:
         {
             Int32 sz_param = 0;
             readBinaryBigEndian(sz_param, in);
+            if (sz_param < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter length {} in Bind message, it must not be negative", sz_param);
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
@@ -1157,6 +1163,9 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyData, it must be at least 4", sz);
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
