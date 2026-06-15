@@ -631,6 +631,13 @@ class Utils:
         return base64_string
 
     @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        base64_bytes = value.encode("utf-8")
+        string_bytes = base64.b64decode(base64_bytes)
+        return string_bytes.decode("utf-8")
+
+    @staticmethod
     def is_hex(s):
         try:
             int(s, 16)
@@ -801,9 +808,10 @@ class Utils:
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 which breaks openssl enc -pass file:
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
-openssl rand 32 >{aes_key_path}
+openssl rand -base64 32 >{aes_key_path}
 openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """)

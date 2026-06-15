@@ -78,6 +78,7 @@ add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
+add_contrib (libpng-cmake libpng) # requires: zlib
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -258,6 +259,9 @@ add_contrib (bech32)
 add_contrib (libcotp-cmake libcotp)
 
 add_contrib (clickstack-cmake clickstack)
+
+add_contrib (librseq-cmake librseq)
+add_contrib (silk-cmake silk)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

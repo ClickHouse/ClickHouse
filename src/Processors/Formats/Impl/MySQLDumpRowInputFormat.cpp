@@ -249,7 +249,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
     return columns_name_and_type;
 }
 
-void readUnquotedColumnName(String & name, ReadBuffer & in)
+static void readUnquotedColumnName(String & name, ReadBuffer & in)
 {
     name.clear();
     while (!in.eof())
@@ -265,7 +265,7 @@ void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
+static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -556,6 +556,7 @@ void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::D
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
+void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory)
 {
     factory.registerInputFormat("MySQLDump", [](
@@ -566,8 +567,89 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
     {
         return std::make_shared<MySQLDumpRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings);
     });
+
+    factory.setDocumentation("MySQLDump", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✔     | ✗       |       |
+
+## Description {#description}
+
+ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
+
+It reads all the data from `INSERT` queries belonging to a single table in the dump. 
+If there is more than one table, by default it reads data from the first one.
+
+:::note
+This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
+:::
+
+## Example usage {#example-usage}
+
+Given the following SQL dump file:
+
+```sql title="dump.sql"
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+We can run the following queries:
+
+```sql title="Query"
+DESCRIBE TABLE file(dump.sql, MySQLDump) 
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SELECT *
+FROM file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+## Format settings {#format-settings}
+
+You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/operations/settings/settings-formats.md/#input_format_mysql_dump_table_name) setting.
+If setting `input_format_mysql_dump_map_columns` is set to `1` and the dump contains a `CREATE` query for specified table or column names in the `INSERT` query, the columns from the input data will map to the columns from the table by name.
+Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+)DOCS_MD"});
 }
 
+void registerMySQLSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MySQLDump", [](ReadBuffer & buf, const FormatSettings & settings)

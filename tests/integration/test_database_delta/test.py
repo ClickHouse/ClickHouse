@@ -84,28 +84,164 @@ def started_cluster():
         cluster.shutdown()
 
 
-def execute_spark_query(node, query_text):
+def _capture_spark_hang_diagnostics(node):
+    """
+    Capture diagnostic data when a Spark query times out or otherwise fails
+    unexpectedly. Each capture is wrapped in its own ``try``/``except`` so a
+    failure in one diagnostic does not prevent collection of the others.
+
+    None of these are intended to recover the test. They only produce data
+    for post-mortem analysis of the chronic Spark hang on
+    ``Integration tests (arm_binary, distributed plan, 4/4)`` and similar
+    shards, where on ``subprocess.TimeoutExpired`` the Spark JVM is killed
+    by SIGKILL and ``stdout``/``stderr`` are typically truncated to whatever
+    Spark logged before the hang point — leaving CIDB without enough
+    information to localize the stuck thread.
+
+    Captured:
+      * ``jstack`` thread dumps of every running ``org.apache.spark`` JVM
+        (shows where the JVM is stuck)
+      * Unity Catalog HTTP liveness probe on ``http://localhost:8080``
+        (shows whether UC is responsive while Spark is hung)
+      * ``ss -tnp`` snapshot of sockets to UC port ``8080`` and ``java``
+        connections (shows whether Spark holds open sockets to UC)
+    """
+    # 1. Thread dumps of running Spark JVMs.
+    try:
+        # `[o]rg.apache.spark` is a character-class trick: it matches the
+        # literal string `org.apache.spark` (because `[o]` matches `o`) but
+        # the regex itself does NOT contain that string, so `pgrep` will
+        # not match its own command line (`pgrep -f '[o]rg.apache.spark'`).
+        # Without this, on shards where no Spark JVM is left the `bash -c`
+        # wrapper's own cmdline can match and `jstack` then runs against
+        # an unrelated shell PID.
+        pids_out = node.exec_in_container(
+            ["bash", "-c", "pgrep -f '[o]rg.apache.spark' || true"],
+            nothrow=True,
+            timeout=30,
+        )
+        pids = [p.strip() for p in (pids_out or "").splitlines() if p.strip()]
+        # Cap the number of jstack-ed PIDs at 3 so a hang affecting both
+        # the driver and several executors does not consume 30s per PID
+        # before the test fails. In practice there is one driver JVM per
+        # query; the cap is a belt for the pathological case.
+        pids = pids[:3]
+        if not pids:
+            print(
+                "Spark hang diag: no running 'org.apache.spark' processes"
+                " (already exited)"
+            )
+        for pid in pids:
+            try:
+                # Prefer non-force `jstack`; fall back to `-F` if the JVM is
+                # unresponsive to the attach mechanism. The fallback must
+                # happen BEFORE `head` truncates, otherwise `head`'s exit
+                # code (always 0 once any bytes flow) masks `jstack`'s and
+                # the `||` branch never fires.
+                dump = node.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"(jstack {pid} 2>&1 || jstack -F {pid} 2>&1)"
+                        f" | head -500",
+                    ],
+                    nothrow=True,
+                    timeout=30,
+                )
+                print(f"Spark hang diag: jstack of PID {pid}:\n{dump}")
+            except Exception as je:
+                print(f"Spark hang diag: jstack PID {pid} failed: {str(je)}")
+    except Exception as e:
+        print(f"Spark hang diag: failed to enumerate Spark PIDs: {str(e)}")
+
+    # 2. Unity Catalog HTTP liveness probe.
+    try:
+        uc = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "curl --silent --show-error --max-time 5 -o /dev/null"
+                " -w 'http_code=%{http_code} time_total=%{time_total}s'"
+                " http://localhost:8080/api/2.1/unity-catalog/schemas"
+                " || echo ' curl_failed'",
+            ],
+            nothrow=True,
+            timeout=15,
+        )
+        print(f"Spark hang diag: Unity Catalog liveness: {uc}")
+    except Exception as e:
+        print(f"Spark hang diag: UC liveness probe failed: {str(e)}")
+
+    # 3. Socket state snapshot for UC port and Java connections.
+    try:
+        # Capture `ss`'s output into a shell variable first, then filter and
+        # truncate from that variable. Checking `ss`'s exit status directly
+        # (via the `if` test on the assignment) avoids the trap of the
+        # earlier `ss | grep | head || sentinel` pipeline: with
+        # `set -o pipefail` enabled, `head -50` closing the pipe early on
+        # outputs longer than 50 lines caused upstream commands to receive
+        # `SIGPIPE`, which made the pipeline status non-zero and falsely
+        # triggered the ` no_matching_sockets` sentinel; without `pipefail`,
+        # the sentinel was unreachable because `head`'s exit code (always
+        # 0 once any bytes flow) masked `ss`'s. Decoupling capture from
+        # truncation breaks both horns of that dilemma. `grep -E ... ||
+        # true` keeps the no-match case from producing an `exit 1` that
+        # would print confusing output, but plays no role in detecting
+        # `ss` failure.
+        sockets = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'if ss_output=$(ss -tnp 2>&1); then '
+                'echo "$ss_output" | { grep -E ":8080|java" || true; } | head -50; '
+                'else '
+                "echo ' no_matching_sockets'; "
+                'fi',
+            ],
+            nothrow=True,
+            timeout=15,
+        )
+        print(f"Spark hang diag: socket state for UC port:\n{sockets}")
+    except Exception as e:
+        print(f"Spark hang diag: ss snapshot failed: {str(e)}")
+
+
+# A healthy Spark invocation finishes in well under a minute; only a hung
+# session runs long. Non-retry callers keep the original single-attempt budget;
+# retry-enabled callers use a shorter per-attempt budget so two attempts still
+# fit the per-test pytest timeout (900s).
+SPARK_QUERY_TIMEOUT = 600
+SPARK_QUERY_RETRY_ATTEMPT_TIMEOUT = 300
+SPARK_QUERY_MAX_ATTEMPTS = 2
+
+
+def _run_spark_query_once(node, query_text, timeout):
     # Kill any lingering Spark processes and remove the Derby metastore
     # before starting a new Spark session. The metastore_db is created inside
     # /spark-3.5.4-bin-hadoop3/ because spark-sql is run with cd to that directory.
     # We remove the entire metastore_db (not just the lock file) because after
     # SIGKILL the database can be left in a corrupted state, causing the next
-    # Spark session to hang during initialization.
+    # Spark session to hang during initialization. Running this before every
+    # attempt also reaps the JVM left behind by a previous attempt's timeout.
+    #
+    # `[o]rg.apache.spark` (character class), not `org.apache.spark`: this very
+    # bash -c command line contains the pattern text, so a plain match would
+    # SIGKILL this shell before `sleep`/`rm -rf` run. Same trick as
+    # `_capture_spark_hang_diagnostics`.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            """pkill -9 -f 'org.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
+            """pkill -9 -f '[o]rg.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
         ],
         nothrow=True,
     )
 
-    try:
-        result = node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"""
+    return node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
     cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
         --master "local[1]" \\
         --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
@@ -120,36 +256,73 @@ def execute_spark_query(node, query_text):
         --conf "spark.sql.defaultCatalog=unity" \\
         -S -e "{query_text}"
     """,
-            ],
-            timeout=600,
-        )
-    except Exception as e:
-        returncode = getattr(e, "returncode", None)
-        cmd = getattr(e, "cmd", None)
-        if returncode is not None:
-            print("Command failed with exit code:", returncode)
-        if cmd is not None:
-            print("Command:", cmd)
+        ],
+        timeout=timeout,
+    )
 
-        stdout_bytes = getattr(e, "stdout", None)
-        stderr_bytes = getattr(e, "stderr", None)
-        if stdout_bytes is not None or stderr_bytes is not None:
-            stdout = stdout_bytes.decode() if stdout_bytes else "<no stdout>"
-            stderr = stderr_bytes.decode() if stderr_bytes else "<no stderr>"
-            print("STDOUT:\n", stdout)
-            print("STDERR:\n", stderr)
-        else:
-            print("Command failed with exception:", str(e))
 
+def execute_spark_query(node, query_text, retry_on_timeout=False):
+    # A Spark invocation can hang for the whole timeout inside the Unity
+    # Catalog HTTP client (it has no per-request timeout) while UC itself
+    # stays responsive. The hang is transient, so a fresh-JVM retry usually
+    # succeeds. Retry is opt-in because it is only safe when query_text is
+    # idempotent or read-only: blindly re-running a multi-statement batch that
+    # already committed an earlier statement would fail on "already exists" or
+    # duplicate INSERT data. Callers set retry_on_timeout=True only after making
+    # their batch idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) or for
+    # read-only queries. Only the hang is retried, real errors are re-raised.
+    if retry_on_timeout:
+        max_attempts = SPARK_QUERY_MAX_ATTEMPTS
+        attempt_timeout = SPARK_QUERY_RETRY_ATTEMPT_TIMEOUT
+    else:
+        max_attempts = 1
+        attempt_timeout = SPARK_QUERY_TIMEOUT
+    for attempt in range(1, max_attempts + 1):
         try:
-            logs = node.exec_in_container(
-                ["tail", "-n", "50", UC_LOG]
-            )
-            print("Last 50 lines of UC log:\n", logs)
-        except Exception as log_e:
-            print(f"Cannot read log file: {str(log_e)}")
+            result = _run_spark_query_once(node, query_text, attempt_timeout)
+            break
+        except Exception as e:
+            is_timeout = "timed out after" in str(e)
+            is_last_attempt = attempt == max_attempts
 
-        raise
+            if is_timeout and not is_last_attempt:
+                print(
+                    f"Spark query hung (attempt {attempt}/{max_attempts}),"
+                    " retrying with a fresh JVM"
+                )
+                continue
+
+            returncode = getattr(e, "returncode", None)
+            cmd = getattr(e, "cmd", None)
+            if returncode is not None:
+                print("Command failed with exit code:", returncode)
+            if cmd is not None:
+                print("Command:", cmd)
+
+            stdout_bytes = getattr(e, "stdout", None)
+            stderr_bytes = getattr(e, "stderr", None)
+            if stdout_bytes is not None or stderr_bytes is not None:
+                stdout = stdout_bytes.decode() if stdout_bytes else "<no stdout>"
+                stderr = stderr_bytes.decode() if stderr_bytes else "<no stderr>"
+                print("STDOUT:\n", stdout)
+                print("STDERR:\n", stderr)
+            else:
+                print("Command failed with exception:", str(e))
+
+            try:
+                logs = node.exec_in_container(
+                    ["tail", "-n", "50", UC_LOG]
+                )
+                print("Last 50 lines of UC log:\n", logs)
+            except Exception as log_e:
+                print(f"Cannot read log file: {str(log_e)}")
+
+            # Capture extra diagnostics that are only useful when the Spark JVM
+            # hangs (timeout case): thread dumps, UC liveness, socket state.
+            if is_timeout:
+                _capture_spark_hang_diagnostics(node)
+
+            raise
 
     # We do not use "grep -v" for the above command,
     # because it will mess up the exit code.
@@ -160,8 +333,13 @@ def execute_spark_query(node, query_text):
     return result
 
 
-def execute_multiple_spark_queries(node, queries_list):
-    return execute_spark_query(node, ";".join(queries_list))
+def execute_multiple_spark_queries(node, queries_list, retry_on_timeout=False):
+    # retry_on_timeout must only be set when every statement in queries_list is
+    # idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) so that a
+    # fresh-JVM retry after a partial commit converges to the same final state.
+    return execute_spark_query(
+        node, ";".join(queries_list), retry_on_timeout=retry_on_timeout
+    )
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
@@ -231,15 +409,21 @@ def test_check_database_unity(started_cluster):
     ]
 
     # Combine schema creation, table creation and inserts into a single
-    # Spark invocation to avoid multiple slow JVM startups.
-    queries = [f"CREATE SCHEMA {schema_name}"]
+    # Spark invocation to avoid multiple slow JVM startups. Every statement is
+    # idempotent (CREATE ... IF NOT EXISTS, one INSERT OVERWRITE per table) so
+    # retry_on_timeout is safe: a fresh-JVM retry after a partial commit
+    # converges to the same final state instead of failing on "already exists"
+    # or duplicating INSERT rows.
+    queries = [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"]
     for table_name, table_schema, data_rows in table_configs:
         queries.append(
-            f"CREATE TABLE {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+            f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
         )
-        for row in data_rows:
-            queries.append(f"INSERT INTO {schema_name}.{table_name} VALUES {row}")
-    execute_multiple_spark_queries(node1, queries)
+        values = ", ".join(str(row) for row in data_rows)
+        queries.append(
+            f"INSERT OVERWRITE {schema_name}.{table_name} VALUES {values}"
+        )
+    execute_multiple_spark_queries(node1, queries, retry_on_timeout=True)
 
     # Create ClickHouse database pointing to Unity Catalog
     node1.query(
@@ -546,6 +730,35 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         return execute_spark_query(node1, f"SHOW SCHEMAS")
 
     assert schema_name in get_schemas()
+
+
+def test_used_storages_in_query_log(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    db_name = f"db_query_log_{uuid.uuid4()}".replace("-", "_")
+
+    node1.query(
+        f"""
+drop database if exists {db_name};
+create database {db_name}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+        """,
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    query_id = str(uuid.uuid4()).replace("-", "")
+    node1.query(
+        f"SELECT * FROM {db_name}.`default.marksheet` LIMIT 1",
+        query_id=query_id,
+    )
+
+    node1.query("SYSTEM FLUSH LOGS")
+
+    result = node1.query(
+        f"SELECT used_storages FROM system.query_log"
+        f" WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ).strip()
+    assert "DeltaLake" in result, f"Expected DeltaLake in used_storages, got {result}"
 
 
 def test_snapshot_version(started_cluster):

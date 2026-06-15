@@ -7,8 +7,6 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
-# Operators
-
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
@@ -158,13 +156,11 @@ See [IN operators](../../sql-reference/operators/in.md), [EXISTS](../../sql-refe
 
 Query with ALL:
 
-```sql
+```sql title="Query"
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -175,13 +171,11 @@ Result:
 
 Query with ANY:
 
-```sql
+```sql title="Query"
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┐
 │ 4 │
 │ 5 │
@@ -191,6 +185,49 @@ Result:
 │ 9 │
 └───┘
 ```
+
+### `SOME` / `ALL` on arrays {#some-all-on-arrays}
+
+In addition to the subquery form described above, the right-hand side of `SOME` / `ALL` can be an array expression (an array literal, an array-typed column, or any expression returning an array). This is the PostgreSQL-style array quantifier syntax. It is recognised at parse time and rewritten to array functions, so no manual rewrite is required:
+
+| Syntax | Rewritten to |
+|--------|--------------|
+| `expr = SOME(arr)` | `has(arr, expr)` |
+| `expr <> ALL(arr)` | `NOT has(arr, expr)` |
+| `expr OP SOME(arr)` (any other comparison operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other comparison operator) | `arrayAll(x -> expr OP x, arr)` |
+
+`SOME` is the existential quantifier (the SQL synonym for `ANY`). `=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
+
+The array form is recognised only for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, and `>=`. Other operators that accept an array on the right — for example `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, and `IN` — are **not** rewritten to the array quantifier and keep their ordinary meaning. For instance, `'abc' LIKE SOME(['a%', 'b%'])` is not the array quantifier syntax; use `arrayExists` / `arrayAll` directly for those cases.
+
+:::note `ANY` is not supported for the array form
+Only `SOME` and `ALL` accept an array right-hand side. `ANY` is excluded because `any` is also an aggregate function, so an expression of the shape `expr = any(x)` keeps its function-call meaning. Use `SOME` for the array quantifier.
+:::
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+:::note `NULL` handling differs from the subquery form
+Because the array form is rewritten in the parser (where query settings such as `transform_null_in` are not available, and a per-row array column cannot use the analyzer's null-safe `IN` path), it uses the two-valued semantics of `has` (for `=` / `<>`) and `arrayExists` / `arrayAll` (which fold an unknown `NULL` comparison result to `0`). This can differ from the subquery form, whose `NULL` handling is lowered through `IN` / `NOT IN` and depends on `transform_null_in`:
+
+```sql
+SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+```
+:::
 
 ## Operators for Working with Dates and Times {#operators-for-working-with-dates-and-times}
 
@@ -204,6 +241,9 @@ Extract parts from a given date. For example, you can retrieve a month from a gi
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
+- `NANOSECOND` — The nanosecond. Possible values: 0–999999999.
+- `MICROSECOND` — The microsecond. Possible values: 0–999999.
+- `MILLISECOND` — The millisecond. Possible values: 0–999.
 - `SECOND` — The second. Possible values: 0–59.
 - `MINUTE` — The minute. Possible values: 0–59.
 - `HOUR` — The hour. Possible values: 0–23.
@@ -220,10 +260,12 @@ The `part` parameter specifies which part of the date to retrieve. The following
 - `CENTURY` — The century. For example, the year 2024 is in the 21st century.
 - `DECADE` — The decade (year divided by 10). For example, the year 2024 has decade 202.
 - `MILLENNIUM` — The millennium. For example, the year 2024 is in the 3rd millennium.
+- `TIMEZONE_HOUR` — The signed hour part of the UTC offset of the operand's timezone. For example, `+5:30` returns `5`, `-3:30` returns `-3`.
+- `TIMEZONE_MINUTE` — The signed minute part of the UTC offset of the operand's timezone. For example, `+5:30` returns `30`, `-3:30` returns `-30`.
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or the time to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), and [DateTime64](../../sql-reference/data-types/datetime64.md) types are supported.
+The `date` parameter specifies the value to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), and [Interval](../../sql-reference/data-types/special-data-types/interval.md) types are supported. When `date` is an `Interval`, the requested `part` must match the interval's stored kind (e.g. `EXTRACT(DAY FROM INTERVAL 5 DAY)` is allowed; `EXTRACT(HOUR FROM INTERVAL 5 DAY)` is rejected, because ClickHouse intervals are single-kind). The result for an `Interval` operand is `Int64`.
 
 Examples:
 
@@ -234,6 +276,10 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
 SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
 SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
 ```
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
@@ -500,3 +546,34 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 ```
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
+
+## Checking Boolean Values {#checking-boolean-values}
+
+ClickHouse supports the `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE`, and `IS NOT UNKNOWN` operators.
+They are used with [Bool](../../sql-reference/data-types/boolean.md) and `Nullable(Bool)` expressions.
+
+- `expr IS TRUE` returns `1` only if `expr` is `true`.
+- `expr IS FALSE` returns `1` only if `expr` is `false`.
+- `expr IS UNKNOWN` returns `1` only if `expr` is `NULL`.
+- `expr IS NOT TRUE` returns `1` if `expr` is `false` or `NULL`.
+- `expr IS NOT FALSE` returns `1` if `expr` is `true` or `NULL`.
+- `expr IS NOT UNKNOWN` returns `1` if `expr` is not `NULL`.
+
+For boolean expressions, `IS UNKNOWN` is equivalent to `IS NULL`, and `IS NOT UNKNOWN` is equivalent to `IS NOT NULL`.
+
+<!-- -->
+
+```sql
+CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
+INSERT INTO t_bool VALUES (true), (false), (NULL);
+
+SELECT
+    x,
+    x IS TRUE,
+    x IS FALSE,
+    x IS UNKNOWN,
+    x IS NOT TRUE,
+    x IS NOT FALSE,
+    x IS NOT UNKNOWN
+FROM t_bool;
+```

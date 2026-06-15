@@ -76,12 +76,12 @@ namespace impl
     {
         ColumnPtr key0;
         ColumnPtr key1;
-        bool is_const;
+        bool is_const = false;
 
         size_t size() const
         {
-            assert(key0 && key1);
-            assert(key0->size() == key1->size());
+            chassert(key0 && key1);
+            chassert(key0->size() == key1->size());
             return key0->size();
         }
 
@@ -91,7 +91,7 @@ namespace impl
                 i = 0;
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
-            assert(key0->size() > i);
+            chassert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
 
@@ -108,8 +108,8 @@ namespace impl
     {
         const auto * col_key = key.column.get();
 
-        bool is_const;
-        const ColumnTuple * col_key_tuple;
+        bool is_const = false;
+        const ColumnTuple * col_key_tuple = nullptr;
         if (isColumnConst(*col_key))
         {
             is_const = true;
@@ -126,8 +126,8 @@ namespace impl
 
         SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        assert(result.key0);
-        assert(result.key1);
+        chassert(result.key0);
+        chassert(result.key1);
 
         if (!checkColumn<ColumnUInt64>(*result.key0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
@@ -238,20 +238,43 @@ struct HalfMD5Impl
 
     static UInt64 apply(const char * begin, size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             unsigned char char_data[16];
             uint64_t uint64_data;
         } buf;
 
         using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+
+        /// A context is initialized with the MD5 digest once, then only copied on each call
+        /// (the same approach as in FunctionsStringHashFixedString.cpp). Copying an already
+        /// initialized context with `EVP_MD_CTX_copy_ex` is faster than re-initializing with
+        /// `EVP_md5` every time: in OpenSSL 3.x the latter re-fetches the digest from the
+        /// provider method store under a read lock, and with this function called once per row
+        /// all hashing threads serialize on it (with musl's `pthread_rwlock` on aarch64 this
+        /// doubled `cryptographic_hashes` times in CI, `__pthread_rwlock_tryrdlock` dominating
+        /// the profile).
+        static const EVP_MD_CTX_ptr ctx_template = []
+        {
+            EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+            if (!new_ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+            if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+            return new_ctx;
+        }();
+
+        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
         if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        {
+            ctx.reset(EVP_MD_CTX_new());
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        }
 
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
@@ -457,7 +480,7 @@ struct MurmurHash3Impl32
 
     static UInt32 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt32 h;
             char bytes[sizeof(h)];
@@ -482,7 +505,7 @@ struct MurmurHash3Impl64
 
     static UInt64 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 h[2];
             char bytes[16];
@@ -669,7 +692,7 @@ struct ImplMetroHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 u64;
             uint8_t u8[sizeof(u64)];
@@ -1226,8 +1249,14 @@ private:
 
             if constexpr (Keyed)
             {
-                auto key_cols_replicated = key_cols.replicateForArray(offsets);
-                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                /// When every array is empty the nested column is empty too. There is nothing to
+                /// hash, but replicating the key columns would produce empty key columns, and the
+                /// recursive call would then read a key for a row that doesn't exist. Skip it.
+                if (nested_size != 0)
+                {
+                    auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                    executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                }
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1663,7 +1692,7 @@ struct URLHierarchyHashImpl
 };
 
 
-class FunctionURLHash : public IFunction
+class FunctionURLHash final : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";

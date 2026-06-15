@@ -27,7 +27,7 @@ namespace
     };
 }
 
-class FunctionStructureToFormatSchema : public IFunction
+class FunctionStructureToFormatSchema final : public IFunction
 {
 private:
     Impl impl;

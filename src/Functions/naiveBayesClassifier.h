@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,7 +42,7 @@ extern const int RECEIVED_EMPTY_DATA;
 
 template <class T>
 concept Tokenizer = requires(
-    T tok, std::string_view text, std::vector<std::string_view> & tokens, const std::string_view * start, size_t n, std::string & ngram)
+    T tok, std::string_view text, VectorWithMemoryTracking<std::string_view> & tokens, const std::string_view * start, size_t n, std::string & ngram)
 {
     { T::start_token } -> std::convertible_to<std::string_view>;
     { T::end_token } -> std::convertible_to<std::string_view>;
@@ -55,7 +56,7 @@ struct BytePolicy
     static constexpr std::string_view start_token{"\x01", 1};
     static constexpr std::string_view end_token{"\xFF", 1};
 
-    void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
+    void tokenize(std::string_view text, VectorWithMemoryTracking<std::string_view> & tokens) const
     {
         tokens.reserve(tokens.size() + text.size());
         for (size_t i = 0; i < text.size(); ++i)
@@ -79,7 +80,7 @@ struct CodePointPolicy
     // U+10FFFF -> F4 8F BF BF
     static constexpr std::string_view end_token{"\xF4\x8F\xBF\xBF"};
 
-    void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
+    void tokenize(std::string_view text, VectorWithMemoryTracking<std::string_view> & tokens) const
     {
         tokens.reserve(tokens.size() + text.size());
         size_t pos = 0;
@@ -114,7 +115,7 @@ struct TokenPolicy
     static constexpr std::string_view start_token{"<s>"};
     static constexpr std::string_view end_token{"</s>"};
 
-    void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
+    void tokenize(std::string_view text, VectorWithMemoryTracking<std::string_view> & tokens) const
     {
         tokens.reserve(tokens.size() + text.size() / 3);
 
@@ -159,7 +160,7 @@ struct TokenPolicy
 };
 
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
-using ClassCountMaps = std::vector<ClassCountMap>;
+using ClassCountMaps = VectorWithMemoryTracking<ClassCountMap>;
 
 using NGramIndexMap = HashMap<std::string_view, UInt32, StringViewHash>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
@@ -255,7 +256,7 @@ public:
             DB::readBinary(count, in); // read the 4-byte count
 
             ArenaKeyHolder key_holder{std::string_view(ngram.data(), ngram_length), pool};
-            NGramIndexMap::LookupResult it;
+            NGramIndexMap::LookupResult it = nullptr;
             bool inserted = false;
 
             ngram_to_class_count_index.emplace(key_holder, it, inserted);
@@ -302,7 +303,7 @@ public:
                 {
                     /// class_totals does not have begin() and end() methods; therefore cannot use std::ranges::transform
                     /// Manually build a vector of available classes
-                    std::vector<UInt32> available_classes;
+                    VectorWithMemoryTracking<UInt32> available_classes;
                     available_classes.reserve(class_totals.size());
                     for (const auto & class_entry : class_totals)
                         available_classes.push_back(class_entry.getKey());
@@ -335,7 +336,7 @@ public:
         for (const auto & [class_id, prior] : log_class_priors)
             class_log_probabilities[class_id] = prior;
 
-        std::vector<std::string_view> tokens;
+        VectorWithMemoryTracking<std::string_view> tokens;
         tokenizer.tokenize(input, tokens);
 
         /// Add (n - 1) start tokens at the front and (n - 1) end tokens at the back

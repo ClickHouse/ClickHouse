@@ -1,10 +1,19 @@
 #define CURL_CA_BUNDLE "/etc/ssl/certs/ca-certificates.crt"
-#define CURL_DISABLE_FTP
-#define CURL_DISABLE_TFTP
-#define CURL_DISABLE_LDAP
-#define CURL_DISABLE_SMB
-#define CURL_DISABLE_POP3
-#define CURL_DISABLE_SMTP
+
+/* curl is only used as a plain HTTP(S) client, optionally through a proxy. */
+#define HTTP_ONLY
+#define CURL_DISABLE_ALTSVC
+#define CURL_DISABLE_AWS
+#define CURL_DISABLE_COOKIES
+#define CURL_DISABLE_DOH
+#define CURL_DISABLE_FORM_API
+#define CURL_DISABLE_GETOPTIONS
+#define CURL_DISABLE_HEADERS_API
+#define CURL_DISABLE_HSTS
+#define CURL_DISABLE_MIME
+#define CURL_DISABLE_NETRC
+#define CURL_DISABLE_PROGRESS_METER
+
 #define CURL_EXTERN_SYMBOL __attribute__ ((__visibility__ ("default")))
 
 #define SIZEOF_SHORT 2
@@ -57,8 +66,9 @@
 
 #define ENABLE_IPV6
 #define USE_OPENSSL
-#define USE_THREADS_POSIX
+#define HAVE_THREADS_POSIX
 #define USE_ARES
+#define USE_RESOLV_ARES
 
 #ifdef __illumos__
 #define HAVE_POSIX_STRERROR_R 1

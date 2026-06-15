@@ -357,6 +357,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/libpng"]
+	path = contrib/libpng
+	url = https://github.com/pnggroup/libpng.git
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -390,3 +393,9 @@
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
+[submodule "contrib/librseq"]
+	path = contrib/librseq
+	url = https://github.com/compudj/librseq.git
+[submodule "contrib/silk"]
+	path = contrib/silk
+	url = https://github.com/ClickHouse/silk.git
