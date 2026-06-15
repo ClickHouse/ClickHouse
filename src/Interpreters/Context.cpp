@@ -4164,15 +4164,30 @@ void Context::updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractCon
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->delete_bitmap_cache)
-        return; /// Cache disabled at startup — nothing to update.
-
     size_t size = config.getUInt64("unique_key_bitmap_cache_size_bytes", 1ULL << 30);
     if (size > max_cache_size)
     {
         size = max_cache_size;
         LOG_DEBUG(shared->log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
     }
+
+    if (!shared->delete_bitmap_cache)
+    {
+        if (size == 0)
+            return; /// Stay disabled until reload requests a non-zero size.
+        /// Enable on the first reload that requests a non-zero size, so a
+        /// startup `size = 0` is reversible rather than a one-way disable
+        /// (mirrors updateUniqueKeyIndexCacheConfiguration).
+        shared->delete_bitmap_cache = std::make_shared<DeleteBitmapCache>(
+            config.getString("unique_key_bitmap_cache_policy", "SLRU"),
+            CurrentMetrics::DeleteBitmapCacheBytes,
+            CurrentMetrics::DeleteBitmapCacheEntries,
+            size,
+            config.getDouble("unique_key_bitmap_cache_size_ratio", 0.5));
+        LOG_INFO(shared->log, "Enabled UNIQUE KEY delete-bitmap cache at {} via reload-config", formatReadableSizeWithBinarySuffix(size));
+        return;
+    }
+
     shared->delete_bitmap_cache->setMaxSizeInBytes(size);
     LOG_DEBUG(shared->log, "UNIQUE KEY delete-bitmap cache size set to {}", formatReadableSizeWithBinarySuffix(size));
 }
