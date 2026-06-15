@@ -175,6 +175,14 @@ public:
     /// plan is built), for validating `buildSchedule` against the live walk.
     std::shared_ptr<const CoverageMap> planGeometryForTest() const { return read_plan.geometry(); }
 
+    /// Test-only: the per-job status sidecar is allocated 1:1 with the
+    /// schedule's jobs on every plan build.
+    bool retrieveStatusMatchesScheduleForTest() const
+    {
+        return read_plan.retrieve_status.size() == read_plan.schedule.retrieves.size();
+    }
+    size_t retrieveStatusSizeForTest() const { return read_plan.retrieve_status.size(); }
+
     /// Test-only: the continuity estimator's predicted reach after the last plan
     /// feed, for verifying the wiring.
     size_t predictedReachForTest() const { return continuity_tracker.predictedReach(); }

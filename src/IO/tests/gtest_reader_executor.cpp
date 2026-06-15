@@ -4167,6 +4167,31 @@ TEST(PlanScheduleValidation, MixedGranularitiesWithBridge)
 /// so it has no cell below 64K (the slack-not-promoted rule is a model
 /// invariant the executor geometry never exercises - the meaningful check is
 /// the hand-built `PlanScheduleRetrieves.SlackNotPromotedToFasterTier`).
+/// Stage 1 sidecar: the per-job status vector is allocated 1:1 with the
+/// schedule's jobs on every plan build, so the processing loop can index it by
+/// retrieve. A resident island leaves gaps either side, so the schedule has
+/// several remote jobs to size against (not the trivial empty case).
+TEST(ReaderExecutor, RetrieveStatusSizedToSchedule)
+{
+    const size_t file = 256 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
+    page->seedBlock(1, 'P');   // resident island [64K,128K), gaps either side
+    auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
+
+    ReaderExecutor::Options opts;
+    opts.window_size = file;
+    opts.block_size = file;
+    opts.plan_look_ahead_window = file;
+    opts.min_bytes_for_seek = 0;
+    ReaderExecutor executor(src, objects, {page, fs}, opts);
+
+    executor.readNextWindow();  // builds the first plan
+    EXPECT_GT(executor.retrieveStatusSizeForTest(), 0u) << "the island leaves gaps to fetch";
+    EXPECT_TRUE(executor.retrieveStatusMatchesScheduleForTest())
+        << "retrieve_status must be 1:1 with the schedule's jobs";
+}
+
 TEST(ReaderExecutor, SchedulesFillOfSeekStraddledLowerSegment)
 {
     const size_t file = 256 * 1024;

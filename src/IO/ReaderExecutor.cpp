@@ -2407,6 +2407,12 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     feedScheduleToContinuity(read_plan.schedule);
     read_plan.schedule.predicted_reach = continuity_tracker.predictedReach();
 
+    /// Allocate the per-job status sidecar 1:1 with the schedule's jobs. The
+    /// schedule-driven processing loop branches on these phases instead of
+    /// re-querying the coverage map; nothing consumes them yet. `cursor` is 0
+    /// from the fresh `ReadPlan` above.
+    read_plan.retrieve_status.assign(read_plan.schedule.retrieves.size(), {});
+
     LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves, predicted_reach={}",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
         read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size(),
