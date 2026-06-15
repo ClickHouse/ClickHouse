@@ -306,7 +306,7 @@ public:
 
     /// Copy the query step fields from parent processor to child processor
     /// The group can be adjusted manually, since even though the processors can be
-    /// coming from the same step, they can belong to different groups (stages) 
+    /// coming from the same step, they can belong to different groups (stages)
     void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
