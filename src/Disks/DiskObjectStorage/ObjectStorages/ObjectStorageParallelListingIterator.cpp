@@ -227,6 +227,10 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
     std::string continuation_token;
     std::string last_key = range.start_after;
     bool first = true;
+    /// Whether a flat keyspace split may still be attempted. We attempt it at most once per range:
+    /// once we decide a flat range cannot be usefully split, we paginate it serially without probing
+    /// again on every page (which would otherwise issue one wasted probe request per page).
+    bool may_split = range.split_budget > 0;
 
     try
     {
@@ -280,7 +284,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
             if (!reached_end && result.is_truncated)
             {
                 continuation_token = result.next_continuation_token;
-                if (had_common_prefixes || range.split_budget == 0)
+                if (had_common_prefixes || !may_split)
                 {
                     keep_paginating = true;
                 }
@@ -288,14 +292,20 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
                 {
                     auto split = splitFlatRange(range, last_key, batch.empty() ? result.objects : batch);
                     if (split.empty())
+                    {
                         keep_paginating = true; /// Could not split; fall back to serial pagination.
+                        may_split = false;
+                    }
                     else
                         for (auto & s : split)
                             follow_up.push_back(std::move(s));
                 }
                 else
                 {
-                    keep_paginating = true; /// Keys share a common prefix; splitting would only waste requests.
+                    /// Keys share a common prefix; splitting would only waste requests. Paginate serially
+                    /// and do not probe again on subsequent pages of this range.
+                    keep_paginating = true;
+                    may_split = false;
                 }
             }
 
