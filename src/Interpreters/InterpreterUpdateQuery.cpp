@@ -9,6 +9,7 @@
 #include <Interpreters/MutationPredicateColumnsAccess.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
@@ -84,7 +85,6 @@ BlockIO InterpreterUpdateQuery::execute()
 
     AccessRightsElements required_access;
     required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
-    addPredicateColumnsSelectAccess(required_access, update_query.predicate.get(), update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {
@@ -104,6 +104,20 @@ BlockIO InterpreterUpdateQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+
+    /// The WHERE predicate and the assignment expressions read columns, so they require SELECT on
+    /// those columns (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
+    {
+        AccessRightsElements read_access;
+        const auto & virtuals = table->getInMemoryMetadataPtr(getContext(), false)->virtuals;
+        addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), table_id.database_name, table_id.table_name, virtuals);
+        for (const ASTPtr & assignment : update_query.assignments->children)
+            addExpressionColumnsSelectAccess(
+                read_access, assignment->as<const ASTAssignment &>().expression().get(),
+                table_id.database_name, table_id.table_name, virtuals);
+        if (!read_access.empty())
+            getContext()->checkAccess(read_access);
+    }
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);

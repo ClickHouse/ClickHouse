@@ -3,31 +3,41 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/IAST.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
 
-void addPredicateColumnsSelectAccess(
-    AccessRightsElements & required_access, const IAST * predicate, const String & database, const String & table)
+void addExpressionColumnsSelectAccess(
+    AccessRightsElements & required_access,
+    const IAST * expression,
+    const String & database,
+    const String & table,
+    const VirtualColumnsDescription & virtual_columns)
 {
-    if (!predicate)
+    if (!expression)
         return;
 
     RequiredSourceColumnsVisitor::Data columns_context;
-    auto predicate_clone = predicate->clone();
-    RequiredSourceColumnsVisitor(columns_context).visit(predicate_clone);
+    auto expression_clone = expression->clone();
+    RequiredSourceColumnsVisitor(columns_context).visit(expression_clone);
 
     Strings columns;
     const String db_table_prefix = database.empty() ? String{} : database + "." + table + ".";
     const String table_prefix = table + ".";
-    for (const auto & name : columns_context.requiredColumns())
+    for (const auto & qualified_name : columns_context.requiredColumns())
     {
+        std::string_view name = qualified_name;
         if (!db_table_prefix.empty() && name.starts_with(db_table_prefix))
-            columns.emplace_back(name.substr(db_table_prefix.size()));
+            name.remove_prefix(db_table_prefix.size());
         else if (name.starts_with(table_prefix))
-            columns.emplace_back(name.substr(table_prefix.size()));
-        else
-            columns.emplace_back(name);
+            name.remove_prefix(table_prefix.size());
+
+        /// Virtual columns are not real data and need no SELECT grant, matching a plain SELECT query.
+        if (virtual_columns.has(String(name)))
+            continue;
+
+        columns.emplace_back(name);
     }
 
     if (!columns.empty())

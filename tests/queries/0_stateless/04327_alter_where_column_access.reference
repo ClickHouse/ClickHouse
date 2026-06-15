@@ -1,12 +1,17 @@
--- Without SELECT(id): WHERE on id must be denied
+-- Without SELECT(id): reading id via WHERE or the SET right-hand side must be denied
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
--- WHERE on a readable column (name) is allowed
+ACCESS_DENIED
+-- Reading only the readable column (name) is allowed
 OK
 OK
--- With SELECT(id): WHERE on id is allowed
+OK
+-- Virtual columns in the predicate need no SELECT grant
+OK
+-- With SELECT(id): reading id via WHERE or the SET right-hand side is allowed
+OK
 OK
 OK
 OK

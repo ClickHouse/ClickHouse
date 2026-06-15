@@ -69,10 +69,7 @@ BlockIO InterpreterDeleteQuery::execute()
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
-    AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
-    addPredicateColumnsSelectAccess(required_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name);
-    getContext()->checkAccess(required_access);
+    getContext()->checkAccess(AccessType::ALTER_DELETE, table_id);
     const auto & settings = getContext()->getSettingsRef();
 
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);
@@ -82,6 +79,17 @@ BlockIO InterpreterDeleteQuery::execute()
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+
+    /// The WHERE predicate is read to select the rows to delete, so it requires SELECT on its columns
+    /// (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
+    {
+        AccessRightsElements read_access;
+        addExpressionColumnsSelectAccess(
+            read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
+            table->getInMemoryMetadataPtr(getContext(), false)->virtuals);
+        if (!read_access.empty())
+            getContext()->checkAccess(read_access);
+    }
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
