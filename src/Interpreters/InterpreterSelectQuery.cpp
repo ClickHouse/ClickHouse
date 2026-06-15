@@ -369,6 +369,23 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 namespace
 {
 
+/// Whether the AST subtree contains an `arrayJoin` function call, without descending into
+/// nested subqueries (their `arrayJoin` belongs to a different scope). Used to disable the
+/// trivial-LIMIT source optimization, since `arrayJoin` changes row cardinality after the
+/// source has run. Mirrors `numbersLikeUtils::astContainsArrayJoinFunction`.
+bool selectListHasArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+        if (function->name == "arrayJoin")
+            return true;
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
   */
@@ -1494,8 +1511,19 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             std::unordered_map<String, DataTypePtr> column_names;
             for (const auto & column : result_block.getColumnsWithTypeAndName())
                 column_names[column.name] = column.type;
+            NameSet order_by_names;
             for (const auto & elem : query.orderBy()->children)
-                column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+            {
+                auto name = elem->as<ASTOrderByElement>()->children.front()->getColumnName();
+                order_by_names.insert(name);
+                column_names.erase(name);
+            }
+            std::erase_if(column_names, [&](const auto & pair)
+            {
+                if (auto it = aliases.find(pair.first); it != aliases.end())
+                    return order_by_names.contains(it->second->getColumnName());
+                return false;
+            });
             for (const auto & [name, type] : column_names)
             {
                 source_columns.emplace_back(name, type);
@@ -2652,6 +2680,14 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     const auto & query = query_ptr->as<const ASTSelectQuery &>();
 
     const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+
+    /// `arrayJoin` (function or `ARRAY JOIN` clause) expands one input row into several output
+    /// rows after the source has produced them. Limiting the source to `limit + offset` rows
+    /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
+    /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
+    /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
+    if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+        return 0;
 
     if (!query.distinct
        && !query.limit_with_ties

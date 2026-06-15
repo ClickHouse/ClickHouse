@@ -245,13 +245,36 @@ struct HalfMD5Impl
         } buf;
 
         using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+
+        /// A context is initialized with the MD5 digest once, then only copied on each call
+        /// (the same approach as in FunctionsStringHashFixedString.cpp). Copying an already
+        /// initialized context with `EVP_MD_CTX_copy_ex` is faster than re-initializing with
+        /// `EVP_md5` every time: in OpenSSL 3.x the latter re-fetches the digest from the
+        /// provider method store under a read lock, and with this function called once per row
+        /// all hashing threads serialize on it (with musl's `pthread_rwlock` on aarch64 this
+        /// doubled `cryptographic_hashes` times in CI, `__pthread_rwlock_tryrdlock` dominating
+        /// the profile).
+        static const EVP_MD_CTX_ptr ctx_template = []
+        {
+            EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+            if (!new_ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+            if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+            return new_ctx;
+        }();
+
+        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
         if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        {
+            ctx.reset(EVP_MD_CTX_new());
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        }
 
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
@@ -878,6 +901,10 @@ public:
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
     #if USE_MULTITARGET_CODE
+        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
+        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
+        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
+        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
         selector.registerImplementation<TargetArch::x86_64_v3,
             TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
         selector.registerImplementation<TargetArch::x86_64_v4,
@@ -1222,8 +1249,14 @@ private:
 
             if constexpr (Keyed)
             {
-                auto key_cols_replicated = key_cols.replicateForArray(offsets);
-                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                /// When every array is empty the nested column is empty too. There is nothing to
+                /// hash, but replicating the key columns would produce empty key columns, and the
+                /// recursive call would then read a key for a row that doesn't exist. Skip it.
+                if (nested_size != 0)
+                {
+                    auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                    executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                }
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1564,9 +1597,10 @@ public:
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
 #if USE_MULTITARGET_CODE
+        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
+        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector
-            .registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 #endif
     }
 
