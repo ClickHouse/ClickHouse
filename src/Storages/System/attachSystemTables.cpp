@@ -241,7 +241,7 @@ void attachSystemView(
     const String & comment,
     bool security_barrier)
 {
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
     ASTPtr ast = parseSystemViewCreateQuery(view_name, select_query);
     const auto & ast_create = ast->as<ASTCreateQuery &>();
@@ -269,7 +269,7 @@ void attachSystemView(
 
 void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
 {
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
     auto query_log = context->getQueryLog();
     String select_query;
