@@ -258,12 +258,16 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// returns whether a znode was actually removed: for a plain `DROP` a missing handler is an error,
     /// for `DROP IF EXISTS` it is a no-op. Either way the version-bumping removal is the source of truth.
     bool removed = metadata_storage->removeIfExists(query.handler_name);
-    if (!removed && !query.if_exists)
-        throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
 
-    /// Rebuild the local snapshot from the now-current persistent state; this also re-arms the update watch.
+    /// Rebuild the local snapshot from the now-current persistent state before reporting the result; this
+    /// also re-arms the update watch. Doing it before the error branch matters in the stale-cache direction:
+    /// if this replica still holds the handler in `loaded_handlers` but Keeper has already removed it, a plain
+    /// `DROP` must stop serving the now-gone handler here rather than keeping it until the background watch fires.
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
+
+    if (!removed && !query.if_exists)
+        throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
 }
 
 void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alter_query)
