@@ -77,6 +77,9 @@ public:
 
     void expand(const IColumn::Filter & mask, bool inverted);
 
+    /// Set the stored index to `value` for every row where `mask[row] == 0`.
+    void setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value);
+
 private:
     size_t getMaxIndexForCurrentType() const;
 

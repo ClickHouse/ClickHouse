@@ -167,6 +167,25 @@ size_t ColumnIndex::getIndexAt(size_t row) const
     return index;
 }
 
+void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value)
+{
+    chassert(mask.size() == size());
+    chassert(value <= getMaxIndexForCurrentType());
+
+    auto set_value = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    {
+        auto & data = getIndexesData<CurIndexType>();
+        const auto typed_value = static_cast<CurIndexType>(value);
+        for (size_t row = 0, rows = data.size(); row < rows; ++row)
+        {
+            if (!mask[row])
+                data[row] = typed_value;
+        }
+    };
+
+    callForType(std::move(set_value), size_of_type);
+}
+
 
 void ColumnIndex::insertIndex(size_t index)
 {
