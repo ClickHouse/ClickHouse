@@ -174,7 +174,7 @@ void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {
-        if (column->isEqual(*correlated_column))
+        if (column->isEqualGlobal(*correlated_column))
             return;
     }
     correlated_columns.push_back(correlated_column);

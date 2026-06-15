@@ -46,7 +46,7 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
-            if (projection_nodes[i]->isEqual(*group_by_element))
+            if (projection_nodes[i]->isEqualGlobal(*group_by_element))
             {
                 result.push_back(projection_columns[i]);
                 break;

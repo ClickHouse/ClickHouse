@@ -292,10 +292,10 @@ private:
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
     /// Lambdas that are currently in resolve process
-    QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
+    QueryTreeNodePtrWithGlobalHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
-    QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
+    QueryTreeNodePtrWithGlobalHashSet ctes_in_resolve_process;
 
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
@@ -326,8 +326,8 @@ private:
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
 
     /// Global scalar subquery to scalar value map
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
+    QueryTreeNodePtrWithGlobalHashMap<Block> scalar_subquery_to_scalar_value_local;
+    QueryTreeNodePtrWithGlobalHashMap<Block> scalar_subquery_to_scalar_value_global;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 

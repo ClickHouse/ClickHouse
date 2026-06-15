@@ -42,12 +42,12 @@ ColumnNode::ColumnNode(
     QueryTreeNodePtr expression_node_,
     QueryTreeNodeWeakPtr column_source_
 )
-    : IQueryTreeNode(children_size, weak_pointers_size)
+    : IQueryTreeNode(children_size)
     , column(std::move(column_))
+    , column_source(std::move(column_source_))
 {
     children[expression_child_index] = std::move(expression_node_);
-    getSourceWeakPointer() = std::move(column_source_);
-    column_source_id = extractColumnSourceId(getSourceWeakPointer().lock(), column);
+    column_source_id = extractColumnSourceId(column_source.lock(), column);
 }
 
 ColumnNode::ColumnNode(
@@ -62,28 +62,32 @@ ColumnNode::ColumnNode(
     QueryTreeNodeWeakPtr column_source_,
     ColumnSourceId column_source_id_
 )
-    : IQueryTreeNode(children_size, weak_pointers_size)
+    : IQueryTreeNode(children_size)
     , column(std::move(column_))
+    , column_source(std::move(column_source_))
     , column_source_id(column_source_id_)
 {
-    getSourceWeakPointer() = std::move(column_source_);
 }
 
 void ColumnNode::setColumnSource(const QueryTreeNodePtr & source)
 {
-    getSourceWeakPointer() = source;
+    column_source = source;
     column_source_id = extractColumnSourceId(source, column);
 }
 
-void ColumnNode::onWeakPointerRemappedAfterClone(size_t weak_pointer_index, const QueryTreeNodePtr & new_node)
+void ColumnNode::remapColumnSourceAfterClone(const ReplacementMap & old_pointer_to_new_pointer)
 {
-    chassert(weak_pointer_index == source_weak_pointer_index);
-    column_source_id = extractColumnSourceId(new_node, column);
+    auto it = old_pointer_to_new_pointer.find(column_source.lock().get());
+    if (it == old_pointer_to_new_pointer.end())
+        return;
+
+    column_source = it->second;
+    column_source_id = extractColumnSourceId(it->second, column);
 }
 
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
-    auto lock = getSourceWeakPointer().lock();
+    auto lock = column_source.lock();
     if (!lock)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Column {} {} query tree node does not have valid source node",
@@ -95,7 +99,7 @@ QueryTreeNodePtr ColumnNode::getColumnSource() const
 
 QueryTreeNodePtr ColumnNode::getColumnSourceOrNull() const
 {
-    return getSourceWeakPointer().lock();
+    return column_source.lock();
 }
 
 void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const
@@ -107,7 +111,7 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 
     buffer << ", column_name: " << column.name << ", result_type: " << column.type->getName();
 
-    auto column_source_ptr = getSourceWeakPointer().lock();
+    auto column_source_ptr = column_source.lock();
     if (column_source_ptr)
         buffer << ", source_id: " << state.getNodeId(column_source_ptr.get());
 
@@ -136,27 +140,27 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*com
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, getSourceWeakPointer(), column_source_id);
+    return std::make_shared<ColumnNode>(column, column_source, column_source_id);
 }
 
 ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     std::vector<std::string> column_identifier_parts;
 
-    auto column_source = getColumnSourceOrNull();
-    if (column_source && options.fully_qualified_identifiers)
+    auto column_source_node = getColumnSourceOrNull();
+    if (column_source_node && options.fully_qualified_identifiers)
     {
-        auto node_type = column_source->getNodeType();
+        auto node_type = column_source_node->getNodeType();
         if (node_type == QueryTreeNodeType::TABLE ||
             node_type == QueryTreeNodeType::TABLE_FUNCTION ||
             node_type == QueryTreeNodeType::QUERY ||
             node_type == QueryTreeNodeType::UNION)
         {
-            if (column_source->hasAlias())
+            if (column_source_node->hasAlias())
             {
-                column_identifier_parts = {column_source->getAlias()};
+                column_identifier_parts = {column_source_node->getAlias()};
             }
-            else if (auto * table_node = column_source->as<TableNode>())
+            else if (auto * table_node = column_source_node->as<TableNode>())
             {
                 if (!table_node->getTemporaryTableName().empty())
                 {

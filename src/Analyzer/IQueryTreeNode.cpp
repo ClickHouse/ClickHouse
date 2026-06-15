@@ -1,8 +1,11 @@
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <unordered_map>
 
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -46,12 +49,6 @@ const char * toString(QueryTreeNodeType type)
     }
 }
 
-IQueryTreeNode::IQueryTreeNode(size_t children_size, size_t weak_pointers_size)
-{
-    children.resize(children_size);
-    weak_pointers.resize(weak_pointers_size);
-}
-
 IQueryTreeNode::IQueryTreeNode(size_t children_size)
 {
     children.resize(children_size);
@@ -61,6 +58,38 @@ namespace
 {
 
 using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
+
+/** Collect all nodes reachable from root through children only (not through column source
+  * references). A column source reachable this way is "internal" to the subtree: it lives inside
+  * the compared/hashed expression (a lambda, an interpolate, or a subquery used as an expression).
+  *
+  * Internal sources are compared by content even in local mode, because two independently built
+  * copies of the same expression contain distinct but structurally equal instances of them
+  * (alpha-equivalence) — e.g. a GROUP BY key written as a full expression and the equal projection
+  * expression each resolve their own lambda / subquery. Sources that are NOT reachable through
+  * children are external references, typically the table expressions of the enclosing query's join
+  * tree; those keep id comparison so that the two sides of a self join stay distinguished.
+  */
+void collectNodesReachableViaChildren(const IQueryTreeNode * root, std::unordered_set<const IQueryTreeNode *> & result)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(root);
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (!result.insert(node).second)
+            continue;
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
+    }
+}
 
 struct NodePairHash
 {
@@ -78,15 +107,37 @@ struct NodePairHash
 
 }
 
-bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+/** Compare two trees.
+  *
+  * If compare_column_sources_by_content is false, column references are compared by their column
+  * source ids. Otherwise column sources are compared by content: source nodes are pushed into the
+  * same pairwise traversal, and the equals_pairs set handles repeated references.
+  */
+bool IQueryTreeNode::areTreesEqual(
+    const IQueryTreeNode & lhs,
+    const IQueryTreeNode & rhs,
+    IQueryTreeNode::CompareOptions compare_options,
+    bool compare_column_sources_by_content)
 {
-    if (this == &rhs)
+    if (&lhs == &rhs)
         return true;
+
+    /// In local mode, a column source that is internal to the compared subtree (reachable through
+    /// children) is compared by content; an external source (e.g. the enclosing query's join tree)
+    /// is compared by id. In global mode all sources are compared by content, so the sets are not
+    /// needed.
+    std::unordered_set<const IQueryTreeNode *> lhs_internal_sources;
+    std::unordered_set<const IQueryTreeNode *> rhs_internal_sources;
+    if (!compare_column_sources_by_content)
+    {
+        collectNodesReachableViaChildren(&lhs, lhs_internal_sources);
+        collectNodesReachableViaChildren(&rhs, rhs_internal_sources);
+    }
 
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
 
-    nodes_to_process.emplace_back(this, &rhs);
+    nodes_to_process.emplace_back(&lhs, &rhs);
 
     while (!nodes_to_process.empty())
     {
@@ -112,11 +163,43 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
-        if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
+        if (compare_options.compare_aliases && lhs_node_to_compare->getAlias() != rhs_node_to_compare->getAlias())
             return false;
 
-        const auto & lhs_children = lhs_node_to_compare->children;
-        const auto & rhs_children = rhs_node_to_compare->children;
+        if (lhs_node_to_compare->getNodeType() == QueryTreeNodeType::COLUMN)
+        {
+            const auto & lhs_column_node = assert_cast<const ColumnNode &>(*lhs_node_to_compare);
+            const auto & rhs_column_node = assert_cast<const ColumnNode &>(*rhs_node_to_compare);
+
+            auto lhs_source = lhs_column_node.getColumnSourceOrNull();
+            auto rhs_source = rhs_column_node.getColumnSourceOrNull();
+
+            /// Sources internal to the compared subtree are compared by content (alpha-equivalence
+            /// of independently built copies); external sources keep id comparison (self-join sides
+            /// stay distinguished). In global mode everything is compared by content.
+            bool lhs_internal = lhs_source && lhs_internal_sources.contains(lhs_source.get());
+            bool rhs_internal = rhs_source && rhs_internal_sources.contains(rhs_source.get());
+
+            if (lhs_internal != rhs_internal)
+                return false;
+
+            if (compare_column_sources_by_content || lhs_internal)
+            {
+                if (static_cast<bool>(lhs_source) != static_cast<bool>(rhs_source))
+                    return false;
+
+                if (lhs_source)
+                    nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            }
+            else
+            {
+                if (lhs_column_node.getColumnSourceId() != rhs_column_node.getColumnSourceId())
+                    return false;
+            }
+        }
+
+        const auto & lhs_children = lhs_node_to_compare->getChildren();
+        const auto & rhs_children = rhs_node_to_compare->getChildren();
 
         size_t lhs_children_size = lhs_children.size();
         if (lhs_children_size != rhs_children.size())
@@ -137,116 +220,137 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
         }
 
-        const auto & lhs_weak_pointers = lhs_node_to_compare->weak_pointers;
-        const auto & rhs_weak_pointers = rhs_node_to_compare->weak_pointers;
-
-        size_t lhs_weak_pointers_size = lhs_weak_pointers.size();
-
-        if (lhs_weak_pointers_size != rhs_weak_pointers.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_weak_pointers_size; ++i)
-        {
-            auto lhs_strong_pointer = lhs_weak_pointers[i].lock();
-            auto rhs_strong_pointer = rhs_weak_pointers[i].lock();
-
-            if (!lhs_strong_pointer && !rhs_strong_pointer)
-                continue;
-            if (lhs_strong_pointer && !rhs_strong_pointer)
-                return false;
-            if (!lhs_strong_pointer && rhs_strong_pointer)
-                return false;
-
-            nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());
-        }
-
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
     }
 
     return true;
 }
 
-IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
+/** Compute tree hash with the given node as root.
+  *
+  * If hash_column_sources_by_content is false, column references are hashed by their column source
+  * ids. Otherwise column sources are hashed by content: when a column source is visited the first
+  * time, the hash state is updated with its content and an identifier is registered for it; for
+  * subsequent visits the identifier is hashed instead of the content. This makes the result
+  * canonical across query trees.
+  */
+IQueryTreeNode::Hash IQueryTreeNode::computeTreeHash(
+    const IQueryTreeNode & root,
+    IQueryTreeNode::CompareOptions compare_options,
+    bool hash_column_sources_by_content)
 {
-    return getGlobalTreeHash(compare_options);
-}
+    IQueryTreeNode::HashState hash_state;
 
-IQueryTreeNode::Hash IQueryTreeNode::getGlobalTreeHash(CompareOptions compare_options) const
-{
-    /** Compute tree hash with this node as root.
-      *
-      * Some nodes can contain weak pointers to other nodes. Such weak nodes are not necessary
-      * part of tree that we try to hash, but we need to update hash state with their content.
-      *
-      * Algorithm
-      * For each node in tree we update hash state with their content.
-      * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
-      * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
-      */
-    HashState hash_state;
+    std::unordered_map<const IQueryTreeNode *, size_t> column_source_to_identifier;
 
-    std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
+    /// In local mode, a column source internal to the hashed subtree (reachable through children) is
+    /// hashed by content, an external source by id. In global mode all sources are hashed by content.
+    std::unordered_set<const IQueryTreeNode *> internal_sources;
+    if (!hash_column_sources_by_content)
+        collectNodesReachableViaChildren(&root, internal_sources);
 
     std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process;
-    nodes_to_process.emplace_back(this, false);
+    nodes_to_process.emplace_back(&root, false);
 
     while (!nodes_to_process.empty())
     {
-        const auto [node_to_process, is_weak_node] = nodes_to_process.back();
+        const auto [node_to_process, is_column_source_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
 
-        if (is_weak_node)
+        if (is_column_source_node)
         {
-            auto node_identifier_it = weak_node_to_identifier.find(node_to_process);
-            if (node_identifier_it != weak_node_to_identifier.end())
+            auto node_identifier_it = column_source_to_identifier.find(node_to_process);
+            if (node_identifier_it != column_source_to_identifier.end())
             {
                 hash_state.update(node_identifier_it->second);
                 continue;
             }
 
-            weak_node_to_identifier.emplace(node_to_process, weak_node_to_identifier.size());
+            column_source_to_identifier.emplace(node_to_process, column_source_to_identifier.size());
         }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
-        if (compare_options.compare_aliases && !node_to_process->alias.empty())
+        const auto & alias = node_to_process->getAlias();
+        if (compare_options.compare_aliases && !alias.empty())
         {
-            hash_state.update(node_to_process->alias.size());
-            hash_state.update(node_to_process->alias);
+            hash_state.update(alias.size());
+            hash_state.update(alias);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);
 
-        hash_state.update(node_to_process->children.size());
+        if (node_to_process->getNodeType() == QueryTreeNodeType::COLUMN)
+        {
+            const auto & column_node = assert_cast<const ColumnNode &>(*node_to_process);
+            auto column_source = column_node.getColumnSourceOrNull();
 
-        for (const auto & node_to_process_child : node_to_process->children)
+            /// Mirror areTreesEqual: sources internal to the hashed subtree are hashed by content,
+            /// external sources by id; in global mode everything is hashed by content.
+            bool internal = column_source && internal_sources.contains(column_source.get());
+
+            if (hash_column_sources_by_content || internal)
+            {
+                hash_state.update(column_source != nullptr);
+
+                if (column_source)
+                    nodes_to_process.emplace_back(column_source.get(), true);
+            }
+            else
+            {
+                hash_state.update(column_node.getColumnSourceId());
+            }
+        }
+
+        hash_state.update(node_to_process->getChildren().size());
+
+        for (const auto & node_to_process_child : node_to_process->getChildren())
         {
             if (!node_to_process_child)
                 continue;
 
             nodes_to_process.emplace_back(node_to_process_child.get(), false);
         }
-
-        hash_state.update(node_to_process->weak_pointers.size());
-
-        for (const auto & weak_pointer : node_to_process->weak_pointers)
-        {
-            auto strong_pointer = weak_pointer.lock();
-            if (!strong_pointer)
-                continue;
-
-            nodes_to_process.emplace_back(strong_pointer.get(), true);
-        }
     }
 
     return getSipHash128AsPair(hash_state);
 }
 
+bool IQueryTreeNode::isEqualLocal(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+{
+    return areTreesEqual(*this, rhs, compare_options, false /*compare_column_sources_by_content*/);
+}
+
+bool IQueryTreeNode::isEqualGlobal(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+{
+    return areTreesEqual(*this, rhs, compare_options, true /*compare_column_sources_by_content*/);
+}
+
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHashLocal(CompareOptions compare_options) const
+{
+    return computeTreeHash(*this, compare_options, false /*hash_column_sources_by_content*/);
+}
+
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHashGlobal(CompareOptions compare_options) const
+{
+    return computeTreeHash(*this, compare_options, true /*hash_column_sources_by_content*/);
+}
+
 QueryTreeNodePtr IQueryTreeNode::clone() const
 {
-    return cloneAndReplace({});
+    return cloneAndReplaceImpl({}, false /*fresh_column_source_ids*/);
+}
+
+QueryTreeNodePtr IQueryTreeNode::cloneWithFreshColumnSourceIds() const
+{
+    return cloneAndReplaceImpl({}, true /*fresh_column_source_ids*/);
 }
 
 QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacement_map) const
+{
+    return cloneAndReplaceImpl(replacement_map, false /*fresh_column_source_ids*/);
+}
+
+QueryTreeNodePtr IQueryTreeNode::cloneAndReplaceImpl(const ReplacementMap & replacement_map, bool fresh_column_source_ids) const
 {
     /** Clone tree with this node as root.
       *
@@ -257,13 +361,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
       * After that we can update pointer in weak pointers array using old pointer to new pointer mapping.
       */
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> old_pointer_to_new_pointer;
-
-    struct WeakPointerToUpdate
-    {
-        IQueryTreeNode * owner = nullptr;
-        size_t weak_pointer_index = 0;
-    };
-    std::vector<WeakPointerToUpdate> weak_pointers_to_update_after_clone;
+    std::vector<ColumnNode *> cloned_column_nodes;
 
     QueryTreeNodePtr result_cloned_node_place;
 
@@ -295,7 +393,14 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         node_clone->setAlias(node_to_clone->alias);
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
-        node_clone->weak_pointers = node_to_clone->weak_pointers;
+
+        /** cloneImpl mints a fresh column source id at construction. By default the clone is the
+          * same logical source, so preserve the original id; only when fresh ids were requested do
+          * we keep the freshly minted one.
+          */
+        if (!fresh_column_source_ids && node_clone->isColumnSource())
+            static_cast<IColumnSourceNode &>(*node_clone).column_source_id
+                = static_cast<const IColumnSourceNode &>(*node_to_clone).column_source_id;
 
         for (auto & child : node_clone->children)
         {
@@ -305,10 +410,8 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             nodes_to_clone.emplace_back(child.get(), &child);
         }
 
-        for (size_t i = 0; i < node_clone->weak_pointers.size(); ++i)
-        {
-            weak_pointers_to_update_after_clone.push_back({node_clone.get(), i});
-        }
+        if (auto * column_node_clone = typeid_cast<ColumnNode *>(node_clone.get()))
+            cloned_column_nodes.push_back(column_node_clone);
     }
 
     /** Ensure all replacement_map entries are in old_pointer_to_new_pointer.
@@ -320,29 +423,17 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
     for (const auto & [old_ptr, new_ptr] : replacement_map)
         old_pointer_to_new_pointer.emplace(old_ptr, new_ptr);
 
-    /** Update weak pointers to new pointers if they were changed during clone.
-      * To do this we check old pointer to new pointer map, if weak pointer
-      * strong pointer exists as old pointer in map, reinitialize weak pointer with new pointer.
+    /** Re-point cloned column nodes to the clones of their column sources.
+      * If a column source is not part of the cloned subtree or the replacement map, the column
+      * keeps referencing the previous source and it is expected.
+      *
+      * Example: SELECT id FROM test_table;
+      * During analysis `id` is resolved as column node and `test_table` is column source.
+      * If we clone `id` column, result column node weak source pointer will point to the same `test_table` column source.
       */
-    for (const auto & [owner, weak_pointer_index] : weak_pointers_to_update_after_clone)
-    {
-        auto & weak_pointer = owner->weak_pointers[weak_pointer_index];
-        auto strong_pointer = weak_pointer.lock();
-        auto it = old_pointer_to_new_pointer.find(strong_pointer.get());
+    for (auto * column_node : cloned_column_nodes)
+        column_node->remapColumnSourceAfterClone(old_pointer_to_new_pointer);
 
-        /** If node had weak pointer to some other node and this node is not part of cloned subtree do not update weak pointer.
-          * It will continue to point to previous location and it is expected.
-          *
-          * Example: SELECT id FROM test_table;
-          * During analysis `id` is resolved as column node and `test_table` is column source.
-          * If we clone `id` column, result column node weak source pointer will point to the same `test_table` column source.
-          */
-        if (it == old_pointer_to_new_pointer.end())
-            continue;
-
-        weak_pointer = it->second;
-        owner->onWeakPointerRemappedAfterClone(weak_pointer_index, it->second);
-    }
     result_cloned_node_place->original_ast = original_ast;
 
     return result_cloned_node_place;

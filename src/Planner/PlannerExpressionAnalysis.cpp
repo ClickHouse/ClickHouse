@@ -55,7 +55,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     const QueryTreeNodePtr & filter_expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     FilterAnalysisResult result;
@@ -132,7 +132,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto & query_node = query_tree->as<QueryNode &>();
@@ -312,7 +312,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
     const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto window_function_nodes = collectWindowFunctionNodes(query_tree);
@@ -446,7 +446,7 @@ ProjectionAnalysisResult analyzeProjection(
     const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto [projection_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
@@ -503,7 +503,7 @@ SortAnalysisResult analyzeSort(
     const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto before_sort_actions = std::make_shared<ActionsAndProjectInputsFlag>();
@@ -593,7 +593,7 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const NameSet & required_output_nodes_names,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto [before_limit_by_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(

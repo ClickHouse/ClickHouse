@@ -72,7 +72,7 @@ private:
         bool parents_are_only_deterministic = false;
     };
 
-    static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
+    static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithGlobalHashSet & group_by_keys)
     {
         auto * function = node->as<FunctionNode>();
         if (!function || function->getArguments().getNodes().empty())
@@ -130,7 +130,7 @@ private:
 
     static void optimizeGroupingSet(QueryTreeNodes & grouping_set)
     {
-        QueryTreeNodePtrWithHashSet group_by_keys(grouping_set.begin(), grouping_set.end());
+        QueryTreeNodePtrWithGlobalHashSet group_by_keys(grouping_set.begin(), grouping_set.end());
 
         QueryTreeNodes new_group_by_keys;
         new_group_by_keys.reserve(grouping_set.size());

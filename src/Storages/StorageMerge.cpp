@@ -1157,7 +1157,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
-                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
             }
@@ -1580,7 +1580,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
 
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
+            ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
             const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
 

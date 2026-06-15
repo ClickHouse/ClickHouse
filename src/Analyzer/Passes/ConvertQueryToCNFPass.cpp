@@ -367,7 +367,7 @@ void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expres
             auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
             index_hint_node->getArguments().getNodes().push_back(Analyzer::CNF{std::move(and_group)}.toQueryTree());
             index_hint_node->resolveAsFunction(FunctionFactory::instance().get("indexHint", context));
-            new_group.insert({false, QueryTreeNodePtrWithHash{std::move(index_hint_node)}});
+            new_group.insert({false, QueryTreeNodePtrWithGlobalHash{std::move(index_hint_node)}});
 
             cnf.appendGroup({new_group});
         }
@@ -406,14 +406,14 @@ struct ColumnPrice
 };
 
 using ColumnPriceByName = std::unordered_map<String, ColumnPrice>;
-using ColumnPriceByQueryNode = QueryTreeNodePtrWithHashMap<ColumnPrice>;
+using ColumnPriceByQueryNode = QueryTreeNodePtrWithGlobalHashMap<ColumnPrice>;
 
 class ComponentCollectorVisitor : public ConstInDepthQueryTreeVisitor<ComponentCollectorVisitor>
 {
 public:
     ComponentCollectorVisitor(
         std::set<UInt64> & components_,
-        QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_,
+        QueryTreeNodePtrWithGlobalHashMap<UInt64> & query_node_to_component_,
         const ComparisonGraph<QueryTreeNodePtr> & graph_)
         : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
     {}
@@ -440,7 +440,7 @@ public:
 
 private:
     std::set<UInt64> & components;
-    QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
+    QueryTreeNodePtrWithGlobalHashMap<UInt64> & query_node_to_component;
 
     const ComparisonGraph<QueryTreeNodePtr> & graph;
 };
@@ -450,7 +450,7 @@ class ColumnNameCollectorVisitor : public ConstInDepthQueryTreeVisitor<ColumnNam
 public:
     ColumnNameCollectorVisitor(
         std::unordered_set<std::string> & column_names_,
-        const QueryTreeNodePtrWithHashMap<UInt64> * query_node_to_component_)
+        const QueryTreeNodePtrWithGlobalHashMap<UInt64> * query_node_to_component_)
         : column_names(column_names_), query_node_to_component(query_node_to_component_)
     {}
 
@@ -470,14 +470,14 @@ public:
 
 private:
     std::unordered_set<std::string> & column_names;
-    const QueryTreeNodePtrWithHashMap<UInt64> * query_node_to_component;
+    const QueryTreeNodePtrWithGlobalHashMap<UInt64> * query_node_to_component;
 };
 
 class SubstituteColumnVisitor : public InDepthQueryTreeVisitor<SubstituteColumnVisitor>
 {
 public:
     SubstituteColumnVisitor(
-        const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_,
+        const QueryTreeNodePtrWithGlobalHashMap<UInt64> & query_node_to_component_,
         const std::unordered_map<UInt64, QueryTreeNodePtr> & id_to_query_node_map_,
         ContextPtr context_)
         : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
@@ -513,7 +513,7 @@ public:
     }
 
 private:
-    const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
+    const QueryTreeNodePtrWithGlobalHashMap<UInt64> & query_node_to_component;
     const std::unordered_map<UInt64, QueryTreeNodePtr> & id_to_query_node_map;
     ContextPtr context;
 };
@@ -616,7 +616,7 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
         };
 
         std::set<UInt64> components;
-        QueryTreeNodePtrWithHashMap<UInt64> query_node_to_component;
+        QueryTreeNodePtrWithGlobalHashMap<UInt64> query_node_to_component;
         std::unordered_set<std::string> column_names;
 
         run_for_all([&](QueryTreeNodePtr & node)

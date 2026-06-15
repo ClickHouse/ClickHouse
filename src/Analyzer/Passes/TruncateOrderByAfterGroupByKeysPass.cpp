@@ -59,15 +59,15 @@ public:
 
         /// Collect GROUP BY keys.
         auto & group_by_nodes = query->getGroupBy().getNodes();
-        QueryTreeNodePtrWithHashSet group_by_keys;
+        QueryTreeNodePtrWithGlobalHashSet group_by_keys;
         for (auto & key : group_by_nodes)
-            group_by_keys.insert(QueryTreeNodePtrWithHash(key));
+            group_by_keys.insert(QueryTreeNodePtrWithGlobalHash(key));
 
         if (group_by_keys.empty())
             return;
 
         /// Scan ORDER BY elements and track which GROUP BY keys have been covered.
-        QueryTreeNodePtrWithHashSet covered_keys;
+        QueryTreeNodePtrWithGlobalHashSet covered_keys;
         size_t truncate_after = order_by_nodes.size();
 
         for (size_t i = 0; i < order_by_nodes.size(); ++i)
@@ -92,12 +92,12 @@ private:
     /// or if it is an injective function whose arguments cover the key(s).
     static void collectCoveredKeys(
         const QueryTreeNodePtr & expr,
-        const QueryTreeNodePtrWithHashSet & group_by_keys,
-        QueryTreeNodePtrWithHashSet & covered_keys)
+        const QueryTreeNodePtrWithGlobalHashSet & group_by_keys,
+        QueryTreeNodePtrWithGlobalHashSet & covered_keys)
     {
-        if (group_by_keys.contains(QueryTreeNodePtrWithHash(expr)))
+        if (group_by_keys.contains(QueryTreeNodePtrWithGlobalHash(expr)))
         {
-            covered_keys.insert(QueryTreeNodePtrWithHash(expr));
+            covered_keys.insert(QueryTreeNodePtrWithGlobalHash(expr));
             return;
         }
 

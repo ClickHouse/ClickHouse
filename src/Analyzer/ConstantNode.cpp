@@ -145,7 +145,7 @@ template <typename F>
 boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) const
 {
     HashState hash_state;
-    hash_state.update(getTreeHash());
+    hash_state.update(getTreeHashGlobal());
     /// ast_generator function's address is used as a key to uniquely define generated AST
     hash_state.update(reinterpret_cast<const std::uintptr_t>(&ast_generator));
     auto hash = getSipHash128AsPair(hash_state);

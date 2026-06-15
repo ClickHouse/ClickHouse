@@ -742,7 +742,7 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
         hash.update(where->getTreeHash(/*ignore_aliases=*/true));
 
     chassert(right_table_expression);
-    hash.update(right_table_expression->getGlobalTreeHash());
+    hash.update(right_table_expression->getTreeHashGlobal());
     return hash;
 }
 

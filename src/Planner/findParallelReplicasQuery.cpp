@@ -230,7 +230,7 @@ static void dumpStack(const std::vector<const QueryNode *> & stack)
 {
     std::ranges::reverse_view rv{stack};
     for (const auto * node : rv)
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}\n{}", CityHash_v1_0_2::Hash128to64(node->getTreeHash()), node->dumpTree());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}\n{}", CityHash_v1_0_2::Hash128to64(node->getTreeHashGlobal()), node->dumpTree());
 }
 #endif
 

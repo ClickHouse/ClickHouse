@@ -113,9 +113,9 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
-ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
+ColumnNodePtrWithGlobalHashSet QueryNode::getCorrelatedColumnsSet() const
 {
-    ColumnNodePtrWithHashSet result;
+    ColumnNodePtrWithGlobalHashSet result;
 
     const auto & correlated_columns = getCorrelatedColumns().getNodes();
     result.reserve(correlated_columns.size());
@@ -132,7 +132,7 @@ void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {
-        if (column->isEqual(*correlated_column))
+        if (column->isEqualGlobal(*correlated_column))
             return;
     }
     correlated_columns.push_back(correlated_column);

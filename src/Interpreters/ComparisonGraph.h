@@ -84,10 +84,10 @@ struct GraphComponent
         if constexpr (with_ast)
             return node->getTreeHash(/*ignore_aliases=*/ true);
         else
-            return QueryTreeNodePtrWithHash{node};
+            return QueryTreeNodePtrWithGlobalHash{node};
     }
 
-    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
+    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>, QueryTreeNodePtrWithGlobalHashMap<size_t>>;
     NodeHashToComponentContainer node_hash_to_component;
     std::vector<EqualComponent> vertices;
     std::vector<std::vector<Edge>> edges;

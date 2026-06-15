@@ -22,7 +22,7 @@ public:
 
         if (query_node->hasOrderBy())
         {
-            QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
+            QueryTreeNodeConstRawPtrWithGlobalHashSet unique_expressions_nodes_set;
             QueryTreeNodes result_nodes;
 
             auto & query_order_by_nodes = query_node->getOrderBy().getNodes();
@@ -48,7 +48,7 @@ public:
 
         if (query_node->hasLimitBy())
         {
-            QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
+            QueryTreeNodeConstRawPtrWithGlobalHashSet unique_expressions_nodes_set;
             QueryTreeNodes result_nodes;
 
             auto & query_limit_by_nodes = query_node->getLimitBy().getNodes();

@@ -181,14 +181,14 @@ struct IdentifierResolveScope
       * converted to Nullable (with ancestor types recomputed), and the key converted to Nullable itself.
       * This way the lookup uses exact comparison, including types.
       */
-    QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
+    QueryTreeNodePtrWithGlobalHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)
       * However, the column in the projection still refers to the table as its source.
       * This map is used to revert these columns back to their original columns in the source table.
       */
-    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
+    QueryTreeNodePtrWithGlobalHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;

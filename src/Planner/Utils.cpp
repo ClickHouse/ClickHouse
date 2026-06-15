@@ -339,7 +339,7 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set,
     bool use_column_identifier_as_action_node_name)
 {
     ActionsDAG action_dag(input_columns);
@@ -618,7 +618,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     ActionsDAG filter_actions_dag;
 
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
     PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
     auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     correlated_subtrees.assertEmpty("in row-policy and additional table filters");

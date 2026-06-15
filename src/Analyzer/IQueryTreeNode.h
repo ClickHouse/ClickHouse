@@ -56,10 +56,9 @@ const char * toString(QueryTreeNodeType type);
   * Query tree node represent node in query tree.
   * IQueryTreeNode is base class for all query tree nodes.
   *
-  * Important property of query tree is that each query tree node can contain weak pointers to other
-  * query tree nodes. Keeping weak pointer to other query tree nodes can be useful for example for column
-  * to keep weak pointer to column source, column source can be table, lambda, subquery and preserving of
-  * such information can significantly simplify query planning.
+  * Important property of query tree is that a column node keeps a weak pointer to its column
+  * source together with the column source id. Column source can be table, lambda, subquery, and
+  * preserving of such information can significantly simplify query planning.
   *
   * Another important property of query tree it must be convertible to AST without losing information.
   */
@@ -68,7 +67,6 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
-using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
 class IColumnSourceNode;
 
@@ -138,32 +136,45 @@ public:
 
     /** Is tree equal to other tree with node root.
       *
-      * With default compare options aliases of query tree nodes are compared during isEqual call.
-      * Original ASTs of query tree nodes are not compared during isEqual call.
+      * Column references are compared by their column source ids, i.e. two columns are equal only
+      * if they reference the same column source instance. Because of that the result is meaningful
+      * only for trees from the same id space: the same query tree, or its clones (a clone of a
+      * column keeps referencing the original source unless the source was cloned with it). For
+      * trees built independently use isEqualGlobal.
+      *
+      * With default compare options aliases of query tree nodes are compared.
+      * Original ASTs of query tree nodes are not compared.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    bool isEqualLocal(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+
+    /** Is tree equal to other tree with node root, with equality canonical across query trees.
+      *
+      * Unlike isEqualLocal, column references are compared by the content of their column sources,
+      * with repeated references handled through a correspondence map, so structurally equal trees
+      * built independently compare equal. Traverses into column sources, so it is more expensive
+      * than isEqualLocal.
+      */
+    bool isEqualGlobal(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
 
-    /** Get tree hash identifying current tree
+    /** Get tree hash identifying current tree, consistent with isEqualLocal.
+      *
+      * Column references are hashed by their column source ids, so the hash is meaningful only
+      * within one id space (one query tree and its clones) and must never be used as an identifier
+      * that outlives the query tree or crosses servers — use getTreeHashGlobal for that.
       *
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       *
       * The result is not cached: every call traverses the whole subtree, so the cost is
-      * proportional to the subtree size. Nodes referenced through weak pointers are hashed too:
-      * for example, hashing a `ColumnNode` also hashes its column source (a `TableNode` or
-      * `QueryNode` with all its columns). Because of that, computing the hash per node — e.g.
-      * looking up each projection node in a container keyed by tree hash, such as
-      * `QueryTreeNodePtrWithHashSet` — can make query analysis quadratic in the number of
-      * columns for queries over wide tables. When such a container is usually empty, skip
-      * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
-      * and `PlannerActionsVisitorImpl::visitColumn`).
+      * proportional to the subtree size.
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    Hash getTreeHashLocal(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
-    /** Get tree hash that is canonical across query trees and across processes.
+    /** Get tree hash that is canonical across query trees and across processes, consistent with
+      * isEqualGlobal.
       *
       * The result does not depend on the identity of column source instances: column sources
       * referenced from the tree are hashed by their content, with repeated visits replaced by
@@ -171,11 +182,27 @@ public:
       * Use it for identifiers that must be stable across trees, queries or servers, e.g. prepared
       * set keys and distributed set names shared between the initiator and shards, or hash-join
       * cache keys shared between queries.
+      *
+      * Hashing a `ColumnNode` hashes its column source content (e.g. a `TableNode` or `QueryNode`
+      * with all its columns). Because of that, computing the hash per node — e.g. looking up each
+      * projection node in a container keyed by this hash — can make query analysis quadratic in
+      * the number of columns for queries over wide tables. When such a container is usually empty,
+      * skip the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
+      * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    Hash getGlobalTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    Hash getTreeHashGlobal(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
-    /// Get a deep copy of the query tree
+    /** Get a deep copy of the query tree.
+      * Column source ids are preserved: cloned column sources keep the id of the original, so the
+      * clone is the same logical source and compares equal to the original (see IColumnSourceNode).
+      */
     QueryTreeNodePtr clone() const;
+
+    /** Get a deep copy of the query tree, assigning a fresh id to every cloned column source.
+      * Use it where the clone is a genuinely separate source instance that may coexist with the
+      * original in the same query tree, e.g. a CTE expanded at several references.
+      */
+    QueryTreeNodePtr cloneWithFreshColumnSourceIds() const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is key in replacement map, then instead of clone it
@@ -310,46 +337,38 @@ public:
     }
 
 protected:
-    /** Construct query tree node.
-      * Resize children to children size.
-      * Resize weak pointers to weak pointers size.
-      */
-    explicit IQueryTreeNode(size_t children_size, size_t weak_pointers_size);
-
     /// Construct query tree node and resize children to children size
     explicit IQueryTreeNode(size_t children_size);
 
-    /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
-      * query tree nodes.
+    /** Subclass must compare its internal state with rhs node internal state and do not compare children or referenced column
+      * sources.
       */
     virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
 
-    /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
-      * query tree nodes.
+    /** Subclass must update tree hash with its internal state and do not update tree hash for children or referenced column
+      * sources.
       */
     virtual void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const = 0;
 
-    /** Subclass must clone its internal state and do not clone children or weak pointers to other
-      * query tree nodes.
+    /** Subclass must clone its internal state and do not clone children or referenced column
+      * sources.
       */
     virtual QueryTreeNodePtr cloneImpl() const = 0;
-
-    /** Called on a cloned node during cloneAndReplace for each weak pointer that was re-pointed
-      * to the clone of its previous target or to a node from the replacement map.
-      * new_node is the node the weak pointer points to after the update.
-      */
-    virtual void onWeakPointerRemappedAfterClone(size_t /*weak_pointer_index*/, const QueryTreeNodePtr & /*new_node*/)
-    {
-    }
 
     /// Subclass must convert its internal state and its children to AST
     virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
-    QueryTreeWeakNodes weak_pointers;
 
 private:
     friend class IColumnSourceNode;
+
+    static bool areTreesEqual(
+        const IQueryTreeNode & lhs, const IQueryTreeNode & rhs, CompareOptions compare_options, bool compare_column_sources_by_content);
+
+    static Hash computeTreeHash(const IQueryTreeNode & root, CompareOptions compare_options, bool hash_column_sources_by_content);
+
+    QueryTreeNodePtr cloneAndReplaceImpl(const ReplacementMap & replacement_map, bool fresh_column_source_ids) const;
 
     String alias;
     /// An alias from query. Alias can be replaced by query passes,

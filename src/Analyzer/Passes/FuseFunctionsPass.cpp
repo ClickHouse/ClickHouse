@@ -117,7 +117,7 @@ public:
         argument_to_functions_mapping[*argument_with_source].insert(&node);
     }
 
-    using ArgumentWithSource = std::pair<QueryTreeNodePtrWithHash, QueryTreeNodePtr>;
+    using ArgumentWithSource = std::pair<QueryTreeNodePtrWithGlobalHash, QueryTreeNodePtr>;
 
     std::optional<ArgumentWithSource> createArgumentWithSource(const QueryTreeNodePtr & argument)
     {

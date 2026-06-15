@@ -1046,7 +1046,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
                 auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());

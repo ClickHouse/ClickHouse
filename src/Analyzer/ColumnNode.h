@@ -124,6 +124,13 @@ public:
 
     void setColumnSource(const QueryTreeNodePtr & source);
 
+    /** Re-point the column source to its clone after the column node was cloned, and refresh the
+      * column source id snapshot. If the column source is not in the map (not part of the cloned
+      * subtree or the replacement map), the column keeps referencing the previous source and it is
+      * expected. Used by IQueryTreeNode::cloneAndReplace.
+      */
+    void remapColumnSourceAfterClone(const ReplacementMap & old_pointer_to_new_pointer);
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
@@ -148,31 +155,18 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    void onWeakPointerRemappedAfterClone(size_t weak_pointer_index, const QueryTreeNodePtr & new_node) override;
-
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    const QueryTreeNodeWeakPtr & getSourceWeakPointer() const
-    {
-        return weak_pointers[source_weak_pointer_index];
-    }
-
-    QueryTreeNodeWeakPtr & getSourceWeakPointer()
-    {
-        return weak_pointers[source_weak_pointer_index];
-    }
-
     NameAndTypePair column;
 
-    /// Snapshot of the source's column source id, kept in sync with the source weak pointer.
+    QueryTreeNodeWeakPtr column_source;
+
+    /// Snapshot of the source's column source id, kept in sync with the column source weak pointer.
     ColumnSourceId column_source_id = INVALID_COLUMN_SOURCE_ID;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
-
-    static constexpr size_t source_weak_pointer_index = 0;
-    static constexpr size_t weak_pointers_size = source_weak_pointer_index + 1;
 };
 
 }

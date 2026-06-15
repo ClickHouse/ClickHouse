@@ -12,12 +12,13 @@ namespace DB
   * (for the fake column referenced by the interpolate expression).
   *
   * Each column source instance has an id unique within the process, assigned at construction.
-  * Cloning a column source therefore produces a node with a fresh id: a clone is a new source
-  * instance, not the same source. This matters for example for a self join of a materialized CTE,
-  * where the resolved source subtree is deep-cloned per reference into the same query tree, and
-  * the two clones must stay distinguishable as column sources. References from ColumnNode are kept
-  * consistent under cloning by IQueryTreeNode::cloneAndReplace, which re-points them together with
-  * the column source weak pointers.
+  * By default cloning preserves the id: a clone is the same logical source (e.g. an expression
+  * containing a lambda or a subquery is cloned for a GROUP BY key, and the clone must compare
+  * equal to the original). Sites that mint a genuinely separate instance — most importantly CTE
+  * expansion, where the resolved source subtree is deep-cloned per reference into the same query
+  * tree and the clones must stay distinguishable — use IQueryTreeNode::cloneWithFreshColumnSourceIds.
+  * References from ColumnNode are kept consistent under cloning by IQueryTreeNode::cloneAndReplace,
+  * which re-points them and refreshes their id snapshot.
   */
 class IColumnSourceNode : public IQueryTreeNode
 {
@@ -32,7 +33,11 @@ protected:
     explicit IColumnSourceNode(size_t children_size);
 
 private:
-    const ColumnSourceId column_source_id;
+    friend class IQueryTreeNode;
+
+    /// Mutable so cloneAndReplace can preserve the original id on a clone (a freshly minted id is
+    /// assigned at construction and overwritten there unless fresh ids were explicitly requested).
+    ColumnSourceId column_source_id;
 };
 
 }

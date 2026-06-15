@@ -664,7 +664,7 @@ public:
         return children[correlated_columns_list_index]->as<ListNode &>();
     }
 
-    ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
+    ColumnNodePtrWithGlobalHashSet getCorrelatedColumnsSet() const;
 
     void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 

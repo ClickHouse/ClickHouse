@@ -131,7 +131,7 @@ private:
 
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodes> scope_to_nodes_with_aliases;
 
-    // We need to use raw pointer as a key, not a QueryTreeNodePtrWithHash.
+    // We need to use raw pointer as a key, not a QueryTreeNodePtrWithGlobalHash.
     std::unordered_map<QueryTreeNodePtr, String> table_expression_to_alias;
 };
 

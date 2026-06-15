@@ -269,7 +269,7 @@ const ComparisonGraph<QueryTreeNodePtr> & ConstraintsDescription::QueryTreeData:
     return *graph;
 }
 
-std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::QueryTreeData::getAtomIds(const QueryTreeNodePtrWithHash & node_with_hash) const
+std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::QueryTreeData::getAtomIds(const QueryTreeNodePtrWithGlobalHash & node_with_hash) const
 {
     auto it = query_node_to_atom_ids.find(node_with_hash);
     if (it != query_node_to_atom_ids.end())
