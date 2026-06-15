@@ -107,10 +107,6 @@ public:
 
     ALWAYS_INLINE void update(const char * data, UInt64 size)
     {
-        /// Avoid UB from `data + 8` arithmetic below when `data == nullptr`.
-        if (size == 0)
-            return;
-
         const char * end = data + size;
 
         /// We'll finish to process the remainder of the previous update, if any.
@@ -135,7 +131,9 @@ public:
 
         cnt += end - data;
 
-        while (data + 8 <= end)
+        /// Use pointer subtraction, not `data + 8 <= end`: forming `data + 8` when fewer than
+        /// 8 bytes remain points past `end`, which is undefined behavior ([expr.add]/4).
+        while (end - data >= 8)
         {
             current_word = unalignedLoadLittleEndian<UInt64>(data);
 
