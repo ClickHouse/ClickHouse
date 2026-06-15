@@ -725,8 +725,8 @@ static bool connects(const JoinActionRef * predicate, const BitSet & left, const
     return (participating & left) && (participating & right);
 }
 
-template <typename DPTable, std::unsigned_integral Tuint>
-std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const Tuint & S) const
+template <typename DPTable, std::unsigned_integral TUint>
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUint & S) const
 {
     auto entry = dptable[S];
     if (!entry.left && !entry.right)
@@ -743,13 +743,27 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
 }
 
+ /**
+ * Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
+ *
+ * This algorithm constructs optimal join trees by iterating over subsets of the relations in an ascending order
+ * based on an integer bitmask (from 1 to 2^n - 2). This ordering ensures that for any relation subset S,
+ * the best plans for all its proper sub-plans (subsets S1 ⊂ S) have already been computed, thereby adhering to
+ * Bellman's optimality principle.
+ *
+ * This methodical evaluation of all connected subsets results in the creation of the best plan for each.
+ * The final answer is the optimal plan for the complete set of relations.
+ *
+ * For more detailed information, see "Building Query Compilers": 
+ * (https://pi3.informatik.uni-mannheim.de/~moer/querycompiler.pdf)
+ */
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
-    using bitvec_t = UInt32;
+    using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
     struct DPEntry {
-        bitvec_t neighbor{0};
-        bitvec_t left{0};
-        bitvec_t right{0};
+        Bitvector neighbor{0};
+        Bitvector left{0};
+        Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
@@ -757,16 +771,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         JoinKind kind{JoinKind::Inner};
         std::vector<JoinActionRef*> edges; // required for physical plan generation
     };
-    using dptable_t = DpTable<DPEntry, bitvec_t>;
-    using checker_t = EnumeratorCheckerWithCosts<dptable_t, JoinOrderOptimizer, bitvec_t>;
-    using enumerator_t = EnumCcpSub<checker_t, dptable_t, QueryGraph, bitvec_t>;
+    using Dptable = DpTable<DPEntry, Bitvector>;
+    using Checker = EnumeratorCheckerWithCosts<Dptable, JoinOrderOptimizer, Bitvector>;
+    using Enumerator = EnumCcpSub<Checker, Dptable, QueryGraph, Bitvector>;
 
     const size_t n = query_graph.relation_stats.size();
-    checker_t checker(n, *this);
-    enumerator_t enumerator(n, log);
-    enumerator.enumerate(checker, &checker_t::accept, query_graph);
+    Checker checker(n, *this);
+    Enumerator enumerator(n, log);
+    enumerator.enumerate(checker, &Checker::accept, query_graph);
 
-    const bitvec_t full_set = (static_cast<bitvec_t>(1) << n) - 1;
+    const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
     const auto & dptable = checker.dptable();
 
     /// The full set is assembled only if the join graph is connected. When it is not — e.g.

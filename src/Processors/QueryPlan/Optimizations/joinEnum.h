@@ -10,26 +10,30 @@
 namespace DB
 {
 
-template <std::unsigned_integral Tuint>
+/** 
+* This an efficient iterator that iterates over all (strict) non-empty subsets of a given 
+* input set S (excluding the empty subset).
+*/
+template <std::unsigned_integral TUint>
 class NonEmptySubmasks
 {
 public:
-    using bitvector_t = Tuint;
+    using Bitvector = TUint;
     
-    constexpr explicit NonEmptySubmasks(const bitvector_t x) noexcept : start(x) {}
+    constexpr explicit NonEmptySubmasks(const Bitvector start_) noexcept : start(start_) {}
     
-    constexpr Tuint getFullSet() const noexcept { return start; }
+    constexpr TUint getFullSet() const noexcept { return start; }
 
     class Iterator 
     {
     public:
-        using value_type = Tuint;
+        using value_type = TUint;
         using difference_type = std::ptrdiff_t;
 
-        constexpr Iterator(Tuint start_, Tuint current_) noexcept
+        constexpr Iterator(TUint start_, TUint current_) noexcept
             : start(start_), current(current_) {}
 
-        constexpr Tuint operator*() const noexcept { return current; }
+        constexpr TUint operator*() const noexcept { return current; }
 
         constexpr Iterator& operator++() noexcept
         {
@@ -50,47 +54,47 @@ public:
         }
         
     private:
-        Tuint start;
-        Tuint current;
+        TUint start;
+        TUint current;
     };
 
     constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
     constexpr Iterator end() const noexcept   { return Iterator(start, start); } 
 
 private:
-    bitvector_t start;
+    Bitvector start;
 };
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
+template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
 class EnumCcpSub
 {
-    using consumer_t = TConsumer;
-    using acceptor_fn = consumer_t::acceptor_fn;
-    using dptable_t = TDptable;
-    using graph_t = TQueryGraph;
-    using uint_t = Tuint;
+    using Consumer = TConsumer;
+    using AcceptorFn = Consumer::AcceptorFN;
+    using Dptable = TDptable;
+    using Graph = TQueryGraph;
+    using Uint = TUint;
 public:
     EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_);
     UInt64 n() const { return nr_relations; }
-    void initDPTable(dptable_t & dp_table, const graph_t & query_graph);
-    bool isConnected(const dptable_t & dp_table, const uint_t S1, const uint_t S2) const;
-    void setTableNeighbor(dptable_t & dp_table, const uint_t S1, const uint_t S2) const;
-    void enumerate(consumer_t & consumer, acceptor_fn acceptor, const graph_t & query_graph);
+    void initDPTable(Dptable & dp_table, const Graph & query_graph);
+    bool isConnected(const Dptable & dp_table, const Uint S1, const Uint S2) const;
+    void setTableNeighbor(Dptable & dp_table, const Uint S1, const Uint S2) const;
+    void enumerate(Consumer & consumer, AcceptorFn acceptor, const Graph & query_graph);
 private:
     UInt64 nr_relations{0};
     LoggerPtr log;
 };
 
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
-EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_)
+template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
+EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_)
     : nr_relations(nr_relations_)
     , log(log_)
 {
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
-void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::initDPTable(TDptable & dp_table, const TQueryGraph & query_graph)
+template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
+void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::initDPTable(TDptable & dp_table, const TQueryGraph & query_graph)
 {
     for (auto & edge : query_graph.edges)
     {
@@ -104,13 +108,13 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::initDPTable(TDptable &
 
         LOG_TEST(log, "Edge contains relations: {}", toString(edge_sources));
 
-        std::vector<Tuint> relations;
+        std::vector<TUint> relations;
         // Fill relations with bit positions set in edge_sources
         for (auto relation : edge_sources)
-            relations.push_back(static_cast<Tuint>(relation));
+            relations.push_back(static_cast<TUint>(relation));
 
-        Tuint left_mask = (static_cast<Tuint>(1) << relations[0]);
-        Tuint right_mask = (static_cast<Tuint>(1) << relations[1]);
+        TUint left_mask = (static_cast<TUint>(1) << relations[0]);
+        TUint right_mask = (static_cast<TUint>(1) << relations[1]);
 
         LOG_TEST(log, "Initializing DP table with edge between relations {} and {}", toBinaryString(left_mask), toBinaryString(right_mask));
 
@@ -126,38 +130,47 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::initDPTable(TDptable &
     }
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
-bool EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::isConnected(const TDptable & dp_table, const Tuint S1, const Tuint S2) const
+template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
+bool EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::isConnected(const TDptable & dp_table, const TUint S1, const TUint S2) const
 {
     return (dp_table[S1].neighbor & S2) || (dp_table[S2].neighbor & S1);
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
-void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::setTableNeighbor(TDptable & dp_table, const Tuint S1, const Tuint S2) const
+template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
+void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::setTableNeighbor(TDptable & dp_table, const TUint S1, const TUint S2) const
 {
     dp_table.insert(S1 | S2, S1, S2);
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
-void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::enumerate(
-    TConsumer & consumer,
-    typename EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::acceptor_fn acceptor,
+template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
+void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & consumer,
+    typename EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::AcceptorFn acceptor,
     const TQueryGraph & query_graph)
 {
-    const Tuint full_set_mask = (static_cast<Tuint>(1) << n()) - 1;
+    const TUint full_set_mask = (static_cast<TUint>(1) << n()) - 1;
 
     initDPTable(consumer.dptable(), query_graph);
 
-    for (Tuint s = 1; s <= full_set_mask; ++s)
+    /**
+    * The integer `s` induces the current subset `S` via its binary representation. 
+    * Taken as bitvectors, integers in the range [1, 2^n - 1] map exactly to all 
+    * non-empty subsets of {R_0, ..., R_{n-1}}. 
+    * Iterating in strictly ascending order guarantees a valid sequence for dynamic 
+    * programming: for any given subset, all of its proper subsets are guaranteed to 
+    * be evaluated before the subset itself.
+    * This approach is highly performant because subset generation is driven by 
+    * a native CPU integer increment operation.
+    */
+    for (TUint s = 1; s <= full_set_mask; ++s)
     {
         if (std::popcount(s) <= 1)
             continue;
 
-        NonEmptySubmasks<Tuint> subsets(s);
+        NonEmptySubmasks<TUint> subsets(s);
         for (auto s_iter : subsets)
         {
-            const Tuint lhs = s_iter;
-            const Tuint rhs = (s ^ lhs);
+            const TUint lhs = s_iter;
+            const TUint rhs = (s ^ lhs);
             LOG_TEST(log, "Enumerating subset S: {}, lhs: {}, rhs: {}", toBinaryString(s), toBinaryString(lhs), toBinaryString(rhs));
 
             // only generate non-symmetric ccps

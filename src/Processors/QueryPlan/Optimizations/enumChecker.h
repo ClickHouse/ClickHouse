@@ -6,50 +6,58 @@
 namespace DB
 {
 
-template <class Tdptable, std::unsigned_integral Tuint>
+/**
+* This a helper class that is used to check the plans before storing them
+* into DP table. No plan costing here. 
+*/
+template <class TDptable, std::unsigned_integral TUint>
 class EnumeratorChecker
 {
-    using dptable_t = Tdptable;
-    using consumser_t = EnumeratorChecker;
+    using DPtable = TDptable;
+    using Consumser = EnumeratorChecker;
 public:
-    using acceptor_fn = void (EnumeratorChecker::*)(Tuint, Tuint, Tuint);
+    using acceptor_fn = void (EnumeratorChecker::*)(TUint, TUint, TUint);
     explicit EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), dptab(nr_relations_) {}
-    void accept(Tuint S, Tuint S1, Tuint S2) { dptab.insert(S, S1, S2); }
+    void accept(TUint S_, TUint S1_, TUint S2_) { dptab.insert(S_, S1_, S2_); }
     inline size_t n() const { return nr_relations; }
-    inline dptable_t & dptable() { return dptab; }
-    inline const dptable_t & dptable() const { return dptab; }
-    inline dptable_t * dptablePtr() { return (&dptab); }
+    inline DPtable & dptable() { return dptab; }
+    inline const DPtable & dptable() const { return dptab; }
+    inline DPtable * dptablePtr() { return (&dptab); }
 private:
     const size_t nr_relations;
-    dptable_t dptab;
+    DPtable dptab;
 };
 
-template <class Tdptable, class Toptimizer, std::unsigned_integral Tuint>
+/**
+* This a helper class that is used to check the plans before storing them
+* into DP table. Plans are costed here as well.
+*/
+template <class TDptable, class TOptimizer, std::unsigned_integral TUint>
 class EnumeratorCheckerWithCosts
 {
-    using dptable_t = Tdptable;
-    using consumser_t = EnumeratorCheckerWithCosts;
-    using optimizer_t = Toptimizer;
+    using Dptable = TDptable;
+    using Consumser = EnumeratorCheckerWithCosts;
+    using Optimizer = TOptimizer;
 public:
-    using acceptor_fn = void (EnumeratorCheckerWithCosts::*)(Tuint, Tuint, Tuint);
-    EnumeratorCheckerWithCosts(const size_t nr_relations_, optimizer_t & optimizer_)
+    using AcceptorFN = void (EnumeratorCheckerWithCosts::*)(TUint, TUint, TUint);
+    EnumeratorCheckerWithCosts(const size_t nr_relations_, Optimizer & optimizer_)
         : nr_relations(nr_relations_), dptab(nr_relations_), optimizer(optimizer_) {}
-    double computeJoinCost(Tuint S1, Tuint S2, double selectivity) const;
-    void accept(Tuint S, Tuint S1, Tuint S2);
-    inline size_t n() const { return nr_relations; }
-    inline dptable_t & dptable() { return dptab; }
-    inline const dptable_t & dptable() const { return dptab; }
-    inline dptable_t * dptablePtr() { return (&dptab); }
+    double computeJoinCost(TUint S1, TUint S2, double selectivity) const;
+    void accept(TUint S, TUint S1, TUint S2);
+    size_t n() const { return nr_relations; }
+    Dptable & dptable() { return dptab; }
+    const Dptable & dptable() const { return dptab; }
+    Dptable * dptablePtr() { return (&dptab); }
 private:
     const size_t nr_relations;
-    dptable_t dptab;
-    optimizer_t & optimizer;
+    Dptable dptab;
+    Optimizer & optimizer;
 };
 
-template <class Tdptable, class Toptimizer, std::unsigned_integral Tuint>
+template <class TDptable, class TOptimizer, std::unsigned_integral TUint>
 double
-EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::computeJoinCost(const Tuint S1,
-                                                                         const Tuint S2,
+EnumeratorCheckerWithCosts<TDptable, TOptimizer, TUint>::computeJoinCost(const TUint S1,
+                                                                         const TUint S2,
                                                                          const double selectivity) const
 {
     return dptab[S1].cost + dptab[S2].cost
@@ -58,9 +66,9 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::computeJoinCost(const T
 }
 
 
-template <class Tdptable, class Toptimizer, std::unsigned_integral Tuint>
+template <class TDptable, class TOptimizer, std::unsigned_integral TUint>
 void
-EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, const Tuint S1, const Tuint S2)
+EnumeratorCheckerWithCosts<TDptable, TOptimizer, TUint>::accept(const TUint S, const TUint S1, const TUint S2)
 {
     auto logger = optimizer.log;
     auto lhs = BitSet::fromUint(S1);
@@ -73,7 +81,7 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
     /// LEFT join requires t1). Such a polluted entry has no recorded join (left == right == 0)
     /// and must not be used as a building block, otherwise `buildPhysicalPlan` mistakes it for
     /// a leaf and emits an incomplete tree.
-    auto is_buildable = [&](Tuint s)
+    auto is_buildable = [&](TUint s)
     {
         return std::popcount(s) == 1 || (dptab.map().contains(s) && (dptab[s].left != 0 || dptab[s].right != 0));
     };

@@ -314,7 +314,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
-            {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
+            {"query_plan_optimize_join_order_algorithm", "greedy", "dpsub", "New experimental setting."},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
             {"format_capn_proto_max_message_size", 0, 1_GiB, "Prevent allocating large amount of memory"},
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},

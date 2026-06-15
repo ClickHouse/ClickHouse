@@ -9,51 +9,57 @@
 namespace DB
 {
 
-template <class Tentry, std::unsigned_integral Tuint>
+/**
+* DP table for storing query plans and fetching them.
+* Besides storing plans, it also computes `csg` & `ccp` statistics: 
+* `csg`: (non-empty) connected subgraph,
+* `ccp`: `csg` and its complement pair.
+*/
+template <class TEntry, std::unsigned_integral TUint>
 class DpTable
 {
 public:
-    struct DPEntry : Tentry
+    struct DPEntry : TEntry
     {
         UInt64 count{0};
     };
 
-    using map_t = std::unordered_map<Tuint, DPEntry>;
+    using Map = std::unordered_map<TUint, DPEntry>;
 
-    explicit DpTable(size_t nrRelations);
+    explicit DpTable(size_t nrRelations_);
 
-    void insert(Tuint S, Tuint S1, Tuint S2);
+    void insert(TUint S, TUint S1, TUint S2);
 
-    const DPEntry & operator[](Tuint x) const { return dp_tab.at(x); }
-    DPEntry & operator[](Tuint x) { return dp_tab[x]; }
+    const DPEntry & operator[](TUint x) const { return dp_tab.at(x); }
+    DPEntry & operator[](TUint x) { return dp_tab[x]; }
 
-    bool isConnected(Tuint S) const { return dp_tab.contains(S); }
+    bool isConnected(TUint S) const { return dp_tab.contains(S); }
     size_t n() const { return nr_relations; }
     UInt64 noCcp() const { return nr_ccp; }
     UInt64 noCsg() const { return map().size(); }
-    const map_t & map() const { return dp_tab; }
+    const Map & map() const { return dp_tab; }
 
     void printStatistics() const;
 private:
     const size_t nr_relations;
-    map_t dp_tab;
+    Map dp_tab;
     UInt64 nr_ccp;
 };
 
-template <class Tentry, std::unsigned_integral Tuint>
-DpTable<Tentry, Tuint>::DpTable(size_t nrRelations)
-    : nr_relations(nrRelations)
+template <class TEntry, std::unsigned_integral TUint>
+DpTable<TEntry, TUint>::DpTable(size_t nrRelations_)
+    : nr_relations(nrRelations_)
     , nr_ccp(0)
 {
     /// The DPsub enumerator visits every connected subset, so the table can hold up to 2^n entries.
     dp_tab.reserve(static_cast<size_t>(1) << n());
 
-    for (Tuint i = 0; i < n(); ++i)
-        dp_tab[static_cast<Tuint>(1) << i].count = 1;
+    for (TUint i = 0; i < n(); ++i)
+        dp_tab[static_cast<TUint>(1) << i].count = 1;
 }
 
-template <class Tentry, std::unsigned_integral Tuint>
-void DpTable<Tentry, Tuint>::insert(Tuint S, Tuint S1, Tuint S2)
+template <class TEntry, std::unsigned_integral TUint>
+void DpTable<TEntry, TUint>::insert(TUint S, TUint S1, TUint S2)
 {
     chassert(0 == (S1 & S2));
     chassert(S == (S1 | S2));
@@ -72,8 +78,8 @@ void DpTable<Tentry, Tuint>::insert(Tuint S, Tuint S1, Tuint S2)
     ++nr_ccp;
 }
 
-template <class Tentry, std::unsigned_integral Tuint>
-void DpTable<Tentry, Tuint>::printStatistics() const
+template <class TEntry, std::unsigned_integral TUint>
+void DpTable<TEntry, TUint>::printStatistics() const
 {
     auto * logger = &Poco::Logger::get("JoinOrderOptimizer");
     LOG_INFO(logger, "DP Table Statistics:");
