@@ -10,8 +10,8 @@
 #include <Common/TargetSpecific.h>
 
 
-#ifdef __SSE4_1__
-#    include <smmintrin.h>
+#ifdef __AVX2__
+#    include <immintrin.h>
 #endif
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
@@ -94,14 +94,14 @@ private:
     uint8_t l = 0;
     uint8_t u = 0;
 
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
-#ifdef __SSE4_1__
-    using Vec = __m128i;
-    static Vec vecLoad(const void * p) { return _mm_loadu_si128(reinterpret_cast<const __m128i *>(p)); }
-    static Vec vecCmpeq(Vec a, Vec b) { return _mm_cmpeq_epi8(a, b); }
-    static Vec vecOr(Vec a, Vec b) { return _mm_or_si128(a, b); }
-    static int vecMovemask(Vec v) { return _mm_movemask_epi8(v); }
-    static Vec vecSet1(uint8_t v) { return _mm_set1_epi8(static_cast<int8_t>(v)); }
+#if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#ifdef __AVX2__
+    using Vec = __m256i;
+    static Vec vecLoad(const void * p) { return _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p)); }
+    static Vec vecCmpeq(Vec a, Vec b) { return _mm256_cmpeq_epi8(a, b); }
+    static Vec vecOr(Vec a, Vec b) { return _mm256_or_si256(a, b); }
+    static int vecMovemask(Vec v) { return _mm256_movemask_epi8(v); }
+    static Vec vecSet1(uint8_t v) { return _mm256_set1_epi8(static_cast<int8_t>(v)); }
 #elif defined(__aarch64__) && defined(__ARM_NEON)
     using Vec = uint8x16_t;
     static Vec vecLoad(const void * p) { return vld1q_u8(reinterpret_cast<const uint8_t *>(p)); }
@@ -120,13 +120,15 @@ private:
 #endif
 
     static constexpr size_t N = sizeof(Vec);
+    /// All N cache bits set (needle fills the cache). Computed to be 32-bit safe (1u << 32 is UB).
+    static constexpr uint32_t full_cache_mask = (N >= 32) ? 0xFFFFFFFFu : ((1u << N) - 1u);
 
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
     Vec patl, patu;
-    /// lower and uppercase vectors of first 16 characters of `needle`
+    /// lower and uppercase vectors of first N characters of `needle`
     Vec cachel{};
     Vec cacheu{};
-    int cachemask = 0;
+    uint32_t cachemask = 0;
 #endif
 
 public:
@@ -140,7 +142,7 @@ public:
         l = static_cast<uint8_t>(std::tolower(*needle));
         u = static_cast<uint8_t>(std::toupper(*needle));
 
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
         patl = vecSet1(l);
         patu = vecSet1(u);
 
@@ -154,7 +156,7 @@ public:
             {
                 cache_l_bytes[i] = static_cast<uint8_t>(std::tolower(*needle_pos));
                 cache_u_bytes[i] = static_cast<uint8_t>(std::toupper(*needle_pos));
-                cachemask |= 1 << i;
+                cachemask |= 1u << i;
                 ++needle_pos;
             }
         }
@@ -169,16 +171,16 @@ public:
         if (needle == needle_end)
             return true;
 
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
         if (pos + N <= haystack_end)
         {
             const auto v_haystack = vecLoad(pos);
             const auto v_against_l = vecCmpeq(v_haystack, cachel);
             const auto v_against_u = vecCmpeq(v_haystack, cacheu);
             const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
-            const auto mask = vecMovemask(v_against_l_or_u);
+            const uint32_t mask = static_cast<uint32_t>(vecMovemask(v_against_l_or_u));
 
-            if (0xffff == cachemask)
+            if (full_cache_mask == cachemask)
             {
                 if (mask == cachemask)
                 {
@@ -227,7 +229,7 @@ public:
 
         while (haystack < haystack_end)
         {
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
             if (haystack + N <= haystack_end)
             {
                 const auto v_haystack = vecLoad(haystack);
@@ -235,7 +237,7 @@ public:
                 const auto v_against_u = vecCmpeq(v_haystack, patu);
                 const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
 
-                const auto mask = vecMovemask(v_against_l_or_u);
+                const uint32_t mask = static_cast<uint32_t>(vecMovemask(v_against_l_or_u));
 
                 if (mask == 0)
                 {
@@ -252,9 +254,9 @@ public:
                     const auto v_against_l_offset = vecCmpeq(v_haystack_offset, cachel);
                     const auto v_against_u_offset = vecCmpeq(v_haystack_offset, cacheu);
                     const auto v_against_l_or_u_offset = vecOr(v_against_l_offset, v_against_u_offset);
-                    const auto mask_offset = vecMovemask(v_against_l_or_u_offset);
+                    const uint32_t mask_offset = static_cast<uint32_t>(vecMovemask(v_against_l_or_u_offset));
 
-                    if (0xffff == cachemask)
+                    if (full_cache_mask == cachemask)
                     {
                         if (mask_offset == cachemask)
                         {
