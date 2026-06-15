@@ -94,6 +94,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -1273,8 +1274,10 @@ void ReplicatedMergeTreeSink::waitForQuorum(
         /// quorum node changes, so on a `KILL QUERY` (or once max_execution_time is exceeded) nothing would wake
         /// us up: without this a cancelled quorum INSERT can stay in the processlist for the entire (possibly very
         /// large) insert_quorum_timeout and trip the hung-check. checkTimeLimit() throws QUERY_WAS_CANCELLED on a
-        /// kill and TIMEOUT_EXCEEDED on max_execution_time, matching the check ZooKeeperRetriesControl already
-        /// performs between retries.
+        /// kill and TIMEOUT_EXCEEDED on max_execution_time when timeout_overflow_mode = 'throw'; with
+        /// timeout_overflow_mode = 'break' it returns false instead. A quorum INSERT cannot return a partial
+        /// success while the quorum status is unknown, so we treat a false return as a timeout too (rather than
+        /// silently continuing to wait). This matches the check ZooKeeperRetriesControl performs between retries.
         auto process_list_element = context->getProcessListElement();
         Stopwatch quorum_watch;
         bool quorum_updated = false;
@@ -1290,8 +1293,16 @@ void ReplicatedMergeTreeSink::waitForQuorum(
                 break;
             }
 
-            if (process_list_element)
+            /// checkTimeLimit() throws on a kill or on a 'throw'-mode timeout. A false return means a 'break'-mode
+            /// timeout was reached: the framework would normally let such a query finish gracefully (as a
+            /// successful "break"), but a quorum INSERT must not report success while the quorum status is unknown.
+            /// Escalate to a hard cancellation (the same call CancellationChecker uses for 'throw' mode) so the
+            /// query fails with TIMEOUT_EXCEEDED instead of being silently completed.
+            if (process_list_element && !process_list_element->checkTimeLimit())
+            {
+                process_list_element->cancelQuery(DB::CancelReason::TIMEOUT);
                 process_list_element->checkTimeLimit();
+            }
         }
 
         if (!quorum_updated)
