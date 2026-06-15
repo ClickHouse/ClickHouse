@@ -175,6 +175,7 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
@@ -839,11 +840,13 @@ void LocalServer::processConfig()
     delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
 
         query_id = getClientConfiguration().getString("query_id", "");
     }
+
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing.
+    setupEchoAndHighlightSettings(/* verbose_implies_echo */ true);
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};
@@ -922,9 +925,11 @@ void LocalServer::processConfig()
                  max_server_memory_usage_to_ram_ratio);
     }
 
-    total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    /// The hard limit is installed atomically by `MemoryWorker::setDynamicHardLimitSettings`
+    /// below, under the same mutex that the worker tick uses, to keep config reload and
+    /// dynamic adjustment from racing. Setting it here too would just overwrite the same value.
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
@@ -965,8 +970,22 @@ void LocalServer::processConfig()
             .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
             .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
             .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+            .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
+                : 0.0,
         };
         memory_worker.emplace(memory_worker_config, global_context->getPageCache());
+        /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
+        /// adjustment (which only sees `MemAvailable` or cgroup memory) cannot exceed
+        /// the explicit `max_server_memory_usage`. `clickhouse-local` does not currently
+        /// support config reload, so the ratio is set once here. The call also installs
+        /// `max_server_memory_usage` as the new hard limit atomically with the settings
+        /// update.
+        memory_worker->setDynamicHardLimitSettings(
+            static_cast<Int64>(max_server_memory_usage),
+            server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                ? max_server_memory_usage_to_ram_ratio
+                : 0.0);
         memory_worker->start();
     }
 
@@ -1175,7 +1194,7 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
+                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false, false);
                 attached_system_database = true;
             }
 
@@ -1190,14 +1209,14 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
 

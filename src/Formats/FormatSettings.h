@@ -30,6 +30,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    UInt64 float_precision = 0;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -71,9 +72,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat : uint8_t
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -191,10 +192,21 @@ struct FormatSettings
         UInt64 receive_timeout = 1;
     };
 
+    /// Retry policy for the Confluent Schema Registry HTTP client. Applied to
+    /// transient transport-level failures (connection refused, DNS, socket
+    /// timeouts) and to retryable HTTP responses (5xx, 408, 429). Schema
+    /// validation errors (HTTP 409, malformed Avro JSON) are NOT retried.
+    struct AvroSchemaRegistryRetryConfig
+    {
+        UInt64 max_retries = 5;
+        UInt64 initial_backoff_ms = 100;
+    };
+
     struct
     {
         String schema_registry_url;
         AvroSchemaRegistryTimeouts schema_registry_timeouts;
+        AvroSchemaRegistryRetryConfig schema_registry_retry;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
@@ -404,6 +416,8 @@ struct FormatSettings
 
         bool named_tuples_as_json = true;
 
+        bool use_nbsp_for_padding = false;
+
         enum class Charset : uint8_t
         {
             UTF8,
@@ -558,6 +572,13 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump{};
+
+    struct
+    {
+        UInt64 width = 1024;
+        UInt64 height = 1024;
+        String terminal_mode;
+    } image{};
 
     struct
     {
