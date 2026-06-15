@@ -1007,10 +1007,6 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
-
-        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
-        if (file_name)
-            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
     else if (is_interactive)
     {
@@ -1019,6 +1015,17 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     else
     {
         default_output_format = "TSV";
+    }
+
+    /// Detect output compression independently of format selection.
+    /// Even when the user specifies --output-format or --format explicitly,
+    /// stdout may still be redirected to a compressed file (e.g., output.gz).
+    if (default_output_compression_method == CompressionMethod::None
+        && isFileDescriptorSuitableForInput(stdout_fd))
+    {
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
+        if (file_name)
+            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
     if (getClientConfiguration().has("input-format"))
@@ -1045,7 +1052,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = *format_from_file_name;
         else
             default_input_format = "auto";
+    }
 
+    /// Detect input compression independently of format selection.
+    /// Even when the user specifies --input-format or --format explicitly,
+    /// stdin may still be redirected from a compressed file (e.g., input.gz).
+    if (default_input_compression_method == CompressionMethod::None)
+    {
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
@@ -2645,6 +2658,25 @@ void ClientBase::processParsedSingleQuery(
     {
         output_stream << "Processed rows: " << processed_rows << "\n";
     }
+
+    /// Optional ASCII `BEL` chime when a query finishes after running for at least
+    /// `chime-threshold-seconds`. Emitted on both success and error paths so that a
+    /// user attending to other work is alerted when a long-running query completes.
+    /// The terminal decides whether to make a sound or a visual flash, based on the
+    /// user's terminal preferences.
+    ///
+    /// Only emit `BEL` when stderr is attached to a terminal. When stderr is
+    /// redirected to a file or a pipe (for example when running under
+    /// `clickhouse-test` or any other automation), there is no terminal to chime
+    /// at, and emitting `BEL` would just contaminate the captured stderr stream.
+    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 0);
+    if (chime_threshold_seconds > 0
+        && stderr_is_a_tty
+        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+    {
+        error_stream << '\x07';
+        error_stream.flush();
+    }
 }
 
 
@@ -3547,6 +3579,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
         ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
+        ("chime", po::value<UInt64>()->implicit_value(5)->default_value(5), "Emit the ASCII `BEL` control character (`\\x07`) to stderr when a query finishes (on success and on error) after running for at least this many seconds. Useful to alert when a long-running query completes. Default: 5 seconds (also used when `--chime` is passed without a value). Pass `--chime 0` to disable. Only emitted when stderr is attached to a terminal; redirected stderr (file, pipe) is left untouched. Whether the terminal makes a sound or visual flash depends on the terminal's user preferences.")
 
         ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
@@ -3639,6 +3672,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("print-profile-events", true);
     if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+    if (options.contains("chime"))
+        getClientConfiguration().setUInt64("chime-threshold-seconds", options["chime"].as<UInt64>());
     /// Whether to print the number of processed rows at
     if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);
