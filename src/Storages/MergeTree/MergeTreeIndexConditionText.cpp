@@ -528,15 +528,16 @@ std::string MergeTreeIndexConditionText::getDescription(const std::vector<MergeT
 
     std::string description = stack.size() == 1 ? std::move(stack.front()) : "unknown";
 
-    /// Global part: the overall search mode plus, for each search token, in how many of the analyzed
-    /// parts it was resolved during index analysis (postings folded) rather than deferred to the runtime
-    /// direct read in PREWHERE. The split is per part, so a token may be analyzed in some parts and read
-    /// at runtime in others; see `MergeTreeReaderTextIndex::initializePostingStreams`.
+    /// Global part: the overall search mode plus, for each search token, in how many of the analyzed parts it was
+    /// resolved during index analysis (postings folded) rather than deferred to the runtime direct read in PREWHERE.
     std::vector<const TextIndexAnalyzer *> analyzers;
     analyzers.reserve(granules.size());
+
     for (const auto & granule : granules)
+    {
         if (const auto * granule_text = typeid_cast<const MergeTreeIndexGranuleText *>(granule.get()))
             analyzers.push_back(&granule_text->getAnalyzer());
+    }
 
     /// Without any granule (e.g. all parts were pruned before this index ran) we cannot tell the tokens apart.
     if (analyzers.empty())
@@ -552,16 +553,19 @@ std::string MergeTreeIndexConditionText::getDescription(const std::vector<MergeT
         for (size_t i = 0; i < all_search_tokens.size(); ++i)
         {
             const auto & token = all_search_tokens[i];
-
-            /// A token is analyzed in a part unless it is still needed there but its postings were not
-            /// folded during analysis (i.e. they are deferred to the runtime direct read).
+            /// A token is analyzed in a part unless it is still needed there but its postings
+            /// were not folded during analysis (i.e. they are deferred to the runtime direct read).
             size_t analyzed_in_parts = 0;
+
             for (const auto * analyzer : analyzers)
-                if (!(analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token)))
+            {
+                if (!analyzer->isTokenNeeded(token) || analyzer->hasReadPostings(token))
                     ++analyzed_in_parts;
+            }
 
             if (i > 0)
                 tokens_str += ", ";
+
             tokens_str += fmt::format("\"{}\" (analyzed in {}/{} parts)", token, analyzed_in_parts, analyzers.size());
         }
     }
