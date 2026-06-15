@@ -18,13 +18,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 FUZZ="implicit_transaction=1&throw_on_unsupported_query_inside_transaction=0&ast_fuzzer_runs=5"
+# Fuzzing a non-read-only query (INSERT) requires ast_fuzzer_any_query=1; otherwise
+# executeASTFuzzerQueries returns early for it and the fuzzer never runs.
+FUZZ_ANY="${FUZZ}&ast_fuzzer_any_query=1"
 
 # 1. A read-only fuzzed query must succeed (not return an exception) and not abort the server.
 ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&${FUZZ}" --data-binary "SELECT count() FROM numbers(3)"
 
-# 2. An INSERT under the same settings must succeed and commit its rows (not silently roll them back).
+# 2. An INSERT that is actually fuzzed must still commit its rows (not silently roll them back).
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_04338 (a Int64) ENGINE = MergeTree ORDER BY a"
-${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&${FUZZ}" --data-binary "INSERT INTO t_04338 VALUES (42)"
+${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&${FUZZ_ANY}" --data-binary "INSERT INTO t_04338 VALUES (42)"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(a) FROM t_04338"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_04338"
 
