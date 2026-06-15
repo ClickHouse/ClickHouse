@@ -297,6 +297,11 @@ def main():
         elif "msan" in args.options:
             # MSan is slow
             nproc = int(Utils.cpu_count() * 0.4)
+        elif is_azure_storage:
+            # azure FT runs only under ASan; concurrent heavy queries overrun the
+            # shared server memory cap, so the OvercommitTracker kills queries across
+            # all co-scheduled tests. Lower concurrency to keep peak total RSS under it.
+            nproc = int(Utils.cpu_count() * 0.4)
         elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
             if not info.is_local_run:
