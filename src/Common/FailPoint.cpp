@@ -37,6 +37,7 @@ static struct InitFiu
     REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
+    REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
@@ -58,6 +59,7 @@ static struct InitFiu
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
     ONCE(smt_lightweight_snapshot_fail) \
+    ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
