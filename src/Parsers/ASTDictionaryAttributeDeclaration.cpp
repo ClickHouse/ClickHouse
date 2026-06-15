@@ -9,6 +9,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 {
     const auto res = make_intrusive<ASTDictionaryAttributeDeclaration>(*this);
