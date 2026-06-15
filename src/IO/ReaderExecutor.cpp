@@ -57,6 +57,10 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPutFailed;
     extern const Event ReaderExecutorPutWaitMicroseconds;
     extern const Event ReaderExecutorPromoteSkipped;
+    extern const Event LongConnectionOpened;
+    extern const Event LongConnectionHits;
+    extern const Event LongConnectionFallbacks;
+    extern const Event LongConnectionBytes;
 }
 
 namespace CurrentMetrics
@@ -168,6 +172,10 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
         case PutWaitMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorPutWaitMicroseconds, value); break;
         case PromoteSkipped:            ProfileEvents::increment(ProfileEvents::ReaderExecutorPromoteSkipped, value); break;
+        case LongConnectionOpened:      ProfileEvents::increment(ProfileEvents::LongConnectionOpened, value); break;
+        case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::LongConnectionHits, value); break;
+        case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value); break;
+        case LongConnectionBytes:       ProfileEvents::increment(ProfileEvents::LongConnectionBytes, value); break;
         case NumCounters:               break;
     }
 }
@@ -1805,7 +1813,11 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
         return;
     LongConnectionSlot slot = long_connection_limit->tryAcquire(long_connection_limit);
     if (!slot)
-        return;   /// at capacity - the read falls back to a one-shot
+    {
+        /// Wanted a long connection but the pool is at capacity - read a one-shot instead.
+        out_stats.add(Stats::LongConnectionFallbacks);
+        return;
+    }
     openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
         std::move(slot), out_stats);
 }
@@ -1830,6 +1842,7 @@ void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const Stored
         .slot = std::move(slot),
     });
     out_stats.add(Stats::SourceRequests);
+    out_stats.add(Stats::LongConnectionOpened);
 }
 
 Rope ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t offset,
@@ -1848,6 +1861,8 @@ Rope ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t 
     /// The served bytes are counted as `BytesFromSource` by the caller (the returned
     /// rope), as on the one-shot path.
     Rope rope = conn->readInto(std::move(blocks), logical_offset, stop);
+    out_stats.add(Stats::LongConnectionHits);
+    out_stats.add(Stats::LongConnectionBytes, rope.totalBytes());
     releaseLongAtBound(conn);
     return rope;
 }

@@ -267,6 +267,12 @@ private:
             /// Deferred promotes skipped (writers on loan / pool full / over
             /// the cap): optional work, regenerable by any later read.
             PromoteSkipped,
+            /// Long source connections: opened, windows served from an open one,
+            /// fallbacks to a one-shot when no slot was free, bytes served through them.
+            LongConnectionOpened,
+            LongConnectionHits,
+            LongConnectionFallbacks,
+            LongConnectionBytes,
             NumCounters
         };
 
