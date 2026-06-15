@@ -177,6 +177,29 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
         {
             NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
+            /// The skipped-columns marker is recorded under the physical column
+            /// names that existed when the part was written. A later on-the-fly
+            /// ALTER RENAME COLUMN remaps reads back to the old physical name
+            /// (see getStorageAndSubcolumnNameInPart), so translate the marker
+            /// through the same rename mapping before fillMissingColumns consults
+            /// it by the current requested name. Otherwise a renamed skipped
+            /// column with a DEFAULT expression would read the expression instead
+            /// of the inserted type-default.
+            const auto & part_skipped_columns = data_part_info_for_read->getSerializationInfos().getSkippedColumns();
+            NameSet skipped_columns;
+            if (!part_skipped_columns.empty())
+            {
+                for (const auto & column : converted_requested_columns)
+                {
+                    auto name_in_part = column.getNameInStorage();
+                    if (alter_conversions->isColumnRenamed(name_in_part))
+                        name_in_part = alter_conversions->getColumnOldName(name_in_part);
+
+                    if (part_skipped_columns.contains(name_in_part))
+                        skipped_columns.insert(column.getNameInStorage());
+                }
+            }
+
             bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
             DB::fillMissingColumns(
                 res_columns,
@@ -187,7 +210,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
-                data_part_info_for_read->getSerializationInfos().getSkippedColumns(),
+                skipped_columns,
                 share_nested);
 
             should_evaluate_missing_defaults
