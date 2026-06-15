@@ -409,11 +409,11 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
 {
     std::set<Row> changed_partitions;
 
-    Int64 removed_data_files = 0;
-    Int64 removed_records = 0;
-    Int64 removed_files_size = 0;
-    Int64 removed_position_deletes = 0;
-    Int64 removed_position_delete_files = 0;
+    UInt64 removed_data_files = 0;
+    UInt64 removed_records = 0;
+    UInt64 removed_files_size = 0;
+    UInt64 removed_position_deletes = 0;
+    UInt64 removed_position_delete_files = 0;
 
     auto update_statistic = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries)
     {
@@ -456,7 +456,7 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
         .removed_files_size = removed_files_size,
         .removed_position_delete_files = removed_position_delete_files,
         .removed_position_deletes = removed_position_deletes,
-        .num_partitions = static_cast<Int64>(changed_partitions.size())};
+        .num_partitions = static_cast<UInt64>(changed_partitions.size())};
 }
 
 std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropPartitionExecutor::writeReplacementManifests(

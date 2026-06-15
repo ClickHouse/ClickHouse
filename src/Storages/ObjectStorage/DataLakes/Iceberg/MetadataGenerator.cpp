@@ -313,6 +313,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
     }
 
+    /// Position deletes
     if (snapshot_summary.getOperation() == Iceberg::SnapshotSummaryOperation::OVERWRITE
         && snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>().added_delete_files > 0)
     {
