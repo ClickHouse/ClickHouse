@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # instead the cumulative decompressed size exceeds the limit and the block whose header pushes
 # the running total over the limit is rejected with TOO_LARGE_SIZE_COMPRESSED before it is
 # allocated. (The single-oversized-block path is covered separately in
-# 04324_http_external_table_decompression_bomb, and the exact-boundary path in
+# 04327_http_external_table_decompression_bomb, and the exact-boundary path in
 # 04326_http_external_table_decompression_boundary.)
 
 # User names are server-global, so scope the name to the test database to avoid
