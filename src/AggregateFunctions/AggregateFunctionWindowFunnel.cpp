@@ -591,7 +591,7 @@ public:
         const UInt8 min_event = strict_order ? 0 : 1;
         for (const auto & event : data.events_list)
         {
-            UInt8 event_type;
+            UInt8 event_type = 0;
             if constexpr (Data::strict_once_enabled)
                 event_type = event.event_type;
             else
