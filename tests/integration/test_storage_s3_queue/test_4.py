@@ -503,6 +503,65 @@ def test_alter_settings(started_cluster):
         check_string_settings(node, string_settings)
 
 
+def test_alter_deduplication_v2_guard(started_cluster):
+    # `deduplication_v2` defaults to true and is typically not set explicitly at creation, so it is
+    # absent from the table's stored settings. `ALTER ... MODIFY SETTING deduplication_v2 = 0` must
+    # still be rejected unless `s3queue_allow_unsafe_alter` is set, even though the old value was
+    # only the implicit default (this is the missing-old-setting case `checkAlterIsPossible` must
+    # treat as changed, matching `alter`).
+    node1 = started_cluster.instances["instance"]
+
+    table_name = f"test_alter_dedup_guard_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+
+    # Sanity check: the table did not set `deduplication_v2`, so it carries the default value.
+    assert (
+        "1"
+        == node1.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
+        ).strip()
+    )
+
+    # Without `s3queue_allow_unsafe_alter` the change must be rejected, not silently applied.
+    error = node1.query_and_get_error(
+        f"ALTER TABLE {table_name} MODIFY SETTING deduplication_v2 = 0"
+    )
+    assert "deduplication_v2" in error and "s3queue_allow_unsafe_alter" in error
+
+    # The value must be unchanged after the rejected ALTER.
+    assert (
+        "1"
+        == node1.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
+        ).strip()
+    )
+
+    # With the explicit opt-in the change goes through.
+    node1.query(
+        f"ALTER TABLE {table_name} MODIFY SETTING deduplication_v2 = 0",
+        settings={"s3queue_allow_unsafe_alter": 1},
+    )
+    assert (
+        "0"
+        == node1.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
+        ).strip()
+    )
+
+
 @pytest.mark.skip(
     reason="tracked_files_limit = 1 triggers asserts, but this is unrealistic"
 )

@@ -1326,7 +1326,12 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                 old_settings->begin(), old_settings->end(),
                 [&](const SettingChange & change) { return change.name == setting.name; });
 
-            setting_changed = it != old_settings->end() && it->value != setting.value;
+            /// A setting missing from `old_settings` (not set explicitly at creation) but present in
+            /// `new_settings` is being introduced by this ALTER, so it counts as changed. This must
+            /// match the same condition in `alter`, otherwise the check below is bypassed while
+            /// `alter` still applies the change (e.g. `MODIFY SETTING deduplication_v2 = 0` on a
+            /// table that did not set it at creation).
+            setting_changed = it == old_settings->end() || it->value != setting.value;
         }
 
         if (setting_changed)

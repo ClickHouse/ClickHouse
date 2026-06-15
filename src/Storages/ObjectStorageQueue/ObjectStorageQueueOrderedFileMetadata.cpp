@@ -776,28 +776,39 @@ bool ObjectStorageQueueOrderedFileMetadata::prepareBucketOwnershipCheckRequests(
         return false;
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-    if (!zk_client->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
-        return false;
 
-    /// Validator matching only the lock node's `czxid`; `-1` means "ignore" for every other field
-    /// (see `checkNodeStat`), so the check passes only if it is still the exact node we acquired.
-    Coordination::Stat match{};
-    match.czxid = bucket_info->lock_czxid;
-    match.mzxid = -1;
-    match.ctime = -1;
-    match.mtime = -1;
-    match.version = -1;
-    match.cversion = -1;
-    match.aversion = -1;
-    match.ephemeralOwner = -1;
-    match.dataLength = -1;
-    match.numChildren = -1;
-    match.pzxid = -1;
+    /// The atomic commit-time ownership assertion matches the lock node's `czxid`, which requires
+    /// Keeper's `CHECK_STAT` feature (plain ZooKeeper cannot match arbitrary stat fields inside a
+    /// multi). When it is available, assert atomically (within the commit multi) that we still own
+    /// this exact lock node.
+    if (zk_client->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
+    {
+        /// Validator matching only the lock node's `czxid`; `-1` means "ignore" for every other field
+        /// (see `checkNodeStat`), so the check passes only if it is still the exact node we acquired.
+        Coordination::Stat match{};
+        match.czxid = bucket_info->lock_czxid;
+        match.mzxid = -1;
+        match.ctime = -1;
+        match.mtime = -1;
+        match.version = -1;
+        match.cversion = -1;
+        match.aversion = -1;
+        match.ephemeralOwner = -1;
+        match.dataLength = -1;
+        match.numChildren = -1;
+        match.pzxid = -1;
 
-    /// Assert atomically (within the commit multi) that we still own this exact lock node ...
-    requests.push_back(zkutil::makeCheckRequest(
-        bucket_info->bucket_lock_path, /* version */-1, /* not_exists */false, match));
-    /// ... and refresh its mtime so the TTL cleanup does not clean up a lock that is actively committing.
+        requests.push_back(zkutil::makeCheckRequest(
+            bucket_info->bucket_lock_path, /* version */-1, /* not_exists */false, match));
+    }
+
+    /// Refresh the lock node's mtime so the TTL cleanup does not clean up a lock that is actively
+    /// committing. This is a plain `SET`, so it also works against external ZooKeeper without
+    /// `CHECK_STAT`: it heartbeats the lock and, if the lock was already removed (e.g. by the TTL
+    /// cleanup) and not yet re-acquired, fails the whole commit multi with `ZNONODE` so the file is
+    /// retried instead of double-committed. Combined with the non-atomic `stillOwnsBucket` check on
+    /// the error path, this keeps the ownership-loss race covered even without `CHECK_STAT`, though
+    /// only the `CHECK_STAT` path makes it fully atomic.
     requests.push_back(zkutil::makeSetRequest(
         bucket_info->bucket_lock_path, bucket_info->processor_info, /* version */-1));
     return true;

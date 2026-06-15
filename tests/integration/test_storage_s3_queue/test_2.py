@@ -515,19 +515,26 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
     ) == total_rows
 
 
-def _wait_for_lock_stat(zk, lock_path, timeout=60):
+def _wait_for_any_bucket_lock(zk, keeper_path, timeout=60):
+    """Bucket ownership is only enabled when there is more than one bucket, so a lock can appear
+    under any `buckets/<i>/lock`. Return (lock_path, stat) for whichever bucket lock is acquired
+    first, or (None, None) on timeout."""
+    buckets_path = f"{keeper_path}/buckets"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        stat = zk.exists(lock_path)
-        if stat is not None:
-            return stat
+        for bucket in zk.get_children(buckets_path) or []:
+            lock_path = f"{buckets_path}/{bucket}/lock"
+            stat = zk.exists(lock_path)
+            if stat is not None:
+                return lock_path, stat
         time.sleep(0.05)
-    return None
+    return None, None
 
 
 def _setup_slow_ordered_bucket_lock_test(started_cluster, table_name, extra_settings):
-    """Ordered + single bucket on two replicas, with a deliberately slow MV so the single
-    bucket lock is held long enough for the cleanup (or the test) to remove it mid-flight.
+    """Ordered + bucketed (more than one bucket, so bucket ownership and its lock nodes are
+    actually used) on two replicas, with a deliberately slow MV so a bucket lock is held long
+    enough for the cleanup (or the test) to remove it mid-flight.
     Returns (node1, node2, keeper_path, dst_table_name)."""
     node1 = started_cluster.instances["instance"]
     node2 = started_cluster.instances["instance2"]
@@ -537,7 +544,9 @@ def _setup_slow_ordered_bucket_lock_test(started_cluster, table_name, extra_sett
 
     settings = {
         "keeper_path": keeper_path,
-        "s3queue_buckets": 1,
+        # Bucket ownership (and the `buckets/<i>/lock` nodes) is only enabled with more than one
+        # bucket; a single bucket would never create a lock node for the test to act on.
+        "s3queue_buckets": 2,
         "s3queue_processing_threads_num": 1,
         # One commit per batch, so the lock is held for the whole (slow) batch with no heartbeat.
         "s3queue_max_processed_files_before_commit": 10000,
@@ -622,9 +631,8 @@ def test_ordered_bucket_lock_deleted_during_commit(started_cluster):
     )
 
     zk = started_cluster.get_kazoo_client("zoo1")
-    lock_path = f"{keeper_path}/buckets/0/lock"
 
-    stat_before = _wait_for_lock_stat(zk, lock_path)
+    lock_path, stat_before = _wait_for_any_bucket_lock(zk, keeper_path)
     assert stat_before is not None, "bucket lock was never acquired"
     zk.delete(lock_path)
 
