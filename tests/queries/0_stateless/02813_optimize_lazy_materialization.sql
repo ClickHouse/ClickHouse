@@ -385,7 +385,7 @@ SELECT
     map('key1', number + 1, 'key2', number + 2)
 FROM numbers(0, 1000);
 -- { echoOn }
-SELECT * FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
+SELECT a, b, mapSort(c) FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
 SELECT a, b, c['key1'] FROM optimize_lazy_materialization_with_map_data_type ORDER BY b LIMIT 10;
 -- { echoOff }
 

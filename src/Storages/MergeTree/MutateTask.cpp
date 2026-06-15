@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -100,6 +101,7 @@ namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
+    extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
 
 namespace ErrorCodes
@@ -1349,6 +1351,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out_comp));
     }
 
+    if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
@@ -2552,12 +2555,28 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
+            /// Add checksums of projection parts that were rebuilt during this mutation.
+            /// `MergedColumnOnlyOutputStream::fillChecksums` no longer adds them because that addition
+            /// is redundant during vertical merge (`MergedBlockOutputStream::finalizePartAsync` adds
+            /// them later). For mutations there is no such later step, so add them here.
+            for (const auto & [projection_name, projection_part] : ctx->new_data_part->getProjectionParts())
+            {
+                if (projection_part->checksums.empty())
+                    continue;
+                ctx->new_data_part->checksums.addFile(
+                    projection_name + ".proj",
+                    projection_part->checksums.getTotalSizeOnDisk(),
+                    projection_part->checksums.getTotalChecksumUInt128());
+            }
+
             /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
             /// Such an entry points at a directory missing from the new part, so the projection
             /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
             /// An inherited entry is an orphan when both hold:
             ///   1. the directory was not hardlinked into the new part, and
             ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
+            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
+            /// one above operate on disjoint sets and never fight over the same checksum entry.
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
                 const auto projection_file = projection.getDirectoryName();
@@ -2815,8 +2834,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     /// We need to rewrite statistics because they have different serialization with nullable type.
+    /// `column_desc` can be `nullptr` if the column was concurrently dropped from the metadata
+    /// snapshot used here (mutation commands and metadata can drift apart under concurrent ALTERs).
+    /// Skip this optimization in that case; the normal mutation path will surface the error.
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
-    if (!column_desc->statistics.empty())
+    fiu_do_on(FailPoints::mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc, { column_desc = nullptr; });
+    if (!column_desc || !column_desc->statistics.empty())
         return false;
 
     return true;
