@@ -67,8 +67,8 @@ bool initFirstCharacter(
 
 /// Shared: build cache byte arrays from needle with case folding.
 /// Returns true if force_fallback should be set (case expansion mismatch).
-/// Only used by SSE4.1 (Default) and AVX2 (x86_64_v3) paths.
-#if defined(__SSE4_1__) || USE_MULTITARGET_CODE || (defined(__aarch64__) && defined(__ARM_NEON))
+/// Only used by the AVX2 (x86_64_v3) and ARM NEON (Default) cache searchers.
+#if USE_MULTITARGET_CODE || (defined(__aarch64__) && defined(__ARM_NEON))
 bool buildCacheBytes(
     const uint8_t * needle,
     const uint8_t * needle_end,
@@ -167,7 +167,7 @@ UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * n
     if (force_fallback)
         return;
 
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__aarch64__) && defined(__ARM_NEON)
     patl = vecSet1(l);
     patu = vecSet1(u);
 
@@ -192,7 +192,7 @@ bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(
 
 bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
 {
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__aarch64__) && defined(__ARM_NEON)
     constexpr size_t N = sizeof(Vec);
 
     if (likely(!force_fallback) && pos + N <= haystack_end)
@@ -230,7 +230,7 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
     if (needle_size == 0)
         return haystack;
 
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__aarch64__) && defined(__ARM_NEON)
     constexpr size_t N = sizeof(Vec);
 
     /// Continuation bytes (10xxxxxx): after XOR with 0x80 → 00xxxxxx, AND with 0x40 → 0.

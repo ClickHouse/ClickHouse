@@ -312,8 +312,9 @@ public:
 /// Case-insensitive UTF-8 searcher
 /// Uses StringZilla on x86_64_v4 (AVX-512), Poco + SIMD on ARM NEON, x86_64_v3 (AVX2), and Default (SSE4.1).
 
-/// Default (Poco-based) implementation for older x86_64 CPUs and ARM NEON.
-/// Declared directly (not via DECLARE_DEFAULT_CODE) because the class uses #ifdef for SIMD members.
+/// Default (Poco-based) implementation: NEON on ARM, serial on non-AVX2 x86. The SSE (v2) path was dropped;
+/// x86 SIMD lives in the x86_64_v3 (AVX2) and x86_64_v4 (StringZilla) specializations below.
+/// Declared directly (not via DECLARE_DEFAULT_CODE) because the class uses #ifdef for NEON members.
 namespace TargetSpecific::Default
 {
 
@@ -329,18 +330,7 @@ private:
     uint8_t l = 0;
     uint8_t u = 0;
 
-#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
-#ifdef __SSE4_1__
-    using Vec = __m128i;
-    static Vec vecLoad(const void * p) { return _mm_loadu_si128(reinterpret_cast<const __m128i *>(p)); }
-    static Vec vecCmpeq(Vec a, Vec b) { return _mm_cmpeq_epi8(a, b); }
-    static Vec vecOr(Vec a, Vec b) { return _mm_or_si128(a, b); }
-    static Vec vecXor(Vec a, Vec b) { return _mm_xor_si128(a, b); }
-    static Vec vecAnd(Vec a, Vec b) { return _mm_and_si128(a, b); }
-    static int vecMovemask(Vec v) { return _mm_movemask_epi8(v); }
-    static Vec vecSet1(uint8_t v) { return _mm_set1_epi8(static_cast<int8_t>(v)); }
-    static Vec vecZero() { return _mm_setzero_si128(); }
-#elif defined(__aarch64__) && defined(__ARM_NEON)
+#if defined(__aarch64__) && defined(__ARM_NEON)
     using Vec = uint8x16_t;
     static Vec vecLoad(const void * p) { return vld1q_u8(reinterpret_cast<const uint8_t *>(p)); }
     static Vec vecCmpeq(Vec a, Vec b) { return vceqq_u8(a, b); }
@@ -358,7 +348,6 @@ private:
     }
     static Vec vecSet1(uint8_t v) { return vdupq_n_u8(v); }
     static Vec vecZero() { return vdupq_n_u8(0); }
-#endif
 
     Vec patl;
     Vec patu;
@@ -491,70 +480,55 @@ public:
 };
 
 #else
-/// On x86_64: runtime dispatch between x86_64_v4 (StringZilla), x86_64_v3 (AVX2), and Default (SSE4.1)
+/// On x86_64 with the AVX2 baseline and multitarget dispatch: pick AVX-512 StringZilla (v4) when the CPU
+/// supports it, otherwise AVX2 (v3). v3 is the floor: the binary already requires AVX2 to run, so v3 is
+/// always available and the serial Default impl is only used (no dispatch) on non-AVX2 x86 builds.
 class UTF8CaseInsensitiveStringSearcher final
 {
 private:
-    std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && defined(__AVX2__)
+    const bool use_v4 = isArchSupported(TargetArch::x86_64_v4);
     std::unique_ptr<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl> impl_v4;
     std::unique_ptr<TargetSpecific::x86_64_v3::UTF8CaseInsensitiveSearcherImpl> impl_v3;
-#endif
-    enum class Impl : uint8_t { Default, V3, V4 };
-
-    static Impl selectImpl()
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-            return Impl::V4;
-        if (isArchSupported(TargetArch::x86_64_v3))
-            return Impl::V3;
-#endif
-        return Impl::Default;
-    }
-
-    const Impl active = selectImpl();
 
 public:
     UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
     {
-        switch (active)
-        {
-#if USE_MULTITARGET_CODE
-            case Impl::V4:
-                impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
-                break;
-            case Impl::V3:
-                impl_v3 = std::make_unique<TargetSpecific::x86_64_v3::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
-                break;
-#endif
-            default:
-                impl_default = std::make_unique<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
-                break;
-        }
+        if (use_v4)
+            impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+        else
+            impl_v3 = std::make_unique<TargetSpecific::x86_64_v3::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
     }
 
     ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
     {
-#if USE_MULTITARGET_CODE
-        if (active == Impl::V4)
-            return impl_v4->compare(haystack, haystack_end, pos);
-        if (active == Impl::V3)
-            return impl_v3->compare(haystack, haystack_end, pos);
-#endif
-        return impl_default->compare(haystack, haystack_end, pos);
+        return use_v4 ? impl_v4->compare(haystack, haystack_end, pos) : impl_v3->compare(haystack, haystack_end, pos);
     }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-#if USE_MULTITARGET_CODE
-        if (active == Impl::V4)
-            return impl_v4->search(haystack, haystack_end);
-        if (active == Impl::V3)
-            return impl_v3->search(haystack, haystack_end);
-#endif
-        return impl_default->search(haystack, haystack_end);
+        return use_v4 ? impl_v4->search(haystack, haystack_end) : impl_v3->search(haystack, haystack_end);
     }
+#else
+    /// Non-AVX2 x86 build: serial Default impl, no runtime dispatch.
+    TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl impl;
+
+public:
+    UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
+        : impl(needle_, needle_size)
+    {
+    }
+
+    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
+    {
+        return impl.compare(haystack, haystack_end, pos);
+    }
+
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    {
+        return impl.search(haystack, haystack_end);
+    }
+#endif
 
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
