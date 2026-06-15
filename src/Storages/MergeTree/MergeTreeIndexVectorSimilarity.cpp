@@ -1451,14 +1451,14 @@ E8Query buildE8Query(const E8Codebook & cb, const float * rqhat, size_t dimensio
     }
 
     /// For 4-bit codebooks (num_points <= 16) also build an int8-quantized LUT for the AVX-512 `vpshufb` fast scan.
-    /// A single global scale maps inner products to int8; the per-vector sum of M <= 258 such values stays within int16.
+    /// A single global scale maps inner products to the full int8 range; the fast scan accumulates the per-vector sum
+    /// of M such values in int32, which cannot overflow within the validator's `M * 2^bits` cap.
     if (q.num_points <= 16)
     {
         float maxabs = 0.0f;
         for (float x : q.lut)
             maxabs = std::max(maxabs, std::abs(x));
-        const float clamp_max = std::min(127.0f, 32767.0f / static_cast<float>(std::max<size_t>(q.M, 1)));
-        const float scale = (maxabs > 0.0f) ? (clamp_max / maxabs) : 0.0f;
+        const float scale = (maxabs > 0.0f) ? (127.0f / maxabs) : 0.0f;
         q.lut_inv_scale = (scale > 0.0f) ? (1.0f / scale) : 0.0f;
         q.lut_i8.assign(q.M * 16, 0);
         for (size_t m = 0; m < q.M; ++m)
@@ -1531,7 +1531,7 @@ struct TopKHeap
 #if USE_MULTITARGET_CODE
 /// AVX-512 "fast scan" for the 4-bit e8 path (num_points <= 16, 1-byte codes). The per-vector ADC gather doesn't
 /// vectorize; instead we process 64 vectors at once: `_mm512_shuffle_epi8` performs 64 16-entry LUT lookups for one
-/// sub-quantizer in a single instruction, accumulated across sub-quantizers in int16. This is the same idea as
+/// sub-quantizer in a single instruction, accumulated across sub-quantizers in int32. This is the same idea as
 /// FAISS/ScaNN PQ fast scan and brings the scan into the popcount kernels' regime. Distances for i in [begin, end)
 /// are pushed into `topk`. Codes are transposed into sub-quantizer-major tiles of 64 in a scratch buffer (no on-disk change).
 X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE
@@ -1542,7 +1542,7 @@ void e8FastScanICELAKE(const E8Query & q, const char * base, size_t bytes_per_ve
     const float inv_scale = q.lut_inv_scale;
 
     std::vector<UInt8> idxbuf(M * 64);
-    alignas(64) Int16 sums[64];
+    alignas(64) Int32 sums[64];
 
     auto emit = [&](size_t idx, float ip)
     {
@@ -1571,19 +1571,27 @@ void e8FastScanICELAKE(const E8Query & q, const char * base, size_t bytes_per_ve
                 idxbuf[m * 64 + v] = code[m];
         }
 
-        __m512i acc0 = _mm512_setzero_si512(); /// int16 sums for vectors 0..31 of the block
-        __m512i acc1 = _mm512_setzero_si512(); /// int16 sums for vectors 32..63
+        /// Accumulate in int32 (16 vectors per register, four registers for the block of 64). int32 cannot overflow
+        /// within the validator's `M * 2^bits` cap, whereas an int16 accumulator could for large M.
+        __m512i acc0 = _mm512_setzero_si512(); /// vectors 0..15 of the block
+        __m512i acc1 = _mm512_setzero_si512(); /// vectors 16..31
+        __m512i acc2 = _mm512_setzero_si512(); /// vectors 32..47
+        __m512i acc3 = _mm512_setzero_si512(); /// vectors 48..63
         for (size_t m = 0; m < M; ++m)
         {
             /// Broadcast this sub-quantizer's 16-byte LUT to all four 128-bit lanes (vpshufb looks up per lane).
             const __m512i lutm = _mm512_broadcast_i32x4(_mm_loadu_si128(reinterpret_cast<const __m128i *>(q.lut_i8.data() + m * 16)));
             const __m512i idx = _mm512_loadu_si512(reinterpret_cast<const void *>(idxbuf.data() + m * 64));
             const __m512i res = _mm512_shuffle_epi8(lutm, idx); /// 64 int8 = LUT_m[code]
-            acc0 = _mm512_add_epi16(acc0, _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(res, 0)));
-            acc1 = _mm512_add_epi16(acc1, _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(res, 1)));
+            acc0 = _mm512_add_epi32(acc0, _mm512_cvtepi8_epi32(_mm512_extracti32x4_epi32(res, 0)));
+            acc1 = _mm512_add_epi32(acc1, _mm512_cvtepi8_epi32(_mm512_extracti32x4_epi32(res, 1)));
+            acc2 = _mm512_add_epi32(acc2, _mm512_cvtepi8_epi32(_mm512_extracti32x4_epi32(res, 2)));
+            acc3 = _mm512_add_epi32(acc3, _mm512_cvtepi8_epi32(_mm512_extracti32x4_epi32(res, 3)));
         }
         _mm512_storeu_si512(reinterpret_cast<void *>(sums), acc0);
-        _mm512_storeu_si512(reinterpret_cast<void *>(sums + 32), acc1);
+        _mm512_storeu_si512(reinterpret_cast<void *>(sums + 16), acc1);
+        _mm512_storeu_si512(reinterpret_cast<void *>(sums + 32), acc2);
+        _mm512_storeu_si512(reinterpret_cast<void *>(sums + 48), acc3);
 
         for (size_t v = 0; v < 64; ++v)
             emit(i + v, static_cast<float>(sums[v]) * inv_scale);
