@@ -46,3 +46,7 @@ DROP TABLE t_lc_nullable;
 
 SELECT 'Correlated subquery: not supported';
 SELECT UNIQUE(SELECT number FROM numbers(5) WHERE number = n) FROM (SELECT 1 AS n); -- { serverError NOT_IMPLEMENTED }
+
+SELECT 'UNIQUE is not supported with the old analyzer';
+SET enable_analyzer = 0;
+SELECT UNIQUE(SELECT 1); -- { serverError NOT_IMPLEMENTED }
