@@ -1393,11 +1393,16 @@ The following settings are available:
 | `max_entries` | The maximum number of `SELECT` query results stored in the cache.                      | `1024`        |
 | `max_entry_size_in_bytes` | The maximum size in bytes `SELECT` query results may have to be saved in the cache.    | `1048576`     |
 | `max_entry_size_in_rows` | The maximum number of rows `SELECT` query results may have to be saved in the cache.   | `30000000`    |
-| `max_size_in_bytes` | The maximum cache size in bytes. `0` means the query cache is disabled.                | `1073741824`  |
+| `max_size_in_bytes` | The maximum in-memory cache size in bytes. `0` means the in-memory query cache is disabled. | `1073741824`  |
+| `disk` | The disk (defined in `storage_configuration`) used to store the on-disk cache. Only used when on-disk caching is enabled via the [enable_writes_to_query_cache_disk](/operations/settings/settings#enable_writes_to_query_cache_disk) / [enable_reads_from_query_cache_disk](/operations/settings/settings#enable_reads_from_query_cache_disk) query-level settings. | `default` |
+| `path` | The path of the on-disk cache, relative to the disk root.                              | `query_result_cache` |
+| `max_disk_size_in_bytes` | The maximum size of the on-disk cache in bytes.                                        | `10737418240` |
+| `max_disk_entries` | The maximum number of `SELECT` query results stored in the on-disk cache.              | `10240`       |
 
 :::note
 - Changed settings take effect immediately.
-- Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
+- Data for the in-memory query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
+- Query results can additionally be cached on disk so that they survive a restart and so that the cache can grow beyond the available memory. See [Caching to disk](/operations/query-cache#caching-to-disk) for details.
 :::
 
 **Example**
@@ -1408,6 +1413,11 @@ The following settings are available:
     <max_entries>1024</max_entries>
     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
     <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    <!-- On-disk cache (used only when enabled via the per-query enable_writes_to_query_cache_disk / enable_reads_from_query_cache_disk settings). -->
+    <disk>default</disk>
+    <path>query_result_cache</path>
+    <max_disk_size_in_bytes>10737418240</max_disk_size_in_bytes>
+    <max_disk_entries>10240</max_disk_entries>
 </query_cache>
 ```
 

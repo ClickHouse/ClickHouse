@@ -552,6 +552,11 @@
         <max_entries>1024</max_entries>
         <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+        <!-- On-disk cache. Used only when enabled per query via enable_writes_to_query_cache_disk / enable_reads_from_query_cache_disk. -->
+        <disk>default</disk>
+        <path>query_result_cache</path>
+        <max_disk_size_in_bytes>10737418240</max_disk_size_in_bytes>
+        <max_disk_entries>10240</max_disk_entries>
     </query_cache>
     -->
 
