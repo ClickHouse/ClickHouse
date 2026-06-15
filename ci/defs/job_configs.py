@@ -207,15 +207,21 @@ class JobConfigs:
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()
-        # Alias 127.0.0.2+ on lo0 before the tests (macOS does not auto-route
-        # 127.0.0.0/8 like Linux) so remote()/cluster() tests can reach them.
-        # Idempotent: skip an address already aliased. Chained with && and || exit 1
-        # so a real alias failure stops before fast_test.py instead of letting the
-        # tests run and report misleading socket timeouts.
+        # macOS does not auto-route 127.0.0.0/8, so alias 127.0.0.2+ on lo0 for the
+        # run (remote()/cluster() tests need them reachable), then remove the aliases:
+        # the macos_m2 runner is reused, so a leaked alias makes 127.0.0.2+ look local
+        # to later jobs. Both setup and teardown run in the command, not pre/post
+        # hooks, because praktika does not propagate hook exit codes to job status, so
+        # a hook cannot fail the job. Both are idempotent and fail-closed (setup skips
+        # an already-present alias and aborts on failure; teardown skips an absent
+        # alias and sets rc=1 on a failed removal); the fast_test.py exit code is kept.
         command=(
             'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " '
-            "|| sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done "
-            "&& python3 ./ci/jobs/fast_test.py"
+            "|| sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done; "
+            "python3 ./ci/jobs/fast_test.py; rc=$?; "
+            'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " '
+            "&& { sudo ifconfig lo0 -alias 127.0.0.$i || rc=1; }; done; "
+            "exit $rc"
         ),
         digest_config=darwin_fast_test_digest_config,
         result_name_for_cidb="Tests",
@@ -223,9 +229,9 @@ class JobConfigs:
             "sudo rm -rf /Library/Logs/DiagnosticReports/*",
         ],
         post_hooks=[
-            # Remove the lo0 aliases added before the run: the macos_m2 runner is
-            # reused, so leftover aliases make 127.0.0.2+ look local to later jobs.
-            # Best-effort (post_hooks run regardless of job pass/fail).
+            # Timeout safety net only: a timed-out command is killed before its
+            # teardown runs, so drop any leaked aliases here (best-effort: a hook
+            # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
