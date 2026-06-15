@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -84,9 +85,14 @@ public:
     {
         /// The array can arrive as a constant column when only the array argument is constant
         /// while `k` varies by row (the all-constant case is already folded by
-        /// useDefaultImplementationForConstants). Materialize it so the per-row offsets below are valid.
-        const ColumnPtr array_holder = arguments[0].column->convertToFullColumnIfConst();
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(array_holder.get());
+        /// useDefaultImplementationForConstants). Read the single stored array for every row instead
+        /// of replicating it across `input_rows_count` rows with convertToFullColumnIfConst: a large
+        /// constant array would otherwise be materialized for every row before the per-row output
+        /// budget below could throw TOO_LARGE_ARRAY_SIZE.
+        const ColumnConst * col_const_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
+        const ColumnArray * col_array = col_const_array
+            ? checkAndGetColumn<ColumnArray>(&col_const_array->getDataColumn())
+            : checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!col_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected array column for function {}", getName());
 
@@ -104,8 +110,10 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const size_t arr_begin = arr_offsets[row - 1];
-            const size_t n = arr_offsets[row] - arr_begin;
+            /// For a constant array, every row refers to the single stored array (offset index 0).
+            const size_t arr_row = col_const_array ? 0 : row;
+            const size_t arr_begin = arr_offsets[arr_row - 1];
+            const size_t n = arr_offsets[arr_row] - arr_begin;
 
             size_t k = n;
             if constexpr (IsPartial)

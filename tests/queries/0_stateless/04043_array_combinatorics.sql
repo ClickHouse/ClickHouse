@@ -26,9 +26,16 @@ SELECT arrayCombinations(arr, 2) FROM (SELECT [1, 2, 3] AS arr UNION ALL SELECT 
 SELECT arrayPermutations(arr) FROM (SELECT [1, 2] AS arr UNION ALL SELECT emptyArrayUInt8() UNION ALL SELECT [7, 8, 9]) ORDER BY arr;
 SELECT arrayPartialPermutations(arr, 2) FROM (SELECT [1, 2, 3] AS arr UNION ALL SELECT [4, 5] UNION ALL SELECT [9, 8, 7]) ORDER BY arr;
 
--- constant array with row-varying k: the array arrives as ColumnConst(ColumnArray) and must be materialized
+-- constant array with row-varying k: the array arrives as ColumnConst(ColumnArray) and the single
+-- stored array is read for every row (without replicating it across all rows).
 SELECT arrayCombinations([1, 2, 3], number) FROM numbers(4);
 SELECT arrayPartialPermutations([1, 2, 3], number) FROM numbers(4);
+
+-- a large constant array with row-varying k and many rows must apply the shared output cap and fail
+-- with TOO_LARGE_ARRAY_SIZE. The constant array is read per row instead of being replicated to every
+-- row, so the cap fires fast rather than first materializing array_length * rows input elements.
+SELECT arrayCombinations(range(1000000), number) FROM numbers(1000000) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+SELECT arrayPartialPermutations(range(1000000), number) FROM numbers(1000000) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
 
 -- size limit: should succeed (C(10,3)=120, total elements = 120*3 = 360 < 1M)
 SELECT length(arrayCombinations(range(toUInt8(10)), 3));
