@@ -7,8 +7,11 @@ SELECT count() > 0 FROM system.fail_points;
 -- Schema check: verify columns and types
 SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'fail_points' ORDER BY position;
 
--- All failpoints are disabled by default
-SELECT count() FROM system.fail_points WHERE enabled = 1;
+-- system.fail_points is process-global, so a bare count() flakes on failpoints other tests leave enabled.
+-- Scope to three integration-only failpoints whose check sites no concurrent stateless query can reach,
+-- so they stay disabled here and a once-enabled one cannot be consumed mid-test.
+SELECT count() FROM system.fail_points
+WHERE enabled = 1 AND name IN ('replicated_merge_tree_insert_retry_pause', 'delta_kernel_fail_literal_visitor', 'finish_set_quorum_failed_parts');
 -- Expected: 0
 
 -- All four types are present
@@ -44,16 +47,18 @@ SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree
 -- Previously fillData called fiu_fail() which triggered and consumed ONETIME points.
 
 -- ONCE failpoint: should still report enabled=1 across repeated SELECTs.
-SYSTEM ENABLE FAILPOINT replicated_queue_fail_next_entry;
-SELECT 'once_first', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
-SELECT 'once_second', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
-SELECT 'once_third', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
-SYSTEM DISABLE FAILPOINT replicated_queue_fail_next_entry;
-SELECT 'once_disabled', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
+-- Its check site (DeltaLake predicate literal visit) cannot be reached by a concurrent stateless query,
+-- so nothing else fires and consumes it between the SELECTs below.
+SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor;
+SELECT 'once_first', enabled FROM system.fail_points WHERE name = 'delta_kernel_fail_literal_visitor';
+SELECT 'once_second', enabled FROM system.fail_points WHERE name = 'delta_kernel_fail_literal_visitor';
+SELECT 'once_third', enabled FROM system.fail_points WHERE name = 'delta_kernel_fail_literal_visitor';
+SYSTEM DISABLE FAILPOINT delta_kernel_fail_literal_visitor;
+SELECT 'once_disabled', enabled FROM system.fail_points WHERE name = 'delta_kernel_fail_literal_visitor';
 
 -- PAUSEABLE_ONCE failpoint: same regression, must not be consumed by SELECT.
-SYSTEM ENABLE FAILPOINT smt_commit_tweaks_gate_open;
-SELECT 'pauseable_once_first', enabled FROM system.fail_points WHERE name = 'smt_commit_tweaks_gate_open';
-SELECT 'pauseable_once_second', enabled FROM system.fail_points WHERE name = 'smt_commit_tweaks_gate_open';
-SYSTEM DISABLE FAILPOINT smt_commit_tweaks_gate_open;
-SELECT 'pauseable_once_disabled', enabled FROM system.fail_points WHERE name = 'smt_commit_tweaks_gate_open';
+SYSTEM ENABLE FAILPOINT finish_set_quorum_failed_parts;
+SELECT 'pauseable_once_first', enabled FROM system.fail_points WHERE name = 'finish_set_quorum_failed_parts';
+SELECT 'pauseable_once_second', enabled FROM system.fail_points WHERE name = 'finish_set_quorum_failed_parts';
+SYSTEM DISABLE FAILPOINT finish_set_quorum_failed_parts;
+SELECT 'pauseable_once_disabled', enabled FROM system.fail_points WHERE name = 'finish_set_quorum_failed_parts';
