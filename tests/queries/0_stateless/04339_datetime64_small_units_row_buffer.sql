@@ -1,0 +1,28 @@
+SET date_time_input_format = 'basic';
+
+SELECT a, b FROM format(TSV, 'a DateTime64(3, \'UTC\'), b String',
+$$1234        0000000000000000000
+0     0000000000000000000
+9999  0000000000000000000
+$$) ORDER BY a;
+
+SELECT a, b FROM format(TSV, 'a DateTime64(1, \'UTC\'), b String',
+$$1234.5      0000000000000000000
+23.9  0000000000000000000
+99.1  0000000000000000000
+$$) ORDER BY a;
+
+SELECT a, b FROM format(TSV, 'a DateTime64(2, \'UTC\'), b String',
+$$3333.77     4444444444444444444
+$$);
+
+SELECT a, b FROM format(TSV, 'a DateTime64(1, \'UTC\'), b DateTime64(0, \'UTC\')',
+$$1234.5      2020-01-02 03:04:05
+$$);
+
+SELECT a, b FROM format(TSV, 'a DateTime64(0, \'UTC\'), b String',
+$$2025-08-31  0000000000000000000
+2025-08-31 13:45:30   0000000000000000000
+2025.08.31    0000000000000000000
+2020-01-02 03:04:05   0000000000000000000
+$$) ORDER BY a;

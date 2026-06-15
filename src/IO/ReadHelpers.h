@@ -876,18 +876,11 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     if (optimistic_path_for_date_time_input)
     {
-        if (s[4] < '0' || s[4] > '9')
+        if ((s[4] < '0' || s[4] > '9') && s[4] == s[7]
+            && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+            && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])
+            && isSymbolIn(s[4], allowed_date_delimiters))
         {
-            if constexpr (!throw_exception)
-            {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                    || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                    return ReturnType(false);
-
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
-                    return ReturnType(false);
-            }
-
             UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
