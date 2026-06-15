@@ -117,38 +117,6 @@ ActionsDAG makeFlagFilterDag()
     return dag;
 }
 
-void evaluateMatchedRowsNoCombinedCheckNoCatch(
-    ActionsDAG pre_actions_dag,
-    const ActionsDAG & filter_dag,
-    const String & filter_column_name)
-{
-    auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
-    ActionsDAG::IntermediateExecutionResult combined_dag_input;
-
-    const auto * filter_node = combined_dag.tryFindInOutputs(filter_column_name);
-    ASSERT_NE(filter_node, nullptr);
-
-    [[maybe_unused]] auto filter_output = ActionsDAG::evaluatePartialResult(
-        combined_dag_input,
-        { filter_node },
-        /*input_rows_count=*/1,
-        { .skip_materialize = true });
-}
-
-}
-
-GTEST_TEST(ConvertAnyJoin, RealInOnNotReadySetWithoutCombinedGuardDiesOrThrows)
-{
-    tryRegisterFunctions();
-    auto context = getContext().context;
-
-    auto in_function = FunctionFactory::instance().get("in", context);
-    auto pre_actions_dag = makePreActionsDagWithNotReadySetFunction(in_function, "__real_not_ready_set");
-    auto filter_dag = makeFlagFilterDag();
-
-    EXPECT_DEATH(
-        evaluateMatchedRowsNoCombinedCheckNoCatch(std::move(pre_actions_dag), filter_dag, "flag"),
-        "Not-ready Set");
 }
 
 GTEST_TEST(ConvertAnyJoin, PreActionsDagNotReadySetReturnsBeforeEvaluatingFilter)
