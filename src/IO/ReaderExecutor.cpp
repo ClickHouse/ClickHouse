@@ -1870,16 +1870,20 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
     return clampReach(continuity_tracker.predictedReach(), phys_off) > boundary;
 }
 
-size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
+size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset, size_t hard_end) const
 {
-    /// The channel bound, in object-local coordinates: the predicted forward reach,
-    /// floored at the current read extent and capped at the object end. The reach term
-    /// (`clampReach(predictedReach())`) lets a confirmed forward run extend the channel
-    /// PAST the reader's current right boundary toward the file end, so one GET spans
-    /// several advancing mark ranges instead of reopening at each. The extent floor keeps
-    /// a bounded read - one reverse chunk, or a run broken by a wide cached gap - from
-    /// stranding the channel before its real end: there the reach equals the chunk and the
-    /// channel drains cleanly. The object end caps a GET to the single object it streams.
+    /// The channel bound, in object-local coordinates: the forward reach, floored at the
+    /// current read extent and capped at the object end. The reach term lets a confirmed
+    /// forward run extend the channel PAST the reader's current right boundary, so one GET
+    /// spans several advancing mark ranges instead of reopening at each. The extent floor
+    /// keeps a bounded read - one reverse chunk, or a run broken by a wide cached gap - from
+    /// stranding the channel before its real end. The object end caps a GET to the single
+    /// object it streams.
+    ///
+    /// The reach is either the schedule job's EXACT physical end (`hard_end`, when the
+    /// schedule-driven launch passes it) or the `predictedReach` EWMA estimate. The exact
+    /// end drains the channel precisely at the job - no reopen where the estimate undershoots,
+    /// no abandoned (incomplete) connection where it overshoots the run.
     const size_t object_base = phys_offset - object_offset;
     const size_t object_end = hasUnknownSize()
         ? std::numeric_limits<size_t>::max()
@@ -1887,13 +1891,13 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     const size_t extent = read_extent_end
         ? std::min<size_t>(*read_extent_end + data_start_offset, object_end)
         : object_end;
-    const size_t reach = clampReach(continuity_tracker.predictedReach(), phys_offset);
+    const size_t reach = hard_end ? hard_end : clampReach(continuity_tracker.predictedReach(), phys_offset);
     const size_t phys_bound = std::min(object_end, std::max(extent, reach));
     return phys_bound - object_base;
 }
 
 void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t object_offset,
-    size_t phys_offset, size_t want, Stats & out_stats)
+    size_t phys_offset, size_t want, Stats & out_stats, size_t hard_end)
 {
     /// Drop a held channel that cannot serve THIS fetch - wrong object, or a gap wider
     /// than `min_bytes_for_seek` - before deciding to open, so a fresh channel covers the
@@ -1914,7 +1918,7 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
         out_stats.add(Stats::LongConnectionFallbacks);
         return;
     }
-    openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
+    openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset, hard_end),
         std::move(slot), out_stats);
 }
 
@@ -2471,11 +2475,14 @@ void ReaderExecutor::launchRetrieve(size_t ri)
 
     /// The foreground is the sole opener; the aligned window's first physical range gives
     /// the object and its object-local offset. A no-op when not warranted / at capacity /
-    /// a usable connection is already held.
+    /// a usable connection is already held. Bound the channel at the JOB's exact end
+    /// (`r.range.end()`) - the schedule knows the coalesced connection's real span, so the
+    /// GET drains precisely at the job instead of at the `predictedReach` estimate (which
+    /// reopens when it undershoots, or strands an incomplete connection when it overshoots).
     auto prefetch_ranges = offset_map.map(next_physical_window);
     if (!prefetch_ranges.empty())
         openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
-            next_physical_window.offset, prefetch_ranges.front().size, stats);
+            next_physical_window.offset, prefetch_ranges.front().size, stats, /*hard_end=*/r.range.end());
     m->long_conn = takeLong(long_conn);
 
     m->run_step = [this, self = m.get()]

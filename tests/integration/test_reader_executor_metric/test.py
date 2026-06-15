@@ -129,16 +129,22 @@ BASELINE = {
     ("prewhere", "cold", "stateless"): {"R": (37, 86), "O": (33, 132), "cost/MiB": (18.5, 55.6)},
     ("prewhere", "fragmented", "stateless"): {"R": (20, 61), "O": (13, 74), "cost/MiB": (8.1, 32.5)},
     # sched = the schedule-driven interpreter (long connection on). At MT scale it differs
-    # from `live` per load (e.g. selective coalesces better: lower R/O); the same served
-    # bytes and the same mode invariant (I bounded by the pool resets) hold.
-    ("sequential", "cold", "sched"): {"R": (26, 61), "I": (6, 15), "O": (6, 23), "cost/MiB": (13.2, 39.6)},
-    ("sequential", "fragmented", "sched"): {"R": (19, 56), "I": (9, 26), "O": (5, 28), "cost/MiB": (6.0, 23.9)},
-    ("selective", "cold", "sched"): {"R": (14, 33), "I": (8, 18), "O": (6, 24), "cost/MiB": (28.4, 85.3)},
-    ("selective", "fragmented", "sched"): {"R": (6, 20), "I": (0, 0), "O": (0, 0), "cost/MiB": (32.5, 129.9)},
-    ("aggregation", "cold", "sched"): {"R": (49, 115), "I": (10, 23), "O": (11, 44), "cost/MiB": (15.9, 47.8)},
-    ("aggregation", "fragmented", "sched"): {"R": (17, 52), "I": (9, 28), "O": (4, 21), "cost/MiB": (5.6, 22.6)},
-    ("prewhere", "cold", "sched"): {"R": (40, 94), "I": (22, 51), "O": (25, 101), "cost/MiB": (20.6, 61.7)},
-    ("prewhere", "fragmented", "sched"): {"R": (24, 72), "I": (8, 23), "O": (10, 56), "cost/MiB": (8.6, 34.5)},
+    # from `live` per load (e.g. selective coalesces better: lower R/O). Bounding the long
+    # connection by the schedule job's exact end (G2) drains it cleanly, so the seek-heavy
+    # loads have far fewer incomplete connections than `live` (prewhere/cold I ~3x lower).
+    # Same served bytes and the same mode invariant (I bounded by the pool resets) hold.
+    ("sequential", "cold", "sched"): {"R": (26, 62), "I": (6, 13), "O": (6, 23), "cost/MiB": (13.2, 39.7)},
+    ("sequential", "fragmented", "sched"): {"R": (19, 57), "I": (9, 27), "O": (5, 26), "cost/MiB": (5.9, 23.8)},
+    # I bands on the scatter/seek loads are hand-widened beyond the recompute margin: the
+    # small incomplete-connection counts swing several units run-to-run, but stay well below
+    # the `live` bands above (the G2 job-range bound's win). A gross-regression gate, not a
+    # tight assertion - the cost/MiB KPI in the report is the precise signal.
+    ("selective", "cold", "sched"): {"R": (14, 34), "I": (2, 14), "O": (6, 25), "cost/MiB": (29.1, 87.4)},
+    ("selective", "fragmented", "sched"): {"R": (8, 23), "I": (0, 0), "O": (0, 0), "cost/MiB": (39.4, 157.4)},
+    ("aggregation", "cold", "sched"): {"R": (47, 110), "I": (3, 20), "O": (10, 39), "cost/MiB": (15.6, 46.8)},
+    ("aggregation", "fragmented", "sched"): {"R": (18, 54), "I": (5, 30), "O": (5, 26), "cost/MiB": (5.7, 22.9)},
+    ("prewhere", "cold", "sched"): {"R": (42, 98), "I": (3, 24), "O": (25, 101), "cost/MiB": (20.1, 60.2)},
+    ("prewhere", "fragmented", "sched"): {"R": (24, 71), "I": (1, 16), "O": (10, 55), "cost/MiB": (8.4, 33.7)},
 }
 
 

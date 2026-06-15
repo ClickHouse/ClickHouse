@@ -712,18 +712,20 @@ private:
     bool shouldOpenLong(size_t phys_off) const;
 
     /// The long-connection bound (object-local) for an open at physical `phys_offset`:
-    /// the predicted forward reach, floored at the current read extent and capped at the
-    /// object end, so a forward run extends the channel past the current right boundary.
-    /// See the definition.
-    size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const;
+    /// the forward reach, floored at the current read extent and capped at the object end,
+    /// so a forward run extends the channel past the current right boundary. The reach is
+    /// the schedule job's exact physical end (`hard_end`, when the schedule-driven launch
+    /// knows it) or the `predictedReach` EWMA estimate (`hard_end == 0`). See the definition.
+    size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset, size_t hard_end = 0) const;
 
     /// Foreground open hook: when `shouldOpenLong(phys_offset)` and a slot can be
     /// acquired, open a long connection over `object` (object-local `object_offset`),
     /// bounded at `longConnectionBound`, so the following source read - and the windows
     /// after it - drain it. A no-op when already held / not warranted / at capacity
-    /// (then the read falls back to a one-shot).
+    /// (then the read falls back to a one-shot). `hard_end` (physical, 0 = unset) bounds the
+    /// channel at the schedule job's exact end instead of the `predictedReach` estimate.
     void openLongIfWarranted(const StoredObject & object, size_t object_offset,
-        size_t phys_offset, size_t want, Stats & out_stats);
+        size_t phys_offset, size_t want, Stats & out_stats, size_t hard_end = 0);
 
     /// Open a bounded GET over `object` for the object-local range `[offset, read_end)`,
     /// taking the already-acquired `slot`; store it in `conn` (its `read_until` bound is
