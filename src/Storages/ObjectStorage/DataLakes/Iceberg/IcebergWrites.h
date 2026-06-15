@@ -104,7 +104,14 @@ void generateManifestFile(
     /// re-stamped as ADDED by the new snapshot (which would corrupt row lineage and break
     /// delete-file sequence-number matching). When empty, entries are written as ADDED with the
     /// new snapshot's id and sequence number (the append path).
-    const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {});
+    const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
+    /// Optional schema object to serialize into the manifest's Avro `schema` metadata header. When
+    /// null, the table's current schema is used (the append path). A manifest-only rewrite of an
+    /// older partition spec (compaction) passes the historical schema that still defines that spec's
+    /// `source-id` columns, because the current schema may have dropped them; otherwise the rewritten
+    /// manifest's `schema` header would not resolve the spec's `source-id`s on read and the partition
+    /// field would be silently dropped.
+    Poco::JSON::Object::Ptr schema_to_serialize = nullptr);
 
 /// Per manifest-list entry counts for a manifest-only rewrite (a `replace` operation), where
 /// every data file referenced by the new manifest already existed in the table. When supplied to

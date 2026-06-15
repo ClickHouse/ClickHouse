@@ -283,7 +283,8 @@ void generateManifestFile(
     const std::vector<String> & data_file_formats,
     const std::vector<DataFileColumnStatistics> & per_file_statistics,
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
-    const std::vector<DataFileEntryLineage> & per_file_entry_lineage)
+    const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
+    Poco::JSON::Object::Ptr schema_to_serialize)
 {
     if (!data_file_formats.empty() && data_file_formats.size() != data_file_names.size())
         throw Exception(
@@ -323,27 +324,36 @@ void generateManifestFile(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-    /// Iceberg schema-ids are identifiers, not array positions: after schema evolution they can be
-    /// non-contiguous or out of order, so look up the schema by matching `schema-id` rather than
-    /// indexing the array by the id.
-    auto schemas_array = metadata->getArray(Iceberg::f_schemas);
-    Poco::JSON::Object::Ptr current_schema_object;
-    for (UInt32 i = 0; i < schemas_array->size(); ++i)
+    /// The Avro `schema` metadata header must describe the schema the manifest's partition spec was
+    /// written against, so the spec's `source-id`s resolve on read. For an append that is the table's
+    /// current schema. A manifest-only rewrite of an older spec (compaction) passes the historical
+    /// schema that still defines the spec's source columns explicitly, because the current schema may
+    /// have dropped them; serializing the current schema there would make the rewritten manifest's
+    /// `source-id`s unresolvable on read and silently drop the partition field.
+    Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize;
+    if (!schema_object_to_write)
     {
-        auto schema_object = schemas_array->getObject(i);
-        if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+        /// Iceberg schema-ids are identifiers, not array positions: after schema evolution they can be
+        /// non-contiguous or out of order, so look up the schema by matching `schema-id` rather than
+        /// indexing the array by the id.
+        auto schemas_array = metadata->getArray(Iceberg::f_schemas);
+        for (UInt32 i = 0; i < schemas_array->size(); ++i)
         {
-            current_schema_object = schema_object;
-            break;
+            auto schema_object = schemas_array->getObject(i);
+            if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                schema_object_to_write = schema_object;
+                break;
+            }
         }
+        if (!schema_object_to_write)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg metadata does not contain a schema entry matching current-schema-id {}",
+                current_schema_id);
     }
-    if (!current_schema_object)
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg metadata does not contain a schema entry matching current-schema-id {}",
-            current_schema_id);
-    Poco::JSON::Stringifier::stringify(current_schema_object, oss, 4);
+    Poco::JSON::Stringifier::stringify(schema_object_to_write, oss, 4);
     std::string json_representation = removeEscapedSlashes(oss.str());
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);

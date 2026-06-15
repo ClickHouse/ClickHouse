@@ -484,6 +484,10 @@ static bool writeConsolidatedManifestFile(
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         std::vector<DataTypePtr> partition_types;
+        /// The schema that defines every source column the spec references. The rewritten manifest
+        /// serializes this into its Avro `schema` metadata header (rather than the current schema)
+        /// so the spec's `source-id`s resolve on read even after the current schema dropped them.
+        Poco::JSON::Object::Ptr schema;
     };
     std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
     auto resolve_partition_spec = [&](Int32 spec_id) -> const ResolvedPartitionSpec &
@@ -572,6 +576,18 @@ static bool writeConsolidatedManifestFile(
         auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
+
+        /// Keep the raw metadata schema object (not the schema_processor's parsed form) so the
+        /// manifest's Avro `schema` header is the verbatim schema JSON, including its `schema-id`.
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+        {
+            if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id_for_spec)
+            {
+                resolved.schema = schemas->getObject(i);
+                break;
+            }
+        }
+
         return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
     };
 
@@ -868,7 +884,8 @@ static bool writeConsolidatedManifestFile(
                 /* data_file_formats */ pd.file_formats,
                 /* per_file_statistics */ pd.file_statistics,
                 /* data_file_sort_order_ids */ pd.file_sort_order_ids,
-                /* per_file_entry_lineage */ pd.file_entry_lineage);
+                /* per_file_entry_lineage */ pd.file_entry_lineage,
+                /* schema_to_serialize */ resolved_spec.schema);
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();

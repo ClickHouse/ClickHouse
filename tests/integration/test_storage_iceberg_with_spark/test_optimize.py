@@ -681,6 +681,133 @@ def test_optimize_manifest_files_dropped_partition_source_column(
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_dropped_partition_source_column_schema_header(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """
+    A manifest-only rewrite (`OPTIMIZE TABLE ... MANIFEST`) must serialize into each compacted
+    manifest's Avro `schema` metadata a schema that still defines the manifest's partition-spec
+    `source-id`s — not unconditionally the current schema. After partition evolution drops a
+    partition field and the source column itself is then dropped, the current schema no longer
+    contains that column. If the rewritten manifest carried the current schema in its `schema`
+    header, the spec's `source-id`s would no longer resolve on read and `ManifestFileIterator`
+    would silently drop the partition field, so the manifest would stop faithfully describing the
+    files it carried forward.
+
+    This is the schema-header regression for the partition-type scenario covered by
+    `test_optimize_manifest_files_dropped_partition_source_column`: here we additionally read the
+    Avro container metadata of the newly written manifest back and assert every partition-spec
+    `source-id` is still present in its `schema` header.
+    """
+    from avro.datafile import DataFileReader
+    from avro.io import DatumReader
+
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_droppedcol_schema_" + storage_type + "_" + get_uuid_str()
+
+    # spec 0: partitioned by identity(region). 'region' is both a partition source and a column.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string, region string) USING iceberg
+        PARTITIONED BY (region)
+        TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} VALUES "
+        f"(0, 'a', 'us'), (1, 'b', 'us'), (2, 'c', 'eu'), (3, 'd', 'eu')"
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'e', 'us'), (5, 'f', 'eu')")
+
+    # Evolve: drop the partition field → new unpartitioned spec 1. Insert more rows under the new
+    # spec while 'region' still exists (dropping it leaves spec 0 unbindable by Spark).
+    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP PARTITION FIELD region")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (6, 'g', 'us'), (7, 'h', 'eu')")
+
+    # Now drop the source column. The current snapshot still references the spec-0 manifests above,
+    # whose partition source column no longer exists in the current schema.
+    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP COLUMN region")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    local_metadata_dir = os.path.join(table_dir, "metadata")
+
+    def download_and_list_manifests():
+        # Mirror the table (including the manifests written to object storage) onto the test host so
+        # the Avro container metadata can be read directly. `snap-*.avro` are manifest lists, not
+        # manifests, so they are excluded.
+        default_download_directory(
+            started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir
+        )
+        return {
+            os.path.join(local_metadata_dir, name)
+            for name in os.listdir(local_metadata_dir)
+            if name.endswith(".avro") and not name.startswith("snap-")
+        }
+
+    manifests_before = download_and_list_manifests()
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    new_manifests = download_and_list_manifests() - manifests_before
+    assert new_manifests, "OPTIMIZE TABLE ... MANIFEST did not write any new manifest files"
+
+    def read_avro_user_metadata(path):
+        with open(path, "rb") as f:
+            reader = DataFileReader(f, DatumReader())
+            try:
+                decoded = {}
+                for key, value in reader.meta.items():
+                    key = key.decode("utf-8") if isinstance(key, bytes) else key
+                    if isinstance(value, bytes):
+                        value = value.decode("utf-8")
+                    decoded[key] = value
+                return decoded
+            finally:
+                reader.close()
+
+    # At least one newly written manifest must carry the old (partitioned) spec, and for every
+    # partition-spec source-id its `schema` header must still define a field with that id.
+    checked_partitioned_manifest = False
+    for manifest_path in sorted(new_manifests):
+        meta = read_avro_user_metadata(manifest_path)
+        if "partition-spec" not in meta or "schema" not in meta:
+            continue
+        partition_spec = json.loads(meta["partition-spec"])
+        if not partition_spec:
+            # The unpartitioned spec-1 manifest — nothing to resolve.
+            continue
+        schema_field_ids = {field["id"] for field in json.loads(meta["schema"])["fields"]}
+        for spec_field in partition_spec:
+            source_id = spec_field["source-id"]
+            assert source_id in schema_field_ids, (
+                f"Compacted manifest {os.path.basename(manifest_path)} has a schema header with "
+                f"field ids {sorted(schema_field_ids)} that does not define partition-spec "
+                f"source-id {source_id}; the rewrite serialized the current schema instead of one "
+                f"defining the spec's source columns"
+            )
+        checked_partitioned_manifest = True
+
+    assert checked_partitioned_manifest, (
+        "No newly written manifest with a non-empty partition spec was found to verify"
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_spark, storage_type):
     """
     OPTIMIZE TABLE ... MANIFEST on a bucket-partitioned table must recompute the manifest-list
