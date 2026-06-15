@@ -35,9 +35,6 @@ extern const Event AsyncLoggingErrorFileLogTotalMessages;
 
 extern const Event AsyncLoggingSyslogDroppedMessages;
 extern const Event AsyncLoggingSyslogTotalMessages;
-
-extern const Event AsyncLoggingAuditFileLogDroppedMessages;
-extern const Event AsyncLoggingAuditFileLogTotalMessages;
 }
 
 namespace DB
@@ -205,40 +202,21 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
 
     const auto auditlog_path_prop = config.getString("logger.auditlog", "");
-    if (!auditlog_path_prop.empty())
+    if (!auditlog_path_prop.empty() && config.getBool("allow_experimental_audit_log", false))
     {
-        const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
-        createDirectory(auditlog_path);
+        DB::setGlobalAuditLog(nullptr);
+        if (audit_log)
+        {
+            audit_log->close();
+            audit_log.reset();
+        }
 
-        /// Audit messages are emitted at PRIO_NOTICE; ensure the root logger level allows them through
-        /// even when other channels are configured at warning/error.
-        const int audit_log_level = Poco::Message::Priority::PRIO_NOTICE;
-        max_log_level = std::max(audit_log_level, max_log_level);
-
-        audit_log_file = new Poco::FileChannel;
-        audit_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(auditlog_path));
-        audit_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
-        audit_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "timestamp");
-        audit_log_file->setProperty(Poco::FileChannel::PROP_TIMES, "local");
-        audit_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        audit_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
-        audit_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
-        audit_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
-        audit_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "auditlog");
-        auto auditlog = std::make_shared<DB::OwnFormattingChannel>(pf, audit_log_file);
-        auditlog->open();
-        split->addChannel(
-            auditlog,
-            "AuditFileLog",
-            audit_log_level,
-            ProfileEvents::AsyncLoggingAuditFileLogTotalMessages,
-            ProfileEvents::AsyncLoggingAuditFileLogDroppedMessages);
-
-        /// Enable audit logging
-        if (config.getBool("allow_experimental_audit_log", false))
-            enableAuditLogging();
+        bool async = config.getBool("logger.async", true);
+        auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
+        audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
+        audit_log->configure(config);
+        audit_log->open();
+        DB::setGlobalAuditLog(audit_log.get());
     }
 
     if (config.getBool("logger.use_syslog", false))
@@ -414,14 +392,6 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->setLevel("ErrorFileLog", errorlog_level);
     }
 
-    // Set level to auditlog: messages are emitted at PRIO_NOTICE; keep root logger high enough to let them through.
-    if (audit_log_file)
-    {
-        const int audit_log_level = Poco::Message::Priority::PRIO_NOTICE;
-        max_log_level = std::max(audit_log_level, max_log_level);
-        split->setLevel("AuditFileLog", audit_log_level);
-    }
-
     // Set level to syslog
     int syslog_level = 0;
     if (config.getBool("logger.use_syslog", false))
@@ -477,8 +447,8 @@ void Loggers::closeLogs(Poco::Logger & logger)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
-    if (audit_log_file)
-        audit_log_file->close();
+    if (audit_log)
+        audit_log->closeFile();
     // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
@@ -500,6 +470,13 @@ DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
 
 void Loggers::stopLogging()
 {
+    DB::setGlobalAuditLog(nullptr);
+    if (audit_log)
+    {
+        audit_log->close();
+        audit_log.reset();
+    }
+
     if (split)
         split->close();
     split.reset();

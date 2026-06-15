@@ -67,9 +67,6 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   */
 bool hasLogger(const std::string & name);
 
-/// Get Logger for audit
-LoggerPtr getAuditLogger();
-
 /// Escape CR/LF in a free-form audit field so that a single audit record
 /// always occupies exactly one physical log line.
 inline std::string escapeForAuditField(std::string s)
@@ -78,9 +75,3 @@ inline std::string escapeForAuditField(std::string s)
     std::replace(s.begin(), s.end(), '\r', ' ');
     return s;
 }
-
-bool isAuditLogEnabled();
-
-void enableAuditLogging();
-
-void disableAuditLogging();

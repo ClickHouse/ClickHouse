@@ -13,6 +13,11 @@
 #include <optional>
 #include <vector>
 
+namespace DB
+{
+class AuditLog;
+}
+
 namespace Poco::Net { class SocketAddress; }
 
 namespace DB
@@ -110,7 +115,7 @@ private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
     void recordLoginSuccess(ContextPtr login_context) const;
-    LoggerPtr getAuditLoggerIfEnabled() const;
+    DB::AuditLog * getAuditLogIfEnabled() const;
 
     mutable bool notified_session_log_about_login = false;
     mutable bool notified_about_login_failure = false;

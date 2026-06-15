@@ -5,12 +5,14 @@
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 
 namespace DB
 {
 class OwnSplitChannelBase;
+class AuditLog;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
 using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
@@ -38,8 +40,6 @@ public:
 
     void stopLogging();
 
-    bool isAuditLogChannelInitialized() const { return static_cast<bool>(audit_log_file); }
-
 protected:
     virtual bool allowTextLog() const { return true; }
 
@@ -48,8 +48,8 @@ private:
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 
-    /// audit log
-    Poco::AutoPtr<Poco::FileChannel> audit_log_file;
+    /// Standalone audit log writer (bypasses OwnSplitChannel)
+    std::unique_ptr<DB::AuditLog> audit_log;
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::optional<std::string> config_logger;

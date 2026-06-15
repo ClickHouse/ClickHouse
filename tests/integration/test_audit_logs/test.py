@@ -395,3 +395,15 @@ def test_audit_log_check_grant_classified_as_dcl(start_cluster):
     assert "DML" not in log_content, "CHECK GRANT must not appear as DML"
 
     node_user_dcl.query("DROP USER IF EXISTS check_grant_test_user")
+
+
+def test_audit_log_failed_query(start_cluster):
+    """DDL audit records must include failed DDL queries (EXCEPTION_BEFORE_START)"""
+    try:
+        node_ddl.query("DROP TABLE test_nonexistent_obj_audit_98765")
+    except Exception:
+        pass
+
+    assert_audit_log_contain_with_retry(node_ddl, "test_nonexistent_obj_audit_98765")
+    log_content = node_ddl.grep_in_log("test_nonexistent_obj_audit_98765", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DDL" in log_content, "Failed DDL must still be classified as DDL"

@@ -7,6 +7,8 @@
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Common/logger_useful.h>
+#include <Common/Logger.h>
+#include <Loggers/AuditLog.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -320,7 +322,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        if (auto audit_log = getAuditLoggerIfEnabled())
+        if (auto * audit_log = getAuditLogIfEnabled())
         {
             const auto & client_info = getClientInfo();
             std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
@@ -360,7 +362,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         notified_about_login_failure = true;
 
-        if (auto audit_log = getAuditLoggerIfEnabled())
+        if (auto * audit_log = getAuditLogIfEnabled())
         {
             const auto & client_info = getClientInfo();
             std::string host = client_info.current_address
@@ -445,7 +447,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
         return;
     notified_about_login_failure = true;
 
-    if (auto audit_log = getAuditLoggerIfEnabled())
+    if (auto * audit_log = getAuditLogIfEnabled())
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
                 escapeForAuditField(user_name.has_value() ? user_name.value() : ""),
@@ -773,7 +775,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      user_authenticated_with);
     }
 
-    if (auto audit_log = getAuditLoggerIfEnabled())
+    if (auto * audit_log = getAuditLogIfEnabled())
     {
         const auto & client_info = getClientInfo();
         std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
@@ -809,12 +811,12 @@ void Session::closeSession(const String & session_id)
     NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
 }
 
-LoggerPtr Session::getAuditLoggerIfEnabled() const
+AuditLog * Session::getAuditLogIfEnabled() const
 {
     if (!global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
         return nullptr;
 
-    return getAuditLogger();
+    return getAuditLog();
 }
 
 }

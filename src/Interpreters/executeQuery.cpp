@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
+#include <Loggers/AuditLog.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -224,6 +225,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int OK;
 }
 
 namespace FailPoints
@@ -469,7 +471,7 @@ QueryLogElement logQueryStart(
     /// Populate object names (tables, views, etc.) from the access info and interpreter.
     /// This is needed by both system.query_log and the audit log, so it runs regardless
     /// of the log_queries setting.
-    if ((log_queries && query_log) || isAuditLogEnabled())
+    if ((log_queries && query_log) || getAuditLog())
     {
         /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
         if (pipeline.initialized())
@@ -1003,11 +1005,14 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
+
+    if (!internal)
+        auditLog(elem, context, ast);
 }
 
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
 {
-    auto audit_log = getAuditLogger();
+    auto * audit_log = DB::getAuditLog();
     if (!audit_log)
         return;
 
@@ -1087,7 +1092,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
         return;
 
     String object_names; /// tables / views
-    if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
+    if ((elem.exception_code == ErrorCodes::OK) && (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML))
     {
         for (const auto & table : elem.query_tables)
         {

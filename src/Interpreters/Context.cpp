@@ -128,6 +128,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
+#include <Loggers/OwnSplitChannel.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -8038,17 +8039,12 @@ void Context::resetAuditTypes() const
 
 void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
 {
-    /// The caller (server) already checks if audit file channel intialized
-    /// Reset audit_types if audit logging is disabled
-    if (!config.getBool("allow_experimental_audit_log", false))
+    /// Audit logging requires both the feature flag and a configured audit log file.
+    if (!getAuditLog())
     {
-        disableAuditLogging();
         resetAuditTypes();
         return;
     }
-
-    if (!isAuditLogEnabled())
-        enableAuditLogging();
 
     /// audit log types
     std::string auditlog_types = config.getString("logger.auditlog_types", "");
