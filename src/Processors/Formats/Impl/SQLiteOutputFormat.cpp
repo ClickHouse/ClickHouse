@@ -175,6 +175,12 @@ void registerOutputFormatSQLite(FormatFactory & factory)
         "SQLite",
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr)
         { return std::make_shared<SQLiteOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+
+    /// The whole SQLite database (table, transaction, prepared statement) is set up in `writePrefix`.
+    /// Appending to an existing non-empty `.db` file would skip the prefix and leave the connection
+    /// unset, so disallow appends: this makes `StorageFile` produce the standard `CANNOT_APPEND_TO_FILE`
+    /// error, the same as `Parquet`/`ORC`.
+    factory.markFormatHasNoAppendSupport("SQLite");
 }
 
 }

@@ -85,6 +85,14 @@ ${CLICKHOUSE_LOCAL} --query "
 
 rm -f "$DB_FILE"
 
+echo "--- a second insert into an existing SQLite file is rejected (the format does not support appends) ---"
+${CLICKHOUSE_LOCAL} --query "
+    INSERT INTO FUNCTION file('${DB_FILE}', SQLite) SELECT 1 AS x"
+${CLICKHOUSE_LOCAL} --query "
+    INSERT INTO FUNCTION file('${DB_FILE}', SQLite) SELECT 2 AS x" 2>&1 | grep -o "CANNOT_APPEND_TO_FILE" | head -n 1
+
+rm -f "$DB_FILE"
+
 echo "--- writing to a non-file is not supported ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT 1 AS x FORMAT SQLite" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -n 1
 

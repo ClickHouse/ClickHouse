@@ -37,5 +37,7 @@ INCORRECT_DATA
 --- reading works with input_format_allow_seeks = 0 (the database is buffered in memory) ---
 NULL	0
 \N	1
+--- a second insert into an existing SQLite file is rejected (the format does not support appends) ---
+CANNOT_APPEND_TO_FILE
 --- writing to a non-file is not supported ---
 NOT_IMPLEMENTED
