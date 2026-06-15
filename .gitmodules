@@ -402,4 +402,4 @@
 [submodule "contrib/iguana"]
 	path = contrib/iguana
 	url = https://github.com/ClickHouse/iguana.git
-	branch = complete-cpp-implementation
+	branch = main
