@@ -48,6 +48,40 @@ PY
 # A spec-compliant reader ignores the reserved field id and returns the projected column.
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH}') ORDER BY x;"
 
+# Conversely, 2147483447 (Integer.MAX_VALUE - 200) is the highest field id a table may use, i.e.
+# NOT reserved. An unmapped column with that id is a genuine schema mismatch and must still be
+# rejected, so the reserved-range check must be strictly greater-than.
+ICEBERG_TABLE_PATH_UNMAPPED="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_v3_unmapped"
+rm -rf "${ICEBERG_TABLE_PATH_UNMAPPED}"
+
+${CLICKHOUSE_CLIENT} --query "
+    SET allow_experimental_insert_into_iceberg = 1;
+    CREATE TABLE t_v3_unmapped (x Int32) ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}');
+    INSERT INTO t_v3_unmapped (x) VALUES (1);
+"
+
+DATAFILE_UNMAPPED=$(ls "${ICEBERG_TABLE_PATH_UNMAPPED}"/data/*.parquet 2>/dev/null | head -1)
+
+python3 - "$DATAFILE_UNMAPPED" <<'PY'
+import sys
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+path = sys.argv[1]
+x = pa.field("x", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": b"1"})
+# 2147483447 = Integer.MAX_VALUE - 200: the highest id a table may use, so NOT reserved.
+extra = pa.field("extra", pa.int64(), nullable=True, metadata={b"PARQUET:field_id": b"2147483447"})
+table = pa.table(
+    {"x": pa.array([1], pa.int32()), "extra": pa.array([0], pa.int64())},
+    schema=pa.schema([x, extra]),
+)
+pq.write_table(table, path)
+PY
+
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_row_lineage;"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_unmapped;"
 rm -rf "${ICEBERG_TABLE_PATH}"
+rm -rf "${ICEBERG_TABLE_PATH_UNMAPPED}"
