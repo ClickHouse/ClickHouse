@@ -37,10 +37,10 @@ TEST(AsyncInsertKey, SettingsChanges)
 
     auto kind = AsynchronousInsertQueueDataKind::Parsed;
 
-    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, settings1, kind);
-    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, settings2, kind);
-    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, settings3, kind);
-    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, settings4, kind);
+    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, settings1, kind);
+    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, settings2, kind);
+    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, settings3, kind);
+    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, settings4, kind);
 
     EXPECT_EQ(key1, key2);
     EXPECT_NE(key1, key3);
