@@ -1539,8 +1539,12 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         receivePacketsExpectCancel(state);
 
-        sendTotals(state, executor.getTotalsBlock());
-        sendExtremes(state, executor.getExtremesBlock());
+        /// null_format suppresses the result stream; totals and extremes are part of the result, so skip them too.
+        if (!state.io.null_format)
+        {
+            sendTotals(state, executor.getTotalsBlock());
+            sendExtremes(state, executor.getExtremesBlock());
+        }
         sendProfileInfo(state, executor.getProfileInfo());
         sendProgress(state);
         sendLogs(state);

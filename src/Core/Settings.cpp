@@ -816,6 +816,19 @@ When stream-like engine reads from multiple queues, the user will need to select
     DECLARE(Bool, dictionary_validate_primary_key_type, false, R"(
 Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64.
 )", 0) \
+    DECLARE(Bool, discard_select_result, false, R"(
+When enabled, a top-level `SELECT` runs its full pipeline on real data, but no result rows are returned to the client over any protocol (native, HTTP, MySQL, PostgreSQL, gRPC), regardless of the query's `FORMAT`. `Totals` and `Extremes` are discarded as well, and `INTO OUTFILE` is rejected. `SHOW`, `DESCRIBE` and `EXPLAIN` are not affected.
+
+Intended to be pinned non-overridably via a settings-profile constraint so an operator can reproduce a query on real data without seeing the result:
+
+``` sql
+CREATE SETTINGS PROFILE debug_no_data SETTINGS discard_select_result = 1 CONST;
+CREATE USER debugger SETTINGS PROFILE debug_no_data;
+GRANT SELECT ON *.* TO debugger;
+```
+
+The setting only secures the result channel. Writes and external sinks (`INSERT`, `INSERT INTO FUNCTION url/s3/file`, `CREATE ... AS SELECT`), exception-message exfiltration (e.g. `throwIf`) and timing side channels stay the deployment's responsibility via grants and quotas.
+)", 0) \
     DECLARE(Bool, distributed_insert_skip_read_only_replicas, false, R"(
 Enables skipping read-only replicas for INSERT queries into Distributed.
 

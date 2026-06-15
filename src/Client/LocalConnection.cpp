@@ -545,7 +545,8 @@ bool LocalConnection::poll(size_t)
         state->sent_totals = true;
         Block totals;
 
-        if (state->executor)
+        /// null_format suppresses the result stream; totals are part of the result, so skip them too.
+        if (state->executor && !state->io.null_format)
             totals = state->executor->getTotalsBlock();
 
         if (!totals.empty())
@@ -561,7 +562,8 @@ bool LocalConnection::poll(size_t)
         state->sent_extremes = true;
         Block extremes;
 
-        if (state->executor)
+        /// null_format suppresses the result stream; extremes are part of the result, so skip them too.
+        if (state->executor && !state->io.null_format)
             extremes = state->executor->getExtremesBlock();
 
         if (!extremes.empty())

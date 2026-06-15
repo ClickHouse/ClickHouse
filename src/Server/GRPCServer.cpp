@@ -1355,8 +1355,12 @@ namespace
 
             if (!isQueryCancelled())
             {
-                addTotalsToResult(executor->getTotalsBlock());
-                addExtremesToResult(executor->getExtremesBlock());
+                /// null_format suppresses the result stream; totals and extremes are part of the result, so skip them too.
+                if (!io.null_format)
+                {
+                    addTotalsToResult(executor->getTotalsBlock());
+                    addExtremesToResult(executor->getExtremesBlock());
+                }
                 addProfileInfoToResult(executor->getProfileInfo());
             }
         }

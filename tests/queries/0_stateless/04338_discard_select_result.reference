@@ -1,0 +1,24 @@
+--- default off: data is returned ---
+0
+1
+2
+--- native protocol: no rows for any FORMAT ---
+native: no rows
+--- native protocol: totals and extremes are suppressed ---
+native: no totals/extremes
+--- HTTP: no rows for any FORMAT ---
+http: no rows
+--- HTTP: totals and extremes are suppressed ---
+http: no totals/extremes
+--- the query really executes on real data (side effects happen) ---
+pipeline executed
+--- SHOW / DESCRIBE / EXPLAIN are unaffected ---
+describe: ok
+show: ok
+explain: ok
+--- INTO OUTFILE is rejected ---
+INTO OUTFILE is not allowed when discard_select_result is enabled
+--- pinned non-overridably via a settings profile (CONST) ---
+pinned user result (expected empty):
+pinned user override attempt:
+Setting discard_select_result should not be changed

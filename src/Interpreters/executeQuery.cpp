@@ -132,6 +132,7 @@ namespace Setting
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsDialect dialect;
+    extern const SettingsBool discard_select_result;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
@@ -2004,6 +2005,24 @@ static BlockIO executeQueryImpl(
         throw;
     }
 
+    /// When 'discard_select_result' is enabled, a top-level SELECT runs its full pipeline on real data
+    /// but no result is returned to the client. Setting 'null_format' here is the single result barrier
+    /// for the native protocol (TCP/gRPC/LocalConnection), which streams Blocks directly and is not
+    /// gated by the output FORMAT; it also makes the formatted (HTTP/MySQL/PostgreSQL) path use the Null
+    /// output format below.
+    /// Only the top-level (non-internal) query result is suppressed: SHOW/DESCRIBE/EXPLAIN have a
+    /// different query kind, and the SELECT that some of them are rewritten into runs as an internal
+    /// query, so its data is still produced for the metadata answer.
+    if (out_ast && !internal && context->getSettingsRef()[Setting::discard_select_result]
+        && out_ast->getQueryKind() == IAST::QueryKind::Select)
+    {
+        if (const auto * ast_with_output = dynamic_cast<const ASTQueryWithOutput *>(out_ast.get());
+            ast_with_output && ast_with_output->out_file)
+            throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed when discard_select_result is enabled");
+
+        res.null_format = true;
+    }
+
     return res;
 }
 
@@ -2481,6 +2500,11 @@ void executeQuery(
             const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
             if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)
                 format_name = context->getDefaultFormat();
+
+            /// 'null_format' (set by 'discard_select_result' or by an explicit 'FORMAT Null') means the formatted
+            /// result must be empty: the Null output format discards rows, totals and extremes.
+            if (streams.null_format)
+                format_name = "Null";
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
