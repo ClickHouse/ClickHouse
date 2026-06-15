@@ -109,12 +109,12 @@ BlockIO InterpreterUpdateQuery::execute()
     /// those columns (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
     {
         AccessRightsElements read_access;
-        const auto & virtuals = table->getInMemoryMetadataPtr(getContext(), false)->virtuals;
-        addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), table_id.database_name, table_id.table_name, virtuals);
+        const auto & metadata = *table->getInMemoryMetadataPtr(getContext(), false);
+        addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), table_id.database_name, table_id.table_name, metadata);
         for (const ASTPtr & assignment : update_query.assignments->children)
             addExpressionColumnsSelectAccess(
                 read_access, assignment->as<const ASTAssignment &>().expression().get(),
-                table_id.database_name, table_id.table_name, virtuals);
+                table_id.database_name, table_id.table_name, metadata);
         if (!read_access.empty())
             getContext()->checkAccess(read_access);
     }

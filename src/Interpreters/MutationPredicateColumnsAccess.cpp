@@ -3,7 +3,8 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/IAST.h>
-#include <Storages/VirtualColumnsDescription.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ void addExpressionColumnsSelectAccess(
     const IAST * expression,
     const String & database,
     const String & table,
-    const VirtualColumnsDescription & virtual_columns)
+    const StorageInMemoryMetadata & metadata)
 {
     if (!expression)
         return;
@@ -25,19 +26,30 @@ void addExpressionColumnsSelectAccess(
     Strings columns;
     const String db_table_prefix = database.empty() ? String{} : database + "." + table + ".";
     const String table_prefix = table + ".";
-    for (const auto & qualified_name : columns_context.requiredColumns())
+    for (const auto & name : columns_context.requiredColumns())
     {
-        std::string_view name = qualified_name;
-        if (!db_table_prefix.empty() && name.starts_with(db_table_prefix))
-            name.remove_prefix(db_table_prefix.size());
-        else if (name.starts_with(table_prefix))
-            name.remove_prefix(table_prefix.size());
+        /// A real column (including a real dotted/quoted name like `t.id`) requires SELECT as-is.
+        if (metadata.columns.has(name))
+        {
+            columns.emplace_back(name);
+            continue;
+        }
 
-        /// Virtual columns are not real data and need no SELECT grant, matching a plain SELECT query.
-        if (virtual_columns.has(String(name)))
+        /// A virtual column not shadowed by a real one needs no SELECT grant, as in a plain SELECT.
+        if (metadata.isVirtualColumn(name))
             continue;
 
-        columns.emplace_back(name);
+        /// Otherwise strip a `table.` / `db.table.` qualifier and resolve the bare name the same way.
+        std::string_view bare = name;
+        if (!db_table_prefix.empty() && bare.starts_with(db_table_prefix))
+            bare.remove_prefix(db_table_prefix.size());
+        else if (bare.starts_with(table_prefix))
+            bare.remove_prefix(table_prefix.size());
+
+        if (metadata.isVirtualColumn(String(bare)))
+            continue;
+
+        columns.emplace_back(bare);
     }
 
     if (!columns.empty())

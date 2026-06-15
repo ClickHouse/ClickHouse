@@ -16,3 +16,5 @@ OK
 OK
 OK
 OK
+-- A real column shadowing a virtual name still needs SELECT
+ACCESS_DENIED

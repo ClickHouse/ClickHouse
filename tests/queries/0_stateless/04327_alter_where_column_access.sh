@@ -63,7 +63,17 @@ check_access "DELETE FROM tab WHERE id = 42"
 check_access "UPDATE tab SET name = '' WHERE id = 1 SETTINGS enable_lightweight_update = 1"
 check_access "ALTER TABLE tab UPDATE name = toString(id) WHERE name = 'a'"
 
+# A real column whose name shadows a virtual column (e.g. `_part`) is real data and still needs SELECT,
+# so without SELECT(`_part`) the mutation is denied (rather than reading the column for free). We only
+# assert the denial: with the grant the mutation hits an unrelated engine limitation on such tables.
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab;
+CREATE TABLE tab_shadow (\`_part\` String, id UInt32) ENGINE = MergeTree ORDER BY id;
+GRANT ALTER DELETE, SELECT(id) ON $CLICKHOUSE_DATABASE.tab_shadow TO $user_name;
+"
+echo "-- A real column shadowing a virtual name still needs SELECT"
+check_access "ALTER TABLE tab_shadow DELETE WHERE \`_part\` = 'x'"
+
+$CLICKHOUSE_CLIENT -q "
+DROP TABLE IF EXISTS tab, tab_shadow;
 DROP USER IF EXISTS $user_name;
 "

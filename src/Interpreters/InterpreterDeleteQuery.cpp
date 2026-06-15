@@ -86,7 +86,7 @@ BlockIO InterpreterDeleteQuery::execute()
         AccessRightsElements read_access;
         addExpressionColumnsSelectAccess(
             read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
-            table->getInMemoryMetadataPtr(getContext(), false)->virtuals);
+            *table->getInMemoryMetadataPtr(getContext(), false));
         if (!read_access.empty())
             getContext()->checkAccess(read_access);
     }

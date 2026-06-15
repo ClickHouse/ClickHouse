@@ -35,7 +35,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/VirtualColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -432,6 +432,35 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
+    /// `UPDATE`/`DELETE` read the columns in their WHERE predicate (and UPDATE assignment expressions),
+    /// so they require SELECT on those columns. Resolved against the table schema so virtual columns are
+    /// excluded; this keeps `getRequiredAccessForCommand` (used by KILL MUTATION and the ON CLUSTER
+    /// pre-check) free of read requirements. Enforced here, before the replicated/cloud DDL enqueue, so
+    /// the initiating user's access is checked even when execution is delegated to other replicas.
+    if (table)
+    {
+        AccessRightsElements read_access;
+        const auto & metadata = *table->getInMemoryMetadataPtr(getContext(), false);
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type == ASTAlterCommand::UPDATE)
+            {
+                addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, metadata);
+                for (const ASTPtr & assignment : command.update_assignments->children)
+                    addExpressionColumnsSelectAccess(
+                        read_access, assignment->as<const ASTAssignment &>().expression().get(),
+                        table_id.database_name, table_id.table_name, metadata);
+            }
+            else if (command.type == ASTAlterCommand::DELETE)
+            {
+                addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, metadata);
+            }
+        }
+        if (!read_access.empty())
+            getContext()->checkAccess(read_access);
+    }
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -453,33 +482,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
-
-    /// `UPDATE`/`DELETE` read the columns in their WHERE predicate (and UPDATE assignment expressions),
-    /// so they require SELECT on those columns. Checked here, with the resolved storage, so virtual
-    /// columns can be excluded; this keeps `getRequiredAccessForCommand` (used by KILL MUTATION and the
-    /// ON CLUSTER pre-check) free of read requirements — each node enforces them when it executes locally.
-    {
-        AccessRightsElements read_access;
-        const auto & virtuals = table->getInMemoryMetadataPtr(getContext(), false)->virtuals;
-        for (const auto & child : alter.command_list->children)
-        {
-            const auto & command = child->as<const ASTAlterCommand &>();
-            if (command.type == ASTAlterCommand::UPDATE)
-            {
-                addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, virtuals);
-                for (const ASTPtr & assignment : command.update_assignments->children)
-                    addExpressionColumnsSelectAccess(
-                        read_access, assignment->as<const ASTAssignment &>().expression().get(),
-                        table_id.database_name, table_id.table_name, virtuals);
-            }
-            else if (command.type == ASTAlterCommand::DELETE)
-            {
-                addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, virtuals);
-            }
-        }
-        if (!read_access.empty())
-            getContext()->checkAccess(read_access);
-    }
 
 #if CLICKHOUSE_CLOUD
     if (alter.isUnlockSnapshot())
