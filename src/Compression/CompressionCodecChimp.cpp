@@ -528,8 +528,13 @@ void registerCodecChimp(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Chimp);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        /// Default bytes size is 1
-        UInt8 data_bytes_size = 1;
+        /// `Chimp` only supports 4- and 8-byte payloads, so unlike `Gorilla` (which also handles 1
+        /// and 2 bytes) there is no sensible default width. Leave it unset and reject any path that
+        /// cannot determine a supported width, so that a `Chimp` codec which can neither compress nor
+        /// read back its own data can never be constructed. Without this, no-column contexts such as
+        /// `clickhouse-compressor --codec Chimp` or `TTL ... RECOMPRESS CODEC(Chimp)` would build a
+        /// `Chimp(1)` that is accepted up front and then fails later, during compression or a merge.
+        UInt8 data_bytes_size = 0;
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
@@ -549,6 +554,10 @@ void registerCodecChimp(CompressionCodecFactory & factory)
         {
             data_bytes_size = getDataBytesSize(column_type);
         }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                "Chimp codec requires either a column type or an explicit width argument of 4 or 8 "
+                "(e.g. Chimp(8)); it has no default width because it only supports 4- and 8-byte values");
 
         return std::make_shared<CompressionCodecChimp>(data_bytes_size);
     };

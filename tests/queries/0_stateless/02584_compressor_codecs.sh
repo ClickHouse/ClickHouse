@@ -24,6 +24,7 @@ $CLICKHOUSE_COMPRESSOR --codec 'Gorilla(5)' --codec 'LZ4' --input $DATA_FILE --o
 $CLICKHOUSE_COMPRESSOR --codec 'Gorilla([1,2])' --codec 'LZ4' --input $DATA_FILE --output $OUT_FILE 2>&1 | grep -c "ILLEGAL_CODEC_PARAMETER";
 $CLICKHOUSE_COMPRESSOR --codec 'Gorilla(4)' --codec 'LZ4' --input $DATA_FILE --output $OUT_FILE;
 
+$CLICKHOUSE_COMPRESSOR --codec 'Chimp' --codec 'LZ4' --input $DATA_FILE --output $OUT_FILE 2>&1 | grep -c "ILLEGAL_CODEC_PARAMETER";
 $CLICKHOUSE_COMPRESSOR --codec 'Chimp(1)' --codec 'LZ4' --input $DATA_FILE --output $OUT_FILE 2>&1 | grep -c "ILLEGAL_CODEC_PARAMETER";
 $CLICKHOUSE_COMPRESSOR --codec 'Chimp(5)' --codec 'LZ4' --input $DATA_FILE --output $OUT_FILE 2>&1 | grep -c "ILLEGAL_CODEC_PARAMETER";
 $CLICKHOUSE_COMPRESSOR --codec 'Chimp([1,2])' --codec 'LZ4' --input $DATA_FILE --output $OUT_FILE 2>&1 | grep -c "ILLEGAL_CODEC_PARAMETER";
