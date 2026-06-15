@@ -1,6 +1,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
+#include <deque>
+
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
@@ -785,6 +787,93 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     auto alias_column_step = std::make_unique<ExpressionStep>(current_header, std::move(merged_alias_columns_actions_dag));
     alias_column_step->setStepDescription("Compute alias columns");
     return alias_column_step;
+}
+
+/// Reorder `source` columns to match `expected` so the position-based convert below pairs
+/// them correctly.
+///
+/// On a remote read the local plan inlines ALIAS columns into their defining expressions
+/// (e.g. `xx` becomes `concat(__table1.x, 'aaa')`) and places them among the projection
+/// columns, while the outer planner keeps the ALIAS column under its identifier
+/// (`__table1.xx`) next to the storage columns. So the two headers carry the same columns in
+/// a different order, and an ALIAS column has a different name on each side.
+///
+/// Storage and function columns have identical names in both lists and are matched by name.
+/// The leftover columns are the ALIAS columns: their relative (projection) order is the same
+/// on both sides, so they are paired positionally. This positional pairing is only sound when
+/// every leftover `expected` column is provably a table ALIAS column (its name is the
+/// identifier of an ALIAS column); a column whose name merely differs between the two plans
+/// for another reason (e.g. a function that references an ALIAS column, inlined to
+/// `plus(plus(__table1.a, 100), 1000)` on one side and `plus(__table1.ax, 1000)` on the
+/// other) must NOT be paired positionally. When that guard does not hold, `source` is
+/// returned unchanged and the convert falls back to its prior name/position behavior.
+ColumnsWithTypeAndName alignRemoteColumnsToExpectedOrder(
+    const ColumnsWithTypeAndName & source,
+    const ColumnsWithTypeAndName & expected,
+    const TableExpressionData & table_expression_data)
+{
+    /// Names of the genuine table ALIAS columns as they appear in `expected` (their identifiers).
+    std::unordered_set<std::string_view> alias_column_identifiers;
+    for (const auto & [alias_name, alias_actions] : table_expression_data.getAliasColumnExpressions())
+        if (const auto * identifier = table_expression_data.getColumnIdentifierOrNull(alias_name))
+            alias_column_identifiers.insert(*identifier);
+
+    if (alias_column_identifiers.empty())
+        return source;
+
+    const size_t num_columns = source.size();
+
+    std::unordered_map<std::string_view, std::deque<size_t>> source_positions_by_name;
+    for (size_t i = 0; i < num_columns; ++i)
+        source_positions_by_name[source[i].name].push_back(i);
+
+    std::vector<size_t> permutation(num_columns);
+    std::vector<bool> source_used(num_columns, false);
+    std::vector<size_t> unmatched_expected;
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        auto it = source_positions_by_name.find(expected[i].name);
+        if (it != source_positions_by_name.end() && !it->second.empty())
+        {
+            size_t source_pos = it->second.front();
+            it->second.pop_front();
+            permutation[i] = source_pos;
+            source_used[source_pos] = true;
+        }
+        else
+        {
+            /// Only pair leftovers positionally when every leftover is a real ALIAS column;
+            /// otherwise the relative-order assumption does not hold and we must not reorder.
+            if (!alias_column_identifiers.contains(expected[i].name))
+                return source;
+            unmatched_expected.push_back(i);
+        }
+    }
+
+    std::vector<size_t> unmatched_source;
+    for (size_t i = 0; i < num_columns; ++i)
+        if (!source_used[i])
+            unmatched_source.push_back(i);
+
+    if (unmatched_expected.size() != unmatched_source.size())
+        return source;
+
+    /// Leftover ALIAS columns keep the same relative order on both sides; pair them in order.
+    for (size_t k = 0; k < unmatched_expected.size(); ++k)
+        permutation[unmatched_expected[k]] = unmatched_source[k];
+
+    ColumnsWithTypeAndName reordered;
+    reordered.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        reordered.push_back(source[permutation[i]]);
+
+    /// Defense in depth: the reorder must line types up with `expected` position by position.
+    for (size_t i = 0; i < num_columns; ++i)
+        if (!reordered[i].type->equals(*expected[i].type))
+            return source;
+
+    return reordered;
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
@@ -1580,9 +1669,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             auto expected_block = *expected_header;
             materializeBlockInplace(expected_block);
 
+            auto source_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
+            auto expected_columns = expected_block.getColumnsWithTypeAndName();
+
+            /// A remote read emits ALIAS columns in a different order than the outer planner
+            /// expects; realign them so the position-based convert below pairs columns correctly.
+            if (table_expression_data.isRemote() && source_columns.size() == expected_columns.size())
+                source_columns = alignRemoteColumnsToExpectedOrder(
+                    source_columns, expected_columns, table_expression_data);
+
             auto rename_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-                expected_block.getColumnsWithTypeAndName(),
+                source_columns,
+                expected_columns,
                 ActionsDAG::MatchColumnsMode::Position,
                 planner_context->getQueryContext(),
                 true /*ignore_constant_values*/,
