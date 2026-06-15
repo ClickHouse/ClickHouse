@@ -153,9 +153,13 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         }
     }
 
-    siphash.update(current_user);
-    siphash.update(initial_user);
-    siphash.update(authenticated_user);
+    /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
+    /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
+    for (const String & identity_field : {current_user, initial_user, authenticated_user})
+    {
+        siphash.update(identity_field.size());
+        siphash.update(identity_field);
+    }
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
