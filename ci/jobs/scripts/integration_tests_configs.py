@@ -49,11 +49,6 @@ TEST_CONFIGS = [
         "pins azurite to fixed host port 10000 (emulator mode); concurrent --dist=each workers collide on bind",
     ),
     TC(
-        "test_storage_delta/test_cdf.py",
-        True,
-        "pins azurite to fixed host port 10000 (emulator mode); concurrent --dist=each workers collide on bind",
-    ),
-    TC(
         "test_storage_iceberg_interoperability_azure/",
         True,
         "pins azurite to fixed host port 10000 (Spark emulator mode); concurrent --dist=each workers collide on bind",
