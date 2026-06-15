@@ -28,18 +28,27 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
 LATEST=$(ls "${TABLE_PATH}metadata/" | grep -E '^v[0-9]+\.metadata\.json$' | sort -t v -k2 -n | tail -1)
 python3 - "${TABLE_PATH}metadata" "${LATEST}" <<'PY'
 import json, os, sys, re
-md, latest = sys.argv[1], sys.argv[2]
-m = json.load(open(os.path.join(md, latest)))
-for s in m["schemas"]:
-    if s["schema-id"] == 0:
-        for f in s["fields"]:
-            if f["name"] == "c0":
-                f["name"] = "c9"
-m["last-updated-ms"] = m.get("last-updated-ms", 0) + 60000
-n = int(re.match(r"v(\d+)\.metadata\.json", latest).group(1)) + 1
-tmp = os.path.join(md, ".tmp_next")
-json.dump(m, open(tmp, "w"))
-os.rename(tmp, os.path.join(md, f"v{n}.metadata.json"))
+
+metadata_dir, latest_file = sys.argv[1], sys.argv[2]
+
+with open(os.path.join(metadata_dir, latest_file)) as fh:
+    metadata = json.load(fh)
+
+for schema in metadata["schemas"]:
+    if schema["schema-id"] == 0:
+        for field in schema["fields"]:
+            if field["name"] == "c0":
+                field["name"] = "c9"
+
+metadata["last-updated-ms"] = metadata.get("last-updated-ms", 0) + 60000
+
+version = int(re.match(r"v(\d+)\.metadata\.json", latest_file).group(1)) + 1
+next_file = os.path.join(metadata_dir, f"v{version}.metadata.json")
+
+tmp_file = os.path.join(metadata_dir, ".tmp_next")
+with open(tmp_file, "w") as fh:
+    json.dump(metadata, fh)
+os.rename(tmp_file, next_file)
 PY
 
 # Forced fresh re-read re-parses the new version: addIcebergTableSchema(0, {c9,c1})
