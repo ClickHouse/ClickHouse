@@ -355,6 +355,7 @@ void MergeSortingTransform::remerge()
         /// Chunk columns follow `header_without_constants` order; the first sort column
         /// is not necessarily at position 0 (e.g. lazy materialization can place a
         /// WHERE-only column before it). Resolve its actual position by name.
+        chassert(!description.empty());
         size_t sort_column_position = header_without_constants.getPositionByName(description.front().column_name);
         chunks[0].getColumns()[sort_column_position]->get(limit - 1, value);
         threshold_tracker->testAndSet(value);
