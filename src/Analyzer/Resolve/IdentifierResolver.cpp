@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TableNameHints.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/IdentifierNode.h>
@@ -350,6 +351,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};
+}
+
+std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifier & table_identifier, const ContextPtr & context)
+{
+    size_t parts_size = table_identifier.getPartsSize();
+    if (parts_size < 1 || parts_size > 2)
+        return {};
+
+    String database_name;
+    String table_name;
+    if (table_identifier.isCompound())
+    {
+        database_name = table_identifier[0];
+        table_name = table_identifier[1];
+    }
+    else
+    {
+        table_name = table_identifier[0];
+    }
+
+    /// Resolve the database the same way table resolution does, so the hint search starts from
+    /// the right database (the current one for a bare name) and can fall back to other databases.
+    if (database_name.empty())
+        database_name = context->getCurrentDatabase();
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    TableNameHints hints(database, context);
+    return hints.getHintForTable(table_name);
 }
 
 /// Resolve identifier from compound expression
