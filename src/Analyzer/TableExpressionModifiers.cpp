@@ -4,8 +4,6 @@
 
 #include <Core/Streaming/CursorTree.h>
 
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -63,20 +61,6 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
             }
         }
     }
-}
-
-void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
-{
-    writeIntBinary(val.numerator, out);
-    writeIntBinary(val.denominator, out);
-}
-
-TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
-{
-    TableExpressionModifiers::Rational val;
-    readIntBinary(val.numerator, in);
-    readIntBinary(val.denominator, in);
-    return val;
 }
 
 String TableExpressionModifiers::formatForErrorMessage() const

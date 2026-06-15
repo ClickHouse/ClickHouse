@@ -153,6 +153,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Paimon)
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/OOMCanary)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 
@@ -440,8 +441,6 @@ if (TARGET ch_contrib::arrow_flight)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
-add_object_library(clickhouse_server_statelessworker Server/StatelessWorker)
-add_object_library(clickhouse_server_distributedquery Server/DistributedQuery)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -549,6 +548,10 @@ if (TARGET ch_contrib::libfiu)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libfiu)
 endif()
 
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::silk_fibers)
+endif()
+
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
@@ -574,6 +577,10 @@ target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 target_link_libraries(dbms PUBLIC ch_contrib::roaring)
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
+endif()
+
+if (TARGET ch_contrib::libpng)
+    target_link_libraries(dbms PUBLIC ch_contrib::libpng)
 endif()
 
 if (TARGET ch_contrib::rdkafka)
@@ -885,6 +892,10 @@ if (ENABLE_TESTS)
         -Wno-sign-compare
     )
 
+    target_compile_definitions(unit_tests_dbms PRIVATE
+        CLICKHOUSE_TESTS_CONFIG_DIR="${ClickHouse_SOURCE_DIR}/tests/config"
+    )
+
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gmock_all
         ch_contrib::gtest
@@ -919,6 +930,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::silk_fibers)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
 endif ()
 

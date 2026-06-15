@@ -280,25 +280,6 @@
         <password></password>
     </interserver_http_credentials>-->
 
-    <!-- Multi-stage distributed query execution (experimental, enabled per query with the
-         `make_distributed_plan` setting). When a query uses streaming exchanges, workers connect
-         directly to each other on this port to pass intermediate results.
-
-         Security: the streaming exchange handshake is NOT authenticated. The port must be treated
-         like the interserver port: reachable only from trusted ClickHouse nodes in the same cluster,
-         never from untrusted networks. For that reason the listener is started only when an explicit
-         `streaming_exchange_listen_host` is configured; setting only the port logs an error and does
-         not start the listener. Bind it to a private interface and protect it with a firewall.
-         Exchanges are keyed by a random per-query identifier, which makes blind injection into a
-         running query impractical, but this is defense in depth, not an access-control mechanism.
-      -->
-    <!--
-    <distributed_query>
-        <streaming_exchange_port>9223</streaming_exchange_port>
-        <streaming_exchange_listen_host>127.0.0.1</streaming_exchange_listen_host>
-    </distributed_query>
-    -->
-
     <!-- Listen specified address.
          Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
          Notes:
@@ -486,7 +467,17 @@
       -->
     <async_load_databases>true</async_load_databases>
 
-    <!-- On memory constrained environments you may have to set this to value larger than 1.
+    <!-- The maximum amount of memory the server is allowed to use, as a ratio to the available memory.
+
+         Besides capping the hard memory limit at startup, the background memory worker periodically
+         recomputes the limit at runtime as (resident memory + system available memory) * this ratio,
+         so the server leaves room for other processes on the same host. In a cgroup with a finite
+         memory limit, the cgroup's available memory is used instead of the host-wide value.
+
+         On memory constrained environments you may have to set this to a value larger than 1.
+         A value of 0 disables both the startup cap and the runtime adjustment.
+         To keep only the static cap (the behavior of previous versions), set
+         memory_worker_dynamic_hard_limit to 0.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
 
