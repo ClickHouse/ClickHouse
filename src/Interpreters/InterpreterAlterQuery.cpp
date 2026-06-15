@@ -34,6 +34,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -564,19 +565,28 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
 
     auto column_name = [&]() -> String { return getIdentifierName(command.column); };
     auto column_name_from_col_decl = [&]() -> std::string_view { return command.col_decl->as<ASTColumnDeclaration &>().name; };
-    auto column_names_from_update_assignments = [&]() -> std::vector<std::string_view>
-    {
-        std::vector<std::string_view> column_names;
-        for (const ASTPtr & assignment_ast : command.update_assignments->children)
-            column_names.emplace_back(assignment_ast->as<const ASTAssignment &>().column_name);
-        return column_names;
-    };
 
     switch (command.type)
     {
         case ASTAlterCommand::UPDATE:
         {
-            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
+            /// Assigning to the `_row_exists` lightweight-delete marker is a delete, not an update:
+            /// `DELETE FROM` rewrites to `ALTER ... UPDATE _row_exists = 0`. Govern it by ALTER DELETE
+            /// so that `DELETE FROM` needs only the documented ALTER DELETE privilege.
+            std::vector<std::string_view> updated_columns;
+            bool updates_row_exists = false;
+            for (const ASTPtr & assignment_ast : command.update_assignments->children)
+            {
+                const auto & column = assignment_ast->as<const ASTAssignment &>().column_name;
+                if (column == RowExistsColumn::name)
+                    updates_row_exists = true;
+                else
+                    updated_columns.emplace_back(column);
+            }
+            if (!updated_columns.empty())
+                required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
+            if (updates_row_exists)
+                required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
         case ASTAlterCommand::ADD_COLUMN:

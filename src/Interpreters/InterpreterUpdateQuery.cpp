@@ -8,11 +8,13 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -81,8 +83,23 @@ BlockIO InterpreterUpdateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
+    /// Assigning to the `_row_exists` lightweight-delete marker is a delete, not an update
+    /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern it by ALTER DELETE.
+    bool updates_row_exists = false;
+    bool updates_other_columns = false;
+    for (const ASTPtr & assignment_ast : update_query.assignments->children)
+    {
+        if (assignment_ast->as<const ASTAssignment &>().column_name == RowExistsColumn::name)
+            updates_row_exists = true;
+        else
+            updates_other_columns = true;
+    }
+
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    if (updates_row_exists)
+        required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
+    if (updates_other_columns || !updates_row_exists)
+        required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {
