@@ -146,8 +146,7 @@ protected:
     CommitCallback commit_callback;
 
     /// Monotonic high-water mark reported to NuRaft via `last_snapshot`. Advanced only via
-    /// `advanceLatestSnapshotMeta`; never regresses; retention pins its registry entry (the
-    /// bytes can still be rewritten in place by a same-index re-receive — pre-existing).
+    /// `advanceLatestSnapshotMeta`; never regresses; retention pins its registry entry.
     /// A saved-but-not-applied install does not advance it, so the manager's map max may
     /// exceed it; `init` adopts the newest disk snapshot.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
@@ -308,9 +307,7 @@ public:
 
     std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
 
-    /// Cancel an in-progress snapshot receive: remove the receive file (the FINAL
-    /// `snapshot_<idx>` name — a same-index re-receive can thus delete a registered
-    /// snapshot) and its marker, and reset the context.
+    /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
 
     SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);

@@ -231,7 +231,6 @@ public:
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
     SnapshotMaintenanceTasks prepareSnapshotMaintenanceTasks(uint64_t just_written_log_idx);
     bool publishMovedSnapshotIfValid(const SnapshotMoveCandidate & candidate);
-    SnapshotFileInfoPtr getLatestSnapshotInfoMetadataOnly() const;
     void retireUnpublishedSnapshotFile(const SnapshotFileInfoPtr & file_info) const;
 
     /// Cross-disk copy/removal; must run outside `snapshots_lock` in the create path.
@@ -239,8 +238,12 @@ public:
         const SnapshotMoveCandidate & candidate,
         const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot);
 
-    /// Receive/tool-path maintenance; may run in the caller's locking context.
-    void runMaintenanceInline(SnapshotMaintenanceTasks && tasks);
+    /// Receive/tool-path maintenance; may run in the caller's locking context. Prepares and
+    /// runs the tasks fully inside its own try/catch (best-effort): it is called after the
+    /// just-written snapshot is already registered, so a throw must never reach the caller and
+    /// let a registered, durable snapshot be lost. `just_written_log_idx` (0 = none) pins the
+    /// calling writer's own entry through this pass.
+    void runMaintenanceInline(uint64_t just_written_log_idx);
 
     /// Serialize already compressed snapshot to disk (return path)
     SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);

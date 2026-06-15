@@ -729,7 +729,7 @@ KeeperSnapshotManager<Storage>::makeManagedSnapshotFileInfo(std::string path, Di
                 if (p->retired_for_removal.load(std::memory_order_acquire))
                 {
                     p->disk->removeFileIfExists(p->path);
-                    LOG_DEBUG(logger, "Removed outdated snapshot {} at path {}", log_idx, p->path);
+                    LOG_DEBUG(logger, "Removed retired snapshot {} at path {}", log_idx, p->path);
                 }
             }
             catch (...)
@@ -903,7 +903,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
 
     /// Runs before `init` sets the mark, so `protected_snapshot_log_idx == 0` here — nothing
     /// to pin yet. With `snapshots_to_keep == 0` retention keeps none at startup (pre-existing).
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks(/*just_written_log_idx=*/0));
+    runMaintenanceInline(/*just_written_log_idx=*/0);
 }
 
 template<typename Storage>
@@ -971,7 +971,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, snapshot_file_info);
     if (published_snapshot_file_info != snapshot_file_info)
         retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks(up_to_log_idx));
+    runMaintenanceInline(up_to_log_idx);
     return published_snapshot_file_info;
 }
 
@@ -1032,7 +1032,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
     auto published_snapshot_file_info = publishSnapshotFile(ctx.log_idx, snapshot_file_info);
     if (published_snapshot_file_info != snapshot_file_info)
         retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks(ctx.log_idx));
+    runMaintenanceInline(ctx.log_idx);
     return published_snapshot_file_info;
 }
 
@@ -1344,7 +1344,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, snapshot_file_info);
     if (published_snapshot_file_info != snapshot_file_info)
         retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(prepareSnapshotMaintenanceTasks(up_to_log_idx));
+    runMaintenanceInline(up_to_log_idx);
     return published_snapshot_file_info;
 }
 
@@ -1365,14 +1365,6 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::publishSnapshotFile(uint64_t
         it->second->path,
         it->second->disk->getName());
     return it->second;
-}
-
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfoMetadataOnly() const
-{
-    if (existing_snapshots.empty())
-        return nullptr;
-    return existing_snapshots.rbegin()->second;
 }
 
 template<typename Storage>
@@ -1480,10 +1472,16 @@ bool KeeperSnapshotManager<Storage>::moveSnapshotCandidate(
 }
 
 template<typename Storage>
-void KeeperSnapshotManager<Storage>::runMaintenanceInline(SnapshotMaintenanceTasks && tasks)
+void KeeperSnapshotManager<Storage>::runMaintenanceInline(uint64_t just_written_log_idx)
 {
+    /// Maintenance is best-effort and runs AFTER the just-written snapshot is registered.
+    /// Preparing the tasks can throw (vector growth in `detachOutdatedSnapshotsIfNeeded`,
+    /// disk-selector lookups in `selectSnapshotsToMove`); keep preparation inside this
+    /// try/catch so a throw can never propagate out of the caller and let
+    /// `cancelIfHasUnfinishedSnapshotReceive` unlink the file we just registered.
     try
     {
+        SnapshotMaintenanceTasks tasks = prepareSnapshotMaintenanceTasks(just_written_log_idx);
         tasks.retired_snapshots.clear();
         for (const auto & candidate : tasks.move_candidates)
             moveSnapshotCandidate(candidate, [this](const SnapshotMoveCandidate & move_candidate)
