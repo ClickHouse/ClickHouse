@@ -951,7 +951,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         const auto & projection_nodes = pre_visitor_query_node->getProjection().getNodes();
         original_projection_hashes.reserve(projection_nodes.size());
         for (const auto & node : projection_nodes)
-            original_projection_hashes.push_back(node->getTreeHash({.compare_aliases = false}));
+            original_projection_hashes.push_back(node->getTreeHashGlobal({.compare_aliases = false}));
     }
 
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
@@ -981,7 +981,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
             for (size_t i = 0; i < projection_nodes.size(); ++i)
             {
-                auto inlined_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
+                auto inlined_hash = projection_nodes[i]->getTreeHashGlobal({.compare_aliases = false});
                 auto & entries = bucket[inlined_hash];
 
                 if (entries.empty())
