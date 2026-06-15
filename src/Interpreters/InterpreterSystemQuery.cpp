@@ -2345,10 +2345,13 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
+    if (query.sync_replica_mode != SyncReplicaMode::DEFAULT && query.sync_replica_mode != SyncReplicaMode::STRICT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC DATABASE REPLICA supports only DEFAULT and STRICT modes");
+
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
-        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds()))
+        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds(), query.sync_replica_mode))
         {
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
                     "See the 'receive_timeout' setting", database_name);

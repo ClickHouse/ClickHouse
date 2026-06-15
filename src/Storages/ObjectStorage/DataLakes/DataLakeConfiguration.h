@@ -84,6 +84,15 @@ public:
 
     bool isDataLakeConfiguration() const override { return true; }
 
+    bool isIcebergConfiguration() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
+    }
+
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
@@ -349,10 +358,11 @@ public:
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Don't use deprecated settings storage_catalog_type and storage_catalog_url");
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(db_name);
-        if (!database)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} not found", db_name);
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(database);
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
+        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
