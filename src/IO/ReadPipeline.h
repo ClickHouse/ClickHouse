@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
+#include <Common/Logger.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
@@ -129,13 +130,13 @@ public:
         std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// -- Memory cache stage --
-    void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings);
+    /// The cache pointer travels inside `page_cache_settings.cache`; a null cache disables the stage.
+    void needMemoryCache(String cache_path_prefix, PageCacheSettings page_cache_settings);
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
     /// `cache_path_prefix + object.remote_path` derivation.
     /// Used by `StorageObjectStorageSource` where the key is `"s3:" + path` with `"etag:" + etag`.
     void needMemoryCache(
-        std::shared_ptr<PageCache> cache,
         String custom_cache_path,
         String custom_file_version,
         PageCacheSettings page_cache_settings);
@@ -194,9 +195,8 @@ private:
 
     struct MemoryCacheStage
     {
-        std::shared_ptr<PageCache> cache;
         String cache_path_prefix;
-        PageCacheSettings page_cache_settings;
+        PageCacheSettings page_cache_settings;          /// Carries the `cache` shared_ptr
         std::optional<String> custom_cache_path;        /// Override the full cache key path
         std::optional<String> custom_file_version;      /// Override the file_version in the cache key
     };
@@ -228,6 +228,16 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+
+    LoggerPtr log = getLogger("ReadPipeline");
+
+    /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`).
+    /// Returns nullptr when the setting is off, the source variant is not yet
+    /// supported, or any stage the minimal executor can't handle (caches,
+    /// decryption, distributed cache) is configured — so the caller falls back
+    /// to the legacy matryoshka pipeline. When it returns a buffer, `build` must
+    /// NOT apply the `wrap*` stages.
+    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor() const;
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.

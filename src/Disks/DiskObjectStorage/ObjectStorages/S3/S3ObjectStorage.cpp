@@ -234,7 +234,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     auto settings_ptr = s3_settings.get();
 
     BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.enable_blob_storage_log_for_read_operations)
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
     {
         blob_storage_log = BlobStorageLogWriter::create(disk_name);
         if (blob_storage_log)
@@ -427,7 +427,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
-void putObjectsTagOnS3(
+static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
     const Strings & object_keys,

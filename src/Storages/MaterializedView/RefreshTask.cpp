@@ -43,6 +43,7 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
+    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
 }
 
 namespace DB
@@ -1208,7 +1209,7 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
 
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
-    UInt64 delay_ms;
+    UInt64 delay_ms = 0;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
     if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
@@ -1360,15 +1361,17 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
     /// Set watches. (This is a lot of code, is there a better way?)
+    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
+        watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
+        zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
     }
     if (!coordination.watches->children_watch_active.load())
     {
         coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
+        zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
@@ -1683,7 +1686,7 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
             /// Unquoted int or quoted json string.
             Int64 int_val = 0;
             String string_val;
-            char c;
+            char c = 0;
             if (in.peek(c) && c != '"')
                 in >> int_val;
             else
@@ -1780,19 +1783,19 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_seconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_seconds(std::chrono::seconds(v));
         }
         else if constexpr (std::is_same_v<T, std::chrono::milliseconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::milliseconds(v);
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_time<std::chrono::nanoseconds>>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(v));
         }

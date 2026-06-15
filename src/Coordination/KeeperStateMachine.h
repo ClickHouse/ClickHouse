@@ -23,6 +23,15 @@ struct KeeperStorageStats;
 
 struct ISnapshotLoader;
 
+struct KeeperSnapshotStatus
+{
+    uint64_t last_log_index;
+    String path;
+    DiskPtr disk;
+    SnapshotFileInfoPtr pin;
+    bool is_received;
+};
+
 class IKeeperStateMachine : public nuraft::state_machine
 {
 public:
@@ -104,7 +113,7 @@ public:
     /// Introspection functions for 4lw commands
     virtual int64_t getLastProcessedZxid() const = 0;
 
-    virtual const KeeperStorageStats & getStorageStats() const = 0;
+    virtual KeeperStorageStats getStorageStats() const = 0;
 
     virtual uint64_t getNodesCount() const = 0;
     virtual uint64_t getTotalWatchesCount() const = 0;
@@ -124,6 +133,8 @@ public:
     virtual void recalculateStorageStats() = 0;
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
+
+    virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
 
     /// Return a pin for `log_idx`, or `nullptr` if absent. The pin defers
     /// unlink and cross-disk moves until the transfer releases it.
@@ -246,6 +257,7 @@ public:
     // in a reasonable way.
     Storage & getStorageUnsafe()
     {
+        chassert(storage);
         return *storage;
     }
 
@@ -263,7 +275,7 @@ public:
     /// Introspection functions for 4lw commands
     int64_t getLastProcessedZxid() const override;
 
-    const KeeperStorageStats & getStorageStats() const override;
+    KeeperStorageStats getStorageStats() const override;
 
     uint64_t getNodesCount() const override;
     uint64_t getTotalWatchesCount() const override;
@@ -283,6 +295,8 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
+
+    std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
 
     /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
