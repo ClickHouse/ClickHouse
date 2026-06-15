@@ -1196,10 +1196,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
         )
 
-    # If the time budget was exhausted before any test produced a result (e.g. a single
-    # very slow or hanging module consumed the whole budget), report SKIPPED rather than
-    # letting `create_from` default an empty result set to ERROR, which would block the PR.
-    empty_best_effort = (is_flaky_check or is_targeted_check) and not test_results
+    # If the flaky-check time budget was exhausted before any test produced a result (e.g.
+    # a single very slow or hanging module consumed the whole `FLAKY_CHECK_TIME_LIMIT`),
+    # report SKIPPED rather than letting `create_from` default an empty result set to ERROR,
+    # which would block the PR.
+    #
+    # Restricted to `is_flaky_check` on purpose. Targeted checks do not use
+    # `FLAKY_CHECK_TIME_LIMIT`, and their legitimate empty cases (no failed tests to rerun,
+    # all targets stale) already early-exit as SKIPPED above. So an empty result set reaching
+    # this point on a targeted check means `pytest` was launched but written no JSONL entries
+    # (it was killed before producing any) - that is exactly the targeted-check failure signal
+    # we must surface, so it stays ERROR.
+    empty_best_effort = is_flaky_check and not test_results
     R = Result.create_from(
         results=test_results,
         status=Result.Status.SKIPPED if empty_best_effort else "",
