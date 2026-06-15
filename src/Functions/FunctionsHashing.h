@@ -64,6 +64,11 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
+namespace Setting
+{
+    extern const SettingsUInt64 hash_function_seed;
+}
+
 namespace impl
 {
     struct SipHashKey
@@ -401,6 +406,10 @@ struct MurmurHash2Impl32
     {
         return MurmurHash2(data, size, 0);
     }
+    static UInt32 apply(const char * data, const size_t size, UInt64 seed)
+    {
+        return MurmurHash2(data, size, static_cast<uint32_t>(seed));
+    }
 
     static UInt32 combineHashes(UInt32 h1, UInt32 h2)
     {
@@ -419,6 +428,10 @@ struct MurmurHash2Impl64
     static UInt64 apply(const char * data, const size_t size)
     {
         return MurmurHash64A(data, size, 0);
+    }
+    static UInt64 apply(const char * data, const size_t size, UInt64 seed)
+    {
+        return MurmurHash64A(data, size, seed);
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
@@ -480,12 +493,16 @@ struct MurmurHash3Impl32
 
     static UInt32 apply(const char * data, const size_t size)
     {
+        return apply(data, size, 0);
+    }
+    static UInt32 apply(const char * data, const size_t size, UInt64 seed)
+    {
         union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt32 h;
             char bytes[sizeof(h)];
         };
-        MurmurHash3_x86_32(data, size, 0, bytes);
+        MurmurHash3_x86_32(data, size, static_cast<uint32_t>(seed), bytes);
         return h;
     }
 
@@ -505,12 +522,16 @@ struct MurmurHash3Impl64
 
     static UInt64 apply(const char * data, const size_t size)
     {
+        return apply(data, size, 0);
+    }
+    static UInt64 apply(const char * data, const size_t size, UInt64 seed)
+    {
         union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 h[2];
             char bytes[16];
         };
-        MurmurHash3_x64_128(data, size, 0, bytes);
+        MurmurHash3_x64_128(data, size, static_cast<uint32_t>(seed), bytes);
         return h[0] ^ h[1];
     }
 
@@ -528,8 +549,12 @@ struct MurmurHash3Impl128
 
     static UInt128 apply(const char * data, const size_t size)
     {
+        return apply(data, size, 0);
+    }
+    static UInt128 apply(const char * data, const size_t size, UInt64 seed)
+    {
         char bytes[16];
-        MurmurHash3_x64_128(data, size, 0, bytes);
+        MurmurHash3_x64_128(data, size, static_cast<uint32_t>(seed), bytes);
         return *reinterpret_cast<UInt128 *>(bytes);
     }
 
@@ -713,6 +738,7 @@ struct ImplXxHash32
     using ReturnType = UInt32;
 
     static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH32(s, len, 0); }
+    static auto apply(const char * s, const size_t len, UInt64 seed) { return XXH_INLINE_XXH32(s, len, static_cast<XXH32_hash_t>(seed)); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
       *  non-reproducible from outside of CH.
@@ -735,6 +761,7 @@ struct ImplXxHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH64(s, len, 0); }
+    static auto apply(const char * s, const size_t len, UInt64 seed) { return XXH_INLINE_XXH64(s, len, seed); }
 
     /*
        With current implementation with more than 1 arguments it will give the results
@@ -753,6 +780,8 @@ struct ImplXXH3
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH3_64bits(s, len); }
+    /// withSeed short-circuits to the unseeded path when seed == 0, so the default stays identical.
+    static auto apply(const char * s, const size_t len, UInt64 seed) { return XXH_INLINE_XXH3_64bits_withSeed(s, len, seed); }
 
     /*
        With current implementation with more than 1 arguments it will give the results
@@ -772,6 +801,12 @@ struct ImplXXH3_128
     static UInt128 apply(const char * s, const size_t len)
     {
         auto hash = XXH_INLINE_XXH3_128bits(s, len);
+        return {hash.low64, hash.high64};
+    }
+    /// withSeed short-circuits to the unseeded path when seed == 0, so the default stays identical.
+    static UInt128 apply(const char * s, const size_t len, UInt64 seed)
+    {
+        auto hash = XXH_INLINE_XXH3_128bits_withSeed(s, len, seed);
         return {hash.low64, hash.high64};
     }
 
@@ -938,8 +973,13 @@ public:
     /// Keep default implementation of useDefaultImplementationForNulls for compatibility.
     /// E.g. someHash(NULL) is NULL, but someHash(tuple(NULL)) is not NULL.
 
+    explicit FunctionAnyHash(UInt64 seed_ = 0) : seed(seed_) {}
+
 private:
     using ToType = typename Impl::ReturnType;
+
+    /// Value of the `hash_function_seed` setting; 0 reproduces the previous unseeded behaviour.
+    const UInt64 seed = 0;
 
     template <typename FromType, bool first>
     void executeIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
@@ -1568,15 +1608,18 @@ public:
         return col_to;
     }
 
-    static ToType apply(const KeyType & key, const char * begin, size_t size)
+    ToType apply(const KeyType & key, const char * begin, size_t size) const
     {
         if constexpr (Keyed)
             return Impl::applyKeyed(key, begin, size);
+        /// Seedable algorithms expose a three-argument apply(begin, size, seed) overload.
+        else if constexpr (requires { Impl::apply(begin, size, seed); })
+            return Impl::apply(begin, size, seed);
         else
             return Impl::apply(begin, size);
     }
 
-    static ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
+    ToType combineHashes(const KeyType & key, ToType h1, ToType h2) const
     {
         if constexpr (Keyed)
             return Impl::combineHashesKeyed(key, h1, h2);
@@ -1591,16 +1634,19 @@ template <typename Impl, bool Keyed = false, typename KeyType = char, typename K
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>
 {
 public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
+    explicit FunctionAnyHash(ContextPtr context)
+        : TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>(context->getSettingsRef()[Setting::hash_function_seed])
+        , selector(context)
     {
+        const UInt64 seed = context->getSettingsRef()[Setting::hash_function_seed];
         selector
-            .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+            .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>(seed);
 
 #if USE_MULTITARGET_CODE
         /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
         /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
-        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>(seed);
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>(seed);
 #endif
     }
 
@@ -1830,6 +1876,7 @@ struct ImplWyHash64
     using ReturnType = UInt64;
 
     static UInt64 apply(const char * s, const size_t len) { return wyhash(s, len, 0, _wyp); }
+    static UInt64 apply(const char * s, const size_t len, UInt64 seed) { return wyhash(s, len, seed, _wyp); }
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, ImplWyHash64>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;

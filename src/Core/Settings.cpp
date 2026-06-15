@@ -385,6 +385,13 @@ Connection timeout if there are no replicas.
     DECLARE(Milliseconds, handshake_timeout_ms, 10000, R"(
 Timeout in milliseconds for receiving Hello packet from replicas during handshake.
 )", 0) \
+    DECLARE(UInt64, hash_function_seed, 0, R"(
+Seed for hash functions that implement a seeded algorithm: `xxHash32`, `xxHash64`, `xxh3`, `xxh3_128`, `murmurHash2_32`, `murmurHash2_64`, `murmurHash3_32`, `murmurHash3_64`, `murmurHash3_128` and `wyHash64`. These functions read the seed from this setting instead of using a fixed seed of 0.
+
+A value of `0` (the default) reproduces the previous, unseeded behavior, so existing results are unchanged. Functions whose seed is 32 bits wide (`xxHash32`, `murmurHash2_32`, `murmurHash3_32`, `murmurHash3_64`, `murmurHash3_128`) use the lower 32 bits of the value.
+
+Hash functions that do not implement a seeded algorithm (for example `cityHash64`, `farmHash64`, `halfMD5`), functions with a fixed compatibility seed (`gccMurmurHash`, `kafkaMurmurHash`) and the cryptographic hashes ignore this setting. `sipHash*` functions support keys via their dedicated `*Keyed` variants.
+)", 0) \
     DECLARE(Milliseconds, connect_timeout_with_failover_ms, 1000, R"(
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the 'shard' and 'replica' sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.

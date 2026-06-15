@@ -1,0 +1,42 @@
+-- default (seed = 0) is unchanged --
+834093149
+17691043854468224118
+17564966470555134057
+ADE2B2886B80787BBB5CA743B534F2FA
+1077681669
+11600739918808951577
+3224780355
+15952677324548579515
+DF65D6D2D12D51F164C5F3A85066322C
+7490563016637708689
+-- not setting the seed equals seed = 0 --
+1
+-- xxHash matches the canonical xxHash test vectors with a seed --
+1042293711
+4152504606
+-- a non-zero seed changes the result of every seedable function (1 = changed) --
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+-- the same seed is deterministic across statements (1 = equal) --
+2654233727439105466
+2654233727439105466
+-- the seed applies to non-String inputs too (1 = changed) --
+1
+-- the seed applies per row, not just to constants (1 = changed) --
+1
+-- non-seedable functions ignore the setting (1 = unchanged) --
+1
+1
+1
+1
+1
+1
+1

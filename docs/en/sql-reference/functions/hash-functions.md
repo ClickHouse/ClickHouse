@@ -23,6 +23,16 @@ SELECT cityHash64(tuple(NULL))
 To calculate hash of the whole contents of a table, use `sum(cityHash64(tuple(*)))` (or other hash function). `tuple` ensures that rows with NULL values are not skipped. `sum` ensures that the order of rows doesn't matter.
 :::
 
+:::note Seeding hash functions
+The [`hash_function_seed`](/operations/settings/settings#hash_function_seed) setting provides a seed for the hash functions that implement a seeded algorithm: `xxHash32`, `xxHash64`, `xxh3`, `xxh3_128`, `murmurHash2_32`, `murmurHash2_64`, `murmurHash3_32`, `murmurHash3_64`, `murmurHash3_128` and `wyHash64`. The default value `0` reproduces the previous, unseeded results, so existing queries are unaffected.
+
+```sql
+SELECT xxHash64('Hello, world!') SETTINGS hash_function_seed = 42;
+```
+
+Hash functions that do not implement a seeded algorithm (such as `cityHash64`, `farmHash64`, `halfMD5`), functions with a fixed compatibility seed (`gccMurmurHash`, `kafkaMurmurHash`) and the cryptographic hashes ignore this setting. The `sipHash*` functions accept keys via their dedicated `*Keyed` variants.
+:::
+
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
