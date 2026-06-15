@@ -16,9 +16,9 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = true,
+            .returns_single_stream = false,
             .preserves_number_of_streams = false,
-            .preserves_sorting = true,
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = false,
@@ -117,9 +117,9 @@ QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void NegativeLimitByStep::applyOrder(SortDescription sort_description)
+void NegativeLimitByStep::applyOrder()
 {
-    in_order = sort_description.hasPrefix(columns);
+    in_order = true;
 }
 
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
