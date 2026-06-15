@@ -655,7 +655,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
           CurrentMetrics::AggregatorThreadsScheduled,
           params.max_threads))
 {
-    memory_tracker = tryCreateAggregationMemoryTracker();
+    if (params.only_merge)
+        memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
+    else
+        memory_tracker = tryCreateAggregationMemoryTracker();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -3524,14 +3527,6 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 
 bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, AggregatedDataVariants & result, bool & no_more_keys, std::atomic<bool> & is_cancelled) const
 {
-    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
-    /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool track_aggregation_memory = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
-    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (track_aggregation_memory)
-        memory_tracker_switcher.emplace(memory_tracker.get());
-
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
@@ -3571,8 +3566,10 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = track_aggregation_memory ? memory_tracker->getParent()->get() : getCurrentQueryMemoryUsage();
-    Int64 result_size_bytes = track_aggregation_memory ? memory_tracker->get() : current_memory_usage;
+    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+
+    /// Here all the results in the sum are taken into account, from different threads.
+    auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
