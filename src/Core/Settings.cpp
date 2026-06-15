@@ -3954,6 +3954,7 @@ If it is set to true, then a user is allowed to executed DDL queries.
 )", 0) \
     DECLARE(Bool, parallel_view_processing, false, R"(
 Enables pushing to attached views concurrently instead of sequentially.
+Note: this setting only applies to INSERT ... SELECT queries. For INSERT ... VALUES queries, view processing parallelism is controlled by the max_threads setting. Buffer engine tables always process views sequentially, regardless of this setting.
 )", 0) \
     DECLARE(Bool, enable_unaligned_array_join, false, R"(
 Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.
