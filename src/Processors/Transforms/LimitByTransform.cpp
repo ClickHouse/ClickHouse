@@ -423,7 +423,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     UInt64 current_run_start_row = 0;
     for (UInt64 row_idx = 1; row_idx < row_count; ++row_idx)
     {
-        if ((row_idx & 1023) == 0 && isCancelled())
+        if (isCancelled())
         {
             stopReading();
             return;
