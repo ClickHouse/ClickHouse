@@ -408,7 +408,7 @@ static void writeMetadataFiles(
             continue;
         }
 
-        Int32 total_records_count = 0;
+        UInt64 total_records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
             total_records_count += data_file->new_records_count;
 

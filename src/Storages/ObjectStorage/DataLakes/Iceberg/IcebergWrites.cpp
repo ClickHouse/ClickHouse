@@ -950,17 +950,17 @@ bool IcebergStorageSink::initializeMetadata()
     if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
-    Int64 total_data_files = 0;
+    UInt64 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
-        total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+        total_data_files += writer.getDataFiles().size();
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
         Iceberg::SnapshotSummaryUpdateAppend{
             .added_files = total_data_files,
-            .added_records = total_rows,
-            .added_files_size = total_chunks_size,
+            .added_records = static_cast<UInt64>(total_rows),
+            .added_files_size = static_cast<UInt64>(total_chunks_size),
             .num_partitions = total_data_files,
         });
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
