@@ -1,5 +1,5 @@
 #include <IO/PlanSchedule.h>
-#include <IO/ReadPlanGeometry.h>
+#include <IO/CoverageMap.h>
 
 #include <gtest/gtest.h>
 
@@ -22,18 +22,18 @@ GeometryEntry tierEntry(CacheTier tier,
     return e;
 }
 
-ReadPlanGeometry geometry(size_t plan_start, size_t plan_end, std::vector<GeometryEntry> entries)
+CoverageMap geometry(size_t plan_start, size_t plan_end, std::vector<GeometryEntry> entries)
 {
-    ReadPlanGeometry g;
+    CoverageMap g;
     g.plan_start = plan_start;
     g.plan_end = plan_end;
     for (auto & e : entries) g.entries.push_back(std::move(e));
     return g;
 }
 
-PlanSchedule describe(const ReadPlanGeometry & g, ByteRange request)
+PlanSchedule describe(const CoverageMap & g, ByteRange request)
 {
-    return describePlan(g, request, MemoryPressureLevel{}, /*min_bytes_for_seek=*/2);
+    return buildSchedule(g, request, MemoryPressureLevel{}, /*min_bytes_for_seek=*/2);
 }
 
 struct Seg { size_t off; size_t size; PlanSchedule::Purpose purpose; bool resident; };
@@ -64,9 +64,9 @@ void expectSteps(const PlanSchedule & s, const std::vector<ByteRange> & want)
 constexpr auto User = PlanSchedule::Purpose::User;
 constexpr auto Fill = PlanSchedule::Purpose::FillOnly;
 
-PlanSchedule describeSeek(const ReadPlanGeometry & g, ByteRange request, size_t min_bytes_for_seek)
+PlanSchedule describeSeek(const CoverageMap & g, ByteRange request, size_t min_bytes_for_seek)
 {
-    return describePlan(g, request, MemoryPressureLevel{}, min_bytes_for_seek);
+    return buildSchedule(g, request, MemoryPressureLevel{}, min_bytes_for_seek);
 }
 
 bool intoHas(const PlanSchedule::Retrieve & r, size_t entry, ByteRange cell)

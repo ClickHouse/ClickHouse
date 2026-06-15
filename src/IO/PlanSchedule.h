@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ReadPlanGeometry.h>
+#include <IO/CoverageMap.h>
 #include <IO/Rope.h>
 #include <IO/ICacheProvider.h>
 #include <Common/MemoryPressureMonitor.h>
@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// The explicit work of ONE look-ahead plan, computed once from the immutable
-/// `ReadPlanGeometry`. Collapses fetch/fill/promote into a single `Retrieve`
+/// `CoverageMap`. Collapses fetch/fill/promote into a single `Retrieve`
 /// job kind and predicts what each `readNextWindow` returns. Pure description -
 /// no buffers, no I/O; see `tmp/reader-executor-unified-plan/DESIGN.md`.
 struct PlanSchedule
@@ -38,12 +38,12 @@ struct PlanSchedule
         ByteRange range;            /// physical, plan coords
         Purpose purpose = Purpose::User;
         bool resident = false;      /// true: served from a tier; false: gap (remote)
-        size_t tier_entry = ReadPlanGeometry::npos;
+        size_t tier_entry = CoverageMap::npos;
         CacheTier tier{};
     };
 
     /// One aligned-miss cell to populate, identified by its tier-entry index
-    /// (into `ReadPlanGeometry::entries` / `ReadPlan::bufs`) and the cell range.
+    /// (into `CoverageMap::entries` / `ReadPlan::bufs`) and the cell range.
     struct WriteTarget
     {
         size_t entry = 0;
@@ -81,7 +81,7 @@ struct PlanSchedule
 
     /// The `ContinuityTracker`'s predicted contiguous reach (bytes) at plan-build
     /// time, after feeding it this plan's predicted source reads. Set by the
-    /// executor, NOT by `describePlan`. Unused for now - a later revision sizes
+    /// executor, NOT by `buildSchedule`. Unused for now - a later revision sizes
     /// long source connections from it.
     size_t predicted_reach = 0;
 };
@@ -90,8 +90,8 @@ struct PlanSchedule
 /// `request_extent` (physical coords here; the caller adds the encryption-header
 /// shift). Pure function of the geometry; `pressure` and `min_bytes_for_seek`
 /// shape connection width and streaming footprint.
-PlanSchedule describePlan(
-    const ReadPlanGeometry & geometry,
+PlanSchedule buildSchedule(
+    const CoverageMap & geometry,
     ByteRange request_extent,
     MemoryPressureLevel pressure,
     size_t min_bytes_for_seek);

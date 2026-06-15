@@ -6,7 +6,7 @@
 #include <IO/IntervalSet.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LongConnectionLimit.h>
-#include <IO/ReadPlanGeometry.h>
+#include <IO/CoverageMap.h>
 #include <IO/PlanSchedule.h>
 #include <IO/FetchMachine.h>
 #include <IO/ContinuityTracker.h>
@@ -52,7 +52,7 @@ class ReaderExecutor
 {
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
-    /// Gap bound for `mergeRanges` / `describePlan`: gaps up to this are
+    /// Gap bound for `mergeRanges` / `buildSchedule`: gaps up to this are
     /// coalesced into one source request rather than read separately. Near the
     /// bandwidth/request cost breakeven.
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
@@ -172,8 +172,8 @@ public:
     size_t abandonedPrefetchCount() const { return abandoned_machines.size(); }
 
     /// Test-only: the current look-ahead plan geometry (null until the first
-    /// plan is built), for validating `describePlan` against the live walk.
-    std::shared_ptr<const ReadPlanGeometry> planGeometryForTest() const { return read_plan.geometry(); }
+    /// plan is built), for validating `buildSchedule` against the live walk.
+    std::shared_ptr<const CoverageMap> planGeometryForTest() const { return read_plan.geometry(); }
 
     /// Test-only: the continuity estimator's predicted reach after the last plan
     /// feed, for verifying the wiring.
@@ -317,7 +317,7 @@ private:
     /// `view` (its hits own the held pinning read buffers; its misses carry
     /// NULL writers and are never dereferenced), and the AUTHORITATIVE
     /// `writers` opened over the aligned miss ranges. 1:1 POSITIONAL with
-    /// `ReadPlanGeometry::entries`, provider-grouped fastest-first. A worker
+    /// `CoverageMap::entries`, provider-grouped fastest-first. A worker
     /// never indexes this, so the buffers are never shared across threads.
     struct BufEntry
     {
@@ -376,13 +376,38 @@ private:
         size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
+    struct FetchMachine;  /// fwd: RetrieveStatus carries a non-owning machine handle
+
+    /// Per-retrieve runtime status for the schedule-driven interpreter: the ENTIRE
+    /// exec-time mutable surface the loop will branch on - no residency state, no
+    /// per-window geometry. `NotLaunched` -> `InFlight` (machine scheduled or a sync
+    /// read entered) -> `Ready` (bytes fetched, serve may proceed) -> `Done` (also
+    /// written into every `into[]` cell, write handles released). Serve gates on
+    /// `Ready`, never `Done`, so a slow cache write never stalls the user.
+    enum class RetrievePhase
+    {
+        NotLaunched,
+        InFlight,
+        Ready,
+        Done,
+    };
+
+    /// 1:1 with `PlanSchedule::retrieves`; lives on `ReadPlan`, dies with the plan.
+    struct RetrieveStatus
+    {
+        RetrievePhase phase = RetrievePhase::NotLaunched;
+        size_t fetched = 0;               /// bytes confirmed fetched (the `Ready` frontier)
+        FetchMachine * machine = nullptr; /// non-owning in-flight handle; carries `long_conn`
+        Rope ready_bytes;                 /// banked fetched prefix for serve, drained as the cursor advances
+    };
+
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
     /// immutable geometry snapshot plus the held buffers. FOREGROUND-PRIVATE.
     /// Held across many windows; destroyed (write buffers finalize, deferred
-    /// LRU bumps run) at the next `planResidencyWindow` / on seek.
+    /// LRU bumps run) at the next `observeAndSchedule` / on seek.
     struct ReadPlan
     {
-        const std::shared_ptr<const ReadPlanGeometry> & geometry() const { return geometry_snapshot; }
+        const std::shared_ptr<const CoverageMap> & geometry() const { return geometry_snapshot; }
 
         /// Late-hit `CacheView`s held alive SOLELY for their destructors: the
         /// deferred LRU bump must land AFTER the write buffers in `bufs` are
@@ -392,16 +417,24 @@ private:
 
         VectorWithMemoryTracking<BufEntry> bufs;
 
-        /// The explicit work of this plan (`describePlan`), computed once at
+        /// The explicit work of this plan (`buildSchedule`), computed once at
         /// build. Its `retrieves[*].into` are the authoritative fill targets:
         /// the deferred put borrows exactly the writers a retrieve designates,
         /// so slack is filled only into its owning lower tier and never
         /// promoted into a faster tier.
         PlanSchedule schedule;
 
+        /// Per-retrieve runtime status, 1:1 with `schedule.retrieves`, allocated at
+        /// plan build and reset on re-plan/seek. Not consumed yet (Stage SE-0).
+        std::vector<RetrieveStatus> retrieve_status;
+
+        /// The step interpreter's loop authority - an index into `schedule.steps`,
+        /// reconstructed from `position` on re-plan/seek. Not consumed yet (Stage SE-0).
+        size_t cursor = 0;
+
     private:
-        friend class ReaderExecutor;  /// `planResidencyWindow` is the sole writer.
-        std::shared_ptr<const ReadPlanGeometry> geometry_snapshot;
+        friend class ReaderExecutor;  /// `observeAndSchedule` is the sole writer.
+        std::shared_ptr<const CoverageMap> geometry_snapshot;
     };
 
     /// The background read-ahead machine (`PrefetchJob` grown into a steppable
@@ -419,7 +452,7 @@ private:
         /// The PHYSICAL cache-aligned window the fetch step reads
         /// (`fetchWindowAt` widened); collect backfills the caches over it.
         ByteRange physical_window;
-        std::shared_ptr<const ReadPlanGeometry> geometry;
+        std::shared_ptr<const CoverageMap> geometry;
         /// The advertised read extent at launch: the worker bounds its source
         /// connection with THIS, never the live `read_extent_end` member - a
         /// soft-cancelled machine must not race `setReadExtent`.
@@ -498,13 +531,13 @@ private:
     /// contiguous run from the window start. `geometry` is the residency
     /// snapshot; `eof_latch` is the size-unknown EOF latch.
     Rope readPhysicalWindow(ByteRange physical_window,
-        const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
+        const CoverageMap & geometry, bool & eof_latch, Stats & out_stats);
 
     /// `readPhysicalWindow` + remap offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer, so
     /// unconsumed read-ahead is never decrypted.
     Rope readWindowLogical(ByteRange physical_window,
-        const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
+        const CoverageMap & geometry, bool & eof_latch, Stats & out_stats);
 
     /// Append every byte `geometry` reports resident in `physical_window` to
     /// `result` (recording it in `covered`), reading from the plan's held hit
@@ -513,7 +546,7 @@ private:
     /// and a self-populated complete page block. Does NOT re-plan.
     void serveResidentFromPlan(
         ByteRange physical_window, Rope & result, IntervalSet & covered,
-        const ReadPlanGeometry & geometry, Stats & out_stats);
+        const CoverageMap & geometry, Stats & out_stats);
 
     /// Serve a clamped resident sub-range from a view's hit buffers, clamping
     /// each read to the buffer's live `readable()` and recording it for the
@@ -748,7 +781,7 @@ private:
     /// - no per-window `getOrSet`. Rebuilt lazily whenever the cursor leaves
     /// the planned span. Resets the in-flight pin before discarding the old
     /// plan.
-    void planResidencyWindow(size_t physical_start);
+    void observeAndSchedule(size_t physical_start);
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
     /// retrieves, in offset order, only past `continuity_fed_end`) into

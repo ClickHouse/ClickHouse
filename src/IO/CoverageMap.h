@@ -27,11 +27,11 @@ struct GeometryEntry
 
 /// The IMMUTABLE geometry of one look-ahead plan: the resident layout + span,
 /// queried positionally (RESIDENT run vs GAP). Built once by
-/// `ReaderExecutor::planResidencyWindow`, never mutated after publish, exposed
+/// `ReaderExecutor::observeAndSchedule`, never mutated after publish, exposed
 /// as a `shared_ptr<const>` snapshot. `entries` is in cache-tier priority
 /// order, 1:1 POSITIONAL with `ReadPlan::bufs`. Empty / `plan_end == plan_start`
 /// means no valid plan.
-struct ReadPlanGeometry
+struct CoverageMap
 {
     static constexpr size_t npos = static_cast<size_t>(-1);
 

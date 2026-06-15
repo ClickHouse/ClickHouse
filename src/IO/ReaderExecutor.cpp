@@ -437,24 +437,24 @@ Rope ReaderExecutor::readNextWindow()
     /// Plan-first: build/refresh the geometry and ask what sits at the cursor.
     /// RESIDENT -> stream the run from the held cache handle; GAP -> consume the
     /// in-flight gap read-ahead (launched last call) or fetch synchronously.
-    ReadPlanGeometry::Resident at;
+    CoverageMap::Resident at;
     if (to_read > 0)
     {
         /// Re-plan only when the cursor leaves the planned span. The margin is the
         /// BASE `window_size` (a constant), so deciding whether to plan never queries
         /// memory pressure; the plan span and every read are clamped to `plan_end`,
-        /// and the per-plan pressure level is sampled once inside `planResidencyWindow`.
+        /// and the per-plan pressure level is sampled once inside `observeAndSchedule`.
         /// NB: never re-plan while a machine is in flight. A read-ahead is launched only
         /// at a gap cursor, so this cursor IS a gap and must be collected via the gap
         /// branch below. A re-plan here would re-probe residency and could see the
         /// worker's just-fetched gap as RESIDENT, wrongly taking the resident
         /// fast-path while `machine` is still set (the invariant the
-        /// `planResidencyWindow` `chassert(!machine)` guards).
+        /// `observeAndSchedule` `chassert(!machine)` guards).
         if (!machine
             && (!read_plan.geometry()
                 || position_phys < read_plan.geometry()->plan_start
                 || position_phys + window_size > read_plan.geometry()->plan_end))
-            planResidencyWindow(position_phys);
+            observeAndSchedule(position_phys);
         if (read_plan.geometry())
             at = read_plan.geometry()->residentAt(position_phys);
     }
@@ -619,7 +619,7 @@ void ReaderExecutor::initDecryption()
     /// cached by a sibling reader (a read-only `planResidencyView` probe), but with no
     /// held write buffers the header itself is not populated here - it is read once and is
     /// tiny.
-    ReadPlanGeometry init_geometry;
+    CoverageMap init_geometry;
     Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset},
         init_geometry, reached_eof, stats);
 
@@ -834,7 +834,7 @@ Rope ReaderExecutor::coverWindow(size_t position_phys, size_t to_read)
     /// Ensure a (possibly empty) geometry snapshot exists for the read below: an
     /// extent-reached (`to_read == 0`) gap could still see a null snapshot.
     if (!read_plan.geometry())
-        planResidencyWindow(position_phys);
+        observeAndSchedule(position_phys);
 
     /// Collect an in-flight read-ahead for this gap if it has started; if it was still
     /// queued, `tryCollectMachine` revokes it and we read synchronously below.
@@ -978,7 +978,7 @@ Rope ReaderExecutor::syncGapRead(ByteRange physical_window)
 }
 
 Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
-    const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats)
+    const CoverageMap & geometry, bool & eof_latch, Stats & out_stats)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
 
@@ -1042,7 +1042,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
 }
 
 Rope ReaderExecutor::readWindowLogical(ByteRange physical_window,
-    const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats)
+    const CoverageMap & geometry, bool & eof_latch, Stats & out_stats)
 {
     Rope rope = readPhysicalWindow(physical_window, geometry, eof_latch, out_stats);
     /// Physical offsets include the encryption header prefix; the consumer works
@@ -1054,7 +1054,7 @@ Rope ReaderExecutor::readWindowLogical(ByteRange physical_window,
 
 void ReaderExecutor::serveResidentFromPlan(
     ByteRange physical_window, Rope & result, IntervalSet & covered,
-    const ReadPlanGeometry & geometry, Stats & out_stats)
+    const CoverageMap & geometry, Stats & out_stats)
 {
     /// Foreground-only (reads `this->read_plan.bufs`). Does NOT re-plan: the foreground
     /// re-plans before calling (in readNextWindow). An uncovered window simply yields no
@@ -1962,7 +1962,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
 
     /// BORROW this window's writers from the plan into the machine, but only the
     /// ones the plan SCHEDULE designates as fill targets for a retrieve
-    /// overlapping this window (`describePlan`'s `into`). A cell holding the
+    /// overlapping this window (`buildSchedule`'s `into`). A cell holding the
     /// request is a target in every missing tier (promotion); a slack-only cell
     /// is a target ONLY in its owning lower tier - so a faster tier never
     /// receives un-requested slack bytes. The put step owns the borrowed writers
@@ -2278,7 +2278,7 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
     }
 }
 
-void ReaderExecutor::planResidencyWindow(size_t physical_start)
+void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
     /// Machine-check the threading invariant: the held read/write buffers are
     /// foreground-private and must never be torn down / rebuilt while a prefetch worker
@@ -2302,14 +2302,14 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     /// Release the PREVIOUS plan's held buffers FIRST: each held write buffer's
     /// destructor finalizes its segments (`FileSegment::complete`) and each `~CacheView`
     /// runs the deferred LRU-bump - AFTER those writes, since the bump is sequenced last
-    /// in the view dtor. Foreground-timed (planResidencyWindow runs only after the
+    /// in the view dtor. Foreground-timed (observeAndSchedule runs only after the
     /// in-flight prefetch is joined), so never concurrent with a worker.
     read_plan = {};
 
     /// Always publish a geometry (empty on the early-out paths below) so the query
     /// methods' callers never dereference a null snapshot: an empty geometry has
     /// `plan_end == plan_start`, so `covers` returns false and the caller re-plans.
-    auto geom = std::make_shared<ReadPlanGeometry>();
+    auto geom = std::make_shared<CoverageMap>();
     geom->plan_start = physical_start;
     geom->plan_end = physical_start;
     /// Sample memory pressure ONCE here, per plan. Every read within this plan (cache
@@ -2395,7 +2395,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     /// read by the scan (User), so only the alignment slack around it is
     /// FillOnly. `schedule.retrieves[*].into` then drives `schedulePutStep` so a
     /// faster tier never receives slack bytes (see `ReadPlan::schedule`).
-    read_plan.schedule = describePlan(
+    read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
         ByteRange{plan_range.offset, plan_range.size},
         read_plan.geometry()->pressure_level,
@@ -2407,7 +2407,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     feedScheduleToContinuity(read_plan.schedule);
     read_plan.schedule.predicted_reach = continuity_tracker.predictedReach();
 
-    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} entries, {} retrieves, predicted_reach={}",
+    LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves, predicted_reach={}",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
         read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size(),
         read_plan.schedule.predicted_reach);
@@ -2546,7 +2546,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// run before it streams from cache (the resident/prefetch overlap). Skip only when the
     /// plan holds no gap left to fetch (everything resident to `plan_end`).
     if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe_size}))
-        planResidencyWindow(position_phys);
+        observeAndSchedule(position_phys);
     const size_t gap_start = read_plan.geometry()->nextGapStart(position_phys);
     if (gap_start >= read_plan.geometry()->plan_end)
     {

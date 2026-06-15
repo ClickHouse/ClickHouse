@@ -3795,7 +3795,7 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
     /// Stage-3 contract: a machine-collected window's cache fill runs as a
     /// background put step (`BytesPushedToCacheAsync`); the first window (sync
     /// path, no machine yet) still writes synchronously. The warm pass is
-    /// deterministic: `planResidencyWindow` joins every deferred fill before
+    /// deterministic: `observeAndSchedule` joins every deferred fill before
     /// rebuilding, so after seek(0) the whole file is page-cache resident.
     constexpr size_t FILE_SIZE = 16000;
     constexpr size_t WINDOW = 2000;
@@ -4029,7 +4029,7 @@ namespace
 {
 
 /// Stage 3 spine: drive a REAL executor over a seeded residency and assert its
-/// readNextWindow outputs equal describePlan's predicted steps. Window/block/
+/// readNextWindow outputs equal buildSchedule's predicted steps. Window/block/
 /// look-ahead are set >= the file so runs are never chunked and the plan never
 /// rebuilds - the schedule's maximal-run steps then map 1:1 to the live calls.
 ///
@@ -4074,7 +4074,7 @@ void validateScheduleMatchesReality(
     ReaderExecutor executor(src, objects, std::move(caches), opts);
 
     std::vector<ByteRange> outputs;
-    std::shared_ptr<const ReadPlanGeometry> geom;
+    std::shared_ptr<const CoverageMap> geom;
     while (true)
     {
         auto rope = executor.readNextWindow();
@@ -4086,7 +4086,7 @@ void validateScheduleMatchesReality(
     }
 
     ASSERT_NE(geom, nullptr);
-    auto sched = describePlan(*geom, ByteRange{0, file_size}, MemoryPressureLevel{}, min_bytes_for_seek);
+    auto sched = buildSchedule(*geom, ByteRange{0, file_size}, MemoryPressureLevel{}, min_bytes_for_seek);
 
     ASSERT_EQ(outputs.size(), sched.steps.size()) << "step count vs live windows";
     for (size_t i = 0; i < outputs.size(); ++i)
@@ -4260,7 +4260,7 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     ReaderExecutor executor(src, objects, {fs}, opts);
     executor.seek(32 * 1024);  // mid-block-0 -> before-slack [0,32K) when filling block 0
 
-    std::shared_ptr<const ReadPlanGeometry> geom;
+    std::shared_ptr<const CoverageMap> geom;
     while (true)
     {
         auto rope = executor.readNextWindow();
@@ -4271,7 +4271,7 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     }
     ASSERT_NE(geom, nullptr);
 
-    auto sched = describePlan(*geom, ByteRange{32 * 1024, file - 32 * 1024}, MemoryPressureLevel{}, 0);
+    auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, MemoryPressureLevel{}, 0);
     auto k = predictKpi(sched);
 
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, k.from_source) << "R";

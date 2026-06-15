@@ -49,7 +49,7 @@ VectorWithMemoryTracking<ByteRange> mergeSorted(VectorWithMemoryTracking<ByteRan
 /// alignment slack. A request byte resident in a faster tier induces NO fetch
 /// and NO slack (it is served from that tier, not fetched). Merged + clamped to
 /// the plan.
-VectorWithMemoryTracking<ByteRange> fillRegion(const ReadPlanGeometry & g, ByteRange request)
+VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange request)
 {
     VectorWithMemoryTracking<ByteRange> parts;
     size_t pos = request.offset;
@@ -99,7 +99,7 @@ VectorWithMemoryTracking<ByteRange> connections(
 /// tier missing it, the one whose segment alignment created the slack - never
 /// promoted into a faster tier.
 VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
-    const ReadPlanGeometry & g, ByteRange conn, ByteRange request)
+    const CoverageMap & g, ByteRange conn, ByteRange request)
 {
     VectorWithMemoryTracking<PlanSchedule::WriteTarget> targets;
     for (size_t ei = 0; ei < g.entries.size(); ++ei)
@@ -145,8 +145,8 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
 
 }
 
-PlanSchedule describePlan(
-    const ReadPlanGeometry & geometry,
+PlanSchedule buildSchedule(
+    const CoverageMap & geometry,
     ByteRange request_extent,
     MemoryPressureLevel /*pressure*/,
     size_t min_bytes_for_seek)

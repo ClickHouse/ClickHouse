@@ -1,11 +1,11 @@
-#include <IO/ReadPlanGeometry.h>
+#include <IO/CoverageMap.h>
 
 #include <algorithm>
 
 namespace DB
 {
 
-ReadPlanGeometry::Resident ReadPlanGeometry::residentAt(size_t offset) const
+CoverageMap::Resident CoverageMap::residentAt(size_t offset) const
 {
     for (size_t i = 0; i < entries.size(); ++i)
         for (const auto & r : entries[i].resident)
@@ -14,7 +14,7 @@ ReadPlanGeometry::Resident ReadPlanGeometry::residentAt(size_t offset) const
     return {};
 }
 
-size_t ReadPlanGeometry::nextGapStart(size_t from) const
+size_t CoverageMap::nextGapStart(size_t from) const
 {
     size_t pos = std::max(from, plan_start);
     while (pos < plan_end)
@@ -27,7 +27,7 @@ size_t ReadPlanGeometry::nextGapStart(size_t from) const
     return plan_end;
 }
 
-size_t ReadPlanGeometry::gapEnd(size_t gap_start) const
+size_t CoverageMap::gapEnd(size_t gap_start) const
 {
     size_t end = plan_end;
     for (const auto & entry : entries)
@@ -37,7 +37,7 @@ size_t ReadPlanGeometry::gapEnd(size_t gap_start) const
     return end;
 }
 
-ByteRange ReadPlanGeometry::fetchWindowAt(ByteRange req) const
+ByteRange CoverageMap::fetchWindowAt(ByteRange req) const
 {
     if (req.size == 0)
         return req;
@@ -65,7 +65,7 @@ ByteRange ReadPlanGeometry::fetchWindowAt(ByteRange req) const
     return ByteRange{lo, hi - lo};
 }
 
-size_t ReadPlanGeometry::streamReach(size_t from, size_t min_gap) const
+size_t CoverageMap::streamReach(size_t from, size_t min_gap) const
 {
     size_t pos = std::max(from, plan_start);
     while (pos < plan_end)
