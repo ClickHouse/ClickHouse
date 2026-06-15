@@ -484,6 +484,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         bexpr->set_op(rg.nextMediumNumber() < 76 ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
         columnPathRef(rg.pickRandomly(filtered_entries).get(), bexpr->mutable_lhs());
         ie->set_interval(static_cast<IntervalExpr_Interval>(i_range(rg.generator)));
+        ie->set_use_extract(rg.nextBool());
         il->set_int_lit(rg.randomInt<int64_t>(-3, 10));
         filtered_entries.clear();
     }

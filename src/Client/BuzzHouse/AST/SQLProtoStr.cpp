@@ -1633,7 +1633,7 @@ CONV_FN(WindowDef, wdef)
 
 CONV_FN(IntervalExpr, ie)
 {
-    if (ie.interval() <= IntervalExpr::YEAR)
+    if (!ie.use_extract() && ie.interval() <= IntervalExpr::YEAR)
     {
         ret += "INTERVAL (";
         ExprToString(ret, ie.expr());

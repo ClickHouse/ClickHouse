@@ -647,9 +647,12 @@ message IntervalExpr {
         CENTURY = 17;
         DECADE = 18;
         MILLENNIUM = 19;
+        TIMEZONE_HOUR = 20;
+        TIMEZONE_MINUTE = 21;
     }
     required Interval interval = 1;
     required Expr expr = 2;
+    required bool use_extract = 3;
 }
 
 /// Separate this out to inflate the probability of having a literal value

@@ -1193,6 +1193,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             this->depth++;
             this->generateExpression(rg, inter->mutable_expr());
             this->depth--;
+            inter->set_use_extract(rg.nextBool());
         }
         break;
         case ExpOp::ColumnsExpr: {
