@@ -670,9 +670,10 @@
     M(1005, STALE_VERSION) \
     M(1006, INVALID_CURSOR_LOOKUP) \
     M(1007, ILLEGAL_STREAM) \
-    M(1008, HANDLER_ALREADY_EXISTS) \
-    M(1009, HANDLER_DOESNT_EXIST) \
-    M(1010, AMBIGUOUS_HANDLER) \
+    M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
+    M(1009, HANDLER_ALREADY_EXISTS) \
+    M(1010, HANDLER_DOESNT_EXIST) \
+    M(1011, AMBIGUOUS_HANDLER) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -689,7 +690,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1010;
+    constexpr ErrorCode END = 1011;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
