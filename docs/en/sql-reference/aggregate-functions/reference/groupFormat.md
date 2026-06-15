@@ -36,7 +36,7 @@ Column names in the formatted output are generated as `c1`, `c2`, ... in the ord
 
 The particular order of formatted rows is not guaranteed.
 
-Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied.
+The query's format settings (for example `format_csv_delimiter` or `output_format_json_quote_64bit_integers`) are captured when the aggregate function is initialized and used to produce the output. The `output_format_write_statistics` setting is always forced off, so the formatted string never contains a statistics section.
 :::
 
 ## NULL handling {#null-handling}
