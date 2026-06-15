@@ -26,7 +26,7 @@ public:
 
     const Names & getColumns() const { return columns; }
 
-    void applyOrder(bool in_order_) { in_order = in_order_; }
+    void applyOrder();
 
 private:
     void updateOutputHeader() override

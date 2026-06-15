@@ -249,6 +249,34 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     return " ".join(options)
 
 
+def install_thread_pool_fault_injection() -> None:
+    """Install `cannot_allocate_thread_injection.xml` and reload config so
+    `cannot_allocate_thread_fault_injection_probability` becomes active.
+    Fail-close on persistent reload failure or inactive setting after reload."""
+    src = "/repo/tests/config/config.d/cannot_allocate_thread_injection.xml"
+    dst = "/etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml"
+
+    if not os.path.exists(src):
+        raise RuntimeError(f"Thread-pool fault-injection source config not found at {src}")
+
+    logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
+    subprocess.run(["ln", "-sf", src, dst], check=True)
+    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+
+    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
+    # the injector probability is actually non-zero after reload.
+    verify_query = make_query_command(
+        "SELECT value FROM system.server_settings "
+        "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
+    )
+    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    if not value or float(value) <= 0:
+        raise RuntimeError(
+            f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
+        )
+    logging.info("Thread-pool fault injection active: probability=%s", value)
+
+
 def run_func_test(
     cmd: str,
     output_prefix: Path,
@@ -264,6 +292,10 @@ def run_func_test(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
+    # --stress-tests loops until global_time_limit; cap the smoke check so
+    # clickhouse-test exits on its own within the execute_bash timeout (180s).
+    smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
+    smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -274,16 +306,19 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         # Validate that simple tests work across all randomizations.
         # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
-        full_command = (
-            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+        options = get_options(i, upgrade_check, encrypted_storage)
+        base_command = (
+            f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
+        full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
-        # Disable server-side AST fuzzer for the smoke check: fuzzed queries
-        # produce expected errors in stderr, which would fail these tests.
-        smoke_command = full_command.replace(
+        # Smoke check: disable AST fuzzer (fuzzed queries produce expected
+        # errors in stderr) and cap global_time_limit so clickhouse-test
+        # exits on its own within the execute_bash timeout.
+        smoke_command = base_command.replace(
             "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
-        )
+        ) + f" {smoke_time_limit_option} "
         check_command = (
             smoke_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
@@ -295,10 +330,10 @@ def run_func_test(
             logging.info("Smoke check stdout:\n%s", e.stdout)
             logging.info("Smoke check stderr:\n%s", e.stderr)
 
-            # Ignore fault injects and transient errors, but most of the time tests should complete successfully
+            # Thread-pool fault injection is off during smoke check, so the
+            # tolerated transients are ZK fault injection + per-worker
+            # `memory_tracker_fault_probability` only.
             ignored_errors = [
-                "CANNOT_SCHEDULE_TASK",
-                "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
                 "DATABASE_REPLICATION_FAILED",
@@ -316,6 +351,12 @@ def run_func_test(
                 f"stdout:\n{e.stdout}\n"
                 f"stderr:\n{e.stderr}"
             ) from e
+
+    # Smoke check passed: activate thread-pool fault injection for the real
+    # stress test. Upgrade-check never had it (old binary may not support
+    # the setting), so keep that behavior.
+    if not upgrade_check:
+        install_thread_pool_fault_injection()
 
     # Start the query killer after smoke check completes, before actual stress test
     if query_killer is not None:
