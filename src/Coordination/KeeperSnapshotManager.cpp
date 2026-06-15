@@ -1118,6 +1118,12 @@ void KeeperSnapshotManager<Storage>::setProtectedSnapshotIndex(uint64_t log_idx)
 }
 
 template<typename Storage>
+void KeeperSnapshotManager<Storage>::setProtectedPendingSnapshotIndex(uint64_t log_idx)
+{
+    protected_pending_snapshot_log_idx = log_idx;
+}
+
+template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::registerSnapshotFile(uint64_t log_idx, const SnapshotFileInfoPtr & snapshot_file_info)
 {
     auto [it, inserted] = existing_snapshots.try_emplace(log_idx, snapshot_file_info);
@@ -1142,23 +1148,23 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::registerSnapshotFile(uint64_
 template<typename Storage>
 void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx)
 {
-    /// Keep the `snapshots_to_keep` newest snapshots, plus the protected (mark-backing)
-    /// entry and the just-written entry. Worst-case retained files: snapshots_to_keep + 2.
-    while (existing_snapshots.size() > snapshots_to_keep)
+    /// Keep the `snapshots_to_keep` newest snapshots, plus the protected (mark-backing) entry,
+    /// the pending-install entry, and the just-written entry. Worst-case: snapshots_to_keep + 3.
+    size_t pinned_below = 0;
+    auto candidate = existing_snapshots.begin();
+    while (candidate != existing_snapshots.end()
+           && existing_snapshots.size() > snapshots_to_keep + pinned_below)
     {
-        auto candidate = existing_snapshots.begin();
-        size_t pinned_below = 0;
-        while (candidate != existing_snapshots.end()
-               && (candidate->first == protected_snapshot_log_idx || candidate->first == just_written_log_idx))
+        if (candidate->first == protected_snapshot_log_idx
+            || candidate->first == protected_pending_snapshot_log_idx
+            || candidate->first == just_written_log_idx)
         {
-            ++candidate;
             ++pinned_below;
+            ++candidate;
+            continue;
         }
-        /// Remove the lowest unpinned entry only while it is not among the newest `snapshots_to_keep`.
-        if (candidate == existing_snapshots.end()
-            || existing_snapshots.size() <= snapshots_to_keep + pinned_below)
-            break;
-        removeSnapshot(candidate->first);
+        auto to_remove = candidate++;
+        removeSnapshot(to_remove->first);
     }
 }
 

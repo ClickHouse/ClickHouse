@@ -250,6 +250,11 @@ public:
     /// stay servable to NuRaft. 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
     void setProtectedSnapshotIndex(uint64_t log_idx);
 
+    /// Protect the index of a saved-but-not-yet-applied install from retention until
+    /// `apply_snapshot` consumes it (its file is not the mark, so the mark protection does
+    /// not cover it). 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    void setProtectedPendingSnapshotIndex(uint64_t log_idx);
+
 private:
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
     void removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
@@ -275,8 +280,10 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
-    /// See `setProtectedSnapshotIndex`. Checked by `removeOutdatedSnapshotsIfNeeded`.
+    /// See `setProtectedSnapshotIndex` / `setProtectedPendingSnapshotIndex`. Both checked by
+    /// `removeOutdatedSnapshotsIfNeeded`.
     uint64_t protected_snapshot_log_idx = 0;
+    uint64_t protected_pending_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage
