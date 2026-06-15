@@ -24,8 +24,10 @@ namespace
 /** Due to a lack of proper code review, this code was contributed with a multiplication of template instantiations
   * over all pairs of data types, and we deeply regret that.
   *
-  * We cannot remove all combinations, because the binary representation of serialized data has to remain the same,
-  * but we can partially heal the wound by treating unsigned and signed data types in the same way.
+  * We cannot remove these combinations, because the binary representation of the serialized data has to remain the same.
+  * Note that signed integers must not be unified with unsigned ones: although their binary representation is identical,
+  * the arithmetic (the `<` comparison and the subtraction in `add` and `merge`) differs once the values cross zero,
+  * which produces wrong results. Only `Date` and `DateTime` are mapped to their unsigned integer equivalents.
   */
 
 template <typename ValueType, typename TimestampType>
