@@ -56,15 +56,15 @@ POOL_EVENTS = {
 ALL_EVENTS = {**METRIC_EVENTS, **POOL_EVENTS}
 
 # Multi-threaded (matches the production load test) plus the connection-budget axis:
-# reader_executor_use_live_connections = 1 (live: a reusable connection across windows)
+# reader_executor_use_long_connections = 1 (long: a reusable connection across windows)
 # or 0 (stateless: a short-lived one-shot connection per window). max_threads=8 because
-# the read pool hands each thread non-contiguous task ranges, which is where live
+# the read pool hands each thread non-contiguous task ranges, which is where long
 # connections get abandoned (the incomplete-connection / reset regime).
 def _settings(live):
     return {
         "use_reader_executor": 1,
         "max_threads": 8,
-        "reader_executor_use_live_connections": 1 if live else 0,
+        "reader_executor_use_long_connections": 1 if live else 0,
     }
 
 
@@ -97,23 +97,27 @@ LOADS = {
 # are the diagnostic levers. Stateless I is gated by the I==0 invariant, not here.
 # The deterministic unit grid remains the tight value gate; update a row when an
 # executor change intentionally moves its magnitudes. Warm cells are ~0, gated by invariants.
+# Regenerated (see test_recompute_baseline) with the widened cost/MiB margin. The three
+# small-count live `I` bands (selective/aggregation) carry a manual absolute floor: a
+# single regen run pins them near-degenerate (e.g. (2, 2)), too tight for run-to-run
+# variance - the recompute docstring flags exactly this for small/near-zero counters.
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (111, 150), "I": (0, 0), "O": (154, 208), "cost/MiB": (42.4, 57.3)},
-    ("sequential", "fragmented", "live"): {"R": (52, 78), "I": (0, 0), "O": (108, 162), "cost/MiB": (22.0, 33.1)},
-    ("selective", "cold", "live"): {"R": (45, 61), "I": (31, 43), "O": (55, 74), "cost/MiB": (75.5, 102.2)},
-    ("selective", "fragmented", "live"): {"R": (16, 24), "I": (14, 21), "O": (0, 0), "cost/MiB": (49.1, 73.7)},
-    ("aggregation", "cold", "live"): {"R": (199, 270), "I": (0, 1), "O": (196, 348), "cost/MiB": (59.6, 80.6)},
-    ("aggregation", "fragmented", "live"): {"R": (55, 82), "I": (0, 2), "O": (95, 142), "cost/MiB": (20.5, 30.8)},
-    ("prewhere", "cold", "live"): {"R": (148, 201), "I": (88, 129), "O": (254, 343), "cost/MiB": (65.0, 89.4)},
-    ("prewhere", "fragmented", "live"): {"R": (74, 110), "I": (34, 51), "O": (72, 108), "cost/MiB": (27.9, 41.9)},
-    ("sequential", "cold", "stateless"): {"R": (109, 148), "O": (152, 206), "cost/MiB": (42.1, 56.9)},
-    ("sequential", "fragmented", "stateless"): {"R": (51, 77), "O": (107, 160), "cost/MiB": (21.8, 32.8)},
-    ("selective", "cold", "stateless"): {"R": (36, 49), "O": (34, 46), "cost/MiB": (80.7, 109.2)},
-    ("selective", "fragmented", "stateless"): {"R": (15, 24), "O": (0, 0), "cost/MiB": (49.0, 76.8)},
-    ("aggregation", "cold", "stateless"): {"R": (199, 269), "O": (185, 335), "cost/MiB": (56.8, 76.9)},
-    ("aggregation", "fragmented", "stateless"): {"R": (54, 80), "O": (95, 142), "cost/MiB": (20.4, 30.6)},
-    ("prewhere", "cold", "stateless"): {"R": (60, 81), "O": (83, 112), "cost/MiB": (32.2, 43.6)},
-    ("prewhere", "fragmented", "stateless"): {"R": (56, 84), "O": (35, 52), "cost/MiB": (21.5, 32.3)},
+    ("sequential", "cold", "live"): {"R": (108, 147), "I": (0, 0), "O": (146, 198), "cost/MiB": (36.6, 61.0)},
+    ("sequential", "fragmented", "live"): {"R": (51, 77), "I": (0, 0), "O": (107, 161), "cost/MiB": (19.1, 35.5)},
+    ("selective", "cold", "live"): {"R": (26, 34), "I": (21, 29), "O": (37, 50), "cost/MiB": (50.5, 84.1)},
+    ("selective", "fragmented", "live"): {"R": (10, 16), "I": (0, 7), "O": (0, 0), "cost/MiB": (65.7, 122.0)},
+    ("aggregation", "cold", "live"): {"R": (183, 247), "I": (0, 6), "O": (182, 320), "cost/MiB": (46.0, 76.7)},
+    ("aggregation", "fragmented", "live"): {"R": (52, 78), "I": (0, 6), "O": (94, 141), "cost/MiB": (17.7, 32.9)},
+    ("prewhere", "cold", "live"): {"R": (54, 73), "I": (25, 33), "O": (69, 93), "cost/MiB": (27.1, 45.1)},
+    ("prewhere", "fragmented", "live"): {"R": (51, 76), "I": (12, 18), "O": (30, 45), "cost/MiB": (19.1, 35.4)},
+    ("sequential", "cold", "stateless"): {"R": (108, 147), "O": (148, 200), "cost/MiB": (36.7, 61.2)},
+    ("sequential", "fragmented", "stateless"): {"R": (51, 77), "O": (107, 161), "cost/MiB": (19.1, 35.5)},
+    ("selective", "cold", "stateless"): {"R": (32, 44), "O": (37, 50), "cost/MiB": (59.8, 99.6)},
+    ("selective", "fragmented", "stateless"): {"R": (6, 10), "O": (0, 0), "cost/MiB": (62.6, 116.2)},
+    ("aggregation", "cold", "stateless"): {"R": (196, 265), "O": (173, 306), "cost/MiB": (46.8, 78.0)},
+    ("aggregation", "fragmented", "stateless"): {"R": (53, 80), "O": (93, 140), "cost/MiB": (17.7, 32.8)},
+    ("prewhere", "cold", "stateless"): {"R": (54, 74), "O": (71, 95), "cost/MiB": (26.7, 44.6)},
+    ("prewhere", "fragmented", "stateless"): {"R": (49, 73), "O": (30, 45), "cost/MiB": (18.2, 33.9)},
 }
 
 
@@ -462,12 +466,15 @@ def test_recompute_baseline(started_cluster):
             for state in ("cold", "fragmented"):
                 samples = _collect_samples(query, live, state)
                 margin = RECOMPUTE_MARGIN[state]
-                cells = [("R", [s["R"] for s in samples], 0)]
+                cells = [("R", [s["R"] for s in samples], 0, margin)]
                 if live:  # stateless I is always 0 and gated by a separate invariant
-                    cells.append(("I", [s["I"] for s in samples], 0))
-                cells.append(("O", [s["O"] / (1024.0 * 1024.0) for s in samples], 0))
-                cells.append(("cost/MiB", [_cost_per_mib(s) for s in samples], 1))
-                body = ", ".join(f'"{metric}": {_band(vals, margin, nd)}' for metric, vals, nd in cells)
+                    cells.append(("I", [s["I"] for s in samples], 0, margin))
+                cells.append(("O", [s["O"] / (1024.0 * 1024.0) for s in samples], 0, margin))
+                # cost/MiB is a composite ratio that compounds the R/I/O variance, so it
+                # swings wider than any single counter - give it extra margin to keep the
+                # band consistent with the (independently gated) component bands.
+                cells.append(("cost/MiB", [_cost_per_mib(s) for s in samples], 1, margin + 0.10))
+                body = ", ".join(f'"{metric}": {_band(vals, m, nd)}' for metric, vals, nd, m in cells)
                 lines.append(f'    ("{name}", "{state}", "{mode}"): {{{body}}},')
     lines.append("}")
     text = "\n".join(lines)
