@@ -14,6 +14,12 @@ namespace DB
 /// to enforce the same depth bound on hostile input.
 size_t getJSONDeserializationMaxDepth();
 
+/// Count one structured `Field` element (an `Array`/`Tuple`/`Map` entry deserialized by
+/// `readFieldFromObject`) against the same element-count budget that `createFromJSON` enforces
+/// for AST nodes. Such elements live inside a single `Literal` AST node and would otherwise let a
+/// hostile literal payload bypass `max_ast_elements`. Throws `TOO_BIG_AST` when the budget is exceeded.
+void countJSONDeserializationElement();
+
 /// Returns true when the buffer [begin, end) starts with a `SET` token (case-insensitive,
 /// followed by whitespace or end-of-input). Used as an escape hatch when
 /// `dialect = clickhouse_json` is active so users can still send `SET dialect = ...`

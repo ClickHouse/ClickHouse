@@ -402,6 +402,14 @@ size_t getJSONDeserializationMaxDepth()
     return json_deser_max_depth;
 }
 
+void countJSONDeserializationElement()
+{
+    if (json_deser_max_elements && json_deser_current_elements >= json_deser_max_elements)
+        throw Exception(ErrorCodes::TOO_BIG_AST,
+            "JSON AST deserialization exceeded maximum element count limit ({})", json_deser_max_elements);
+    ++json_deser_current_elements;
+}
+
 bool isClickHouseJSONSetEscape(const char * begin, const char * end)
 {
     /// In the `clickhouse_json` dialect, a leading `SET` query is an escape hatch back to a
