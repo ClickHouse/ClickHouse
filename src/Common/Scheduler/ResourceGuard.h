@@ -95,19 +95,12 @@ public:
             // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
             chassert(state == Finished);
             state = Enqueued;
+            // `Request` is reused (e.g. via `Request::local()` thread-local instance), so a stale `exception`
+            // left over from a previous failed request must be cleared. Otherwise `wait()` would observe it and
+            // spuriously throw even though this (new) request was granted via `execute()`.
+            exception = {};
             ResourceRequest::reset(cost_);
-            try
-            {
-                estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
-            }
-            catch (...)
-            {
-                // The queue rejected the request (e.g. it has been purged). The thread-local
-                // `Request` would otherwise be stuck in `Enqueued`, poisoning the next
-                // `ResourceGuard` on this thread which would chassert in this very function.
-                state = Finished;
-                throw;
-            }
+            estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
         // This function is executed inside scheduler thread and wakes thread issued this `request`.
@@ -145,19 +138,21 @@ public:
             ProfileEvents::increment(metrics->cost, real_cost_);
         }
 
-        /// Check if request has failed and reset exception for reuse of thread-local request.
-        /// Should be called before finish() to determine if finish() should be skipped.
-        bool consumeException()
+        // Restore a reused request to the `Finished` state after a `ResourceGuard` constructor failed
+        // (either `enqueue()` or `wait()` threw). Because the constructor is unwinding, `~ResourceGuard()`
+        // will not run, so this is the only chance to make the thread-local instance reusable; otherwise the
+        // next request enqueued on this thread would hit `chassert(state == Finished)`.
+        void recoverAfterConstructorFailure(ResourceLink link_)
         {
-            // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
-            chassert(state == Dequeued);
-            if (exception)
-            {
-                exception = nullptr;
+            if (state == Enqueued)
+                // `enqueue()` threw before the request entered the scheduler (e.g. the queue is being
+                // destructed). The request was never linked into a queue and `enqueueRequestUsingBudget`
+                // has rolled back its budget transaction, so just restore the state.
                 state = Finished;
-                return true;
-            }
-            return false;
+            else if (state == Dequeued)
+                // `wait()` threw: the request was failed by the scheduler. Finish it as the destructor would;
+                // `ResourceRequest::finish()` is a no-op for a failed request.
+                finish(0, link_);
         }
 
         void assertFinished()
@@ -194,23 +189,20 @@ public:
             link.reset(); // Ignore zero-cost requests
         else if (link)
         {
-            request.enqueue(cost, link);
-            if (type == Lock::Default)
+            try
             {
-                try
-                {
+                request.enqueue(cost, link);
+                if (type == Lock::Default)
                     request.wait();
-                }
-                catch (...)
-                {
-                    // The scheduler failed our request and `wait` is rethrowing. The dtor will not
-                    // run (object is only partially constructed), so we must reset the thread-local
-                    // request back to `Finished` here; otherwise the next `ResourceGuard` on this
-                    // thread reuses a poisoned request and chasserts in `enqueue`.
-                    request.consumeException();
-                    link.reset();
-                    throw;
-                }
+            }
+            catch (...)
+            {
+                // The constructor is propagating an exception (the request failed in `enqueue()` or `wait()`),
+                // so `~ResourceGuard()` will not run. Restore the reused thread-local `Request` to the `Finished`
+                // state here, mirroring the cleanup the `Lock::Defer` path performs via `~ResourceGuard()`.
+                request.recoverAfterConstructorFailure(link);
+                link.reset();
+                throw;
             }
         }
     }
@@ -238,9 +230,7 @@ public:
         consume(consumed);
         if (link)
         {
-            // finish() and failed() are alternatives - skip finish() if request was failed
-            if (!request.consumeException())
-                request.finish(real_cost, link);
+            request.finish(real_cost, link);
             link.reset();
         }
     }

@@ -142,13 +142,15 @@ ProcessList::EntryPtr ProcessList::insert(
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
-        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
+        /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
+        auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
+        String query_resource_name = workload_entity_storage->getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
                 query_slot = std::make_unique<QuerySlot>(link);
         }
-        String memory_reservation_resource_name = query_context->getWorkloadEntityStorage().getMemoryReservationResourceName();
+        String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
