@@ -1,0 +1,101 @@
+-- { echo }
+
+DROP TABLE IF EXISTS test_partition_eq_key;
+CREATE TABLE test_partition_eq_key (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
+SYSTEM STOP MERGES test_partition_eq_key;
+INSERT INTO test_partition_eq_key SELECT number, number FROM numbers_mt(1e3);
+INSERT INTO test_partition_eq_key SELECT number, number FROM numbers_mt(1e3);
+EXPLAIN PIPELINE SELECT DISTINCT a FROM test_partition_eq_key SETTINGS allow_distinct_partitions_independently = 1;
+(Expression)
+ExpressionTransform × 8
+  (Distinct)
+  DistinctTransform × 8
+    (Distinct)
+    DistinctTransform × 8
+      (Expression)
+      ExpressionTransform × 8
+        (ReadFromMergeTree)
+        Resize 2 → 1
+          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+            Resize 2 → 1
+              MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                Resize 2 → 1
+                  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                    Resize 2 → 1
+                      MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                        Resize 2 → 1
+                          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                            Resize 2 → 1
+                              MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                                Resize 2 → 1
+                                  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                                    Resize 2 → 1
+                                      MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_partition_eq_key SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT DISTINCT a FROM test_partition_eq_key SETTINGS allow_distinct_partitions_independently = 0)) = (SELECT count() FROM (SELECT DISTINCT a FROM test_partition_eq_key SETTINGS allow_distinct_partitions_independently = 1));
+1
+DROP TABLE test_partition_eq_key;
+DROP TABLE IF EXISTS test_partition_func_of_key;
+CREATE TABLE test_partition_func_of_key (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY toYYYYMM(d);
+SYSTEM STOP MERGES test_partition_func_of_key;
+INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 240), number FROM numbers_mt(1e3);
+INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 240), number + 1 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT d FROM test_partition_func_of_key SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT DISTINCT d FROM test_partition_func_of_key SETTINGS allow_distinct_partitions_independently = 0)) = (SELECT count() FROM (SELECT DISTINCT d FROM test_partition_func_of_key SETTINGS allow_distinct_partitions_independently = 1));
+1
+DROP TABLE test_partition_func_of_key;
+DROP TABLE IF EXISTS test_complex_expr_both_sides;
+CREATE TABLE test_complex_expr_both_sides (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY intDiv(a, 2) * 2 + 1;
+INSERT INTO test_complex_expr_both_sides SELECT number FROM numbers_mt(100);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT intDiv(a, 2) + 1 AS a1 FROM test_complex_expr_both_sides SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT DISTINCT intDiv(a, 2) + 1 AS a1 FROM test_complex_expr_both_sides SETTINGS allow_distinct_partitions_independently = 0)) = (SELECT count() FROM (SELECT DISTINCT intDiv(a, 2) + 1 AS a1 FROM test_complex_expr_both_sides SETTINGS allow_distinct_partitions_independently = 1));
+1
+DROP TABLE test_complex_expr_both_sides;
+DROP TABLE IF EXISTS test_with_where_filter;
+CREATE TABLE test_with_where_filter (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY b PARTITION BY a % 8;
+SYSTEM STOP MERGES test_with_where_filter;
+INSERT INTO test_with_where_filter SELECT number, number FROM numbers_mt(1e3);
+INSERT INTO test_with_where_filter SELECT number, number + 1 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_with_where_filter WHERE b > 0 SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT DISTINCT a FROM test_with_where_filter WHERE b > 0 SETTINGS allow_distinct_partitions_independently = 0)) = (SELECT count() FROM (SELECT DISTINCT a FROM test_with_where_filter WHERE b > 0 SETTINGS allow_distinct_partitions_independently = 1));
+1
+DROP TABLE test_with_where_filter;
+DROP TABLE IF EXISTS test_with_filter_step;
+CREATE TABLE test_with_filter_step (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY b PARTITION BY a % 8;
+SYSTEM STOP MERGES test_with_filter_step;
+INSERT INTO test_with_filter_step SELECT number, number FROM numbers_mt(1e3);
+INSERT INTO test_with_filter_step SELECT number, number + 1 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_with_filter_step WHERE b > 0 SETTINGS allow_distinct_partitions_independently = 1, optimize_move_to_prewhere = 0) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT DISTINCT a FROM test_with_filter_step WHERE b > 0 SETTINGS allow_distinct_partitions_independently = 0, optimize_move_to_prewhere = 0)) = (SELECT count() FROM (SELECT DISTINCT a FROM test_with_filter_step WHERE b > 0 SETTINGS allow_distinct_partitions_independently = 1, optimize_move_to_prewhere = 0));
+1
+DROP TABLE test_with_filter_step;
+DROP TABLE IF EXISTS test_key_noninjective_of_partition;
+CREATE TABLE test_key_noninjective_of_partition (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a;
+INSERT INTO test_key_noninjective_of_partition SELECT number % 8 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT (a % 4) FROM test_key_noninjective_of_partition SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+DROP TABLE test_key_noninjective_of_partition;
+DROP TABLE IF EXISTS test_key_coarser_than_partition;
+CREATE TABLE test_key_coarser_than_partition (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a;
+INSERT INTO test_key_coarser_than_partition SELECT number % 16 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT intDiv(a, 2) AS a1 FROM test_key_coarser_than_partition SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+DROP TABLE test_key_coarser_than_partition;
+DROP TABLE IF EXISTS test_with_final;
+CREATE TABLE test_with_final (a UInt32, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY a PARTITION BY a % 8;
+INSERT INTO test_with_final SELECT number, 1 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_with_final FINAL SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+DROP TABLE test_with_final;
+DROP TABLE IF EXISTS test_no_partition_by;
+CREATE TABLE test_no_partition_by (a UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO test_no_partition_by SELECT number FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_no_partition_by SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+DROP TABLE test_no_partition_by;
