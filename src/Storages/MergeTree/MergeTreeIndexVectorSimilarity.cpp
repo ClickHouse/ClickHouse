@@ -617,6 +617,44 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
 /// ============================ Flat ("fastknn") implementation ============================
 
+namespace
+{
+
+/// Map the per-method flags to the persisted codec id.
+FlatQuantization flatQuantizationFromFlags(bool projected, bool turboquant, bool rabitq, bool e8)
+{
+    if (e8)
+        return FlatQuantization::E8;
+    if (turboquant)
+        return FlatQuantization::TurboQuant;
+    if (rabitq)
+        return FlatQuantization::RaBitQ;
+    if (projected)
+        return FlatQuantization::B1Projected;
+    return FlatQuantization::B1;
+}
+
+/// The on-disk bytes per vector for a given flat codec; the single source of truth shared by the aggregator and the
+/// load-time / scan-time validation.
+size_t expectedFlatBytesPerVector(FlatQuantization quantization, size_t dimensions, size_t e8_bits)
+{
+    switch (quantization)
+    {
+        case FlatQuantization::B1:
+        case FlatQuantization::B1Projected:
+            return dimensions / 8;
+        case FlatQuantization::TurboQuant:
+            return dimensions / 4 + sizeof(float);
+        case FlatQuantization::RaBitQ:
+            return dimensions / 8 + sizeof(float);
+        case FlatQuantization::E8:
+            return (dimensions / 8) * (e8_bits <= 8 ? 1 : 2) + sizeof(float);
+    }
+    return 0;
+}
+
+}
+
 MergeTreeIndexGranuleVectorSimilarityFlat::MergeTreeIndexGranuleVectorSimilarityFlat(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,
@@ -636,6 +674,7 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::serializeBinary(WriteBuffer & os
     writeIntBinary(static_cast<UInt64>(dimensions), ostr);
     writeIntBinary(static_cast<UInt64>(bytes_per_vector), ostr);
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
+    writeIntBinary(static_cast<UInt8>(quantization), ostr);
     writeIntBinary(static_cast<UInt64>(e8_bits), ostr);
     if (!codes.empty())
         ostr.write(reinterpret_cast<const char *>(codes.data()), codes.size());
@@ -651,10 +690,12 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::deserializeBinary(ReadBuffer & i
     UInt64 dims = 0;
     UInt64 bpv = 0;
     UInt64 count = 0;
+    UInt8 quant = 0;
     UInt64 bits = 0;
     readIntBinary(dims, istr);
     readIntBinary(bpv, istr);
     readIntBinary(count, istr);
+    readIntBinary(quant, istr);
     readIntBinary(bits, istr);
 
     /// Validate the persisted layout against what this index expects, so a stale/corrupt/foreign part fails the granule
@@ -662,23 +703,23 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::deserializeBinary(ReadBuffer & i
     if (dims != dimensions)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Flat vector similarity index has {} dimensions on disk but the index expects {}", dims, dimensions);
-    if (bpv == 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has zero bytes per vector");
+    if (quant > static_cast<UInt8>(FlatQuantization::E8))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has an unknown quantization id {}", static_cast<UInt32>(quant));
+    if ((bits != 0) != (static_cast<FlatQuantization>(quant) == FlatQuantization::E8))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has inconsistent quantization id {} and bits {}", static_cast<UInt32>(quant), bits);
+    if (bits != 0 && (bits > 16 || (dimensions % 8) != 0))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has an invalid 'e8' layout (bits {}, dimensions {})", bits, dimensions);
+    /// The bytes per vector must match the layout of the persisted codec (catches a corrupt header).
+    const UInt64 expected_bpv = expectedFlatBytesPerVector(static_cast<FlatQuantization>(quant), dimensions, bits);
+    if (bpv != expected_bpv)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Flat vector similarity index expects {} bytes per vector for its layout but the file has {}", expected_bpv, bpv);
     if (count != 0 && bpv > std::numeric_limits<UInt64>::max() / count)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index size ({} x {}) overflows", count, bpv);
-    if (bits != 0)
-    {
-        /// 'e8': the expected layout is M = dim/8 sub-quantizer codes (1 byte for bits <= 8, else 2) plus a 4-byte norm.
-        if (bits > 16 || (dimensions % 8) != 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Flat vector similarity index has an invalid 'e8' layout (bits {}, dimensions {})", bits, dimensions);
-        const UInt64 expected_bpv = (dimensions / 8) * (bits <= 8 ? 1 : 2) + sizeof(float);
-        if (bpv != expected_bpv)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Flat 'e8' vector similarity index expects {} bytes per vector for bits={} but the file has {}", expected_bpv, bits, bpv);
-    }
 
     bytes_per_vector = bpv;
     num_vectors = count;
+    quantization = static_cast<FlatQuantization>(quant);
     e8_bits = bits;
     codes.resize(num_vectors * bytes_per_vector);
     if (!codes.empty())
@@ -1583,11 +1624,8 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     , rabitq(rabitq_)
     , e8(e8_)
     , e8_bits(e8_bits_)
-    /// e8: M = dim/8 sub-quantizer codes (1 byte for bits <= 8, else 2) + a 4-byte norm; turboquant: 2 bits/coord
-    /// (1-bit MSE + 1-bit QJL) + a 4-byte residual norm; rabitq: 1 bit/coord + a 4-byte factor; else 1 bit/coord
-    , bytes_per_vector(
-          e8_ ? (dimensions_ / E8_SUBDIM) * (e8_bits_ <= 8 ? 1 : 2) + sizeof(float)
-              : (turboquant_ ? dimensions_ / 4 + sizeof(float) : (rabitq_ ? dimensions_ / 8 + sizeof(float) : dimensions_ / 8)))
+    /// Same layout the granule persists and the load/scan path validates against (single source of truth).
+    , bytes_per_vector(expectedFlatBytesPerVector(flatQuantizationFromFlags(projected_, turboquant_, rabitq_, e8_), dimensions_, e8_bits_))
 {
 }
 
@@ -1596,6 +1634,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarityFlat::getGranul
     auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarityFlat>(index_name, metric_kind, scalar_kind, dimensions);
     granule->bytes_per_vector = bytes_per_vector;
     granule->num_vectors = num_vectors;
+    granule->quantization = flatQuantizationFromFlags(projected, turboquant, rabitq, e8);
     granule->e8_bits = e8 ? e8_bits : 0;
     granule->codes = std::move(codes);
     codes.clear();
@@ -1864,8 +1903,14 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
-    /// The codebook (and the decode) depend on `e8_bits`; a granule persisted with a different bits value (e.g. a part
-    /// attached from an index defined with other parameters) would be decoded against the wrong codebook.
+    /// The codes are decoded according to the index's quantization; a granule built with a different codec (e.g. a part
+    /// attached from a differently-quantized index) must not be scanned under the wrong one - that would read past code
+    /// boundaries or return garbage. Validate the persisted codec (and 'e8' bits) against this index.
+    const FlatQuantization expected_quantization = flatQuantizationFromFlags(projected, turboquant, rabitq, e8);
+    if (granule->quantization != expected_quantization)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Flat vector similarity index granule was built with quantization id {} but the index uses {}",
+            static_cast<UInt32>(granule->quantization), static_cast<UInt32>(expected_quantization));
     if (e8 && granule->e8_bits != e8_bits)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Flat 'e8' vector similarity index granule was built with {} bits per sub-quantizer but the index specifies {}",

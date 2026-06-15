@@ -168,6 +168,20 @@ private:
 };
 
 
+/// The quantization (codec) of a flat "fastknn" granule. Persisted with each granule so that, before scanning, a part
+/// can be validated against the index definition: different quantizations have different code layouts and semantics, so
+/// decoding a part with the wrong one would read past code boundaries or return garbage (e.g. on ATTACH of a part built
+/// by a differently-quantized index). `b1` and `b1_projected` share a layout but differ semantically, so the id (not
+/// just `bytes_per_vector`) is what distinguishes them.
+enum class FlatQuantization : UInt8
+{
+    B1 = 0,
+    B1Projected = 1,
+    TurboQuant = 2,
+    RaBitQ = 3,
+    E8 = 4,
+};
+
 /// ---------------------------------------------------------------------------------------------------------------------
 /// "fastknn" method: a flat (brute-force) variant of the vector similarity index.
 ///
@@ -199,14 +213,15 @@ struct MergeTreeIndexGranuleVectorSimilarityFlat final : public IMergeTreeIndexG
     const size_t dimensions;
     size_t bytes_per_vector = 0;       /// dim/8 for b1; dim/4 for turboquant; dim/8 + sizeof(float) for rabitq (1-bit code + per-vector correction factor)
     size_t num_vectors = 0;
+    FlatQuantization quantization = FlatQuantization::B1; /// persisted so a part can be validated against the index codec
     size_t e8_bits = 0;                /// 'e8' only: bits per 8-dim sub-quantizer; persisted so the layout can be validated on load
     std::vector<UInt8> codes;          /// num_vectors * bytes_per_vector packed quantized codes
 
     LoggerPtr logger = getLogger("VectorSimilarityIndexFlat");
 
 private:
-    /// Bump whenever the on-disk flat format changes. v2 persists `e8_bits` and validates the layout.
-    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
+    /// Bump whenever the on-disk flat format changes. v3 persists the quantization id and `e8_bits` and validates the layout.
+    static constexpr UInt64 FILE_FORMAT_VERSION = 3;
 };
 
 
