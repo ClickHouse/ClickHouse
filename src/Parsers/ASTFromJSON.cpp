@@ -21,6 +21,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDictionary.h>
@@ -181,6 +182,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"NameTypePair", [] { return make_intrusive<ASTNameTypePair>(); }},
         {"DataType", [] { return make_intrusive<ASTDataType>(); }},
         {"EnumDataType", [] { return make_intrusive<ASTEnumDataType>(); }},
+        {"TupleDataType", [] { return make_intrusive<ASTTupleDataType>(); }},
         {"FunctionWithKeyValueArguments", [] { return make_intrusive<ASTFunctionWithKeyValueArguments>(); }},
         {"Pair", [] { return make_intrusive<ASTPair>(); }},
         {"TTLElement", [] { return make_intrusive<ASTTTLElement>(); }},
