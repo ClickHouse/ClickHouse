@@ -767,6 +767,8 @@ Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is ski
 Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_use_long_connections, true, R"(
 Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_schedule_driven, false, R"(
+Run the experimental `ReaderExecutor`'s `readNextWindow` as a decision-free interpreter of the pre-built schedule (launch and serve the planned jobs) instead of re-deriving the next gap from the coverage map on every window.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

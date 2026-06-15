@@ -110,6 +110,15 @@ namespace DB::FailPoints
 namespace DB
 {
 
+/// True in builds where `chassert` is live (the assert spine runs). Used to keep the
+/// schedule processing-state maintenance running for the spine even when the
+/// schedule-driven interpreter is off, so the OFF path cross-checks the schedule.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+static constexpr bool spine_build = true;
+#else
+static constexpr bool spine_build = false;
+#endif
+
 /// The ONE place a counter is mapped to its ProfileEvent. Bump the counter, emit the event,
 /// and (for the cost-model counters) add the modeled-cost contribution - so a running query's
 /// events advance as the read happens. The prefetch worker runs in the submitter's thread
@@ -260,6 +269,7 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
+    , schedule_driven(options.schedule_driven)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
@@ -456,46 +466,53 @@ Rope ReaderExecutor::readNextWindow()
                 || position_phys + window_size > read_plan.geometry()->plan_end))
         {
             observeAndSchedule(position_phys);
+            if (schedule_driven || spine_build)
+                shadowReconstructCursor();
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: a fresh plan starts at the cursor
-            shadowReconstructCursor();
             chassert(read_plan.schedule.steps.empty()
                 || read_plan.schedule.steps.front().output.offset == position_phys);
 #endif
         }
-        if (read_plan.geometry())
+        /// The OFF path picks the track live; the interpreter dispatches on the cursor step.
+        if (!schedule_driven && read_plan.geometry())
             at = read_plan.geometry()->residentAt(position_phys);
     }
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: track-pick parity (schedule classification vs live residency)
-    if (to_read > 0 && read_plan.geometry() && !read_plan.schedule.steps.empty()
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: track-pick parity (live residency vs schedule classification), OFF path
+    if (!schedule_driven && to_read > 0 && read_plan.geometry() && !read_plan.schedule.steps.empty()
         && read_plan.cursor < read_plan.schedule.steps.size())
         chassert(read_plan.schedule.steps[read_plan.cursor].require_retrieve.has_value() == !at.resident());
 #endif
 
-    if (at.resident())
+    if (schedule_driven)
+        rope = interpretStep(position_phys, to_read);
+    else if (at.resident())
         rope = serveCacheBlock(position_phys, to_read);
     else
         rope = coverWindow(position_phys, to_read);
 
     stats.add(Stats::RequestedBytes, rope.range().size);
     position += rope.range().size;
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
-    if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !rope.empty() && !reached_eof
-        && read_plan.cursor < read_plan.schedule.steps.size())
+    if (schedule_driven || spine_build)
     {
-        const size_t produced_off_phys = (position - rope.range().size) + data_start_offset;
-        const auto & step = read_plan.schedule.steps[read_plan.cursor];
-        chassert(produced_off_phys >= step.output.offset);
-        chassert(produced_off_phys + rope.range().size <= step.output.end());
-        /// Strict equality only when this window spanned the whole step (known size); a
-        /// step wider than the per-call block/window is served over several windows.
-        if (!offset_map.hasUnknownSize()
-            && produced_off_phys == step.output.offset
-            && position + data_start_offset == step.output.end())
-            chassert(rope.range().size == step.output.size);
-    }
-    shadowAdvanceCursor();
+#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
+        if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !rope.empty() && !reached_eof
+            && read_plan.cursor < read_plan.schedule.steps.size())
+        {
+            const size_t produced_off_phys = (position - rope.range().size) + data_start_offset;
+            const auto & step = read_plan.schedule.steps[read_plan.cursor];
+            chassert(produced_off_phys >= step.output.offset);
+            chassert(produced_off_phys + rope.range().size <= step.output.end());
+            /// Strict equality only when this window spanned the whole step (known size); a
+            /// step wider than the per-call block/window is served over several windows.
+            if (!offset_map.hasUnknownSize()
+                && produced_off_phys == step.output.offset
+                && position + data_start_offset == step.output.end())
+                chassert(rope.range().size == step.output.size);
+        }
 #endif
+        shadowAdvanceCursor();
+    }
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         rope.range().size, rope.getNodes().size(), position);
 
@@ -505,7 +522,10 @@ Rope ReaderExecutor::readNextWindow()
     if (reached_eof)
         inflight_segment_pin.reset();
 
-    maybeTriggerPrefetch();
+    if (schedule_driven)
+        maybeLaunchAhead();
+    else
+        maybeTriggerPrefetch();
 
     return rope;
 }
@@ -521,9 +541,8 @@ void ReaderExecutor::seek(size_t new_position)
         LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
             machine->requested_range.offset, machine->requested_range.end());
         position = new_position;
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: jumped within the surviving plan
-        shadowReconstructCursor();
-#endif
+        if (schedule_driven || spine_build)  /// jumped within the surviving plan
+            shadowReconstructCursor();
         return;
     }
 
@@ -541,11 +560,21 @@ void ReaderExecutor::seek(size_t new_position)
 
     position = new_position;
     reached_eof = false;
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: jumped position; reconstruct against the (possibly surviving) plan
-    shadowReconstructCursor();
-#endif
+    /// A jumped position invalidates the schedule-driven serve state: jobs banked AHEAD of
+    /// the old cursor would, after the jump, leave `ready_bytes` disjoint from the new
+    /// cursor (a foreground read below the ahead-bank makes a gappy rope). Drop the plan so
+    /// the next launch re-plans + rebuilds `retrieve_status` from the new position. (The
+    /// fast path above keeps the plan only for a forward seek into the in-flight window,
+    /// where the bank stays contiguous.) The OFF path re-plans lazily and uses no bank.
+    if (schedule_driven)
+        read_plan = {};
+    else if (spine_build)  /// jumped position; reconstruct against the (possibly surviving) plan
+        shadowReconstructCursor();
 
-    maybeTriggerPrefetch();
+    if (schedule_driven)
+        maybeLaunchAhead();
+    else
+        maybeTriggerPrefetch();
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -583,6 +612,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     transient_options.max_tail_for_drain = max_tail_for_drain;
     transient_options.plan_look_ahead_window = plan_look_ahead_window;
     transient_options.long_connection_limit = long_connection_limit;
+    transient_options.schedule_driven = schedule_driven;
     auto t = std::make_unique<ReaderExecutor>(source, stored_objects, caches, std::move(transient_options));
 
 #if USE_SSL
@@ -2113,6 +2143,17 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
         tryLogException(m.failure, log, "Deferred cache fill failed", LogsLevel::debug);
     }
     stats += m.stats;
+
+    /// Ready -> Done: the job's bytes are now written into its `into[]` cells (this put
+    /// committed). Only once the WHOLE job is fetched - a multi-window job reaps a put per
+    /// window. `depsSatisfied` gates the launch of an offset-later same-cell write on this,
+    /// so without it a deps-bearing job would never read ahead. The put machine inherits
+    /// `retrieve_index` from the launch machine via `schedulePutStep`.
+    if (m.retrieve_index < read_plan.retrieve_status.size()
+        && m.retrieve_index < read_plan.schedule.retrieves.size()
+        && read_plan.retrieve_status[m.retrieve_index].fetched
+            >= read_plan.schedule.retrieves[m.retrieve_index].range.size)
+        read_plan.retrieve_status[m.retrieve_index].phase = RetrievePhase::Done;
 }
 
 void ReaderExecutor::sweepPutMachines(bool wait)
@@ -2328,9 +2369,9 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
     }
 }
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-/// SE-2 assert spine. All of this is compiled out in release; Stage 4 makes it the
-/// real serve driver by removing the guards.
+/// Schedule processing-state maintenance. Always compiled: the assert spine (debug)
+/// maintains it as a shadow, and the schedule-driven interpreter maintains it for real
+/// and serves from it.
 size_t ReaderExecutor::findStepContaining(size_t pos_phys) const
 {
     const auto & steps = read_plan.schedule.steps;
@@ -2374,7 +2415,245 @@ void ReaderExecutor::shadowResetRetrieve(const FetchMachine & m)
     if (m.retrieve_index < read_plan.retrieve_status.size())
         read_plan.retrieve_status[m.retrieve_index] = {};
 }
-#endif
+
+// ─── Schedule-driven interpreter (active when `schedule_driven`) ──────────────
+//
+// `readNextWindow` runs the schedule's already-planned jobs instead of re-deriving
+// the next gap from the coverage map. Two decoupled frontiers: the serve `cursor`
+// (what the query reads) and the launch frontier (`retrieve_status[ri].fetched`,
+// running one window ahead). ONE machine in flight - sequential serve is ordered, so a
+// deeper read-ahead only trades memory for latency-hiding, and connection parallelism
+// comes from multiple executors. Each remote job's collected bytes are banked in
+// `retrieve_status[ri].ready_bytes` (LOGICAL coords, matching the I/O leaves' output, so
+// banking needs no shift) and sliced per step; the long connection coalesces the GETs
+// while each machine stays one window wide, so peak serve memory is ~one window per job.
+
+bool ReaderExecutor::depsSatisfied(size_t ri) const
+{
+    /// An offset-earlier write into a shared append-only cell must be committed
+    /// (its put reaped, phase Done) before this job's bytes land in the same cell.
+    for (size_t dep : read_plan.schedule.retrieves[ri].deps)
+        if (read_plan.retrieve_status[dep].phase != RetrievePhase::Done)
+            return false;
+    return true;
+}
+
+void ReaderExecutor::launchRetrieve(size_t ri)
+{
+    const auto & r = read_plan.schedule.retrieves[ri];
+    auto & st = read_plan.retrieve_status[ri];
+    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
+
+    /// ONE window within the job range at its launch frontier - never `r.range` itself
+    /// (a coalesced connection can be a whole column). The long connection keeps the GET
+    /// open across these windows, so the job is still one GET.
+    const size_t base = r.range.offset + st.fetched;
+    const size_t chunk = std::min(r.range.end() - base, boundedReadSize(effectivePrefetchWindowSize(level)));
+    if (chunk == 0)
+        return;
+    const ByteRange next_physical_window{base, chunk};
+
+    auto m = std::make_shared<FetchMachine>();
+    abandoned_machines.reserve(abandoned_machines.size() + 1);
+    m->requested_range = ByteRange{base - data_start_offset, chunk};
+    m->physical_window = next_physical_window;
+    m->retrieve_index = ri;
+    m->geometry = read_plan.geometry();
+    m->extent_snapshot = read_extent_end;
+
+    /// The foreground is the sole opener; the aligned window's first physical range gives
+    /// the object and its object-local offset. A no-op when not warranted / at capacity /
+    /// a usable connection is already held.
+    auto prefetch_ranges = offset_map.map(next_physical_window);
+    if (!prefetch_ranges.empty())
+        openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
+            next_physical_window.offset, prefetch_ranges.front().size, stats);
+    m->long_conn = takeLong(long_conn);
+
+    m->run_step = [this, self = m.get()]
+    {
+        self->fetched = fetchGapsFromSource(
+            self->physical_window, /*from_prefetch=*/true,
+            self->reached_eof, self->geometry->pressure_level,
+            self->extent_snapshot, &self->long_conn, self, self->stats);
+        const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;
+        const bool stopped_short = !self->reached_eof
+            && fetched_size < self->physical_window.size
+            && self->interrupt_requested.load();
+        if (stopped_short)
+        {
+            self->stats.add(Stats::MachineInterrupted);
+            return StepResult::Interrupted;
+        }
+        return StepResult::AwaitCollect;
+    };
+
+    joinPutMachinesOverlapping(next_physical_window, /*writers_too=*/false);
+
+    if (!runner->schedule(m))
+    {
+        long_conn = takeLong(m->long_conn);
+        stats.add(Stats::PrefetchPoolFull);
+        return;
+    }
+    machine = std::move(m);
+    st.phase = RetrievePhase::InFlight;
+    st.machine = machine.get();
+}
+
+void ReaderExecutor::maybeLaunchAhead()
+{
+    if (!prefetch_pool || machine || atEnd())
+        return;  /// one machine in flight (the cap for this stage)
+    drainAbandonedMachines();
+
+    const size_t position_phys = position + data_start_offset;
+    const size_t probe = boundedReadSize(window_size);
+    if (probe == 0)
+        return;
+    if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe}))
+    {
+        observeAndSchedule(position_phys);
+        shadowReconstructCursor();
+    }
+    if (effectivePrefetchWindowSize(read_plan.geometry()->pressure_level) == 0)
+        return;  /// read-ahead suppressed under High/Critical memory pressure
+
+    auto & retrieves = read_plan.schedule.retrieves;
+    auto & status = read_plan.retrieve_status;
+    for (size_t ri = read_plan.launch_frontier; ri < retrieves.size(); ++ri)
+    {
+        const auto & r = retrieves[ri];
+        /// Non-Remote jobs (fill/promote) are served from the cache side; a fully launched
+        /// job is done. Advance the frontier past them so it never rescans.
+        if (r.source != PlanSchedule::Source::Remote || status[ri].fetched >= r.range.size)
+        {
+            if (ri == read_plan.launch_frontier)
+                ++read_plan.launch_frontier;
+            continue;
+        }
+        if (!depsSatisfied(ri))
+            return;  /// hold: an offset-earlier same-cell write is not committed yet
+        launchRetrieve(ri);
+        return;
+    }
+}
+
+void ReaderExecutor::collectInFlightInto(size_t ri)
+{
+    auto & st = read_plan.retrieve_status[ri];
+    /// The launch frontier advances by the requested window; short reads here are only
+    /// EOF (no further launch) or a cancel/re-plan (which resets `fetched`), so the
+    /// frontier never strands un-fetched bytes mid-plan.
+    const size_t window = machine ? machine->physical_window.size : 0;
+    Rope collected;
+    if (tryCollectMachine(collected))
+    {
+        /// `collected` is logical (the I/O leaf already shifted + sliced to `position`);
+        /// `ready_bytes` is logical too, so bank it directly - no shift, no round-trip.
+        if (!collected.empty())
+            st.ready_bytes.append(std::move(collected));
+        st.fetched += window;
+        st.phase = RetrievePhase::Ready;
+        st.machine = nullptr;
+    }
+    else
+    {
+        /// Revoked while still queued: the foreground reads this window instead.
+        st.phase = RetrievePhase::NotLaunched;
+        st.machine = nullptr;
+    }
+}
+
+Rope ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const
+{
+    /// All logical: `ready_bytes` and `position` are logical; the cursor step is physical,
+    /// so shift its end by the header. No `Rope` shift - only the bounds arithmetic.
+    const size_t pos = position_phys - data_start_offset;
+    const size_t step_end = step.output.end() - data_start_offset;
+    const size_t end = std::min({step_end, pos + to_read, st.ready_bytes.range().end()});
+    Rope out = st.ready_bytes.slice(ByteRange{pos, end - pos});
+    /// Release everything up to `end` (the served prefix + any skipped head) so the
+    /// banked footprint stays ~one window.
+    st.ready_bytes = st.ready_bytes.slice(ByteRange{end, st.ready_bytes.range().end() - end});
+    return out;
+}
+
+Rope ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read)
+{
+    const auto & r = read_plan.schedule.retrieves[ri];
+    auto & st = read_plan.retrieve_status[ri];
+    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
+    /// Read one window within the job range at the cursor; `syncGapRead` runs the late-hit
+    /// salvage + the source read + the deferred fill in its I/O leaf. The long connection
+    /// coalesces across windows.
+    const size_t want = std::min({to_read, r.range.end() - position_phys, boundedReadSize(effectiveWindowSize(level))});
+    if (want == 0)
+        return {};
+    Rope w = syncGapRead(ByteRange{position_phys, want});  /// returns logical, banked directly
+    if (!w.empty())
+        st.ready_bytes.append(std::move(w));
+    /// The launch frontier is a high-water mark of bytes fetched from `r.range.offset`, NOT
+    /// an accumulator: a foreground read at the cursor can land BELOW the frontier (the
+    /// cursor trails an ahead launch), so `+= want` would over-count and make the next
+    /// launch skip never-fetched bytes. Advance only if this read extends the frontier.
+    st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + want);
+    st.phase = RetrievePhase::Ready;
+    return serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys, to_read);
+}
+
+Rope ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
+{
+    auto & st = read_plan.retrieve_status[ri];
+    const size_t pos = position_phys - data_start_offset;  /// `ready_bytes` is logical
+    /// Coverage-driven: a job can be partially banked AND still have a window in flight,
+    /// so branch on "does `ready_bytes` cover the cursor?" rather than the phase alone.
+    while (st.ready_bytes.empty()
+        || pos < st.ready_bytes.range().offset
+        || pos >= st.ready_bytes.range().end())
+    {
+        if (st.machine)
+            collectInFlightInto(ri);  /// wait, bank one window, advance the frontier
+        else
+            return serveRetrieveForeground(ri, position_phys, to_read);  /// not prefetched: read it now
+    }
+    return serveStepFromBanked(step, st, position_phys, to_read);
+}
+
+Rope ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)
+{
+    /// A resident step: stream it from the held cache buffers, bounded to the step (the
+    /// maximal cross-tier resident run) and to one block. Reuses the resident serve path.
+    return serveCacheBlock(position_phys, std::min(to_read, step.output.end() - position_phys));
+}
+
+Rope ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t to_read)
+{
+    /// The cursor ran past the materialized steps (or there is nothing to read). At a known
+    /// end / the extent, this is EOF (empty rope). Otherwise re-plan from here and retry.
+    if (to_read == 0 || atEnd())
+        return {};
+    if (!read_plan.geometry() || read_plan.cursor >= read_plan.schedule.steps.size())
+    {
+        observeAndSchedule(position_phys);
+        shadowReconstructCursor();
+        if (read_plan.schedule.steps.empty())
+            return {};
+    }
+    return interpretStep(position_phys, to_read);
+}
+
+Rope ReaderExecutor::interpretStep(size_t position_phys, size_t to_read)
+{
+    if (to_read == 0 || !read_plan.geometry() || read_plan.schedule.steps.empty()
+        || read_plan.cursor >= read_plan.schedule.steps.size())
+        return handleExtentOrReplan(position_phys, to_read);
+
+    const auto & step = read_plan.schedule.steps[read_plan.cursor];
+    return step.require_retrieve.has_value()
+        ? serveRetrieveStep(step, *step.require_retrieve, position_phys, to_read)
+        : serveHitStep(step, position_phys, to_read);
+}
 
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
@@ -2816,9 +3095,14 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     auto m = std::move(machine);
     if (!m)
         return;
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: cancelled (seek/setReadExtent) before serving -> NotLaunched
-    shadowResetRetrieve(*m);
-#endif
+    /// Clear the cancelled job's non-owning machine handle in ALL builds: it is live
+    /// serve state for the schedule-driven interpreter, not just a debug shadow. Without
+    /// this, a later `serveRetrieveStep` would see a stale `st.machine` and collect a
+    /// machine the foreground no longer owns (a null `shared_ptr` deref). The banked
+    /// `ready_bytes`/`fetched` stay valid - the cursor has not moved (`setReadExtent`), or
+    /// a seek re-plans and rebuilds them (see `seek`).
+    if (m->retrieve_index < read_plan.retrieve_status.size())
+        read_plan.retrieve_status[m->retrieve_index].machine = nullptr;
     /// The foreground holds no long connection while a machine is in flight (moved in
     /// at launch); a queued machine's pristine one is reclaimed below.
     chassert(!long_conn);

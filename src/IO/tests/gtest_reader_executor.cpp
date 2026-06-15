@@ -4237,6 +4237,125 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
 #endif
 }
 
+/// The schedule-driven interpreter must deliver byte-identical output to the live walk
+/// over the same source + cache state: it changes the fetch coordination, not the served
+/// windows. Two resident islands (one wide, one bridgeable) make a coalesced job span a
+/// bridged hole + multi-window jobs - exactly what banking exists for. Run both flag states
+/// and compare. (In a debug build the ON run also exercises the assert spine.)
+TEST(ReaderExecutor, ScheduleDrivenMatchesLiveWalk)
+{
+    const size_t block = 4096;
+    const size_t file = block * 20;  // 80K
+    auto read_all = [&](bool schedule_driven)
+    {
+        auto [src, objects] = srcOf(file);
+        auto page = std::make_shared<WideGranularityMockCache>(block, "page");
+        auto fs = std::make_shared<WideGranularityMockCache>(block, "fs");
+        page->seedBlock(2, 'P'); page->seedBlock(3, 'P');  // wide island [8K,16K), not bridged
+        fs->seedBlock(10, 'F');                            // narrow island [40K,44K), bridged
+        auto pool = std::make_shared<SyncPrefetchPool>();
+        ReaderExecutor::Options opts;
+        opts.window_size = block * 3;
+        opts.block_size = block;
+        opts.plan_look_ahead_window = file;
+        opts.min_bytes_for_seek = block;   // bridges the 4K island into one coalesced job
+        opts.prefetch_pool = pool;
+        opts.schedule_driven = schedule_driven;
+        ReaderExecutor executor(src, objects, {page, fs}, opts);
+        String out;
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            for (const auto & node : rope.getNodes())
+                out.append(node.data(), node.size);
+        }
+        return out;
+    };
+    const String live = read_all(false);
+    const String sched = read_all(true);
+    EXPECT_EQ(live.size(), file);
+    EXPECT_EQ(sched, live) << "schedule-driven output must equal the live walk byte for byte";
+}
+
+/// A backward seek INSIDE the look-ahead plan must not serve a discontiguous rope: the
+/// jump invalidates the ahead-banked ready_bytes, so the interpreter must re-plan from the
+/// new position. Read forward (banking ahead), seek back inside the plan, read to the end,
+/// and compare the post-seek tail to the live walk.
+TEST(ReaderExecutor, ScheduleDrivenBackwardSeekMatchesLiveWalk)
+{
+    const size_t block = 4096;
+    const size_t file = block * 20;  // 80K
+    auto tail_after_seek = [&](bool schedule_driven)
+    {
+        auto [src, objects] = srcOf(file);
+        auto cache = std::make_shared<WideGranularityMockCache>(block, "c");
+        cache->seedBlock(5, 'R');  // an island so steps mix hit/gap
+        auto pool = std::make_shared<SyncPrefetchPool>();
+        ReaderExecutor::Options opts;
+        opts.window_size = block * 2;
+        opts.block_size = block;
+        opts.plan_look_ahead_window = file;   // ONE plan -> the seek stays within it
+        opts.min_bytes_for_seek = block;
+        opts.prefetch_pool = pool;
+        opts.schedule_driven = schedule_driven;
+        ReaderExecutor executor(src, objects, {cache}, opts);
+        for (int i = 0; i < 4; ++i)           // read forward ~32K, banking ahead
+            executor.readNextWindow();
+        executor.seek(block);                 // backward, into the surviving plan
+        String out;
+        while (true)
+        {
+            auto r = executor.readNextWindow();
+            if (r.empty())
+                break;
+            for (const auto & node : r.getNodes())
+                out.append(node.data(), node.size);
+        }
+        return out;                           // bytes [4K, end)
+    };
+    EXPECT_EQ(tail_after_seek(true), tail_after_seek(false)) << "post-backward-seek tail must match the live walk";
+    EXPECT_EQ(tail_after_seek(true).size(), file - block);
+}
+
+/// The per-mark-range setReadExtent cadence (advance the extent one window ahead before
+/// each read) must not strand a stale machine handle: setReadExtent cancels the in-flight
+/// prefetch, and a later serve must not collect the cancelled machine. Equivalence (and no
+/// crash) confirms the cancelled job's machine handle is cleared.
+TEST(ReaderExecutor, ScheduleDrivenSetReadExtentCadence)
+{
+    const size_t block = 4096;
+    const size_t file = block * 20;  // 80K
+    auto read_with_extent = [&](bool schedule_driven)
+    {
+        auto [src, objects] = srcOf(file);
+        auto cache = std::make_shared<WideGranularityMockCache>(block, "c");
+        auto pool = std::make_shared<SyncPrefetchPool>();
+        ReaderExecutor::Options opts;
+        opts.window_size = block * 2;
+        opts.block_size = block;
+        opts.plan_look_ahead_window = file;
+        opts.min_bytes_for_seek = 0;
+        opts.prefetch_pool = pool;
+        opts.schedule_driven = schedule_driven;
+        ReaderExecutor executor(src, objects, {cache}, opts);
+        String out;
+        while (true)
+        {
+            executor.setReadExtent(std::min(file, executor.getPosition() + block * 2));  // advance ahead of the cursor
+            auto r = executor.readNextWindow();
+            if (r.empty())
+                break;
+            for (const auto & node : r.getNodes())
+                out.append(node.data(), node.size);
+        }
+        return out;
+    };
+    EXPECT_EQ(read_with_extent(true), read_with_extent(false)) << "per-window setReadExtent cadence must match the live walk";
+    EXPECT_EQ(read_with_extent(true).size(), file);
+}
+
 /// Schedule-driven fill, seek mid-coarse-segment: seeking to 64K lands inside
 /// the slow tier's 256K segment [0,256K), whose head [0,64K) is before-slack.
 /// The schedule-driven borrow must still fill that whole segment (it owns its

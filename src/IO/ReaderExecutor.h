@@ -77,6 +77,7 @@ public:
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
+        bool schedule_driven = false;
     };
 
     ReaderExecutor(
@@ -443,12 +444,17 @@ private:
         PlanSchedule schedule;
 
         /// Per-retrieve runtime status, 1:1 with `schedule.retrieves`, allocated at
-        /// plan build and reset on re-plan/seek. Not consumed yet (Stage SE-0).
+        /// plan build and reset on re-plan/seek. The assert spine maintains it as a
+        /// debug shadow; the schedule-driven interpreter maintains and serves from it.
         std::vector<RetrieveStatus> retrieve_status;
 
         /// The step interpreter's loop authority - an index into `schedule.steps`,
-        /// reconstructed from `position` on re-plan/seek. Not consumed yet (Stage SE-0).
+        /// reconstructed from `position` on re-plan/seek.
         size_t cursor = 0;
+
+        /// The launch interpreter's authority - the first `schedule.retrieves` index not
+        /// yet launched/exhausted; advanced by `maybeLaunchAhead`. Reset on re-plan.
+        size_t launch_frontier = 0;
 
     private:
         friend class ReaderExecutor;  /// `observeAndSchedule` is the sole writer.
@@ -807,19 +813,30 @@ private:
     /// plan.
     void observeAndSchedule(size_t physical_start);
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// SE-2 assert spine (debug/sanitizer only; compiled out in release). Shadow the
-    /// schedule's processing state alongside the live walk so a `chassert` can prove the
-    /// schedule predicts it. `cursor` = index of the step whose `output` contains the
-    /// current `position_phys`; `retrieve_status[ri].phase` mirrors the machine lifecycle.
-    /// None of this serves bytes yet - Stage 4 promotes it to the real driver by removing
-    /// the guards.
+    /// Schedule processing state maintenance. The assert spine (debug-only) maintains it
+    /// as a shadow alongside the live walk; the schedule-driven interpreter maintains it
+    /// for real and serves from it. `cursor` = index of the step whose `output` contains
+    /// the current `position_phys`; `retrieve_status[ri].phase` mirrors the machine lifecycle.
     size_t findStepContaining(size_t pos_phys) const;
     void shadowReconstructCursor();
     void shadowAdvanceCursor();
     void shadowSetPhase(const FetchMachine & m, RetrievePhase phase);
     void shadowResetRetrieve(const FetchMachine & m);
-#endif
+
+    /// The schedule-driven interpreter (active when `schedule_driven`): `readNextWindow`
+    /// runs the schedule's already-planned jobs instead of re-deriving the next gap from
+    /// the coverage map. `interpretStep` dispatches on `steps[cursor]`; `maybeLaunchAhead`
+    /// launches the schedule's `Remote` jobs at a frontier.
+    Rope interpretStep(size_t position_phys, size_t to_read);
+    Rope serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read);
+    Rope serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read);
+    Rope serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const;
+    Rope serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read);
+    void collectInFlightInto(size_t ri);
+    Rope handleExtentOrReplan(size_t position_phys, size_t to_read);
+    void maybeLaunchAhead();
+    void launchRetrieve(size_t ri);
+    bool depsSatisfied(size_t ri) const;
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
     /// retrieves, in offset order, only past `continuity_fed_end`) into
@@ -907,6 +924,8 @@ private:
     size_t min_bytes_for_seek;
     size_t block_size;
     size_t max_tail_for_drain;
+    /// Run `readNextWindow` as a decision-free interpreter of the schedule.
+    bool schedule_driven;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
 

@@ -441,6 +441,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     executor_options.max_tail_for_drain = settings.reader_executor_max_tail_for_drain;
     executor_options.prefetch_pool = prefetch_pool;
     executor_options.long_connection_limit = long_connection_limit;
+    executor_options.schedule_driven = settings.reader_executor_schedule_driven;
     if (settings.enable_reader_executor_log)
     {
         if (auto global = Context::getGlobalContextInstance())
