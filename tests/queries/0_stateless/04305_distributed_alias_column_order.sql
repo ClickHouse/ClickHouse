@@ -278,6 +278,17 @@ SELECT flag_a, flag_b, flag_b FROM local_dup_mixed ORDER BY dt DESC LIMIT 1;
 SELECT 'distributed_dup_mixed';
 SELECT flag_a, flag_b, flag_b FROM dist_dup_mixed ORDER BY dt DESC LIMIT 1;
 
+-- Interleaved duplicate: a duplicated alias occurrence precedes a later distinct alias.
+-- Regression for https://github.com/ClickHouse/ClickHouse/pull/106398#discussion_r3413976358
+-- The duplicate `flag_b` is deduplicated at the mergeable-state boundary and reconstructed
+-- on the initiator, so the distinct projection columns (`flag_b`, `flag_a`) must keep their
+-- first-occurrence order to avoid a positional rename mismatch.
+SELECT 'local_dup_interleaved';
+SELECT flag_b, flag_b, flag_a FROM local_dup_mixed ORDER BY dt DESC LIMIT 1;
+
+SELECT 'distributed_dup_interleaved';
+SELECT flag_b, flag_b, flag_a FROM dist_dup_mixed ORDER BY dt DESC LIMIT 1;
+
 DROP TABLE dist_dup_mixed;
 DROP TABLE local_dup_mixed;
 

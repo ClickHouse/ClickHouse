@@ -30,6 +30,10 @@ local_dup_mixed
 42_suffix	42	42
 distributed_dup_mixed
 42_suffix	42	42
+local_dup_interleaved
+42	42	42_suffix
+distributed_dup_interleaved
+42	42	42_suffix
 local_same_expr
 7	7
 distributed_same_expr
