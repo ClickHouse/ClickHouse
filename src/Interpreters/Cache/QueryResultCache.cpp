@@ -1043,13 +1043,19 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
     }
 }
 
-QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const Cache::Key & key, bool enable_reads_from_query_cache_disk, const std::lock_guard<std::mutex> &)
+QueryResultCacheReader::QueryResultCacheReader(
+    QueryResultCachePtr cache_,
+    const Cache::Key & key,
+    bool enable_reads_from_query_cache_disk,
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota,
+    const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_->readFromMemory(key);
 
     if (!entry.has_value() && enable_reads_from_query_cache_disk)
     {
-        auto disk_entry = cache_->readFromDisk(key);
+        auto disk_entry = cache_->readFromDisk(key, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
         if (disk_entry.has_value())
         {
             ProfileEvents::increment(ProfileEvents::QueryCacheDiskHits);
@@ -1165,10 +1171,20 @@ void QueryResultCache::updateConfiguration(
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryResultCacheReader QueryResultCache::createReader(const Key & key, bool enable_reads_from_query_cache_disk)
+QueryResultCacheReader QueryResultCache::createReader(
+    const Key & key,
+    bool enable_reads_from_query_cache_disk,
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota)
 {
     std::lock_guard lock(mutex);
-    return QueryResultCacheReader(shared_from_this(), key, enable_reads_from_query_cache_disk, lock);
+    return QueryResultCacheReader(
+        shared_from_this(),
+        key,
+        enable_reads_from_query_cache_disk,
+        max_query_result_cache_size_in_bytes_quota,
+        max_query_result_cache_entries_quota,
+        lock);
 }
 
 QueryResultCacheWriter QueryResultCache::createWriter(
@@ -1370,7 +1386,10 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromMemo
     return {{entry->key, res}};
 }
 
-std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk(const Key & key)
+std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk(
+    const Key & key,
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota)
 {
     if (!disk)
         return std::nullopt;
@@ -1383,6 +1402,18 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
 
     if (!checkAccess(disk_entry_key, key))
         return std::nullopt;
+
+    /// The promotion below inserts into `memory_cache` under `disk_entry_key`, so it is accounted against
+    /// `disk_entry_key.user_id`'s memory quota. After a restart `loadEntrysFromDisk` populates only `disk_cache`,
+    /// leaving the `memory_cache` per-user quota map empty - and `PerUserTTLCachePolicyUserQuota` treats an
+    /// unregistered user as unlimited. Without registering the quota a result whose compressed on-disk size fit
+    /// the disk cache but whose in-memory weight exceeds the user's `query_cache_max_size_in_bytes` /
+    /// `query_cache_max_entries` could be promoted here and push `QueryCacheBytes` past the profile cap just by
+    /// being read from disk. Register it first (mirroring `createWriter`) so the `memory_cache.set` below is
+    /// declined by `approveWrite` when the promotion would exceed the quota; the entry is still returned to the
+    /// reader for this query.
+    if (disk_entry_key.user_id.has_value())
+        memory_cache.setQuotaForUser(*disk_entry_key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     try
     {

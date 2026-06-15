@@ -87,6 +87,46 @@ def test_disk_cache_survives_restart(start_cluster):
     assert disk_hits_for(query_id) == 0
 
 
+def test_disk_cache_respects_memory_quota_after_restart(start_cluster):
+    setup_table()
+
+    # `default` writes an entry to the disk cache with no per-user quota.
+    expected = node.query(
+        QUERY,
+        settings={
+            "use_query_cache": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            # Keep the entry fresh across the (potentially slow) restart so the post-restart read is a hit.
+            "query_cache_ttl": 600,
+        },
+    )
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Disk'").strip() == "1"
+
+    # After a restart only the disk metadata is reloaded; the per-user memory quota map is empty
+    # (`PerUserTTLCachePolicyUserQuota` then treats the user as unlimited).
+    node.restart_clickhouse(kill=True)
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Memory'").strip() == "0"
+
+    # Reading the restored entry with a tiny per-user memory quota (`query_cache_max_size_in_bytes = 1`) must
+    # still serve it from disk, but the disk->memory promotion must be declined by the quota - otherwise reading
+    # from disk would push `QueryCacheBytes` past the profile cap.
+    query_id = "qrc_on_disk_quota_read"
+    res = node.query(
+        QUERY,
+        query_id=query_id,
+        settings={
+            "use_query_cache": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_max_size_in_bytes": 1,
+        },
+    )
+    assert res == expected
+    assert disk_hits_for(query_id) == 1
+    # The promotion was rejected by the quota, so the memory cache stays empty.
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Memory'").strip() == "0"
+
+
 def test_disk_cache_user_isolation_after_restart(start_cluster):
     setup_table()
     # `other` is granted `SELECT ON default.t` via `configs/users.xml` (it lives in the readonly

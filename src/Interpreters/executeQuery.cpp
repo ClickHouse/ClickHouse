@@ -1705,7 +1705,11 @@ static BlockIO executeQueryImpl(
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
-                    QueryResultCacheReader reader = query_result_cache->createReader(key, settings[Setting::enable_reads_from_query_cache_disk]);
+                    QueryResultCacheReader reader = query_result_cache->createReader(
+                        key,
+                        settings[Setting::enable_reads_from_query_cache_disk],
+                        settings[Setting::query_cache_max_size_in_bytes],
+                        settings[Setting::query_cache_max_entries]);
 
                     if (reader.hasCacheEntryForKey())
                     {

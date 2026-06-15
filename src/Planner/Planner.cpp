@@ -2143,7 +2143,11 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && settings[Setting::enable_reads_from_query_cache])
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
-        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key, settings[Setting::enable_reads_from_query_cache_disk]));
+        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(
+            key,
+            settings[Setting::enable_reads_from_query_cache_disk],
+            settings[Setting::query_cache_max_size_in_bytes],
+            settings[Setting::query_cache_max_entries]));
         if (reader->hasCacheEntryForKey())
         {
             addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());

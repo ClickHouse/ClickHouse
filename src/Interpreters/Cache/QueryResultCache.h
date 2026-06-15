@@ -210,7 +210,11 @@ public:
         size_t max_disk_size_in_bytes,
         size_t max_disk_entries);
 
-    QueryResultCacheReader createReader(const Key & key, bool enable_reads_from_query_cache_disk);
+    QueryResultCacheReader createReader(
+        const Key & key,
+        bool enable_reads_from_query_cache_disk,
+        size_t max_query_result_cache_size_in_bytes_quota,
+        size_t max_query_result_cache_entries_quota);
     QueryResultCacheWriter createWriter(
         const Key & key,
         std::chrono::milliseconds min_query_runtime,
@@ -226,7 +230,10 @@ public:
 
     /// Returns a cloned copy of the cached content, not the cached object itself.
     std::optional<QueryResultCache::Cache::KeyMapped> readFromMemory(const Key & key);
-    std::optional<QueryResultCache::Cache::KeyMapped> readFromDisk(const Key & key);
+    std::optional<QueryResultCache::Cache::KeyMapped> readFromDisk(
+        const Key & key,
+        size_t max_query_result_cache_size_in_bytes_quota,
+        size_t max_query_result_cache_entries_quota);
 
     bool isStale(const Key & key);
 
@@ -363,7 +370,13 @@ public:
     std::unique_ptr<SourceFromChunks> getSourceTotals();
 
 private:
-    QueryResultCacheReader(QueryResultCachePtr cache_, const Cache::Key & key, bool enable_reads_from_query_cache_disk, const std::lock_guard<std::mutex> &);
+    QueryResultCacheReader(
+        QueryResultCachePtr cache_,
+        const Cache::Key & key,
+        bool enable_reads_from_query_cache_disk,
+        size_t max_query_result_cache_size_in_bytes_quota,
+        size_t max_query_result_cache_entries_quota,
+        const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, std::optional<Chunk> & totals, std::optional<Chunk> & extremes);
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;
