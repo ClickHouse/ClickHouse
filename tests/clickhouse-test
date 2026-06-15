@@ -1722,8 +1722,6 @@ class MergeTreeSettingsRandomizer:
         #"add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
         #"add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
         "concurrent_part_removal_threshold_for_remote_disk": lambda: random.choice([0, 1, 16, 100]),
-        "materialize_projections_on_insert": lambda: random.randint(0, 1),
-        "materialize_projections_on_merge": lambda: random.randint(0, 1),
         #"part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
     }
 
