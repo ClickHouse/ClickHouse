@@ -128,6 +128,14 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!limit_step || limit_step->getLimit() == 0 || limit_step->withTies() || limit_step->getOffset() > 0)
         return;
 
+    /// Skip when `always_read_till_end` is set (e.g. `exact_rows_before_limit` or `WITH TOTALS`),
+    /// like `limitPushDown` and `topKThroughJoin` do. `LimitTransform` must keep consuming upstream
+    /// data after producing `K` rows to report the full pre-limit row count and preserve totals.
+    /// This rewrite drops the `LimitStep` and `Mode 1` stops reading after `K` groups, so it cannot
+    /// honor that contract.
+    if (limit_step->alwaysReadTillEnd())
+        return;
+
     if (node.children.size() != 1)
         return;
 
