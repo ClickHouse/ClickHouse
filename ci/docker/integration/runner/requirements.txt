@@ -41,7 +41,7 @@ geopandas==1.1.2
 grpcio-tools==1.78.0
 grpcio==1.78.0
 httplib2==0.31.2
-idna==3.11
+idna==3.15
 iniconfig==2.3.0
 jwcrypto==1.5.6
 kafka-python-ng==2.2.3

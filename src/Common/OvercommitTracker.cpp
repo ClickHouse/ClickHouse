@@ -57,7 +57,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         return OvercommitResult::DISABLED;
 
     pickQueryToExclude();
-    assert(cancellation_state != QueryCancellationState::NONE);
+    chassert(cancellation_state != QueryCancellationState::NONE);
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
@@ -66,7 +66,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     {
         // Here state can not be RUNNING, because it requires
         // picked_tracker to be not null pointer.
-        assert(cancellation_state == QueryCancellationState::SELECTED);
+        chassert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
         return OvercommitResult::DISABLED;
     }

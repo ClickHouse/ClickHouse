@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionULIDStringToDateTime : public IFunction
+class FunctionULIDStringToDateTime final : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;

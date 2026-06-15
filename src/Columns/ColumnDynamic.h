@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Common/WeakHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -198,9 +197,12 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override
+    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
+    /// to be equal for logically equal values stored with different variant layouts (typed variant
+    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
-        return variant_column_ptr->getWeakHash32();
+        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
     }
 
     void updateHashFast(SipHash & hash) const override
@@ -488,7 +490,7 @@ private:
     /// Store and use pointer to ColumnVariant to avoid virtual calls.
     /// ColumnDynamic is widely used inside ColumnObject for each path and
     /// with hundreds of paths these virtual calls are noticeable.
-    ColumnVariant * variant_column_ptr;
+    ColumnVariant * variant_column_ptr{};
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;
     /// The maximum number of different types that can be stored in this Dynamic column.

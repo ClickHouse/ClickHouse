@@ -11,6 +11,8 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -94,7 +96,7 @@ Chunk convertToChunk(const Block & block)
     return chunk;
 }
 
-Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
+static Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
 {
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = agg_chunk.bucket_num;

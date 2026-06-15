@@ -54,8 +54,8 @@ def partition_table_simple(started_cluster):
 
 
 def test_partition_simple(partition_table_simple):
-    q("ALTER TABLE test.partition_simple DETACH PARTITION 197001")
-    q("ALTER TABLE test.partition_simple ATTACH PARTITION 197001")
+    q("ALTER TABLE test.partition_simple DETACH PARTITION '1970-01-01'")
+    q("ALTER TABLE test.partition_simple ATTACH PARTITION '1970-01-01'")
     q("OPTIMIZE TABLE test.partition_simple")
 
 
@@ -178,8 +178,8 @@ def test_partition_complex(partition_table_complex):
 
     partition_complex_assert_checksums(True)
 
-    q("ALTER TABLE test.partition_complex DETACH PARTITION 197001")
-    q("ALTER TABLE test.partition_complex ATTACH PARTITION 197001")
+    q("ALTER TABLE test.partition_complex DETACH PARTITION '1970-01-01'")
+    q("ALTER TABLE test.partition_complex ATTACH PARTITION '1970-01-01'")
 
     partition_complex_assert_columns_txt()
 
@@ -514,7 +514,7 @@ def test_system_detached_parts(drop_detached_parts_table):
             q("alter table sdp_{} attach partition id '{}'".format(i, p))
 
     assert (
-        q("select n, x::int AS x, count() from merge('default', '^sdp_') group by n, x")
+        q("select n, x::int AS x, count() from merge('default', '^sdp_') group by n, x order by n, x")
         == "0\t0\t4\n1\t1\t4\n"
     )
 

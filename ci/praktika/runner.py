@@ -114,6 +114,14 @@ class Runner:
             WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
+        if pr and pr > 0:
+            changed_files = GH.get_changed_files()
+            if changed_files is not None:
+                print(f"Storing {len(changed_files)} changed files in JOB_KV_DATA")
+                Info().store_kv_data("changed_files", changed_files)
+            else:
+                print("WARNING: Failed to fetch changed files for PR")
+
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
@@ -654,6 +662,26 @@ class Runner:
         if is_initial_job:
             output = dataclasses.asdict(env)
             output["pipeline_status"] = "success"
+            # User-authored free text must not be embedded into the job output:
+            # the GitHub Actions runner scans outputs with built-in secret
+            # patterns (e.g. "Bearer <chars>") and silently drops the whole
+            # output on a match, which makes every downstream job skip.
+            # Downstream jobs restore these fields from the event payload in
+            # _Environment.from_workflow_data.
+            output["PR_BODY"] = ""
+            output["PR_TITLE"] = ""
+            output["COMMIT_MESSAGE"] = ""
+            # JOB_KV_DATA carries user-authored strings too (e.g. the
+            # `changed_files`/`changed_integration_tests` paths a PR can name
+            # arbitrarily), so a path matching a secret pattern would suppress
+            # the whole output the same way. The downstream-visible `data`
+            # output only needs `workflow_config` as plain JSON (for the GitHub
+            # Actions `if: fromJson(...).workflow_config` expressions); the rest
+            # is consumed solely by _Environment.from_workflow_data. Encode the
+            # whole bucket as opaque base64 so no raw user text can match a
+            # pattern - base64 is already used for `cache_success_base64` in the
+            # same output, so it is known to pass the masker.
+            output["JOB_KV_DATA"] = Utils.to_base64(json.dumps(env.JOB_KV_DATA))
         else:
             output = job_outputs
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:

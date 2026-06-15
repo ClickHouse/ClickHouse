@@ -50,6 +50,7 @@ public:
         CLEAR_PAGE_CACHE,
         CLEAR_SCHEMA_CACHE,
         CLEAR_FORMAT_SCHEMA_CACHE,
+        CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
         STOP_LISTEN,
         START_LISTEN,
@@ -117,6 +118,8 @@ public:
         START_PULLING_REPLICATION_LOG,
         STOP_CLEANUP,
         START_CLEANUP,
+        SCHEDULE_MERGE,
+        SYNC_MERGES,
         RESET_COVERAGE,
         SET_COVERAGE_TEST,
         REFRESH_VIEW,
@@ -218,18 +221,20 @@ public:
 
 #if USE_XRAY
     /// For SYSTEM INSTRUMENT ADD/REMOVE
-    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    using InstrumentArgument = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
-    Instrumentation::EntryType instrumentation_entry_type;
+    Instrumentation::EntryType instrumentation_entry_type{};
     std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
-    std::vector<InstrumentParameter> instrumentation_parameters;
+    std::vector<InstrumentArgument> instrumentation_arguments;
     String instrumentation_subquery;
 #endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
     std::optional<Int64> fake_time_for_view;
+
+    ASTPtr scheduled_merge_parts;
 
     String getID(char) const override { return "SYSTEM query"; }
 
@@ -242,6 +247,7 @@ public:
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
         if (backup_source) { res->backup_source = backup_source->clone(); res->children.push_back(res->backup_source); }
+        if (scheduled_merge_parts) { res->scheduled_merge_parts = scheduled_merge_parts->clone(); res->children.push_back(res->scheduled_merge_parts); }
 
         return res;
     }

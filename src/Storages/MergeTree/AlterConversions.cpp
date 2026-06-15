@@ -40,35 +40,30 @@ namespace ErrorCodes
 /// to reacreate mutation command as "UPDATE c1 = 'x' WHERE <cond>"
 static MutationCommand createCommandWithUpdatedColumns(
     const MutationCommand & command,
-    std::unordered_map<String, ASTPtr> available_columns)
+    const std::unordered_map<String, ASTPtr> & available_columns)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    chassert(command.ast);
+    chassert(!command.ast_text.empty());
 
     MutationCommand res;
     res.type = command.type;
-    res.ast = command.ast->clone();
-
-    if (command.predicate)
-        res.predicate = command.predicate->clone();
-
-    if (command.partition)
-        res.partition = command.partition->clone();
-
-    res.column_to_update_expression = std::move(available_columns);
     res.mutation_version = command.mutation_version;
+    res.max_parser_depth = command.max_parser_depth;
+    res.max_parser_backtracks = command.max_parser_backtracks;
+    res.ast_text = command.ast_text;
 
-    auto & alter_ast = assert_cast<ASTAlterCommand &>(*res.ast);
+    auto handle = res.mutateAst();
     auto new_assignments = make_intrusive<ASTExpressionList>();
 
-    for (const auto & child : alter_ast.update_assignments->children)
+    for (const auto & child : handle->update_assignments->children)
     {
         const auto & assignment = assert_cast<const ASTAssignment &>(*child);
-        if (res.column_to_update_expression.contains(assignment.column_name))
+        if (available_columns.contains(assignment.column_name))
             new_assignments->children.push_back(child->clone());
     }
 
-    alter_ast.update_assignments = alter_ast.children.emplace_back(std::move(new_assignments)).get();
+    handle->update_assignments = handle->children.emplace_back(std::move(new_assignments)).get();
+    handle.commit();
     return res;
 }
 
@@ -90,16 +85,22 @@ static bool isLightweightDeleteCommand(const String & column_name, const ASTPtr 
 static MutationCommand createLightweightDeleteCommand(const MutationCommand & command)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    chassert(command.predicate != nullptr);
+    auto src_alter = command.ast();
+    chassert(src_alter && src_alter->predicate != nullptr);
 
     auto alter_command = make_intrusive<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
 
-    if (command.partition)
-        alter_command->partition = alter_command->children.emplace_back(command.partition->clone()).get();
+    if (src_alter->partition)
+        alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
 
-    alter_command->predicate = alter_command->children.emplace_back(command.predicate->clone()).get();
-    auto mutation_command = MutationCommand::parse(*alter_command);
+    alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
+    auto mutation_command = MutationCommand::parse(
+        *alter_command,
+        /* parse_alter_commands = */ false,
+        /* with_pure_metadata_commands = */ false,
+        command.max_parser_depth,
+        command.max_parser_backtracks);
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
@@ -199,8 +200,11 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        for (const auto & [column, _] : command.column_to_update_expression)
-            all_updated_columns.insert(column);
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+        {
+            for (const auto & child : alter->update_assignments->children)
+                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
+        }
 
         mutation_commands.push_back(command);
     }
@@ -302,6 +306,68 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     auto actions_chain = getMutationActions(part_info, read_columns, metadata_snapshot, context);
     auto settings = ExpressionActionsSettings(context);
 
+    /// Columns the surviving on-fly chain will overwrite. Attached to every
+    /// pre-`MODIFY` step so `MergeTreeReadersChain::executeActionsBeforePrewhere`
+    /// can skip `performRequiredConversions` for them: their on-disk value is
+    /// about to be replaced and pre-casting it could fail on values the chain
+    /// will discard (for example, `_CAST('x', UInt64)` before `UPDATE v = '100'`).
+    ///
+    /// The set is built from the chain that `filterMutationCommands` actually
+    /// returns for this `read_columns`. Commands the query does not need are
+    /// dropped here, otherwise an earlier surviving step that reads one of
+    /// those columns as a source would see the on-disk type while the block
+    /// already advertises the post-`MODIFY` type.
+    ///
+    /// `MutationActions::dag.getOutputs()` would give a superset (it lists
+    /// passthrough columns too), so we read the assignment targets directly
+    /// from the surviving commands.
+    ///
+    /// The skip is keyed on storage column names downstream
+    /// (`MergeTreeReadersChain::executeActionsBeforePrewhere` calls
+    /// `getNameInStorage()`). Assignment targets are top-level columns today;
+    /// if per-subcolumn assignments to `Nested` columns ever become
+    /// supported, the reader-side key has to switch accordingly.
+    NameSet columns_overwritten_by_chain;
+    if (!actions_chain.empty())
+    {
+        Names storage_read_columns;
+        NameSet storage_read_columns_set;
+        for (const auto & column : read_columns)
+        {
+            auto name_in_storage = column.getNameInStorage();
+            if (storage_read_columns_set.emplace(name_in_storage).second)
+            {
+                storage_read_columns.emplace_back(name_in_storage);
+            }
+        }
+        addColumnsRequiredForMaterialized(storage_read_columns, storage_read_columns_set, metadata_snapshot, context);
+        for (const auto & command : filterMutationCommands(storage_read_columns, std::move(storage_read_columns_set)))
+        {
+            auto ast = command.ast();
+            if (!ast)
+            {
+                continue;
+            }
+            if (command.type == MutationCommand::UPDATE)
+            {
+                for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
+                {
+                    columns_overwritten_by_chain.insert(column);
+                }
+            }
+            else if (command.type == MutationCommand::DELETE)
+            {
+                /// Inserted for any chained `DELETE`. Lightweight delete
+                /// arrives as a `DELETE`-typed command without the original
+                /// `_row_exists = 0` assignment, so the explicit insert is
+                /// the only way to keep it skipped. Plain `ALTER DELETE` does
+                /// not have an on-disk `_row_exists`, so the insert is a
+                /// no-op for `performRequiredConversions`.
+                columns_overwritten_by_chain.insert(RowExistsColumn::name);
+            }
+        }
+    }
+
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
     {
@@ -318,6 +384,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             .remove_filter_column = false,
             .need_filter = is_filter,
             .perform_alter_conversions = perform_alter_conversions,
+            .columns_overwritten_by_chain = perform_alter_conversions ? NameSet{} : columns_overwritten_by_chain,
             .mutation_version = actions.mutation_version,
         };
 
@@ -336,7 +403,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     for (const auto & patch : patch_parts)
     {
-        bool has_column_in_patch;
+        bool has_column_in_patch = false;
         const auto & patch_conversions = patch.part->getAlterConversions();
 
         /// If patch has lightweight delete we have to always apply it.
@@ -480,7 +547,7 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
         IdentifierNameSet source_columns;
         if (command.type == MutationCommand::Type::DELETE)
         {
-            command.predicate->collectIdentifierNames(source_columns);
+            command.ast()->predicate->collectIdentifierNames(source_columns);
             filtered_commands.push_back(command);
         }
         else if (command.type == MutationCommand::Type::UPDATE)
@@ -488,30 +555,36 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
             bool has_lightweight_delete = false;
             std::unordered_map<String, ASTPtr> new_updated_columns;
 
-            for (const auto & [column, ast] : command.column_to_update_expression)
+            auto alter = command.ast();
+            if (alter && alter->update_assignments)
             {
-                if (isLightweightDeleteCommand(column, ast))
+                for (const auto & child : alter->update_assignments->children)
                 {
-                    has_lightweight_delete = true;
-                }
-                else if (read_columns_set.contains(column))
-                {
-                    ast->collectIdentifierNames(source_columns);
-                    new_updated_columns.emplace(column, ast->clone());
+                    const auto & assignment = child->as<ASTAssignment &>();
+                    auto expr = assignment.expression();
+                    if (isLightweightDeleteCommand(assignment.column_name, expr))
+                    {
+                        has_lightweight_delete = true;
+                    }
+                    else if (read_columns_set.contains(assignment.column_name))
+                    {
+                        expr->collectIdentifierNames(source_columns);
+                        new_updated_columns.emplace(assignment.column_name, expr->clone());
+                    }
                 }
             }
 
             if (has_lightweight_delete)
             {
                 auto new_command = createLightweightDeleteCommand(command);
-                new_command.predicate->collectIdentifierNames(source_columns);
+                new_command.ast()->predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
 
             if (!new_updated_columns.empty())
             {
-                auto new_command = createCommandWithUpdatedColumns(command, std::move(new_updated_columns));
-                new_command.predicate->collectIdentifierNames(source_columns);
+                auto new_command = createCommandWithUpdatedColumns(command, new_updated_columns);
+                new_command.ast()->predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
         }
