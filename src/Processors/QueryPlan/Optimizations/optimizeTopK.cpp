@@ -96,6 +96,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (expression_step)
     {
+        /// `arrayJoin` changes the number of rows. The dynamic top-K prewhere filter
+        /// applies the threshold to source rows BEFORE the expansion, while the sort
+        /// + limit operates on EXPANDED rows. Mixing the two breaks the assumption
+        /// that "rows seen by the filter" equals "rows seen by the sort": the
+        /// threshold can stabilize at the wrong value, letting the wrong source rows
+        /// through and producing non-deterministic / incorrect results. See #82279.
+        if (expression_step->getExpression().hasArrayJoin())
+            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();
@@ -104,6 +112,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (filter_step)
     {
+        /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort
+        /// breaks the top-K source-row threshold assumption. See #82279.
+        if (filter_step->getExpression().hasArrayJoin())
+            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();

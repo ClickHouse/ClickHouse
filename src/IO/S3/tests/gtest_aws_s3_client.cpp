@@ -413,8 +413,9 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name)
+void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
 {
+    bool external_id_present = false;
     for (const auto & [param, value] : query_params)
     {
         if (param == "Action")
@@ -423,7 +424,14 @@ void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params
             ASSERT_EQ(value, expected_role_arn);
         else if (param == "RoleSessionName")
             ASSERT_EQ(value, expected_role_session_name);
+        else if (param == "ExternalId")
+        {
+            external_id_present = true;
+            ASSERT_EQ(value, expected_external_id);
+        }
     }
+    /// ExternalId is optional and must be sent only when configured.
+    ASSERT_EQ(external_id_present, !expected_external_id.empty());
 }
 
 }
@@ -516,7 +524,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     bool use_insecure_imds_request = false;
 
 
-    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name)
+    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name, const std::string & external_id = "")
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
@@ -537,6 +545,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
                 .use_insecure_imds_request = use_insecure_imds_request,
                 .role_arn = role_arn,
                 .role_session_name = role_session_name,
+                .external_id = external_id,
                 .sts_endpoint_override = sts_http.getUrl()
             }
         );
@@ -601,6 +610,118 @@ TEST(IOTestAwsS3Client, AssumeRole)
         validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
     }
+
+    {
+        SCOPED_TRACE("With role arn and external id set");
+
+        sts_http.resetLastRequest();
+
+        std::string role_arn = "arn::role/my_role";
+        std::string role_session_name = "session_name";
+        std::string external_id = "my_external_id";
+
+        read_from_s3(role_arn, role_session_name, external_id);
+
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
+
+        ASSERT_TRUE(sts_http.hasLastRequest());
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, external_id);
+    }
+}
+
+TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)
+{
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+
+    std::shared_ptr<DB::S3::ClientCache> cache_ab1 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
+    std::shared_ptr<DB::S3::ClientCache> cache_ab2 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
+    EXPECT_EQ(cache_ab1.get(), cache_ab2.get()) << "Same (endpoint, bucket) should return the same cache";
+
+    std::shared_ptr<DB::S3::ClientCache> cache_b1 = registry.getOrCreateCacheForKey("endpoint1", "bucket2");
+    EXPECT_NE(cache_ab1.get(), cache_b1.get()) << "Different bucket should return different cache";
+
+    std::shared_ptr<DB::S3::ClientCache> cache_e2 = registry.getOrCreateCacheForKey("endpoint2", "bucket1");
+    EXPECT_NE(cache_ab1.get(), cache_e2.get()) << "Different endpoint should return different cache";
+
+    auto cache_concat1 = registry.getOrCreateCacheForKey("ab", "c");
+    auto cache_concat2 = registry.getOrCreateCacheForKey("a", "bc");
+    EXPECT_NE(cache_concat1.get(), cache_concat2.get())
+        << "Pairs with identical concatenation but different boundary must not share a cache";
+}
+
+TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri("https://s3.eu-central-1.amazonaws.com/my-bucket/key");
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "eu-central-1",
+        remote_host_filter,
+        10,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        true,
+        true,
+        false,
+        false,
+        {},
+        {},
+        "https");
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    auto shared_cache = DB::S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(uri.endpoint, uri.bucket);
+    std::unique_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "access",
+        "secret",
+        "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false},
+        "",
+        shared_cache);
+
+    ASSERT_TRUE(client);
+    std::unique_ptr<DB::S3::Client> clone = client->clone();
+    ASSERT_TRUE(clone);
+
+    EXPECT_EQ(client->getRawCache(), shared_cache.get()) << "Client should use the shared cache";
+    EXPECT_EQ(clone->getRawCache(), client->getRawCache()) << "Clone should share the same cache as original";
+}
+
+TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
+{
+    /// Verify ClientCacheRegistry refcounting directly via the test-only refcount accessor.
+    /// We can't go through Client construction/destruction because Client::~Client catches
+    /// and logs exceptions from unregisterClient, so a refcount bug would be invisible;
+    /// and we can't probe via the throwing path (the entry was already removed) because in
+    /// debug/sanitizer builds LOGICAL_ERROR aborts the process instead of throwing.
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+    auto shared_cache = registry.getOrCreateCacheForKey(
+        "https://s3.us-east-1.amazonaws.com",
+        "test-refcount-bucket");
+
+    ASSERT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
+
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    /// Second registration of the same cache must bump the refcount, not silently no-op.
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 2u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
 }
 
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
