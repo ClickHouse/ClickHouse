@@ -40,6 +40,7 @@ def publish(rabbitmq_cluster, exchange, start, count):
     )
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
+    channel.confirm_delivery()
     for i in range(start, start + count):
         channel.basic_publish(
             exchange=exchange, routing_key="", body=json.dumps({"key": i, "value": i})

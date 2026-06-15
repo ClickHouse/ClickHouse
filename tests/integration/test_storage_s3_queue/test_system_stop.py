@@ -243,6 +243,29 @@ def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
             wait_dst_count(node, table, n_files * ROWS_PER_FILE)
 
 
+def test_stopped_state_does_not_persist_across_restart(started_cluster):
+    # The STOP state lives in in-memory action locks, not in on-disk metadata, so it does not survive
+    # a server restart: a STOPped table resumes consuming on its own after the node restarts, with no
+    # explicit START. This pins the documented contract that none of these states persist across a
+    # restart. The streaming control is shared machinery, so one engine is enough to cover it.
+    node = started_cluster.instances["instance"]
+    table = f"s3queue_restart_{generate_random_string()}"
+    files_path = setup_consuming_table(started_cluster, node, table)
+
+    generate_random_files(started_cluster, files_path, count=5, start_ind=0)
+    wait_dst_count(node, table, 5 * ROWS_PER_FILE)
+
+    # STOP really halts polling: files added now stay unprocessed.
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(started_cluster, files_path, count=5, start_ind=5)
+    assert_dst_count_stable(node, table, 5 * ROWS_PER_FILE)
+
+    # The restart drops the in-memory stop; the table comes back consuming and drains the files that
+    # were left pending, without any START. (Already-processed files stay Processed via Keeper.)
+    node.restart_clickhouse()
+    wait_dst_count(node, table, 10 * ROWS_PER_FILE)
+
+
 def test_system_stop_all_background(started_cluster):
     node = started_cluster.instances["instance"]
     table = f"s3queue_allbg_{generate_random_string()}"

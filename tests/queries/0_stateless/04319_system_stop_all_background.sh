@@ -277,8 +277,9 @@ for verb in stop start pause cancel refresh; do
         system $verb $CLICKHOUSE_DATABASE.granted;"
 done
 
-echo '<9: granted verbs work>'
-echo '<9: denied verbs error as expected>'
+$CLICKHOUSE_CLIENT -q "
+    select '<9: granted verbs work>';
+    select '<9: denied verbs error as expected>';"
 
 $CLICKHOUSE_CLIENT -q "
     system start view granted;
@@ -288,3 +289,41 @@ $CLICKHOUSE_CLIENT -q "
     drop table denied;
     drop table src;
     drop user $test_user;"
+
+# ---------------------------------------------------------------------------
+# Test 10: SYSTEM ... ALL BACKGROUND with partial privileges acts only on the
+# objects the caller may control and silently skips the rest, so unauthorized
+# background activity keeps running. The wildcard is a per-object fan-out (each
+# table is access-checked individually inside startStopAction), not a single
+# global lock.
+# ---------------------------------------------------------------------------
+
+partial_user="user_04319_partial_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT -q "
+    create user $partial_user;
+    create table src (x Int64) engine Memory;
+    insert into src values (1);
+    create materialized view wa refresh every 1 year (x Int64) engine Memory empty as select x from src;
+    create materialized view wb refresh every 1 year (x Int64) engine Memory empty as select x from src;
+    grant system views on $CLICKHOUSE_DATABASE.wa to $partial_user;"
+
+wait_status wa Scheduled
+wait_status wb Scheduled
+
+# The user holds SYSTEM VIEWS on wa only: STOP ALL BACKGROUND must stop wa and leave wb untouched.
+$CLICKHOUSE_CLIENT --user $partial_user -q "system stop all background;"
+
+wait_status wa Disabled
+
+$CLICKHOUSE_CLIENT -q "
+    select '<10: partial privilege stops only the authorized view>',
+        (select status = 'Disabled' from refreshes where view = 'wa'),
+        (select status != 'Disabled' from refreshes where view = 'wb');"
+
+$CLICKHOUSE_CLIENT -q "
+    system stop view wa;
+    system stop view wb;
+    drop table wa;
+    drop table wb;
+    drop table src;
+    drop user $partial_user;"

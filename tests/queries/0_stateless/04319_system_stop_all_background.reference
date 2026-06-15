@@ -11,3 +11,4 @@
 <8: cancel all background keeps views enabled>	2	2
 <9: granted verbs work>
 <9: denied verbs error as expected>
+<10: partial privilege stops only the authorized view>	1	1

@@ -2420,55 +2420,51 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     using Type = ASTSystemQuery::Type;
     const auto type = query.type;
 
-    /// Pre-check access before touching the catalog so that a user with neither privilege gets
-    /// ACCESS_DENIED rather than being able to tell UNKNOWN_TABLE apart and probe table existence.
     auto access = getContext()->getAccess();
-    if (!access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name)
-        && !access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name))
+    const bool can_views = access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name);
+    const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    const bool is_streaming = storage && storage->isStreamingStorage();
+    const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
+    const bool is_refreshable_view = mv && mv->isRefreshable();
+
+    const bool authorized = (is_streaming && can_streaming) || (is_refreshable_view && can_views) || (can_views && can_streaming);
+    if (!authorized)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Not enough privileges. To execute this query, it's necessary to have the grant "
-            "SYSTEM VIEWS or SYSTEM STREAMING ENGINES on {}", table_id.getNameForLogs());
+            "SYSTEM VIEWS (for refreshable materialized views) or SYSTEM STREAMING ENGINES (for "
+            "streaming engines) on {}", table_id.getNameForLogs());
 
-    auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (!storage)
+        storage = DatabaseCatalog::instance().getTable(table_id, getContext()); /// throws UNKNOWN_TABLE
 
-    if (storage->isStreamingStorage())
+    if (is_streaming)
     {
-        /// Streaming engines, guarded by SYSTEM STREAMING ENGINES
         switch (type)
         {
             case Type::STOP:
-                /// privilege check is done in startStopAction
                 startStopAction(ActionLocks::StreamConsume, false);
                 storage->cancelBackgroundActivity();
                 break;
             case Type::PAUSE:
-                /// privilege check is done in startStopAction
                 startStopAction(ActionLocks::StreamConsume, false);
                 break;
             case Type::START:
-                /// privilege check is done in startStopAction
                 startStopAction(ActionLocks::StreamConsume, true);
                 break;
             case Type::CANCEL:
-                getContext()->checkAccess(AccessType::SYSTEM_STREAMING_ENGINES, table_id);
                 storage->cancelBackgroundActivity();
                 break;
             case Type::REFRESH:
-                getContext()->checkAccess(AccessType::SYSTEM_STREAMING_ENGINES, table_id);
                 storage->refreshBackgroundActivity();
                 break;
             default:
                 break;
         }
     }
-    else
+    else if (is_refreshable_view)
     {
-        const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
-        if (!mv || !mv->isRefreshable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table {} has no controllable background activity", table_id.getNameForLogs());
-
-        /// Refreshable materialized view, alias for SYSTEM ... VIEW
         switch (type)
         {
             case Type::STOP:
@@ -2492,6 +2488,11 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
             default:
                 break;
         }
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} has no controllable background activity", table_id.getNameForLogs());
     }
 }
 
@@ -2757,6 +2758,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::PAUSE_VIEWS:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
+        /// STOP/START/PAUSE/CANCEL/REFRESH [db.]table | ALL BACKGROUND parser rejects with SYNTAX_ERROR
+        /// this is currently unreachable. It is also engine-unaware.
         case Type::STOP:
         case Type::START:
         case Type::PAUSE:
