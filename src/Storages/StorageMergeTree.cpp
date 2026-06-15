@@ -2638,7 +2638,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
@@ -2805,7 +2805,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params
         {

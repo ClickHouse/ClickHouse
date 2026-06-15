@@ -9140,7 +9140,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             }
 
             UInt64 index = lock.getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+            MergeTreePartInfo dst_part_info(partition_id, index, index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
             IDataPartStorage::ClonePartParams clone_params
             {
@@ -9427,7 +9427,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             }
 
             UInt64 index = lock.getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+            MergeTreePartInfo dst_part_info(partition_id, index, index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
             bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]

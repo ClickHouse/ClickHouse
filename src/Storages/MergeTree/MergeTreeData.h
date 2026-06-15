@@ -1118,6 +1118,15 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
+    /// Level to assign to a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM,
+    /// CLONE AS, MOVE PARTITION TO TABLE). Reset to 0 when the merge mode differs from the
+    /// source's: a lone level>0 part merged under different semantics is otherwise treated as
+    /// fully-merged and skipped by FINAL/OPTIMIZE, leaving duplicate keys (issue #106798).
+    UInt32 getLevelForAdoptedPart(const MergeTreeData & source_data, UInt32 source_level) const
+    {
+        return merging_params.mode == source_data.merging_params.mode ? source_level : 0;
+    }
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
