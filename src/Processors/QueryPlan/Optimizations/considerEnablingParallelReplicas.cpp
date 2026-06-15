@@ -175,6 +175,15 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
         if (const auto * join_step = typeid_cast<const JoinStep *>(reading_step->step.get());
             join_step && reading_step->children.size() == 2)
         {
+            // `swap_streams` swaps the physical pipelines at execution without reordering the plan
+            // children, so the kind-based side selection below would then descend into the wrong
+            // child. In the analyzer path that AutoPR requires this is never set: joins are built as
+            // `JoinStepLogical` and the logical->physical conversion applies any swap by reordering
+            // the children and flipping the kind together (only the dead `optimizeJoinLegacy` path
+            // sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
+            // it, AutoPR fails closed (skips) instead of instrumenting/parallelizing the wrong side.
+            if (join_step->swap_streams)
+                return nullptr;
             const auto kind = join_step->getJoin()->getTableJoin().kind();
             reading_step = reading_step->children[isRight(kind) ? 1 : 0];
             continue;
