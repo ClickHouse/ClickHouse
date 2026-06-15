@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-flaky-check
+# Tags: race, zookeeper, no-flaky-check, no-replicated-database
 # no-flaky-check: This test stresses concurrent ALTER and INSERT to guard against a
 # column-resolution regression. It is expected to pass on master; it should fail only
 # if that regression returns (a genuine bug surfaces as `NOT_FOUND_COLUMN_IN_BLOCK`,
