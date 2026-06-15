@@ -260,7 +260,7 @@ void listFilesWithRegexpMatchingImpl(
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
                                                 total_bytes_to_read, result, recursive, depth + 1, use_glob_ast);
             }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            else if (looking_for_directory && matches_name(file_name))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result, false, depth + 1, use_glob_ast);
         }
