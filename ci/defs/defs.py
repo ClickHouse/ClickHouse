@@ -358,6 +358,7 @@ class JobNames:
     SQL_LOGIC_TEST = "SQLLogic test"
     SQLANCER = "SQLancer"
     LLVM_COVERAGE = "LLVM Coverage"
+    PROMQL_COMPLIANCE = "PromQL Compliance"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"

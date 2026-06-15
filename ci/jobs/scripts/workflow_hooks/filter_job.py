@@ -154,10 +154,23 @@ def should_skip_job(job_name):
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
         or job_name in BUILDS_FOR_TESTS
+        or (
+            job_name == JobNames.PROMQL_COMPLIANCE
+            and Labels.COMP_PROMQL in _info_cache.pr_labels
+        )
     ):
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
+        )
+
+    if (
+        job_name == JobNames.PROMQL_COMPLIANCE
+        and Labels.COMP_PROMQL not in _info_cache.pr_labels
+    ):
+        return (
+            True,
+            f"Skipped, PR not labeled '{Labels.COMP_PROMQL}' — PromQL compliance comment job only",
         )
 
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
