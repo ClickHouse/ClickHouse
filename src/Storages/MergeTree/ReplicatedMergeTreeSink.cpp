@@ -1268,11 +1268,13 @@ void ReplicatedMergeTreeSink::waitForQuorum(
         if (quorum_entry.part_name != part_name)
             break;
 
-        /// Wait for the quorum watch to fire, but in bounded steps so that a cancelled (killed) query stops
-        /// waiting promptly instead of blocking for the whole quorum_timeout_ms. The watch is only signalled when
-        /// the quorum node changes, so on a `KILL QUERY` nothing would wake us up: without this a killed quorum
-        /// INSERT can stay in the processlist for the entire (possibly very large) insert_quorum_timeout and trip
-        /// the hung-check.
+        /// Wait for the quorum watch to fire, but in bounded steps so that a cancelled query stops waiting
+        /// promptly instead of blocking for the whole quorum_timeout_ms. The watch is only signalled when the
+        /// quorum node changes, so on a `KILL QUERY` (or once max_execution_time is exceeded) nothing would wake
+        /// us up: without this a cancelled quorum INSERT can stay in the processlist for the entire (possibly very
+        /// large) insert_quorum_timeout and trip the hung-check. checkTimeLimit() throws QUERY_WAS_CANCELLED on a
+        /// kill and TIMEOUT_EXCEEDED on max_execution_time, matching the check ZooKeeperRetriesControl already
+        /// performs between retries.
         auto process_list_element = context->getProcessListElement();
         Stopwatch quorum_watch;
         bool quorum_updated = false;
@@ -1288,8 +1290,8 @@ void ReplicatedMergeTreeSink::waitForQuorum(
                 break;
             }
 
-            if (process_list_element && process_list_element->isKilled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Quorum insert was cancelled while waiting for quorum");
+            if (process_list_element)
+                process_list_element->checkTimeLimit();
         }
 
         if (!quorum_updated)
