@@ -1,5 +1,5 @@
--- Regression test for issue #107172: LimitByTransform aborted with
--- "Invalid number of rows in Chunk" (LOGICAL_ERROR) when the sparse-slice
+-- Regression test for issue #107172: LimitByTransform threw a LOGICAL_ERROR
+-- "Invalid number of rows in Chunk" when the sparse-slice
 -- branch of materializeSlicesIntoChunk kept rows for a ColumnConst LIMIT BY
 -- key. The const key was sized by the slice-length sum while non-const
 -- columns were sized by the filter mask popcount, so the output columns
@@ -18,7 +18,7 @@ SELECT n, g FROM t_lbsparse ORDER BY n LIMIT 2 BY 'C', g SETTINGS max_block_size
 SELECT n, g FROM t_lbsparse ORDER BY n LIMIT 1 OFFSET 1 BY 'C', g SETTINGS max_block_size = 1000;
 
 -- The shape from the original report: a constant LIMIT BY key alongside a
--- function result column. Must not abort the server.
+-- function result column. Must not throw LOGICAL_ERROR.
 SELECT concatAssumeInjective('p', toString(g)) AS gg
 FROM t_lbsparse
 ORDER BY n
