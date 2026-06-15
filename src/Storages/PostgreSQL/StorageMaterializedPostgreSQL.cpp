@@ -1,6 +1,5 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
-#include <Core/UUID.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -522,7 +521,6 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 }
 
 
-void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
