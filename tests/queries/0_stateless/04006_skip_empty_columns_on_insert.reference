@@ -89,3 +89,22 @@ case15_new_insert
 2	200	0
 case16_enum
 1	100	zero
+case17_columns_in_part
+a
+key
+case17_post_mutate
+1	101	0
+case18_columns_in_part
+a
+key
+case18_post_merge_alter
+1	100	0
+2	200	0
+case19_post_rename_alter
+1	100	0
+case20_columns_in_part
+a
+b
+key
+case20_data
+1	100	
