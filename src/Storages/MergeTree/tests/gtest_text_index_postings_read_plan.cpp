@@ -50,7 +50,11 @@ TEST(TextIndexPostingsReadPlan, AllQueryPrefersEmptyThenCheapestAndRarestToken)
     const RowsRange current_range{100, 199};
     const absl::flat_hash_set<String> tokens_with_postings;
 
-    const auto plan = TextIndexAnalyzer::buildPostingsReadPlan(query_builder, current_range, tokens_with_postings);
+    const auto plan = TextIndexAnalyzer::buildPostingsReadPlan(
+        query_builder,
+        current_range,
+        tokens_with_postings,
+        /*max_cardinality_per_token_for_analysis=*/ 1000);
 
     ASSERT_EQ(plan.size(), 4);
     EXPECT_EQ(plan[0].token, "empty");
@@ -66,10 +70,56 @@ TEST(TextIndexPostingsReadPlan, SkipsAlreadyReadPostings)
     const RowsRange current_range{100, 199};
     const absl::flat_hash_set<String> tokens_with_postings{"rare"};
 
-    const auto plan = TextIndexAnalyzer::buildPostingsReadPlan(query_builder, current_range, tokens_with_postings);
+    const auto plan = TextIndexAnalyzer::buildPostingsReadPlan(
+        query_builder,
+        current_range,
+        tokens_with_postings,
+        /*max_cardinality_per_token_for_analysis=*/ 1000);
 
     ASSERT_EQ(plan.size(), 3);
     EXPECT_EQ(plan[0].token, "empty");
     EXPECT_EQ(plan[1].token, "dense");
     EXPECT_EQ(plan[2].token, "expensive_rare");
+}
+
+TEST(TextIndexPostingsReadPlan, ZeroCardinalityThresholdMarksPlanAsCacheOnly)
+{
+    const auto query_builder = makeAllQueryBuilder();
+    const RowsRange current_range{100, 199};
+    const absl::flat_hash_set<String> tokens_with_postings;
+
+    const auto plan = TextIndexAnalyzer::buildPostingsReadPlan(
+        query_builder,
+        current_range,
+        tokens_with_postings,
+        /*max_cardinality_per_token_for_analysis=*/ 0);
+
+    ASSERT_EQ(plan.size(), 4);
+    EXPECT_EQ(plan[0].token, "empty");
+    EXPECT_TRUE(plan[0].blocks_to_read.empty());
+    EXPECT_FALSE(plan[0].allow_cold_postings_read);
+    EXPECT_EQ(plan[1].token, "rare");
+    EXPECT_FALSE(plan[1].blocks_to_read.empty());
+    EXPECT_FALSE(plan[1].allow_cold_postings_read);
+}
+
+TEST(TextIndexPostingsReadPlan, CardinalityThresholdOnlyAllowsCheapColdReads)
+{
+    const auto query_builder = makeAllQueryBuilder();
+    const RowsRange current_range{100, 199};
+    const absl::flat_hash_set<String> tokens_with_postings;
+
+    const auto plan = TextIndexAnalyzer::buildPostingsReadPlan(
+        query_builder,
+        current_range,
+        tokens_with_postings,
+        /*max_cardinality_per_token_for_analysis=*/ 10);
+
+    ASSERT_EQ(plan.size(), 4);
+    EXPECT_EQ(plan[1].token, "rare");
+    EXPECT_TRUE(plan[1].allow_cold_postings_read);
+    EXPECT_EQ(plan[2].token, "dense");
+    EXPECT_FALSE(plan[2].allow_cold_postings_read);
+    EXPECT_EQ(plan[3].token, "expensive_rare");
+    EXPECT_TRUE(plan[3].allow_cold_postings_read);
 }

@@ -38,4 +38,16 @@ FROM
 )
 WHERE explain LIKE '%Name:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
+SET text_index_max_cardinality_per_token_for_analysis = 500;
+
+SELECT trimLeft(explain)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT count()
+    FROM tab_multiblock_pruning
+    WHERE hasAllTokens(s, ['v1', 'v2', 'v3', 'v4'])
+)
+WHERE explain LIKE '%Name:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+
 DROP TABLE tab_multiblock_pruning;

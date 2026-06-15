@@ -47,6 +47,7 @@ public:
         TokenPostingsInfoPtr token_info;
         std::vector<size_t> blocks_to_read;
         size_t covered_rows = 0;
+        bool allow_cold_postings_read = false;
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
@@ -76,11 +77,15 @@ public:
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
     /// Builds a plan for unread posting blocks. `All` queries are sorted to prove an empty
     /// result earlier; other query modes preserve token order.
-    std::vector<PostingsReadPlanEntry> buildPostingsReadPlan(const QueryBuilder & query_builder, const RowsRange & range) const;
+    std::vector<PostingsReadPlanEntry> buildPostingsReadPlan(
+        const QueryBuilder & query_builder,
+        const RowsRange & range,
+        UInt64 max_cardinality_per_token_for_analysis) const;
     static std::vector<PostingsReadPlanEntry> buildPostingsReadPlan(
         const QueryBuilder & query_builder,
         const RowsRange & range,
-        const absl::flat_hash_set<String> & tokens_with_postings);
+        const absl::flat_hash_set<String> & tokens_with_postings,
+        UInt64 max_cardinality_per_token_for_analysis);
     size_t memoryUsageBytes() const;
 
 private:

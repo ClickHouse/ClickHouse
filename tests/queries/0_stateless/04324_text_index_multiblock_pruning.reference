@@ -7,4 +7,9 @@ Condition: true
 Granules: 1/1
 Name: idx_s
 Condition: (mode: All; tokens: ["v1", "v2", "v3", "v4"])
+Granules: 1/1
+Condition: true
+Granules: 1/1
+Name: idx_s
+Condition: (mode: All; tokens: ["v1", "v2", "v3", "v4"])
 Granules: 0/1

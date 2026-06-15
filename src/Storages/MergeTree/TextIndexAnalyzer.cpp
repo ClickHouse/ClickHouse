@@ -318,15 +318,17 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
 
 std::vector<TextIndexAnalyzer::PostingsReadPlanEntry> TextIndexAnalyzer::buildPostingsReadPlan(
     const QueryBuilder & query_builder,
-    const RowsRange & range) const
+    const RowsRange & range,
+    UInt64 max_cardinality_per_token_for_analysis) const
 {
-    return buildPostingsReadPlan(query_builder, range, tokens_with_postings);
+    return buildPostingsReadPlan(query_builder, range, tokens_with_postings, max_cardinality_per_token_for_analysis);
 }
 
 std::vector<TextIndexAnalyzer::PostingsReadPlanEntry> TextIndexAnalyzer::buildPostingsReadPlan(
     const QueryBuilder & query_builder,
     const RowsRange & range,
-    const absl::flat_hash_set<String> & tokens_with_postings)
+    const absl::flat_hash_set<String> & tokens_with_postings,
+    UInt64 max_cardinality_per_token_for_analysis)
 {
     std::vector<PostingsReadPlanEntry> plan;
     plan.reserve(query_builder.tokens.size());
@@ -344,12 +346,16 @@ std::vector<TextIndexAnalyzer::PostingsReadPlanEntry> TextIndexAnalyzer::buildPo
                 covered_rows += intersection->end - intersection->begin + 1;
         }
 
+        const bool allow_cold_postings_read =
+            max_cardinality_per_token_for_analysis > 0 && token_info->cardinality <= max_cardinality_per_token_for_analysis;
+
         plan.push_back(
         {
             .token = token,
             .token_info = token_info,
             .blocks_to_read = std::move(blocks_to_read),
             .covered_rows = covered_rows,
+            .allow_cold_postings_read = allow_cold_postings_read,
         });
     }
 

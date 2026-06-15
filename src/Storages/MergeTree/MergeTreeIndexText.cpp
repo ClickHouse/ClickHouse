@@ -65,6 +65,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 text_index_max_cardinality_per_token_for_analysis;
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
 }
@@ -677,6 +678,20 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     return std::get<PostingListPtr>(cell->value);
 }
 
+static PostingListPtr getCachedPostingsBlock(
+    const MergeTreeIndexConditionText & condition_text,
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    const String & index_id_for_caches)
+{
+    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
+    auto cell = condition_text.postingsCache()->get(hash);
+    if (!cell)
+        return nullptr;
+
+    return std::get<PostingListPtr>(cell->value);
+}
+
 void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     if (analyzer->alwaysFalse())
@@ -893,8 +908,10 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
     auto & postings_stream = *context.postings_stream;
     auto & state = *context.state;
     auto & postings_serialization = *context.postings_serialization;
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const UInt64 max_cardinality_per_token_for_analysis = condition_text.getContext()->getSettingsRef()[Setting::text_index_max_cardinality_per_token_for_analysis];
 
-    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range))
+    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range, max_cardinality_per_token_for_analysis))
     {
         const auto & token_info = entry.token_info;
         const auto & blocks_to_read = entry.blocks_to_read;
@@ -904,7 +921,13 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
         PostingList token_postings;
         for (const auto block_idx : blocks_to_read)
         {
-            auto block = readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches);
+            auto block = entry.allow_cold_postings_read
+                ? readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches)
+                : getCachedPostingsBlock(condition_text, *token_info, block_idx, index_id_for_caches);
+
+            if (!block)
+                return true;
+
             token_postings |= (*block & range_posting);
         }
 
@@ -943,8 +966,10 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
     auto & postings_stream = *context.postings_stream;
     auto & state = *context.state;
     auto & postings_serialization = *context.postings_serialization;
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const UInt64 max_cardinality_per_token_for_analysis = condition_text.getContext()->getSettingsRef()[Setting::text_index_max_cardinality_per_token_for_analysis];
 
-    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range))
+    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range, max_cardinality_per_token_for_analysis))
     {
         const auto & token_info = entry.token_info;
         const auto & blocks_to_read = entry.blocks_to_read;
@@ -954,7 +979,13 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
         PostingList token_postings;
         for (const auto block_idx : blocks_to_read)
         {
-            auto block = readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches);
+            auto block = entry.allow_cold_postings_read
+                ? readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches)
+                : getCachedPostingsBlock(condition_text, *token_info, block_idx, index_id_for_caches);
+
+            if (!block)
+                return true;
+
             token_postings |= (*block & range_posting);
         }
 

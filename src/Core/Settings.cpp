@@ -7995,6 +7995,11 @@ Maximum number of large postings to read when text index LIKE evaluation by the 
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
+    DECLARE(UInt64, text_index_max_cardinality_per_token_for_analysis, 0, R"(
+Maximum per-token cardinality for reading uncached posting lists during `text` skip-index mark filtering.
+
+The default value `0` disables cold posting reads. Mark filtering then uses token metadata, already materialized postings, and posting blocks already present in the text index postings cache. If an uncached posting block is needed to prove that a mark cannot match, the mark is kept conservatively.
+)", 0) \
     DECLARE(Bool, use_text_index_tokens_cache, false, R"(
 Whether to use a cache of deserialized text index token infos.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
