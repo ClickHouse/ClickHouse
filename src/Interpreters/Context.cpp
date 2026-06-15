@@ -506,6 +506,8 @@ struct ContextSharedPart : boost::noncopyable
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
     scope_guard user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
     mutable std::shared_ptr<std::set<String>> functions_deny_list TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<std::set<String>> functions_deny_types TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<std::set<String>> table_functions_deny_list TSA_GUARDED_BY(mutex);
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
@@ -3679,29 +3681,46 @@ void Context::waitForDictionariesLoad() const
 
 void Context::updateFunctionsDenyList(const Poco::Util::AbstractConfiguration & config)
 {
-    auto denied_functions = getMultipleValuesFromConfig(config, "functions_deny_list", "name");
+    auto udfs = getMultipleValuesFromConfig(config, "udfs_deny_list", "name"); // case-sensitive, no aliases
+    auto udf_types = getMultipleValuesFromConfig(config, "udfs_deny_list", "type"); // case-sensitive
+    auto table_functions = getMultipleValuesFromConfig(config, "table_functions_deny_list", "name"); // could be case-insensitive, allow aliases
+
+    auto udfs_set = std::make_shared<std::set<String>>();
+    udfs_set->insert(udfs.begin(), udfs.end());
+
+    auto udf_types_set = std::make_shared<std::set<String>>();
+    udf_types_set->insert(udf_types.begin(), udf_types.end());
+
+    auto table_functions_set = std::make_shared<std::set<String>>();
+    std::for_each(
+        table_functions.begin(),
+        table_functions.end(),
+        [&](String & name) { table_functions_set->insert(TableFunctionFactory::instance().getCanonicalNameIfAny(name)); });
+
 
     std::lock_guard lock(shared->mutex);
 
-    if (denied_functions.empty())
-    {
-        if (shared->functions_deny_list)
-            shared->functions_deny_list.reset();
-        return;
-    }
-
-    if (!shared->functions_deny_list)
-        shared->functions_deny_list = std::make_shared<std::set<String>>();
-    else
-        shared->functions_deny_list->clear();
-
-    shared->functions_deny_list->insert(denied_functions.begin(), denied_functions.end());
+    shared->functions_deny_list = std::move(udfs_set);
+    shared->functions_deny_types = std::move(udf_types_set);
+    shared->table_functions_deny_list = std::move(table_functions_set);
 }
 
 std::shared_ptr<std::set<String>> Context::getFunctionsDenyList() const
 {
     std::lock_guard lock(shared->mutex);
     return shared->functions_deny_list;
+}
+
+std::shared_ptr<std::set<String>> Context::getFunctionsDenyTypes() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->functions_deny_types;
+}
+
+std::shared_ptr<std::set<String>> Context::getTableFunctionsDenyList() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->table_functions_deny_list;
 }
 
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)

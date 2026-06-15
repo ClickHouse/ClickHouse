@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int FUNCTION_NOT_ALLOWED;
+}
+
 /// Following class implement IExecutableFunction via IFunction.
 
 class FunctionToExecutableFunctionAdaptor final : public IExecutableFunction
@@ -161,11 +166,28 @@ public:
 
     void getLambdaArgumentTypesImpl(DataTypes & arguments) const override { function->getLambdaArgumentTypes(arguments); }
 
-    const IFunction * getFunction() const { return function.get(); }
+    virtual const IFunction * getFunction() const { return function.get(); }
 
 private:
     std::shared_ptr<IFunction> function;
 };
 
+class DisabledFunctionToOverloadResolverAdaptor : public FunctionToOverloadResolverAdaptor
+{
+public:
+    explicit DisabledFunctionToOverloadResolverAdaptor(std::shared_ptr<IFunction> function)
+        : FunctionToOverloadResolverAdaptor(std::move(function))
+    {
+    }
 
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const final
+    {
+        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", getName());
+    }
+
+    const IFunction * getFunction() const final
+    {
+        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", getName());
+    }
+};
 }

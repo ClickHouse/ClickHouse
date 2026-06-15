@@ -11,6 +11,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 
+#include <Poco/String.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
@@ -38,7 +39,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
     extern const int UDF_EXECUTION_FAILED;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace Setting
@@ -282,13 +282,9 @@ UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::ins
 
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context, Array parameters)
 {
-    if (auto deny_list_ptr = context->getFunctionsDenyList())
-        if (deny_list_ptr->contains(function_name))
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", function_name);
-
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
-    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
+    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), context, std::move(parameters));
 
     if (CurrentThread::isInitialized())
     {
@@ -297,22 +293,26 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
 
+    if (auto deny_types_ptr = context->getFunctionsDenyTypes())
+        if (deny_types_ptr->contains("executable"))
+            return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
+
+    if (auto deny_list_ptr = context->getFunctionsDenyList())
+        if (deny_list_ptr->contains(function_name))
+            return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
+
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const String & function_name, ContextPtr context, Array parameters)
 {
-    if (auto deny_list_ptr = context->getFunctionsDenyList())
-        if (deny_list_ptr->contains(function_name))
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", function_name);
-
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto load_result = loader.getLoadResult(function_name);
 
     if (load_result.object)
     {
         auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
-        auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
+        auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), context, std::move(parameters));
 
         if (CurrentThread::isInitialized())
         {
@@ -320,6 +320,14 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }
+
+        if (auto deny_types_ptr = context->getFunctionsDenyTypes())
+            if (deny_types_ptr->contains("executable"))
+                return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
+
+        if (auto deny_list_ptr = context->getFunctionsDenyList())
+            if (deny_list_ptr->contains(function_name))
+                return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
 
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
     }

@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <TableFunctions/TableFunctionDisabled.h>
 
 
 namespace DB
@@ -20,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 void TableFunctionFactory::registerFunction(
@@ -62,10 +62,6 @@ TableFunctionPtr TableFunctionFactory::tryGet(
     String name = getAliasToOrName(name_param);
     TableFunctionPtr res;
 
-    if (auto deny_list_ptr = context->getFunctionsDenyList())
-        if (deny_list_ptr->contains(name))
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in functions_deny_list", name);
-
     auto it = table_functions.find(name);
     if (table_functions.end() != it)
     {
@@ -80,6 +76,10 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (!res)
         return nullptr;
+
+    auto deny_list_ptr = context->getTableFunctionsDenyList();
+    if (deny_list_ptr && deny_list_ptr->contains(getCanonicalNameIfAny(name)))
+        res = std::make_shared<TableFunctionDisabled>(res);
 
     if (CurrentThread::isInitialized())
     {
