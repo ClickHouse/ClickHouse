@@ -251,3 +251,66 @@ SELECT 'mapkeys-final-split-0 groupArray', length(groupArray(m)) FROM tm_split_r
     SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
 
 DROP TABLE tm_split_repro_mapkeys_final;
+
+-- The `query_plan_join_shard_by_pk_ranges` optimization (optimizeJoinByShards) calls the
+-- layer splitter directly, bypassing the `splitPartsWithRangesByPrimaryKey` guard above.
+-- A join whose common PK prefix is a `Map` (or `Map`-derived, e.g. `mapKeys(m)`) thus dropped
+-- a row even though the non-join read path was already fixed. Both joins below must return the
+-- same count with sharding off (control) and on. No injection setting is needed -- the
+-- optimization runs the layer split unconditionally.
+
+DROP TABLE IF EXISTS tm_join_l;
+DROP TABLE IF EXISTS tm_join_r;
+
+CREATE TABLE tm_join_l(m Map(String, Array(UInt8))) ENGINE = MergeTree() ORDER BY m SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_join_l VALUES (map('k1', [1,2,3], 'k2', [4,5,6])), (map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_join_l SELECT map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_join_l SELECT map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_join_l SELECT map('k3', [number, number + 2, number * 2]) FROM numbers(6);
+
+CREATE TABLE tm_join_r AS tm_join_l;
+INSERT INTO tm_join_r SELECT * FROM tm_join_l;
+
+SELECT 'join-map shard-off count', count() FROM tm_join_l l INNER JOIN tm_join_r r ON l.m = r.m
+    SETTINGS query_plan_join_shard_by_pk_ranges = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, max_threads = 4;
+SELECT 'join-map shard-on count', count() FROM tm_join_l l INNER JOIN tm_join_r r ON l.m = r.m
+    SETTINGS query_plan_join_shard_by_pk_ranges = 1, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, max_threads = 4;
+
+DROP TABLE tm_join_l;
+DROP TABLE tm_join_r;
+
+DROP TABLE IF EXISTS tm_join_mapkeys_l;
+DROP TABLE IF EXISTS tm_join_mapkeys_r;
+
+CREATE TABLE tm_join_mapkeys_l(m Map(String, Array(UInt8))) ENGINE = MergeTree() ORDER BY mapKeys(m) SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_join_mapkeys_l VALUES (map('k1', [1,2,3], 'k2', [4,5,6])), (map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_join_mapkeys_l SELECT map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_join_mapkeys_l SELECT map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_join_mapkeys_l SELECT map('k3', [number, number + 2, number * 2]) FROM numbers(6);
+
+CREATE TABLE tm_join_mapkeys_r AS tm_join_mapkeys_l;
+INSERT INTO tm_join_mapkeys_r SELECT * FROM tm_join_mapkeys_l;
+
+SELECT 'join-mapkeys shard-off count', count() FROM tm_join_mapkeys_l l INNER JOIN tm_join_mapkeys_r r ON mapKeys(l.m) = mapKeys(r.m)
+    SETTINGS query_plan_join_shard_by_pk_ranges = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, max_threads = 4;
+SELECT 'join-mapkeys shard-on count', count() FROM tm_join_mapkeys_l l INNER JOIN tm_join_mapkeys_r r ON mapKeys(l.m) = mapKeys(r.m)
+    SETTINGS query_plan_join_shard_by_pk_ranges = 1, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, max_threads = 4;
+
+DROP TABLE tm_join_mapkeys_l;
+DROP TABLE tm_join_mapkeys_r;

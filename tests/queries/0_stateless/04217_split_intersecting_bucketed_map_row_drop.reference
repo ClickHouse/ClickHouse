@@ -18,3 +18,7 @@ mdotkeys-inj count	20
 mdotkeys-inj groupArray	20
 mapkeys-final-split-0 count	20
 mapkeys-final-split-0 groupArray	20
+join-map shard-off count	20
+join-map shard-on count	20
+join-mapkeys shard-off count	110
+join-mapkeys shard-on count	110
