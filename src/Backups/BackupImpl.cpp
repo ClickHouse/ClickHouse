@@ -321,11 +321,7 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
         else if (base_backup_use_same_s3_credentials && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
         {
-            /// The backup was created with `use_same_s3_credentials_for_base_backup`, so its metadata
-            /// stores the base backup locator without credentials. Copy them from this backup's locator
-            /// without requiring the setting at restore time. This is best-effort: if this backup was
-            /// opened without copyable inline credentials (e.g. via a named collection), the base backup
-            /// is opened as written, with server-side credentials.
+            /// Metadata marker asks to copy credentials from this backup locator at restore time.
             backup_info.copyS3CredentialsTo(effective_base_backup_info);
         }
 
@@ -438,10 +434,18 @@ void BackupImpl::writeBackupMetadata()
             /// Persist base backup locators without inline `S3` credentials.
             BackupInfo base_backup_info_for_metadata = base_backup_info->withoutS3Credentials(params.context);
             bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != base_backup_info->toString();
+            bool base_backup_can_use_this_backup_credentials = false;
+
+            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
+            {
+                BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
+                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
+                base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == base_backup_info->toString();
+            }
 
             *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
-            if (params.use_same_s3_credentials_for_base_backup || base_backup_credentials_were_stripped)
+            if (params.use_same_s3_credentials_for_base_backup || base_backup_can_use_this_backup_credentials)
                 *out << "<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>";
         }
     }

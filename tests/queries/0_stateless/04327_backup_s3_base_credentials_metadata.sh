@@ -18,6 +18,8 @@ function s3_url() { echo "http://localhost:11111/test/backups/$CLICKHOUSE_DATABA
 
 function s3_location() { echo "'$(s3_url "$*")', 'test', 'testtest'"; }
 
+function s3_location_root() { echo "'$(s3_url "$*")', 'clickhouse', 'clickhouse'"; }
+
 function check_base_backup_in_metadata()
 {
     local name=$1 && shift
@@ -26,7 +28,7 @@ function check_base_backup_in_metadata()
     metadata=$($CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT line FROM s3($(s3_location $name/.backup), 'LineAsString') FORMAT TSVRaw")
     grep -c '<base_backup>' <<< "$metadata"
     grep -c '<use_same_s3_credentials_for_base_backup>' <<< "$metadata" || true
-    grep -cE ", 'test'|, 'testtest'|SECRET" <<< "$metadata" || true
+    grep -cE ", 'test'|, 'testtest'|, 'clickhouse'|SECRET" <<< "$metadata" || true
 }
 
 function rewrite_backup_metadata()
@@ -55,18 +57,24 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_1 FROM S3(
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_1"
 
 echo 'inc_2: explicit base backup credentials without the setting'
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_2)) SETTINGS base_backup=S3($(s3_location base), role_arn = 'SECRET_ROLE_ARN', external_id = 'SECRET_EXTERNAL_ID')" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_2)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
 check_base_backup_in_metadata inc_2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_2 FROM S3($(s3_location inc_2))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_2"
 
-echo 'inc_3: backward compatibility with credentials embedded in metadata'
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_3)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
-# Imitate old metadata with embedded credentials and no marker.
-rewrite_backup_metadata inc_3 '<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>' ''
-rewrite_backup_metadata inc_3 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'INVALID_PASSWORD')"
-$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "RESTORE TABLE data AS data_3_bad FROM S3($(s3_location inc_3))" |& grep -m1 -o 'The request signature we calculated does not match the signature you provided. Check your key and signing method. (S3_ERROR)'
-rewrite_backup_metadata inc_3 'INVALID_PASSWORD' 'testtest'
+echo 'inc_3: distinct base credentials and extra auth arguments'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_3)) SETTINGS base_backup=S3($(s3_location_root base), role_arn = 'SECRET_ROLE_ARN', external_id = 'SECRET_EXTERNAL_ID')" | cut -f2
 check_base_backup_in_metadata inc_3
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_3 FROM S3($(s3_location inc_3))" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_3 FROM S3($(s3_location inc_3)) SETTINGS base_backup=S3($(s3_location_root base))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_3"
+
+echo 'inc_4: backward compatibility with credentials embedded in metadata'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
+# Imitate old metadata with embedded credentials and no marker.
+rewrite_backup_metadata inc_4 '<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>' ''
+rewrite_backup_metadata inc_4 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'INVALID_PASSWORD')"
+$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "RESTORE TABLE data AS data_4_bad FROM S3($(s3_location inc_4))" |& grep -m1 -o 'The request signature we calculated does not match the signature you provided. Check your key and signing method. (S3_ERROR)'
+rewrite_backup_metadata inc_4 'INVALID_PASSWORD' 'testtest'
+check_base_backup_in_metadata inc_4
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_4 FROM S3($(s3_location inc_4))" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_4"
