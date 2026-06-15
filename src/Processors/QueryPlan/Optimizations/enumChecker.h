@@ -8,7 +8,7 @@ namespace DB
 
 /**
 * This a helper class that is used to check the plans before storing them
-* into DP table. No plan costing here. 
+* into DP table. No plan costing here.
 */
 template <class TDptable, std::unsigned_integral TUint>
 class EnumeratorChecker

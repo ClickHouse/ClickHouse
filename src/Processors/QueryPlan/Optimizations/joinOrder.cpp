@@ -752,7 +752,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
  * This methodical evaluation of all connected subsets results in the creation of the best plan for each.
  * The final answer is the optimal plan for the complete set of relations.
  *
- * For more detailed information, see "Building Query Compilers": 
+ * For more detailed information, see "Building Query Compilers":
  * (https://pi3.informatik.uni-mannheim.de/~moer/querycompiler.pdf)
  */
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
@@ -762,7 +762,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     // This budget cap is obtained from empirical testing using different queries and join graphs.
     static constexpr UInt64 max_nr_ccps = 60'000;
 
-    struct DPEntry {
+    struct DPEntry
+    {
         Bitvector neighbor{0};
         Bitvector left{0};
         Bitvector right{0};
