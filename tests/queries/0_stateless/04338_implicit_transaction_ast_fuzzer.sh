@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database
+# Tags: no-fasttest, no-ordinary-database, no-replicated-database
 # no-fasttest: requires transactions (allow_experimental_transactions), not enabled in fast test
 # no-ordinary-database: transactions require an Atomic database
+# no-replicated-database: this test enables the server-side fuzzer for non-read-only queries
+#     (ast_fuzzer_any_query=1). On a Replicated database the fuzzer settings are serialized into the
+#     replicated DDL entry, so the fuzzer re-runs inside DDLWorker on an already-executed
+#     ZooKeeperMetadataTransaction and hits a separate, unrelated logical error. The
+#     implicit-transaction bug under test does not need a Replicated database.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/107446
 # The server-side AST fuzzer (ast_fuzzer_runs > 0) used to reset the *current* query's transaction.
