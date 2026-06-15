@@ -56,7 +56,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 B
 SELECT __table1.g AS g
 FROM default.test AS __table1
 ORDER BY __table1.x ASC
-LIMIT _CAST(2, \'UInt64\') BY abs(__table1.x - 5)
+LIMIT _CAST(2, \'UInt64\') BY abs(minus(__table1.x, 5))
 SELECT g FROM test ORDER BY x LIMIT 2 BY abs(x - 5);
 0
 1

@@ -58,7 +58,7 @@ FROM default.test AS __table1
 ORDER BY __table1.x ASC
 LIMIT _CAST(2, \'UInt64\') BY
     __table1.g,
-    __table1.g + rand()
+    plus(__table1.g, rand())
 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + rand();
 0
 1
@@ -77,7 +77,7 @@ FROM default.test AS __table1
 ORDER BY __table1.x ASC
 LIMIT _CAST(2, \'UInt64\') BY
     __table1.g,
-    __table1.x + 1
+    plus(__table1.x, 1)
 SELECT g FROM test ORDER BY x LIMIT 2 BY g, x + 1;
 0
 1
@@ -126,7 +126,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 B
 SELECT __table1.g AS g
 FROM default.test AS __table1
 ORDER BY __table1.x ASC
-LIMIT _CAST(2, \'UInt64\') BY __table1.g + 1
+LIMIT _CAST(2, \'UInt64\') BY plus(__table1.g, 1)
 SELECT g FROM test ORDER BY x LIMIT 2 BY g + 1;
 0
 1
@@ -178,7 +178,7 @@ FROM default.test AS __table1
 ORDER BY __table1.x ASC
 LIMIT _CAST(2, \'UInt64\') BY
     __table1.g,
-    __table1.g + 1
+    plus(__table1.g, 1)
 SETTINGS optimize_limit_by_function_keys = 0
 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1 SETTINGS optimize_limit_by_function_keys = 0;
 0
