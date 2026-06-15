@@ -14,3 +14,5 @@ CREATE TABLE t (`n` Nested(a UInt8, b String)) ENGINE = Memory
 SELECT * EXCEPT (a, b) FROM t
 SELECT * EXCEPT \'re\' FROM t
 SELECT * EXCEPT \'\' FROM t
+ALTER TABLE t (COMMENT COLUMN x \'c\')
+DROP INDEX idx ON t

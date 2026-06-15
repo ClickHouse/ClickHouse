@@ -7,6 +7,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
@@ -246,7 +247,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readRawChild("partition", partition);
     readRawChild("predicate", predicate);
     readRawChild("update_assignments", update_assignments);
-    readRawChild("comment", comment);
+    /// `comment` (COMMENT COLUMN / MODIFY COMMENT / MODIFY DATABASE COMMENT) is parsed by
+    /// `ParserStringLiteral`; `AlterCommands` reads `comment->as<ASTLiteral &>().value`, so type it.
+    readTypedChild.operator()<ASTLiteral>("comment", comment);
     readRawChild("ttl", ttl);
     readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
     readRawChild("settings_resets", settings_resets);

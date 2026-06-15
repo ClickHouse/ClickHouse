@@ -22,6 +22,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`n` Nested(a UInt8,
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (a, b) FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (\'re\') FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (\'\') FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (COMMENT COLUMN x \'c\')'));
+SELECT formatQueryFromJSON(parseQueryToJSON('DROP INDEX idx ON t'));
 
 -- ---------------------------------------------------------------------------
 -- `ASTInsertQuery.select` is an `ASTSelectWithUnionQuery` (insert execution downcasts it).
@@ -94,3 +96,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN 
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * EXCEPT (a) FROM t'), '"transformers":{"type":"ColumnsTransformerList"', '"transformers":{"type":"Identifier","name":"x"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * EXCEPT (a, b) FROM t'), '"ColumnsExceptTransformer","children":[{"type":"Identifier","name":"a"}', '"ColumnsExceptTransformer","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTAlterCommand.comment` (COMMENT COLUMN / MODIFY COMMENT) is an `ASTLiteral`, and
+-- `ASTDropIndexQuery.index_name` is an `ASTIdentifier` (both downcast by `AlterCommands`).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (COMMENT COLUMN x \'c\')'), '"comment":{"type":"Literal"', '"comment":{"type":"Identifier","name":"c"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('DROP INDEX idx ON t'), '"index_name":{"type":"Identifier"', '"index_name":{"type":"Literal","value":{"field_type":"String","value":"idx"}')); -- { serverError BAD_ARGUMENTS }

@@ -1,6 +1,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTDropIndexQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -67,7 +68,10 @@ void ASTDropIndexQuery::readJSON(const Poco::JSON::Object & json)
 
     cluster = r.getString("cluster");
 
-    index_name = r.readChild("index_name");
+    /// `index_name` comes from `ParserIdentifier`, and `convertToASTAlterCommand` forwards it as
+    /// `command->index`, which `AlterCommands` reads via `index->as<ASTIdentifier &>().name()`.
+    /// Reject any other node type at the JSON boundary.
+    index_name = r.readChildOfType<ASTIdentifier>("index_name");
     if (!index_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropIndexQuery` must specify 'index_name' during AST JSON deserialization");
     children.push_back(index_name);

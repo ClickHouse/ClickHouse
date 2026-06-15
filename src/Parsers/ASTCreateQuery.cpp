@@ -4,6 +4,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -602,7 +603,9 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(targets, child);
 
-    child = r.readChild("comment");
+    /// `comment` is parsed by `ParserStringLiteral`; `StorageFactory::get`/`DatabaseFactory::get`
+    /// read `comment->as<ASTLiteral &>().value`, so reject any other node type here.
+    child = r.readChildOfType<ASTLiteral>("comment");
     if (child)
         set(comment, child);
 

@@ -15,6 +15,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8 COMMENT \
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` Tuple(UInt8, String)) ENGINE = Memory'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = Memory COMMENT \'c\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY d (`k` UInt64, `v` String) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(0)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2'));
@@ -63,3 +64,8 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2
 -- of `ASTPair`; `buildConfigurationFromFunctionWithKeyValueArguments` downcasts each child to `ASTPair`.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE DICTIONARY d (`k` UInt64, `v` String) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(0)'), '"type":"Pair"', '"type":"Identifier","name":"p"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTCreateQuery.comment` is an `ASTLiteral` (`StorageFactory`/`DatabaseFactory` read it as a string).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = Memory COMMENT \'c\''), '"comment":{"type":"Literal","value":{"field_type":"String","value":"c"}}', '"comment":{"type":"Identifier","name":"c"}')); -- { serverError BAD_ARGUMENTS }
