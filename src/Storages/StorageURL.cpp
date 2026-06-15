@@ -132,7 +132,7 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
 
     if (!query)
     {
-        return [s = literal](std::ostream & os)
+        return [s = *literal](std::ostream & os)
         {
             os.write(s.data(), s.size());
         };

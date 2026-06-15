@@ -60,14 +60,17 @@ public:
     /// Execution is deferred: the subquery is interpreted only when a request is sent.
     struct Body
     {
-        String literal;
+        /// Presence (engaged optional) is kept separate from the payload length, so that
+        /// `body('')` is treated as a specified, empty payload rather than as an absent body.
+        std::optional<String> literal;
         ASTPtr query;
         String format;
 
-        bool empty() const { return literal.empty() && !query; }
+        /// True only when no `body(...)` argument was given at all.
+        bool empty() const { return !literal && !query; }
 
         /// Build a callback that writes the body into the HTTP request output stream.
-        /// Returns nullptr when the body is empty.
+        /// Returns nullptr only when no body was specified (see `empty`).
         std::function<void(std::ostream &)> makeCallback(const ContextPtr & context) const;
     };
 

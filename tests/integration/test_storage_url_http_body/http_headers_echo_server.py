@@ -3,13 +3,19 @@ import json
 import sys
 
 RESULT_PATH = "/echo_server_headers.txt"
- 
+METHOD_PATH = "/echo_server_method.txt"
+
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def log_body(self, results):
         with open(RESULT_PATH, "w") as f:
             f.write(results)
 
+    def log_method(self, method):
+        with open(METHOD_PATH, "w") as f:
+            f.write(method)
+
     def do_GET(self): # for health-check in docker startup script
+        self.log_method("GET")
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -18,6 +24,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
 
     def do_POST(self):
+        self.log_method("POST")
         transfer_encoding = self.headers.get('Transfer-Encoding')
         if transfer_encoding == 'chunked':
             body, body_length = self.read_chunked()

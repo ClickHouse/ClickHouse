@@ -120,3 +120,20 @@ def test_subquery_result_csv_in_http_body(started_cluster):
     csv_separate_each_row_dump = '''"id","name","number"\n1,"Vasya",123\n2,"Kolya",456\n3,"Dima",789'''
     query = f"SELECT * FROM url('http://localhost:8000/', headers('type'='string'), body(({generator_subquery}), CSVWithNames))"
     run_test(query, csv_separate_each_row_dump)
+
+
+def test_empty_string_in_http_body(started_cluster):
+    # `body('')` is a specified, empty payload. It must still promote the request
+    # from GET to POST and send an empty body, instead of behaving as if there were
+    # no `body` argument at all.
+    query = "SELECT * FROM url('http://localhost:8000/', headers('type'='string'), body(''))"
+    server.query(query)
+
+    method = server.exec_in_container(
+        ["cat", http_headers_echo_server.METHOD_PATH], user="root"
+    )
+    body = server.exec_in_container(
+        ["cat", http_headers_echo_server.RESULT_PATH], user="root"
+    )
+    assert method.strip() == "POST"
+    assert body == ""
