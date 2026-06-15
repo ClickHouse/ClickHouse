@@ -89,23 +89,29 @@ function run_with_retry()
             continue
         fi
 
-        # Transient ZooKeeper-session state: the single replica briefly went read-only.
-        # Retry until the session recovers (bounded by this thread's time budget).
-        if [[ "${ERROR}" =~ "in readonly mode" ]]
-        then
-            continue
-        fi
-
-        # Benign teardown races: a pending ALTER/mutation could not be awaited because the
-        # table or replica was shut down (e.g. a concurrent DROP at teardown or a server
-        # restart triggered by another parallel test). Nothing left to do for this worker;
-        # stop without printing (non-zero so the caller breaks its dependent sequence), and
-        # record that the run was disrupted so the progress requirement below is waived.
+        # Benign teardown races: a pending ALTER/mutation/insert could not complete because
+        # the table or replica was shut down (e.g. a concurrent DROP at teardown or a server
+        # restart triggered by another parallel test). This includes the read-only variant
+        # `Table is in readonly mode due to shutdown: ...` raised by `ReplicatedMergeTreeSink`
+        # on the INSERT path, which must be classified here - before the generic read-only
+        # retry below - so a permanent shutdown is not mistaken for a transient session blip
+        # and retried until the time budget runs out. Nothing left to do for this worker; stop
+        # without printing (non-zero so the caller breaks its dependent sequence), and record
+        # that the run was disrupted so the progress requirement below is waived.
         if [[ "${ERROR}" =~ "table shutdown was called" \
-            || "${ERROR}" =~ "was shut down" ]]
+            || "${ERROR}" =~ "was shut down" \
+            || "${ERROR}" =~ "due to shutdown" ]]
         then
             touch "${PROGRESS_PREFIX}_disrupted"
             return 1
+        fi
+
+        # Transient ZooKeeper-session state: the single replica briefly went read-only (e.g.
+        # `Table is in readonly mode (replica path: ...)`). This is not a shutdown - the
+        # session recovers - so retry until it does (bounded by this thread's time budget).
+        if [[ "${ERROR}" =~ "in readonly mode" ]]
+        then
+            continue
         fi
 
         # Anything else is a genuine error this test exists to catch
@@ -141,7 +147,12 @@ function thread_insert()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        run_with_retry "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)"
+        # A non-zero return means `run_with_retry` gave up before the INSERT landed: either
+        # the time budget ran out or the table/replica was shut down (disrupted). Stop the
+        # worker cleanly instead of letting `set -e` fail the whole test for that benign
+        # shutdown/restart race. A genuine INSERT error is printed by `run_with_retry` (which
+        # then returns 0), so it still fails the empty-reference test.
+        run_with_retry "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)" || break
     done
 }
 
