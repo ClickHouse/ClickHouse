@@ -212,6 +212,7 @@ namespace Setting
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
+    extern const SettingsBool allow_minmax_index_for_json;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
     extern const SettingsBool apply_mutations_on_fly;
@@ -931,26 +932,13 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-static bool getAllowMinmaxIndexForJSON(const StorageInMemoryMetadata & metadata, bool default_value)
-{
-    if (metadata.settings_changes)
-    {
-        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        if (const auto * value = changes.tryGet("allow_minmax_index_for_json"))
-            return value->safeGet<bool>();
-    }
-
-    return default_value;
-}
-
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context,
-    std::optional<bool> allow_minmax_index_for_json_default) const
+    ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -968,10 +956,9 @@ void MergeTreeData::checkProperties(
     if (local_context)
         allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
-    bool allow_minmax_index_for_json = allow_minmax_index_for_json_default
-        ? *allow_minmax_index_for_json_default
-        : static_cast<bool>((*getSettings())[MergeTreeSetting::allow_minmax_index_for_json]);
-    allow_minmax_index_for_json = getAllowMinmaxIndexForJSON(new_metadata, allow_minmax_index_for_json);
+    bool allow_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
+    if (local_context)
+        allow_minmax_index_for_json = local_context->getSettingsRef()[Setting::allow_minmax_index_for_json];
 
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
@@ -1078,8 +1065,8 @@ void MergeTreeData::checkProperties(
                             if (isObject(type))
                                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
-                                    "with different data types. Consider using typed subcolumns or cast column to a specific data type, or use table "
-                                    "SETTINGS allow_minmax_index_for_json = 1 to suppress this check",
+                                    "with different data types. Consider using typed subcolumns or cast column to a specific data type, or use "
+                                    "setting 'allow_minmax_index_for_json = 1' to suppress this check",
                                     idx_column.type->getName(), idx_column.name);
                         };
                         check_not_json(*idx_column.type);
@@ -1146,8 +1133,7 @@ void MergeTreeData::checkProperties(
                 attach,
                 is_aggregate,
                 true /* allow_nullable_key */,
-                local_context,
-                allow_minmax_index_for_json);
+                local_context);
 
             if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
             {
@@ -4477,47 +4463,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
-    const bool allow_minmax_index_for_json_before_alter
-        = (*settings_from_storage)[MergeTreeSetting::allow_minmax_index_for_json];
-    const bool allow_minmax_index_for_json_after_alter
-        = getAllowMinmaxIndexForJSON(new_metadata, allow_minmax_index_for_json_before_alter);
-    const bool enables_json_minmax_index_for_replicated_table = supportsReplication()
-        && !allow_minmax_index_for_json_before_alter
-        && allow_minmax_index_for_json_after_alter;
-
-    bool adds_json_minmax_index = false;
-    if (enables_json_minmax_index_for_replicated_table)
-    {
-        for (const auto & command : commands)
-        {
-            if (command.type != AlterCommand::ADD_INDEX || command.ignore)
-                continue;
-
-            const auto & index = new_metadata.secondary_indices.getByName(command.index_name);
-            if (index.type != "minmax")
-                continue;
-
-            for (const auto & idx_column : index.sample_block)
-            {
-                auto check_json = [&](const IDataType & type)
-                {
-                    if (isObject(type))
-                        adds_json_minmax_index = true;
-                };
-                check_json(*idx_column.type);
-                idx_column.type->forEachChild(check_json);
-            }
-        }
-    }
-
-    if (enables_json_minmax_index_for_replicated_table && adds_json_minmax_index)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot add a minmax index on JSON/Object columns to ReplicatedMergeTree in the same ALTER query that enables "
-            "setting 'allow_minmax_index_for_json'. ReplicatedMergeTree table settings are local and are not stored in "
-            "replicated metadata; enable the setting on replicas first, then add the index");
-    }
-
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
 
@@ -4954,15 +4899,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    auto default_settings = getDefaultSettings();
-    checkProperties(
-        new_metadata,
-        old_metadata,
-        false,
-        false,
-        allow_nullable_key,
-        local_context,
-        (*default_settings)[MergeTreeSetting::allow_minmax_index_for_json]);
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())

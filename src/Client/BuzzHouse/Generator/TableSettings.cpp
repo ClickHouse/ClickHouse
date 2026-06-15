@@ -58,6 +58,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_commit_order_projection", trueOrFalseSetting},
     {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
     {"allow_floating_point_partition_key", trueOrFalseSetting},
+    {"allow_minmax_index_for_json", trueOrFalseSetting},
     {"allow_nullable_key", trueOrFalseSetting},
     {"allow_part_offset_column_in_projections", trueOrFalseSetting},
     {"allow_reduce_blocking_parts_task", trueOrFalseSetting},

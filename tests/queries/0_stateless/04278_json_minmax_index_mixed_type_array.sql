@@ -1,12 +1,12 @@
 -- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
--- Tag no-replicated-database: mixed local/replicated ALTER is rejected earlier by Replicated database validation.
--- Tag no-shared-merge-tree: covers ReplicatedMergeTree-specific local settings vs replicated metadata behavior.
+-- Tag no-replicated-database: covers ReplicatedMergeTree-specific table setting behavior.
+-- Tag no-shared-merge-tree: covers ReplicatedMergeTree-specific table setting behavior.
 
 -- Test for https://github.com/ClickHouse/ClickHouse/issues/106088
 -- JSON (Object) column should be forbidden in minmax skip index by default.
--- The MergeTree setting allow_minmax_index_for_json controls this behavior.
--- There is no session/query-level setting; the guard is only controlled via
--- table-level SETTINGS (consistent with allow_suspicious_indices).
+-- The MergeTree setting allow_minmax_index_for_json controls persistent table behavior.
+-- The query-level setting with the same name can suppress ALTER validation for compatibility,
+-- consistent with allow_suspicious_indices.
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
@@ -61,7 +61,7 @@ ALTER TABLE t_json_minmax_forbidden RESET SETTING allow_minmax_index_for_json; -
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
--- Should succeed: a mixed ALTER is validated against the post-alter effective settings.
+-- Should fail: MODIFY SETTING is table metadata and does not suppress validation of the current ALTER.
 CREATE TABLE t_json_minmax_forbidden (
     id Int32,
     col1 JSON
@@ -69,14 +69,20 @@ CREATE TABLE t_json_minmax_forbidden (
 
 ALTER TABLE t_json_minmax_forbidden
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
-    MODIFY SETTING allow_minmax_index_for_json = 1;
+    MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Should succeed: the query-level setting suppresses validation of the current ALTER,
+-- and MODIFY SETTING makes the escape hatch persistent for the table.
+ALTER TABLE t_json_minmax_forbidden
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
+    MODIFY SETTING allow_minmax_index_for_json = 1
+    SETTINGS allow_minmax_index_for_json = 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
 
--- Should fail: for ReplicatedMergeTree, MODIFY SETTING is local but ADD INDEX is replicated.
--- The setting must be enabled before the replicated metadata alter writes the index to Keeper.
+-- Should fail: MODIFY SETTING is local table metadata and does not suppress validation of the current ALTER.
 CREATE TABLE t_json_minmax_forbidden_replicated (
     id Int32,
     col1 JSON
@@ -86,8 +92,10 @@ ALTER TABLE t_json_minmax_forbidden_replicated
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
 
+-- Should succeed: once the table-level setting is effective, replicated metadata can be replayed locally.
 ALTER TABLE t_json_minmax_forbidden_replicated MODIFY SETTING allow_minmax_index_for_json = 1;
-ALTER TABLE t_json_minmax_forbidden_replicated ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1;
+ALTER TABLE t_json_minmax_forbidden_replicated ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1
+    SETTINGS allow_minmax_index_for_json = 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
 
@@ -106,11 +114,9 @@ ALTER TABLE t_json_minmax_forbidden
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
--- Should succeed: ALTER TABLE MODIFY SETTING on a legacy table.
--- Simulates the upgrade/recovery path: DETACH/ATTACH skips validation (attach=true),
--- then ALTER TABLE MODIFY SETTING allow_minmax_index_for_json = 1 makes it durable.
--- We create the table with the setting enabled, then detach+attach to simulate a legacy
--- table that loaded without validation.
+-- Should succeed: ALTER TABLE MODIFY SETTING on a table that already has a JSON minmax index.
+-- DETACH/ATTACH skips validation (attach=true), and the query-level setting suppresses validation
+-- while making allow_minmax_index_for_json durable in table metadata.
 CREATE TABLE t_json_minmax_forbidden (
     id Int32,
     col1 JSON,
@@ -121,8 +127,10 @@ SETTINGS allow_minmax_index_for_json = 1;
 DETACH TABLE t_json_minmax_forbidden;
 ATTACH TABLE t_json_minmax_forbidden;
 
--- Recovery path: persist the table-level setting. Should NOT be rejected.
-ALTER TABLE t_json_minmax_forbidden MODIFY SETTING allow_minmax_index_for_json = 1;
+-- Recovery path: persist the table-level setting. The query-level setting suppresses validation
+-- of the current ALTER.
+ALTER TABLE t_json_minmax_forbidden MODIFY SETTING allow_minmax_index_for_json = 1
+SETTINGS allow_minmax_index_for_json = 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
