@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 Connection::~Connection()
@@ -1425,10 +1426,14 @@ Packet Connection::receivePacket()
 
             case Protocol::Server::PartUUIDs:
             {
-                // just to avoid throwing UNKNOWN_PACKET_FROM_SERVER
-                // ignore part uuids, allow_experimental_query_deduplication feature is no longer supported
-                std::vector<UUID> part_uuids;
-                readVectorBinary(part_uuids, *in);
+                // allow_experimental_query_deduplication is no longer supported, but an old server
+                // may still send this packet. Skip the obsolete, peer-controlled payload without
+                // materializing it (do not resize a vector to a peer-chosen size).
+                UInt64 num_part_uuids = 0;
+                readVarUInt(num_part_uuids, *in);
+                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
             }
             case Protocol::Server::ReadTaskRequest:

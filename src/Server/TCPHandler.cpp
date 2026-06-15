@@ -14,7 +14,6 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
@@ -2557,9 +2556,8 @@ void TCPHandler::processUnexpectedQuery()
 
 void TCPHandler::processObsoleteIgnoredPartUUIDs()
 {
-    /// Read the obsolete payload off the wire to keep the chunked input stream framed, then reject.
-    std::vector<UUID> ignored_part_uuids;
-    readVectorBinary(ignored_part_uuids, *in);
+    /// Reject before reading the peer-controlled payload: this packet only ever arrives pre-query,
+    /// so the exception closes the connection
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
         "Received IgnoredPartUUIDs packet, but query deduplication "
         "(allow_experimental_query_deduplication) is no longer supported. "
