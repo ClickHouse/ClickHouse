@@ -10,13 +10,10 @@ if __name__ == "__main__":
     parser.add_argument("--gtest_filter", default="")
     args = parser.parse_args()
 
-    # The CI Docker image installs an uninstrumented FIPS provider (`fips.so`) for OpenSSL.
-    # Sanitizers cannot track writes from uninstrumented shared libraries, causing false
-    # positives during OpenSSL global initialization (e.g. "use-of-uninitialized-value"
-    # in MSan). Disable FIPS provider loading for sanitizer builds.
+    # Our static OpenSSL must ignore the image's system openssl.cnf.
+    os.environ["OPENSSL_CONF"] = "/dev/null"
+
     job_name = Info().job_name
-    if any(san in job_name for san in ("msan", "asan", "tsan", "ubsan")):
-        os.environ["OPENSSL_CONF"] = "/dev/null"
 
     # Note, LSan does not compatible with debugger
     if "asan" not in job_name:

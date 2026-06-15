@@ -26,10 +26,9 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
-#include <chrono>
 #include <cstdint>
+#include <latch>
 #include <string>
-#include <thread>
 
 
 namespace
@@ -162,10 +161,13 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
     auto listener = this->policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    std::latch negative_poll_done{1};
+
     struct Params
     {
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
+        std::latch * negative_poll_done;
     };
 
     silk::FiberFuture client_future;
@@ -188,6 +190,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             }
 
             EXPECT_FALSE(socket.poll(Poco::Timespan(0, 50'000), Poco::Net::Socket::SELECT_READ));
+            p->negative_poll_done->count_down();
             EXPECT_TRUE(socket.poll(Poco::Timespan(0, 500'000), Poco::Net::Socket::SELECT_READ));
 
             char data[1] = {};
@@ -198,7 +201,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient()},
+        Params{port, this->policy.makeClient(), &negative_poll_done},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -213,7 +216,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
     }
     peer.sendBytes("pong", 4);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    negative_poll_done.wait();
     peer.sendBytes("x", 1);
 
     client_future.wait();
