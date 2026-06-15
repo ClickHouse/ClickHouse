@@ -219,8 +219,10 @@ bool operator==(const Pattern & a, const Pattern & b)
     {
         return false;
     }
-    else if (a.function->getName() != b.function->getName())
+    else if (a.function->getName() != b.function->getName()
+        || a.function->getParameters() != b.function->getParameters())
     {
+        /// Keep in lockstep with Pattern::updateHash, which hashes both the name and the parameters.
         return false;
     }
 
