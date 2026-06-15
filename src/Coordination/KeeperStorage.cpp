@@ -4507,26 +4507,28 @@ uint64_t KeeperStorage<Container>::getNodesCount() const
 template<typename Container>
 std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
 {
-    /// `ttl_paths` and `container` are mutated by commit under exclusive
-    /// `storage_mutex`. Take it shared to read them consistently.
-    SharedLockGuard storage_lock(storage_mutex);
-
     std::vector<String> expired_nodes;
     std::unordered_map<String, Int32> versions;
 
-    for (const auto & ttl_path : ttl_paths)
     {
-        auto node_it = container.find(ttl_path);
-        if (node_it == container.end())
-            continue;
-        const Node & node = node_it->value;
-        if (node.stats.isTTL() && now_ms >= node.stats.destroyTime())
+        /// `ttl_paths` and `container` are mutated by commit under exclusive
+        /// `storage_mutex`. Take it shared to read them consistently.
+        SharedLockGuard storage_lock(storage_mutex);
+
+        for (const auto & ttl_path : ttl_paths)
         {
-            expired_nodes.push_back(ttl_path);
-            versions[ttl_path] = node.stats.version;
+            auto node_it = container.find(ttl_path);
+            if (node_it == container.end())
+                continue;
+            const Node & node = node_it->value;
+            if (node.stats.isTTL() && now_ms >= node.stats.destroyTime())
+            {
+                expired_nodes.push_back(ttl_path);
+                versions[ttl_path] = node.stats.version;
+            }
+            if (expired_nodes.size() >= batch_size)
+                break;
         }
-        if (expired_nodes.size() >= batch_size)
-            break;
     }
 
     std::vector<std::pair<std::string, Int32>> result;

@@ -712,6 +712,7 @@ public:
 
     std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
 
+    /// Used by tests.
     bool containsTTLPath(const std::string & path) const;
 
     void updateStats();
