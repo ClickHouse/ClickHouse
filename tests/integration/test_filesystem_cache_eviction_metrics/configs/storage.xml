@@ -11,7 +11,7 @@
                 <path>cache_eviction_metrics/</path>
                 <!-- Very small cache so the test workload immediately forces evictions. -->
                 <expose_prometheus_eviction_metrics>1</expose_prometheus_eviction_metrics>
-                <expose_prometheus_eviction_metrics_per_client>1</expose_prometheus_eviction_metrics_per_client>
+                <expose_prometheus_eviction_metrics_per_user>1</expose_prometheus_eviction_metrics_per_user>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <max_size>100Ki</max_size>
                 <max_elements>16</max_elements>

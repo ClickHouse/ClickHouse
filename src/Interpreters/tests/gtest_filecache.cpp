@@ -93,7 +93,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
-    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_client;
+    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
@@ -2368,8 +2368,8 @@ TEST_F(FileCacheTest, EvictionMetricsTryIncreasePriority)
 
 TEST_F(FileCacheTest, ExposeEvictionMetrics)
 {
-    /// Verify that filesystem_cache_* metric families update iff the
-    /// expose_prometheus_eviction_metrics / _per_client
+    /// Verify that `filesystem_cache_*` metric families update iff the
+    /// `expose_prometheus_eviction_metrics` / `_per_user`
     /// flags are set on the cache.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -2410,7 +2410,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
         return total;
     };
 
-    auto run_workload = [&](const std::string & cache_name, bool expose, bool per_client)
+    auto run_workload = [&](const std::string & cache_name, bool expose, bool per_user)
     {
         DB::FileCacheSettings settings;
         settings[FileCacheSetting::path] = cache_base_path;
@@ -2421,7 +2421,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
         settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
         settings[FileCacheSetting::slru_size_ratio] = 0.5;
         settings[FileCacheSetting::expose_prometheus_eviction_metrics] = expose;
-        settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client] = per_client;
+        settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = per_user;
 
         auto cache = DB::FileCache(cache_name, settings);
         cache.initialize();
@@ -2436,27 +2436,27 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
     };
 
     const auto evictions_off_before = sum_dim("filesystem_cache_evictions_total");
-    const auto by_client_off_before = sum_dim("filesystem_cache_evictions_by_client_total");
-    run_workload("eviction_metrics_off", /*expose=*/false, /*per_client=*/false);
+    const auto by_user_off_before = sum_dim("filesystem_cache_evictions_by_user_total");
+    run_workload("eviction_metrics_off", /*expose=*/false, /*per_user=*/false);
     EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), evictions_off_before);
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_client_total"), by_client_off_before);
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_off_before);
 
     const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
     const auto bytes_before = sum_dim("filesystem_cache_evicted_bytes_total");
     const auto hits_before = sum_hist("filesystem_cache_evicted_segment_hits");
     const auto size_before = sum_hist("filesystem_cache_evicted_segment_size_bytes");
-    const auto by_client_before = sum_dim("filesystem_cache_evictions_by_client_total");
-    run_workload("eviction_metrics_aggregate", /*expose=*/true, /*per_client=*/false);
+    const auto by_user_before = sum_dim("filesystem_cache_evictions_by_user_total");
+    run_workload("eviction_metrics_aggregate", /*expose=*/true, /*per_user=*/false);
     const auto evictions_delta = sum_dim("filesystem_cache_evictions_total") - evictions_before;
     EXPECT_GT(evictions_delta, 0.0);
     EXPECT_GT(sum_dim("filesystem_cache_evicted_bytes_total") - bytes_before, 0.0);
     EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_hits") - hits_before);
     EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_size_bytes") - size_before);
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_client_total"), by_client_before);
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_before);
 
-    const auto by_client_pre_pc = sum_dim("filesystem_cache_evictions_by_client_total");
-    run_workload("eviction_metrics_per_client", /*expose=*/true, /*per_client=*/true);
-    EXPECT_GT(sum_dim("filesystem_cache_evictions_by_client_total") - by_client_pre_pc, 0.0);
+    const auto by_user_pre = sum_dim("filesystem_cache_evictions_by_user_total");
+    run_workload("eviction_metrics_per_user", /*expose=*/true, /*per_user=*/true);
+    EXPECT_GT(sum_dim("filesystem_cache_evictions_by_user_total") - by_user_pre, 0.0);
 }
 
 TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)

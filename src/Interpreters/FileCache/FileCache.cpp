@@ -114,7 +114,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
-    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_client;
+    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
 }
 
 namespace
@@ -153,28 +153,28 @@ namespace
         "Distribution of byte sizes of evicted file segments, labelled by cache name.",
         size_buckets, {"cache_name"});
 
-    DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_evictions_by_client_total",
-        "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
+    DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_user_total = DimensionalMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_evictions_by_user_total",
+        "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_user`.",
         {"cache_name", "user_id"},
         {},
         DimensionalMetrics::MetricType::Counter);
 
-    DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_evicted_bytes_by_client_total",
-        "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
+    DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_by_user_total = DimensionalMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_evicted_bytes_by_user_total",
+        "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_user`.",
         {"cache_name", "user_id"},
         {},
         DimensionalMetrics::MetricType::Counter);
 
-    HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_client = HistogramMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_evicted_segment_hits_by_client",
-        "Distribution of cache-hit counts on evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
+    HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_user = HistogramMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_evicted_segment_hits_by_user",
+        "Distribution of cache-hit counts on evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_user`.",
         hits_buckets, {"cache_name", "user_id"});
 
-    HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes_by_client = HistogramMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_evicted_segment_size_bytes_by_client",
-        "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
+    HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes_by_user = HistogramMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_evicted_segment_size_bytes_by_user",
+        "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_user`.",
         size_buckets, {"cache_name", "user_id"});
 }
 
@@ -275,7 +275,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
-    , expose_eviction_metrics_per_client(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client])
+    , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],
@@ -2213,12 +2213,12 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, const String & use
     filesystem_cache_evicted_segment_hits.withLabels({name}).observe(static_cast<HistogramMetrics::Value>(hits));
     filesystem_cache_evicted_segment_size_bytes.withLabels({name}).observe(static_cast<HistogramMetrics::Value>(bytes));
 
-    if (!expose_eviction_metrics_per_client.load(std::memory_order_relaxed))
+    if (!expose_eviction_metrics_per_user.load(std::memory_order_relaxed))
         return;
-    filesystem_cache_evictions_by_client_total.withLabels({name, user_id}).increment();
-    filesystem_cache_evicted_bytes_by_client_total.withLabels({name, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    filesystem_cache_evicted_segment_hits_by_client.withLabels({name, user_id}).observe(static_cast<HistogramMetrics::Value>(hits));
-    filesystem_cache_evicted_segment_size_bytes_by_client.withLabels({name, user_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    filesystem_cache_evictions_by_user_total.withLabels({name, user_id}).increment();
+    filesystem_cache_evicted_bytes_by_user_total.withLabels({name, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
+    filesystem_cache_evicted_segment_hits_by_user.withLabels({name, user_id}).observe(static_cast<HistogramMetrics::Value>(hits));
+    filesystem_cache_evicted_segment_size_bytes_by_user.withLabels({name, user_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
 }
 
 void FileCache::deactivateBackgroundOperations()
@@ -2452,10 +2452,10 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics];
     }
 
-    if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client])
+    if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
     {
-        expose_eviction_metrics_per_client.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client], std::memory_order_relaxed);
-        actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client];
+        expose_eviction_metrics_per_user.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user], std::memory_order_relaxed);
+        actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user];
     }
 }
 
