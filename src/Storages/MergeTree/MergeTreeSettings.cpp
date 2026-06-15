@@ -678,7 +678,7 @@ namespace ErrorCodes
     Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
     )", 0) \
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
-    Default posting list block size for text indexes (bytes).
+    Default posting list block size for text indexes (rows).
     Can be overridden by explicit `posting_list_block_size` index argument.
     )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
