@@ -403,3 +403,6 @@
 	path = contrib/iguana
 	url = https://github.com/ClickHouse/iguana.git
 	branch = main
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd
