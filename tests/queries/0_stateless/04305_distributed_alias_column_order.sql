@@ -311,7 +311,7 @@ SELECT 'local_same_expr';
 SELECT a1, a2 FROM local_same_expr ORDER BY dt DESC LIMIT 1;
 
 SELECT 'distributed_same_expr';
-SELECT a1, a2 FROM dist_same_expr ORDER BY dt DESC LIMIT 1; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT a1, a2 FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 
 DROP TABLE dist_same_expr;
 DROP TABLE local_same_expr;
