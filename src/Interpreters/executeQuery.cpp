@@ -1051,9 +1051,11 @@ public:
         SCOPE_EXIT({ transaction_running = false; });
 
         auto txn = query_context->getCurrentTransaction();
-        /// The current transaction may have been finalized out of band, so there is nothing to commit.
         if (!txn)
+        {
+            chassert(query_context->getSettingsRef()[Setting::ast_fuzzer_runs] > 0);
             return;
+        }
         LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Commit implicit transaction {}", txn->tid);
 
         ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::COMMIT);
@@ -1067,9 +1069,11 @@ public:
         SCOPE_EXIT({ transaction_running = false; });
 
         auto txn = query_context->getCurrentTransaction();
-        /// The current transaction may have been finalized out of band, so there is nothing to roll back.
         if (!txn)
+        {
+            chassert(query_context->getSettingsRef()[Setting::ast_fuzzer_runs] > 0);
             return;
+        }
         LOG_TRACE(getLogger("ImplicitTransactionControlExecutor"), "Rollback implicit transaction {}", txn->tid);
 
         ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
