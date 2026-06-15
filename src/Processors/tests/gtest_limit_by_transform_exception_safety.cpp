@@ -56,6 +56,27 @@ Chunk makeDistinctKeyChunk(UInt64 first_key, UInt64 count)
     return Chunk(Columns{std::move(key_column), std::move(value_column)}, count);
 }
 
+/// One sorted chunk of `num_groups` contiguous groups, each `group_size` rows, with ascending
+/// keys `first_key, first_key + 1, ...`. This is valid sorted-stream input. Under `LIMIT 1 BY
+/// key` only the first row of each group survives, so the kept rows are sparse across a large
+/// chunk: `LimitBySortedStreamTransform::transform` populates all slices in the run loop and
+/// then reaches `materializeSlicesIntoChunk`, whose mask allocation (sized to the whole chunk)
+/// is the after-slice throw point. Keep `num_groups` small so `output_slices` itself never
+/// trips the limit during the loop; keep `group_size` large so the mask allocation does.
+Chunk makeSortedGroupedChunk(UInt64 first_key, UInt64 num_groups, UInt64 group_size)
+{
+    auto key_column = ColumnUInt64::create();
+    auto value_column = ColumnUInt64::create();
+    for (UInt64 g = 0; g < num_groups; ++g)
+        for (UInt64 i = 0; i < group_size; ++i)
+        {
+            key_column->insertValue(first_key + g);
+            value_column->insertValue(i);
+        }
+    const UInt64 count = num_groups * group_size;
+    return Chunk(Columns{std::move(key_column), std::move(value_column)}, count);
+}
+
 }
 
 /// Regression test for the AST fuzzer finding "Logical error: 'output_slices.empty()'"
@@ -107,6 +128,67 @@ TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
     /// exception. Before the fix this tripped `chassert(output_slices.empty())` in debug
     /// builds (and used stale, out-of-range slices in release builds). Use keys outside
     /// the first chunk's range so the result is independent of how far the first chunk got.
+    Chunk second_chunk = makeDistinctKeyChunk(/*first_key=*/ 1000000000, /*count=*/ 4);
+    ASSERT_NO_THROW(runTransform(transform, second_chunk));
+
+    /// Every distinct key survives `LIMIT 1 BY key`, and the output columns must agree on
+    /// the row count (a leaked slice would corrupt this).
+    EXPECT_EQ(second_chunk.getNumRows(), 4u);
+    for (const auto & column : second_chunk.getColumns())
+        EXPECT_EQ(column->size(), second_chunk.getNumRows());
+}
+
+/// Same regression but for the sorted-stream variant `LimitBySortedStreamTransform`, which
+/// has its own `output_slices` scratch buffer and its own after-slice throw point: the
+/// chunk-sized filter mask allocated inside `materializeSlicesIntoChunk` once the slices are
+/// populated. Without the matching SCOPE_EXIT clear in `LimitBySortedStreamTransform::transform`,
+/// re-entry on the next chunk trips `chassert(output_slices.empty())`.
+TEST(LimitBySortedStreamTransform, ClearsOutputSlicesWhenTransformThrows)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    const Int64 prev_hard_limit = thread_tracker.getHardLimit();
+
+    CurrentThread::flushUntrackedMemory();
+    SCOPE_EXIT({
+        thread_tracker.setHardLimit(prev_hard_limit);
+        CurrentThread::flushUntrackedMemory();
+    });
+
+    /// Sorted-stream `LIMIT 1 BY key` over the non-constant "key" column.
+    LimitBySortedStreamTransform transform(makeHeader(), /*group_length_=*/ 1, /*group_offset_=*/ 0, Names{"key"});
+
+    /// First chunk: a few large contiguous groups (already sorted by key). The sorted-stream
+    /// variant has no grouping hash table, so its after-slice throw point is the chunk-sized
+    /// filter mask inside `materializeSlicesIntoChunk`. `LIMIT 1 BY key` keeps only each
+    /// group's first row, so survival is sparse and that mask (one byte per source row) is
+    /// allocated after every slice has been pushed. Clamp the hard limit just above current
+    /// usage so that mask allocation overshoots and throws.
+    Chunk first_chunk = makeSortedGroupedChunk(/*first_key=*/ 0, /*num_groups=*/ 4, /*group_size=*/ 2000000);
+
+    CurrentThread::flushUntrackedMemory();
+    thread_tracker.setHardLimit(thread_tracker.get() + 64 * 1024);
+
+    bool threw = false;
+    try
+    {
+        runTransform(transform, first_chunk);
+    }
+    catch (const Exception & e)
+    {
+        threw = (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    /// Lift the limit before doing anything else so cleanup and the second chunk run freely.
+    thread_tracker.setHardLimit(prev_hard_limit);
+    CurrentThread::flushUntrackedMemory();
+
+    ASSERT_TRUE(threw) << "expected the first chunk to hit the memory limit mid-transform";
+
+    /// Re-enter `transform` exactly as the pipeline executor would after catching the
+    /// exception. Before the fix this tripped `chassert(output_slices.empty())` in debug
+    /// builds (and used stale, out-of-range slices in release builds). Keys ascend past the
+    /// first chunk's range so the second chunk stays valid sorted-stream input.
     Chunk second_chunk = makeDistinctKeyChunk(/*first_key=*/ 1000000000, /*count=*/ 4);
     ASSERT_NO_THROW(runTransform(transform, second_chunk));
 
