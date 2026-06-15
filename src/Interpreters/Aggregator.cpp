@@ -1610,25 +1610,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     AggregateColumns & aggregate_columns,
     bool & no_more_keys) const
 {
-    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
-    /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool track_aggregation_memory = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
-    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (track_aggregation_memory)
-        memory_tracker_switcher.emplace(memory_tracker.get());
-
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
-    /// How to perform the aggregation?
-    if (result.empty())
-    {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
-        result.keys_size = params.keys_size;
-        result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
-    }
 
     /** Constant columns are not supported directly during aggregation.
       * To make them work anyway, we materialize them.
@@ -1656,7 +1640,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
 
 
-        if (!result.isLowCardinality())
+        if (!AggregatedDataVariants::isLowCardinality(method_chosen))
         {
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
             if (column_no_lc.get() != key_columns[i])
@@ -1670,6 +1654,24 @@ bool Aggregator::executeOnBlock(Columns columns,
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
+
+    /// Tracking starts after input materialization if necessary.
+    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
+    /// and query memory trackers, and accounts for the aggregation state across all threads.
+    const bool track_aggregation_memory = memory_tracker && CurrentThread::getMemoryTracker()
+        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    if (track_aggregation_memory)
+        memory_tracker_switcher.emplace(memory_tracker.get());
+
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        initDataVariantsWithSizeHint(result, method_chosen, params);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
+    }
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {

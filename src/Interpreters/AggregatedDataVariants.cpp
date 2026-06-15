@@ -182,7 +182,7 @@ void AggregatedDataVariants::convertToTwoLevel()
     }
 }
 
-bool AggregatedDataVariants::isLowCardinality() const
+bool AggregatedDataVariants::isLowCardinality(Type type)
 {
     switch (type)
     {
