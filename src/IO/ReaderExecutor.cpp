@@ -2730,10 +2730,14 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                 stats += m->stats;
                 stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
                 stats.add(Stats::PrefetchWastedCacheBytes, m->stats.get(Stats::PrefetchIssuedCacheBytes));
-                /// A long connection carried by an abandoned machine is lost with it
-                /// (the worker may have drained part of it); account a still-incomplete
-                /// drop before the machine - and its buffer/slot - are destroyed.
+                /// Account the still-incomplete long connection and destroy it HERE, on
+                /// the query-attached reaping thread, so its pool reset/expire events are
+                /// attributed to this query: left to the machine's shared_ptr, the prefetch
+                /// worker can win the last reference and free it after detaching, leaking
+                /// `DiskConnectionsReset` off-query. Never drain (as `dropLong` does) - this
+                /// is reachable from the noexcept destructor.
                 accountLongDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
+                m->long_conn.reset();
                 return true;
             }),
         abandoned_machines.end());
