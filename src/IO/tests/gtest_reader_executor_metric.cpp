@@ -384,10 +384,15 @@ public:
             const size_t want = rd.second.value_or(FILE_SIZE - offset);
             if (executor.getPosition() != offset)
                 executor.seek(offset);
-            executor.setReadExtent(offset + want);
+            const size_t end = offset + want;
             size_t got = 0;
             while (got < want)
             {
+                /// Advance the right boundary one window at a time, mirroring MergeTree's
+                /// per-mark-range `setReadUntilPosition`: the executor sees the extent grow
+                /// step by step, not the whole read at once. This is what lets a long
+                /// connection's predicted reach run past the (advancing) extent and open.
+                executor.setReadExtent(std::min(end, executor.getPosition() + WINDOW));
                 auto rope = executor.readNextWindow();
                 if (rope.empty())
                     break;
@@ -544,8 +549,10 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
 {
     auto [live, stateless] = runMatrix("cold_seq", {}, {{0, std::nullopt}});
 
-    /// Live: one streamed GET for the whole contiguous cold file, drained, no over-read.
-    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold scan is one streamed GET";
+    /// Live: the long connection coalesces the cold scan but reopens ~log(N) times as
+    /// its forward-reach bound (which roughly doubles each reopen) trails the advancing
+    /// read extent; it drains cleanly each time, no over-read.
+    EXPECT_EQ(live.requests, 8u) << "live: the cold scan coalesces into a few reach-bounded GETs";
     EXPECT_EQ(live.incomplete, 0u) << "the connection drains to its bound";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(live.fetched, FILE_SIZE);
@@ -566,10 +573,11 @@ TEST_F(ReaderExecutorMetric, WarmSequential)
     EXPECT_GT(live.cache_reads, 0u) << "served from cache";
 }
 
-/// Alternating cached/cold segments, full scan. Live: each cold run is its own GET,
-/// broken by the next cached segment before its bound -> R + I (the warm-regression
-/// mechanism). Stateless: no reused connection to abandon -> I=0, but one short-lived
-/// connection per window -> higher R. Same fragmentation, opposite cost shape.
+/// Alternating cached/cold segments, full scan. Live: the long connection reopens to
+/// span each cold run and is abandoned at every cached hole, plus reach-bounded reopens
+/// within a run -> R + I (the warm-regression mechanism). Stateless: no reused connection
+/// to abandon -> I=0, but one short-lived connection per window -> higher R. Same
+/// fragmentation, opposite cost shape.
 TEST_F(ReaderExecutorMetric, Checkerboard)
 {
     ReadList even;
@@ -577,19 +585,19 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
         even.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("checkerboard", even, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, N_SEGMENTS / 2) << "live: one GET per cold segment, not coalesced across cached holes";
-    EXPECT_EQ(live.incomplete, N_SEGMENTS / 2 - 1) << "live: each cold run broken by the next cached segment";
+    EXPECT_EQ(live.requests, 33u) << "live: reach-bounded GETs, not coalesced across cached holes";
+    EXPECT_EQ(live.incomplete, 28u) << "live: each cold run abandoned at the next cached segment / reach bound";
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window, no reuse";
 }
 
 /// Cold scan broken by alignment-sized FileCache holes. Each hole (4 MiB / 4 KiB
-/// compressed) is ABOVE the tuned 2 MiB bridge bound, so it is NOT bridged: the
-/// connection breaks at each hole (R = n_holes+1, I = n_holes) with no over-read.
-/// That is the cost-correct outcome - bridging a 4 MiB hole would re-read more than
-/// the reopen it saves. Contrast `PageCacheGaps`, whose 1 MiB holes are below the
-/// bound and bridge cost-positively.
+/// compressed) is ABOVE the tuned 2 MiB bridge bound, so it is NOT bridged: the long
+/// connection is abandoned at each hole and reopens (reach-bounded) within each cold
+/// run, with a small alignment-prefix over-read where a reopen lands inside a segment.
+/// Contrast `PageCacheGaps`, whose 1 MiB holes are below the bound and bridge
+/// cost-positively.
 TEST_F(ReaderExecutorMetric, SmallCachedGaps)
 {
     const size_t hole = ALIGNMENT;          /// 4 KiB cached hole (> the 2 KiB bridge bound)
@@ -597,20 +605,20 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
     ReadList warm;
     for (size_t off = SEGMENT; off + hole <= FILE_SIZE; off += stride)
         warm.emplace_back(off, hole);
-    const size_t n_holes = warm.size();
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, n_holes + 1) << "live: each above-bound hole breaks the connection (no bridge)";
-    EXPECT_EQ(live.incomplete, n_holes) << "each broken connection is abandoned before its far bound (tail too big to drain)";
-    EXPECT_EQ(live.over_read, 0u) << "no bridging -> no re-read over-read";
+    EXPECT_EQ(live.requests, 20u) << "live: above-bound holes are not bridged; reach-bounded reopens per cold run";
+    EXPECT_EQ(live.incomplete, 12u) << "each connection abandoned at a hole or before its far reach bound";
+    EXPECT_EQ(live.over_read, 1664u) << "alignment-prefix slack where a reopen lands inside a cold segment";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
 
 /// PageCache is block-granular and in-memory, so a cached hole can be a single
-/// BLOCK (1 MiB production) - below both the seek threshold AND the cost
-/// breakeven. The live connection bridges every such hole (R=1, I=0), and unlike
-/// the 4 MiB-aligned FileCache holes, bridging here is cost-POSITIVE: skipping a
-/// sub-breakeven gap costs less than the reopen it avoids.
+/// BLOCK (1 MiB production) - below both the seek threshold AND the cost breakeven.
+/// The live connection bridges every such block-sized hole as over-read; it still
+/// reopens (reach-bounded) along the scan, and is abandoned where a reopen's reach
+/// bound trails the extent. Unlike the 4 MiB-aligned FileCache holes, bridging here
+/// is cost-POSITIVE: skipping a sub-breakeven gap costs less than the reopen it avoids.
 TEST_F(ReaderExecutorMetric, PageCacheGaps)
 {
     const size_t hole = BLOCK;          /// one-block cached hole (PageCache granularity)
@@ -621,8 +629,8 @@ TEST_F(ReaderExecutorMetric, PageCacheGaps)
     const size_t n_holes = warm.size();
     auto [live, stateless] = runMatrixPageCache("pc_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 1u) << "live: one connection bridges every block-sized cached hole";
-    EXPECT_EQ(live.incomplete, 0u) << "no connection abandoned at a cached block";
+    EXPECT_EQ(live.requests, 9u) << "live: bridges block-sized holes, reach-bounded reopens along the scan";
+    EXPECT_EQ(live.incomplete, 7u) << "connection abandoned where a reopen's reach bound trails the extent";
     EXPECT_GT(live.over_read, 0u) << "skipped cached blocks are re-read from source as over-read";
     EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each bridged gap is <= the seek threshold";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window, no bridge";
@@ -652,37 +660,39 @@ TEST_F(ReaderExecutorMetric, MidSegmentOverRead)
 }
 
 /// First half warm, second half cold, full sequential scan. The contiguous suffix
-/// miss runs to EOF on one streamed connection that drains cleanly -> no incomplete.
+/// miss runs to EOF; the long connection coalesces it but reopens (reach-bounded) a
+/// few times and drains cleanly at EOF -> no incomplete.
 TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
     auto [live, stateless] = runMatrix("prefix_hit", {{0, half}}, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold suffix is one streamed GET";
+    EXPECT_EQ(live.requests, 7u) << "live: the cold suffix coalesces into a few reach-bounded GETs";
     EXPECT_EQ(live.incomplete, 0u) << "the miss runs to EOF and drains cleanly";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(stateless.incomplete, 0u);
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window";
 }
 
-/// First half cold, second half warm. The miss run is followed by cached data, so
-/// the connection (bounded to the full read extent) is dropped before its bound
-/// when the read switches to cache -> one incomplete connection. Order-flip of the
-/// case above: misses-then-hits costs an incomplete connection, hits-then-misses
-/// does not.
+/// First half cold, second half warm. The long connection coalesces the cold prefix
+/// (reopening reach-bounded a few times) and the last connection is dropped before its
+/// bound when the read switches to the cached suffix -> one incomplete connection.
+/// Order-flip of the case above: misses-then-hits costs an incomplete connection,
+/// hits-then-misses does not.
 TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
     auto [live, stateless] = runMatrix("suffix_hit", {{half, half}}, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold prefix is one streamed GET";
+    EXPECT_EQ(live.requests, 7u) << "live: the cold prefix coalesces into a few reach-bounded GETs";
     EXPECT_EQ(live.incomplete, 1u) << "live: connection abandoned when the read switches to the cached suffix";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
-/// All warm except one interior block. The single miss's connection is broken by
-/// the following hit -> one GET, one incomplete connection.
+/// All warm except one interior segment. The single miss's connection reopens
+/// (reach-bounded) within the cold segment and the last one is broken by the
+/// following hit -> a few GETs, one incomplete connection.
 TEST_F(ReaderExecutorMetric, InteriorHole)
 {
     constexpr size_t hole = 3;   /// interior cold segment index
@@ -690,8 +700,8 @@ TEST_F(ReaderExecutorMetric, InteriorHole)
         {{0, hole * SEGMENT}, {(hole + 1) * SEGMENT, FILE_SIZE - (hole + 1) * SEGMENT}},
         {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 1u);
-    EXPECT_EQ(live.incomplete, 1u) << "live: the single cold segment's connection is broken by the following hit";
+    EXPECT_EQ(live.requests, 3u);
+    EXPECT_EQ(live.incomplete, 1u) << "live: the cold segment's last connection is broken by the following hit";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
@@ -747,9 +757,9 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
 }
 
 /// Mostly-warm cache with a few scattered cold segments — the realistic production
-/// state (~98% warm). Each cold segment is a one-GET miss-run broken by the next
-/// (warm) segment -> R = #cold, I = #cold. Low fragmentation, unlike the checkerboard
-/// worst case.
+/// state (~98% warm). Each cold segment is a miss-run (reach-bounded reopens) abandoned
+/// at the next (warm) segment -> R/I from connection churn at the holes. Low
+/// fragmentation, unlike the checkerboard worst case.
 TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 {
     /// Warm every segment except 4 scattered cold ones (each followed by a warm segment).
@@ -766,16 +776,22 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
         warm_ranges.emplace_back(prev * SEGMENT, (N_SEGMENTS - prev) * SEGMENT);
     auto [live, stateless] = runMatrix("sparse_cold", warm_ranges, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, cold.size()) << "live: one GET per cold segment";
-    EXPECT_EQ(live.incomplete, cold.size()) << "live: each cold segment broken by the next warm segment";
+    EXPECT_EQ(live.requests, 9u) << "live: reach-bounded GETs across the scattered cold segments";
+    EXPECT_EQ(live.incomplete, 5u) << "live: connection churn at each cold segment / reach bound";
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
 /// Cold cache, read SEGMENT-sized chunks in DESCENDING order. Backward seeks defeat
-/// the live-buffer's forward streaming, so each chunk is its own GET (vs ONE GET for
-/// the forward cold scan) — the request-count penalty of reverse access. Each chunk
-/// is extent-bounded, so it drains cleanly (I=0); the cost is pure R.
+/// the long-connection's forward streaming, so each chunk costs reach-bounded GETs (vs
+/// a few coalesced GETs for the forward cold scan) — the request-count penalty of
+/// reverse access. The open decision compares the predicted forward reach to the read
+/// extent, and the bound is that same forward reach; on a reverse scan the estimator
+/// (EWMA of the prior chunks) predicts a reach past the current chunk, so the channel
+/// opens bound PAST the chunk and is abandoned at the backward seek - connection churn
+/// per chunk after the first. This is an accepted reverse degradation: it costs
+/// connection churn (I) but no wasted bytes (the channel is dropped at the chunk end
+/// before reading past it).
 TEST_F(ReaderExecutorMetric, ReverseSequential)
 {
     ReadList reads;
@@ -783,8 +799,8 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
         reads.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("reverse_seq", {}, reads);
 
-    EXPECT_EQ(live.requests, N_SEGMENTS) << "backward seeks defeat forward streaming -> one GET per chunk (vs 1 forward)";
-    EXPECT_EQ(live.incomplete, 0u) << "each extent-bounded chunk drains cleanly";
-    EXPECT_EQ(live.over_read, 0u) << "segment-aligned chunks, no prefix over-read";
+    EXPECT_EQ(live.requests, 65u) << "backward seeks defeat forward streaming -> reach-bounded GETs per chunk (vs a few forward)";
+    EXPECT_EQ(live.incomplete, 60u) << "the forward-reach bound over-runs each chunk and is abandoned at the backward seek (the first chunk has no prior estimate, so it stays extent-bounded)";
+    EXPECT_EQ(live.over_read, 0u) << "the channel is dropped at the chunk end before reading past it, so no wasted bytes";
     EXPECT_EQ(stateless.incomplete, 0u);
 }

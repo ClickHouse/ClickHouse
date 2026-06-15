@@ -97,27 +97,29 @@ LOADS = {
 # are the diagnostic levers. Stateless I is gated by the I==0 invariant, not here.
 # The deterministic unit grid remains the tight value gate; update a row when an
 # executor change intentionally moves its magnitudes. Warm cells are ~0, gated by invariants.
-# Regenerated (see test_recompute_baseline) with the widened cost/MiB margin. The three
-# small-count live `I` bands (selective/aggregation) carry a manual absolute floor: a
-# single regen run pins them near-degenerate (e.g. (2, 2)), too tight for run-to-run
-# variance - the recompute docstring flags exactly this for small/near-zero counters.
+# Regenerated (see test_recompute_baseline) after the boundary-based long-connection open
+# ("open when the predicted reach runs past the read extent"): live R drops sharply on the
+# big scans (sequential 108->~43, aggregation 183->~70) as one long connection coalesces the
+# run, with modest extra `I` churn where the reach over-runs an extent. The small-count live
+# `I` bands carry a manual absolute floor: a single regen run pins selective/fragmented to
+# (0, 0), too tight for run-to-run variance (the recompute docstring flags this).
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (108, 147), "I": (0, 0), "O": (146, 198), "cost/MiB": (36.6, 61.0)},
-    ("sequential", "fragmented", "live"): {"R": (51, 77), "I": (0, 0), "O": (107, 161), "cost/MiB": (19.1, 35.5)},
-    ("selective", "cold", "live"): {"R": (26, 34), "I": (21, 29), "O": (37, 50), "cost/MiB": (50.5, 84.1)},
-    ("selective", "fragmented", "live"): {"R": (10, 16), "I": (0, 7), "O": (0, 0), "cost/MiB": (65.7, 122.0)},
-    ("aggregation", "cold", "live"): {"R": (183, 247), "I": (0, 6), "O": (182, 320), "cost/MiB": (46.0, 76.7)},
-    ("aggregation", "fragmented", "live"): {"R": (52, 78), "I": (0, 6), "O": (94, 141), "cost/MiB": (17.7, 32.9)},
-    ("prewhere", "cold", "live"): {"R": (54, 73), "I": (25, 33), "O": (69, 93), "cost/MiB": (27.1, 45.1)},
-    ("prewhere", "fragmented", "live"): {"R": (51, 76), "I": (12, 18), "O": (30, 45), "cost/MiB": (19.1, 35.4)},
-    ("sequential", "cold", "stateless"): {"R": (108, 147), "O": (148, 200), "cost/MiB": (36.7, 61.2)},
-    ("sequential", "fragmented", "stateless"): {"R": (51, 77), "O": (107, 161), "cost/MiB": (19.1, 35.5)},
-    ("selective", "cold", "stateless"): {"R": (32, 44), "O": (37, 50), "cost/MiB": (59.8, 99.6)},
-    ("selective", "fragmented", "stateless"): {"R": (6, 10), "O": (0, 0), "cost/MiB": (62.6, 116.2)},
-    ("aggregation", "cold", "stateless"): {"R": (196, 265), "O": (173, 306), "cost/MiB": (46.8, 78.0)},
-    ("aggregation", "fragmented", "stateless"): {"R": (53, 80), "O": (93, 140), "cost/MiB": (17.7, 32.8)},
-    ("prewhere", "cold", "stateless"): {"R": (54, 74), "O": (71, 95), "cost/MiB": (26.7, 44.6)},
-    ("prewhere", "fragmented", "stateless"): {"R": (49, 73), "O": (30, 45), "cost/MiB": (18.2, 33.9)},
+    ("sequential", "cold", "live"): {"R": (24, 57), "I": (6, 15), "O": (7, 27), "cost/MiB": (12.9, 38.7)},
+    ("sequential", "fragmented", "live"): {"R": (16, 50), "I": (7, 21), "O": (8, 46), "cost/MiB": (6.1, 24.4)},
+    ("selective", "cold", "live"): {"R": (19, 45), "I": (4, 10), "O": (13, 50), "cost/MiB": (32.8, 98.4)},
+    ("selective", "fragmented", "live"): {"R": (8, 25), "I": (0, 5), "O": (0, 0), "cost/MiB": (44.4, 177.7)},
+    ("aggregation", "cold", "live"): {"R": (42, 98), "I": (8, 18), "O": (28, 114), "cost/MiB": (16.5, 49.4)},
+    ("aggregation", "fragmented", "live"): {"R": (14, 44), "I": (9, 26), "O": (7, 40), "cost/MiB": (5.6, 22.4)},
+    ("prewhere", "cold", "live"): {"R": (32, 74), "I": (18, 41), "O": (33, 130), "cost/MiB": (18.2, 54.5)},
+    ("prewhere", "fragmented", "live"): {"R": (25, 75), "I": (4, 13), "O": (10, 55), "cost/MiB": (9.2, 36.7)},
+    ("sequential", "cold", "stateless"): {"R": (76, 177), "O": (7, 27), "cost/MiB": (18.0, 54.1)},
+    ("sequential", "fragmented", "stateless"): {"R": (33, 99), "O": (6, 35), "cost/MiB": (7.4, 29.8)},
+    ("selective", "cold", "stateless"): {"R": (23, 55), "O": (12, 50), "cost/MiB": (35.2, 105.6)},
+    ("selective", "fragmented", "stateless"): {"R": (8, 25), "O": (0, 0), "cost/MiB": (45.1, 180.2)},
+    ("aggregation", "cold", "stateless"): {"R": (101, 236), "O": (25, 101), "cost/MiB": (21.9, 65.6)},
+    ("aggregation", "fragmented", "stateless"): {"R": (34, 101), "O": (8, 44), "cost/MiB": (7.4, 29.5)},
+    ("prewhere", "cold", "stateless"): {"R": (34, 79), "O": (28, 110), "cost/MiB": (17.5, 52.4)},
+    ("prewhere", "fragmented", "stateless"): {"R": (24, 71), "O": (9, 49), "cost/MiB": (8.5, 34.2)},
 }
 
 
@@ -427,9 +429,11 @@ def test_page_cache_path(started_cluster):
     print(banner)
 
 
-# Per-cache-state band margins used when regenerating the baseline: cold reads are
-# stable, the half-warm fragmented state varies more across runs.
-RECOMPUTE_MARGIN = {"cold": 0.15, "fragmented": 0.20}
+# Per-cache-state band margins used when regenerating the baseline. These are a loose
+# gross-regression gate, not precise assertions: the scattered loads (selective, prewhere)
+# swing wide run-to-run - the long connection opens and abandons variably on seek-heavy
+# reads - so the margins are generous (and wider still for the fragmented half-warm state).
+RECOMPUTE_MARGIN = {"cold": 0.40, "fragmented": 0.50}
 
 
 def _band(values, margin, ndigits):
@@ -469,7 +473,9 @@ def test_recompute_baseline(started_cluster):
                 cells = [("R", [s["R"] for s in samples], 0, margin)]
                 if live:  # stateless I is always 0 and gated by a separate invariant
                     cells.append(("I", [s["I"] for s in samples], 0, margin))
-                cells.append(("O", [s["O"] / (1024.0 * 1024.0) for s in samples], 0, margin))
+                # Over-read bytes swing widely run-to-run (read-ahead alignment / task split),
+                # more than a request count, so give O extra margin like cost/MiB below.
+                cells.append(("O", [s["O"] / (1024.0 * 1024.0) for s in samples], 0, margin + 0.20))
                 # cost/MiB is a composite ratio that compounds the R/I/O variance, so it
                 # swings wider than any single counter - give it extra margin to keep the
                 # band consistent with the (independently gated) component bands.

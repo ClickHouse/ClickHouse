@@ -642,9 +642,10 @@ private:
     size_t clampReach(size_t reach, size_t phys_off) const;
 
     /// Whether to open a long connection at physical `phys_off`: the estimator's
-    /// predicted contiguous reach exceeds the current read window, a connection slot is
-    /// configured (`reader_executor_use_long_connections`), and pressure is not
-    /// High/Critical (the open is speculative, like prefetch).
+    /// predicted contiguous reach runs past the current read extent (the right boundary
+    /// where a short connection would stop), a connection slot is configured
+    /// (`reader_executor_use_long_connections`), and pressure is not High/Critical (the
+    /// open is speculative, like prefetch).
     bool shouldOpenLong(size_t phys_off) const;
 
     /// The long-connection bound (object-local) for an open at physical `phys_offset`:

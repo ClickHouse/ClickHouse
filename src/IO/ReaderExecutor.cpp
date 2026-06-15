@@ -1771,7 +1771,15 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
         = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
     if (effectivePrefetchWindowSize(level) == 0)
         return false;
-    return clampReach(continuity_tracker.predictedReach(), phys_off) > phys_off + effectiveWindowSize(level);
+    /// Open when the predicted forward reach runs past the current read extent - the right
+    /// boundary where a short connection stops and the next read pays a fresh request. A long
+    /// connection continues past it instead. (The channel is still bounded by `predictedReach`,
+    /// so a reverse/scattered pattern, whose reach does not lead past the extent, stays short.)
+    /// When no extent is advertised, fall back to one window.
+    const size_t boundary = read_extent_end
+        ? (*read_extent_end + data_start_offset)
+        : (phys_off + effectiveWindowSize(level));
+    return clampReach(continuity_tracker.predictedReach(), phys_off) > boundary;
 }
 
 size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
