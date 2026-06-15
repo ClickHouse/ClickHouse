@@ -7,6 +7,11 @@
 -- its set. The set was then executed unbuilt during PartitionPruner key analysis,
 -- raising "Not-ready Set is passed as the second argument for function 'in'".
 -- This is the partition-pruning counterpart of the PREWHERE fix in #100375.
+--
+-- A wrapped GLOBAL IN / GLOBAL NOT IN hits the same partition-pruning path but its
+-- set is intentionally never built before reading (ReadFromRemote fills it later),
+-- so it must be kept out of the single-point monotonic chain entirely, otherwise
+-- pruning raised "Not-ready Set ... for function 'globalIn'".
 
 DROP TABLE IF EXISTS t_107503_part;
 DROP TABLE IF EXISTS t_107503_set;
@@ -31,6 +36,15 @@ SELECT c0 FROM t_107503_nopart WHERE (c0 IN (SELECT c2 FROM t_107503_set)) != 0 
 
 SELECT '-- partitioned + top-level IN';
 SELECT c0 FROM t_107503_part WHERE c0 IN (SELECT c2 FROM t_107503_set) ORDER BY c0;
+
+SELECT '-- partitioned + wrapped GLOBAL IN';
+SELECT c0 FROM t_107503_part WHERE (c0 GLOBAL IN (SELECT c2 FROM t_107503_set)) != 0 ORDER BY c0;
+
+SELECT '-- partitioned + wrapped GLOBAL NOT IN';
+SELECT c0 FROM t_107503_part WHERE (c0 GLOBAL NOT IN (SELECT c2 FROM t_107503_set)) != 0 ORDER BY c0;
+
+SELECT '-- partitioned + top-level GLOBAL IN';
+SELECT c0 FROM t_107503_part WHERE c0 GLOBAL IN (SELECT c2 FROM t_107503_set) ORDER BY c0;
 
 DROP TABLE t_107503_part;
 DROP TABLE t_107503_set;

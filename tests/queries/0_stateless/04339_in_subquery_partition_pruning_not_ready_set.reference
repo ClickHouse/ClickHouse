@@ -9,3 +9,11 @@
 -- partitioned + top-level IN
 2
 3
+-- partitioned + wrapped GLOBAL IN
+2
+3
+-- partitioned + wrapped GLOBAL NOT IN
+1
+-- partitioned + top-level GLOBAL IN
+2
+3

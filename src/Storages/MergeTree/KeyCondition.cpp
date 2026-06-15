@@ -2778,6 +2778,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     {
         auto function_node = node.toFunctionNode();
 
+        /// GLOBAL IN / GLOBAL NOT IN sets are not built before index analysis (ReadFromRemote fills
+        /// them later), so they must not enter the monotonic function chain or pruning would execute
+        /// them against an unbuilt set ("Not-ready Set").
+        if (functionIsGlobalInOperator(function_node.getFunctionName()))
+            return false;
+
         size_t arguments_size = function_node.getArgumentsSize();
         if (arguments_size > 2 || arguments_size == 0)
             return false;
