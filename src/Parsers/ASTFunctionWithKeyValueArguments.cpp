@@ -1,5 +1,6 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
+#include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
@@ -142,9 +143,17 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
 
     has_brackets = r.getBool("has_brackets");
 
-    elements = r.readChild("elements");
+    /// `elements` is parser-produced as an `ASTExpressionList` of `ASTPair`;
+    /// `buildConfigurationFromFunctionWithKeyValueArguments` does `elements->as<const ASTExpressionList>()`
+    /// and dereferences each child as an `ASTPair`. Validate both layers so malformed dictionary
+    /// `clickhouse_json` fails with `BAD_ARGUMENTS` instead of inside dictionary-configuration building.
+    elements = r.readChildOfType<ASTExpressionList>("elements");
     if (!elements)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+    for (const auto & element : elements->children)
+        if (!element || !element->as<ASTPair>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'elements' of ASTFunctionWithKeyValueArguments must contain only key-value pairs during AST JSON deserialization");
     children.push_back(elements);
 }
 

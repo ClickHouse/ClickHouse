@@ -1,7 +1,13 @@
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
@@ -94,14 +100,28 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
 void ASTColumns::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    auto c = r.readChild("columns");
-    if (c) set(columns, c);
-    auto idx = r.readChild("indices");
-    if (idx) set(indices, idx);
-    auto con = r.readChild("constraints");
-    if (con) set(constraints, con);
-    auto proj = r.readChild("projections");
-    if (proj) set(projections, proj);
+
+    /// `columns`/`indices`/`constraints`/`projections` are parser-produced `ASTExpressionList`s whose
+    /// children are concrete declaration nodes. Both layers are downcast later (a wrong outer type makes
+    /// `set` raise `LOGICAL_ERROR`; a wrong child reaches code such as `getColumnsDescription`, which does
+    /// `ast->as<ASTColumnDeclaration &>()`). Validate both so malformed `clickhouse_json` fails closed.
+    auto readDeclarationList = [&]<typename T>(const char * key, ASTExpressionList *& member)
+    {
+        auto child = r.readChildOfType<ASTExpressionList>(key);
+        if (!child)
+            return;
+        for (const auto & element : child->children)
+            if (!element || !element->as<T>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected element type in '{}' of `Columns` during AST JSON deserialization", key);
+        set(member, child);
+    };
+
+    readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
+    readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
+    readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
+    readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
+
     auto pk = r.readChild("primary_key");
     if (pk) set(primary_key, pk);
     auto pkfc = r.readChild("primary_key_from_columns");
@@ -125,7 +145,10 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    auto child = r.readChild("engine");
+    /// `engine` (`ASTFunction`) and `settings` (`ASTSetQuery`) are concrete typed members; a wrong node
+    /// type from malformed `clickhouse_json` would otherwise reach `set` as a `LOGICAL_ERROR` cast
+    /// failure instead of a user-facing `BAD_ARGUMENTS`. The remaining slots are arbitrary expressions.
+    auto child = r.readChildOfType<ASTFunction>("engine");
     if (child)
         set(engine, child);
 
@@ -153,7 +176,7 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(ttl_table, child);
 
-    child = r.readChild("settings");
+    child = r.readChildOfType<ASTSetQuery>("settings");
     if (child)
         set(settings, child);
 }
@@ -543,15 +566,19 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
 
-    auto child = r.readChild("columns_list");
+    /// Restore concrete-typed members with `readChildOfType` so a wrong node type from malformed
+    /// `clickhouse_json` is rejected with `BAD_ARGUMENTS` here, instead of reaching `set` as a
+    /// `LOGICAL_ERROR` cast failure (or, for `sql_security`, a downstream `as<ASTSQLSecurity>`
+    /// invariant violation). The `*_function` and `comment` slots hold arbitrary expressions.
+    auto child = r.readChildOfType<ASTColumns>("columns_list");
     if (child)
         set(columns_list, child);
 
-    child = r.readChild("aliases_list");
+    child = r.readChildOfType<ASTExpressionList>("aliases_list");
     if (child)
         set(aliases_list, child);
 
-    child = r.readChild("storage");
+    child = r.readChildOfType<ASTStorage>("storage");
     if (child)
         set(storage, child);
 
@@ -567,11 +594,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(as_table_function, child);
 
-    child = r.readChild("select");
+    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
         set(select, child);
 
-    child = r.readChild("targets");
+    child = r.readChildOfType<ASTViewTargets>("targets");
     if (child)
         set(targets, child);
 
@@ -579,23 +606,23 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(comment, child);
 
-    child = r.readChild("sql_security");
+    child = r.readChildOfType<ASTSQLSecurity>("sql_security");
     if (child)
         set(sql_security, child);
 
-    child = r.readChild("table_overrides");
+    child = r.readChildOfType<ASTTableOverrideList>("table_overrides");
     if (child)
         set(table_overrides, child);
 
-    child = r.readChild("dictionary_attributes_list");
+    child = r.readChildOfType<ASTExpressionList>("dictionary_attributes_list");
     if (child)
         set(dictionary_attributes_list, child);
 
-    child = r.readChild("dictionary");
+    child = r.readChildOfType<ASTDictionary>("dictionary");
     if (child)
         set(dictionary, child);
 
-    child = r.readChild("refresh_strategy");
+    child = r.readChildOfType<ASTRefreshStrategy>("refresh_strategy");
     if (child)
         set(refresh_strategy, child);
 
@@ -643,6 +670,21 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` sets more than one watermark strategy at once during AST JSON deserialization, "
             "but they are mutually exclusive");
+
+    /// `is_ordinary_view`, `is_materialized_view`, `is_window_view` and `is_dictionary` are mutually
+    /// exclusive query kinds: the parser produces exactly one, and `formatQueryImpl` selects the form via
+    /// an `if (!is_dictionary)` / `if`-`else if` chain over the view flags. Setting several at once would
+    /// let formatting and execution disagree (e.g. both `is_ordinary_view` and `is_materialized_view`
+    /// formats as `CREATE VIEW` while `InterpreterCreateQuery` still runs materialized-view setup).
+    const size_t create_kinds =
+        static_cast<size_t>(is_ordinary_view)
+        + static_cast<size_t>(is_materialized_view)
+        + static_cast<size_t>(is_window_view)
+        + static_cast<size_t>(is_dictionary);
+    if (create_kinds > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` sets more than one of 'is_ordinary_view'/'is_materialized_view'/'is_window_view'/"
+            "'is_dictionary' during AST JSON deserialization, but they are mutually exclusive");
 
     /// `watermark_function` is only meaningful for (and only formatted by) the bounded watermark strategy.
     /// The parser attaches it exactly when the bounded mode is selected, so require it to be present iff

@@ -1,4 +1,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCollation.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -237,12 +241,19 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
             toString(default_specifier));
 
     setDefaultExpression(std::move(default_expression));
-    setComment(r.readChild("comment"));
-    setCodec(r.readChild("codec"));
-    setStatisticsDesc(r.readChild("statistics_desc"));
+
+    /// These sub-slots are parser-produced as fixed concrete types and are downcast later
+    /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`;
+    /// the compression/statistics factories take the `CODEC`/`STATISTICS` `ASTFunction`s). Validate them
+    /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
+    /// `data_type` is left untyped (a type can be `ASTDataType`/`ASTEnumDataType`/`ASTTupleDataType`/...),
+    /// and `ttl`/`default_expression` are arbitrary expressions.
+    setComment(r.readChildOfType<ASTLiteral>("comment"));
+    setCodec(r.readChildOfType<ASTFunction>("codec"));
+    setStatisticsDesc(r.readChildOfType<ASTFunction>("statistics_desc"));
     setTTL(r.readChild("ttl"));
-    setCollation(r.readChild("collation"));
-    setSettings(r.readChild("settings"));
+    setCollation(r.readChildOfType<ASTCollation>("collation"));
+    setSettings(r.readChildOfType<ASTSetQuery>("settings"));
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)

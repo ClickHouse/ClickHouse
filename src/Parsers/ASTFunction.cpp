@@ -21,6 +21,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
 
 
@@ -231,7 +232,11 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
 
     window_name = r.getString("window_name");
 
-    window_definition = r.readChild("window_definition");
+    /// `window_definition` is parser-produced as an `ASTWindowDefinition`; `finishFormatWithWindow`
+    /// prints it inside `OVER (...)` and `QueryTreeBuilder::buildWindow` does
+    /// `window_definition->as<const ASTWindowDefinition &>()`. Reject any other node type from
+    /// malformed `clickhouse_json` here instead of reaching that downstream cast.
+    window_definition = r.readChildOfType<ASTWindowDefinition>("window_definition");
     if (window_definition)
         children.push_back(window_definition);
 

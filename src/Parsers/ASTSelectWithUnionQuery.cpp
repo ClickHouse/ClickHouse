@@ -6,6 +6,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 
 
 namespace DB
@@ -244,6 +245,17 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     if (list_of_selects->children.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST requires a non-empty 'list_of_selects' during AST JSON deserialization");
+    /// Each element must itself be a select-form node: analyzer paths call `buildSelectOrUnionExpression`
+    /// per child and only support `ASTSelectQuery`, `ASTSelectWithUnionQuery`, or
+    /// `ASTSelectIntersectExceptQuery`. Reject any other child type here instead of letting it reach that
+    /// code as an internal AST-invariant violation.
+    for (const auto & select_child : list_of_selects->children)
+        if (!select_child
+            || !(select_child->as<ASTSelectQuery>()
+                 || select_child->as<ASTSelectWithUnionQuery>()
+                 || select_child->as<ASTSelectIntersectExceptQuery>()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`SelectWithUnionQuery` 'list_of_selects' must contain only select queries during AST JSON deserialization");
     children.push_back(list_of_selects);
 
     /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
