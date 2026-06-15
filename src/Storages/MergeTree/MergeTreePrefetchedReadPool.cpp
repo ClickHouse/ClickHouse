@@ -365,11 +365,11 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
                     column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
             }
 
-            /// Use the effective (capped) prefetch buffer size, not the raw public setting. The actual
-            /// read buffer is allocated at `read_settings.remote_fs_settings.large_buffer_size`, which
-            /// `Context::getReadSettings` caps at DBMS_MAX_READ_BUFFER_SIZE. Accounting the raw value
-            /// here would overcharge memory and disable prefetches that the capped reads would fit.
-            const size_t prefetch_buffer_size = reader_settings.read_settings.remote_fs_settings.large_buffer_size;
+            /// Account for the effective buffer the read pipeline actually allocates, so
+            /// `filesystem_prefetch_max_memory_usage` bounds real memory. That is `buffer_size`, which
+            /// `DiskObjectStorage` may raise to `max(buffer_size, large_buffer_size)`.
+            const auto & remote_fs_settings = reader_settings.read_settings.remote_fs_settings;
+            const size_t prefetch_buffer_size = std::max(remote_fs_settings.buffer_size, remote_fs_settings.large_buffer_size);
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, prefetch_buffer_size);
             ++part_stat.required_readers_num;
         };
