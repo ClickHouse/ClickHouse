@@ -71,6 +71,40 @@ namespace
         return std::nullopt;
     }
 
+    /// Returns the effective key of a key-value assignment, evaluating a constant expression key with
+    /// the context the same way `getKeyValueFromAST` (the named collection opening path) does. This is
+    /// needed so that keys written as expressions (e.g. concat('secret_', 'access_key')) are classified
+    /// correctly and their credentials are not persisted into the backup metadata. Without a context a
+    /// non-literal key is rejected (fail closed).
+    std::optional<String> getEffectiveKeyValueArgName(const ASTPtr & ast, const ContextPtr & context)
+    {
+        if (auto name = getKeyValueArgName(ast))
+            return name;
+
+        const auto * func = ast->as<const ASTFunction>();
+        if (!func || func->name != "equals")
+            return std::nullopt;
+
+        const auto * list = func->arguments ? func->arguments->as<const ASTExpressionList>() : nullptr;
+        if (!list || list->children.size() != 2)
+            return std::nullopt;
+
+        if (!context)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot remove credentials from the base backup locator with the non-literal argument key {}",
+                ast->formatForErrorMessage());
+
+        ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(list->children[0], context);
+        const auto * literal = evaluated->as<const ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::Which::String)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The base backup locator argument key {} must be a constant string expression",
+                ast->formatForErrorMessage());
+        return literal->value.safeGet<String>();
+    }
+
     /// Returns the value of a key-value assignment when it is a string literal (e.g., "..." for url='...').
     std::optional<String> getKeyValueArgStringValue(const ASTPtr & ast)
     {
@@ -258,14 +292,15 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
 
     /// S3(collection, secret_access_key = '...') -> S3(collection)
     /// The keys are the `S3` authentication arguments consumed by `registerBackupEngineS3`
-    /// and `S3StorageParsedArguments::collectCredentials`.
+    /// and `S3StorageParsedArguments::collectCredentials`. The key is resolved with the context, so
+    /// that an expression key (e.g. concat('secret_', 'access_key')) is recognized as well.
     res.kv_args.erase(
         std::remove_if(
             res.kv_args.begin(),
             res.kv_args.end(),
-            [](const ASTPtr & kv_arg)
+            [&context](const ASTPtr & kv_arg)
             {
-                auto key = getKeyValueArgName(kv_arg);
+                auto key = getEffectiveKeyValueArgName(kv_arg, context);
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
                         || *key == "role_session_name" || *key == "external_id");
@@ -278,7 +313,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
     /// S3(collection, url = 'https://...?X-Amz-Signature=...') -> redact the `url` override as well
     for (auto & kv_arg : res.kv_args)
     {
-        auto key = getKeyValueArgName(kv_arg);
+        auto key = getEffectiveKeyValueArgName(kv_arg, context);
         if (!key || *key != "url")
             continue;
 
