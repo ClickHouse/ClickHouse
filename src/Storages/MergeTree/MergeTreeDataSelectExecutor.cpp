@@ -660,7 +660,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (minmax_idx_condition)
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
-    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date] && (minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue() && partition_pruner->isUseless()))
+    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
+        && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        && (!partition_pruner || partition_pruner->isUseless()))
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         const auto & partition_columns_names = partition_key.expression->getRequiredColumns();
