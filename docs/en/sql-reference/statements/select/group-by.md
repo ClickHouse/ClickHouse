@@ -367,6 +367,41 @@ Aggregation is one of the most important features of a column-oriented DBMS, and
 
 The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution.
 
+### TopN Aggregation Optimization {#topn-aggregation-optimization}
+
+For queries of the form `GROUP BY ... ORDER BY aggregate LIMIT K`, ClickHouse can fuse aggregation, sorting, and limiting into a single optimized pass with early termination.
+This is controlled by the [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) setting (enabled by default).
+
+When the MergeTree table is sorted by the ORDER BY aggregate's argument (for example, `ORDER BY max(ts) DESC` on a table with `ORDER BY ts`), the optimizer rewrites eligible queries to use a `TopNAggregating` operator that reads data in key order. Each group's aggregate result is determined by its first occurrence, so the scan terminates early after `K` distinct groups instead of reading the entire table. This reduces both I/O and memory to `O(K)`.
+
+**Eligibility requirements:**
+
+- All aggregate functions must be from the `min`/`max`/`any`/`argMin`/`argMax` family. Every non-`any` aggregate must operate on the same determining argument as the `ORDER BY` aggregate; `any` may take any argument.
+- The `ORDER BY` expression must reference exactly one aggregate, whose argument is the first column of the table sorting key.
+- The sort direction must be compatible with the aggregate (for example, `max` + `DESC` or `min` + `ASC`).
+- No `OFFSET`, `WITH TIES`, `HAVING`, or grouping sets.
+
+**Cardinality gate.** The optimization only helps when `LIMIT` is small relative to the number of distinct groups (otherwise it would scan most of the table in a single thread). It is gated by two settings:
+
+- [topn_aggregation_max_ndv_ratio](/operations/settings/settings#topn_aggregation_max_ndv_ratio) (default `0.5`): with column `uniq` statistics on the GROUP BY columns, apply only when `LIMIT <= ndv * ratio`. Set to `0` to disable the statistics-based path.
+- [topn_aggregation_max_limit](/operations/settings/settings#topn_aggregation_max_limit) (default `1000`): when `uniq` statistics are unavailable, apply when `LIMIT` does not exceed this value. Set to `0` to require statistics.
+
+**Other limitations:**
+
+- Disabled for nullable sorting-key columns, collation-sensitive `ORDER BY`, and reverse-flagged (`DESC`) sorting keys.
+
+**Example:**
+
+```sql
+SET optimize_topn_aggregation = 1;
+
+SELECT user_id, max(event_time) AS latest
+FROM events
+GROUP BY user_id
+ORDER BY latest DESC
+LIMIT 10;
+```
+
 ### GROUP BY in External Memory {#group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.

@@ -4000,6 +4000,26 @@ Possible values:
 - 0 — Sharded aggregation optimization is disabled.
 - 1 — Sharded aggregation optimization is enabled.
 )", 0) \
+    DECLARE(Bool, optimize_topn_aggregation, true, R"(
+Fuses `GROUP BY ... ORDER BY aggregate LIMIT K` into a single pass with early termination
+when the MergeTree table is sorted by the ORDER BY aggregate's argument (e.g. table
+`ORDER BY start_time`, query `ORDER BY max(start_time) DESC`): reading in physical order, each
+group's aggregate is decided by its first row, so the scan stops after K distinct groups.
+
+Applies to min/max/any/argMin/argMax aggregates on the same argument, single-column ORDER BY,
+no OFFSET/WITH TIES/HAVING. Skipped for large LIMIT relative to the GROUP BY cardinality (see
+`topn_aggregation_max_ndv_ratio` / `topn_aggregation_max_limit`) and for nullable / collation-sensitive ORDER BY.
+)", 0) \
+    DECLARE(Float, topn_aggregation_max_ndv_ratio, 0.5, R"(
+For the `optimize_topn_aggregation` optimization: apply it only when `LIMIT <= ndv * topn_aggregation_max_ndv_ratio`,
+where `ndv` is the estimated number of distinct GROUP BY keys from column `uniq` statistics. Early termination only
+pays off when `LIMIT` is small relative to the group cardinality. Set to 0 to never apply the optimization when
+statistics are available.
+)", 0) \
+    DECLARE(UInt64, topn_aggregation_max_limit, 1000, R"(
+For the `optimize_topn_aggregation` optimization: when `uniq` statistics are not available on the GROUP BY columns,
+apply the optimization when `LIMIT` does not exceed this value. Set to 0 to require statistics (never apply without them).
+)", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \
