@@ -41,25 +41,14 @@ if (ARCH_AARCH64)
 
 elseif (ARCH_AMD64)
     # x86 architecture
-
-    macro(ggml_append_intrinsic intrin darwin_intrin)
-        if (OS_DARWIN)
-            execute_process(COMMAND sysctl hw.optional.${darwin_intrin} OUTPUT_VARIABLE GGML_${intrin})
-        elseif(OS_LINUX)
-            execute_process(COMMAND grep "${intrin} " /proc/cpuinfo OUTPUT_VARIABLE GGML_${intrin})
-        endif()
-
-        if ((OS_DARWIN AND "${GGML_${intrin}}" MATCHES "${darwin_intrin}") OR (OS_LINUX AND "${GGML_${intrin}}" MATCHES "${intrin}"))
-            list(APPEND GGML_ARCH_FLAGS "-m${intrin}")
-        endif()
-    endmacro()
-
-    ggml_append_intrinsic(f16c f16c)
-    ggml_append_intrinsic(avx avx1_0)
-    ggml_append_intrinsic(avx2 avx2_0)
-    ggml_append_intrinsic(fma fma)
-    # ggml_append_intrinsic(avx512f avx512f)
-    # ggml_append_intrinsic(avx512vbmi avx512vbmi)
+    #
+    # Do not probe the build host (`/proc/cpuinfo`, `sysctl`) for AVX/FMA/F16C: that makes the
+    # produced object code depend on the machine that happened to run the build, which breaks
+    # official packages and cross builds (a binary built on an AVX2 host can fault on an older
+    # x86-64 runtime host). Instead inherit ClickHouse's global target microarchitecture level
+    # (`-march=x86-64-v${X86_ARCH_LEVEL}`, default `v3` which already enables AVX2/FMA/F16C).
+    # ggml's source guards its SIMD kernels with `#if defined(__AVX2__)` etc., so it compiles to
+    # exactly the configured baseline and stays portable.
 
 elseif (ARCH_PPC64LE)
     # PowerPC64LE CPU architecture (ClickHouse supports little-endian ppc64 only)
@@ -114,10 +103,10 @@ set_target_properties(_ggml PROPERTIES PUBLIC_HEADER ${GGML_PUBLIC_HDRS})
 
 target_link_libraries(_ggml PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 
-find_library(MATH_LIB m) # -lm
-if (MATH_LIB)
-    target_link_libraries(_ggml PUBLIC ${MATH_LIB})
-endif()
+# Do not probe for and link the build host's system libm here: that would override ClickHouse's
+# bundled math (llvm-libc, see ENABLE_LLVM_LIBC_MATH) in the final `clickhouse` binary and change
+# last-ULP results of unrelated functions (e.g. geo distances). The math symbols ggml needs are
+# already provided by the standard libraries ClickHouse links (`-lm` in DEFAULT_LIBS).
 
 #
 # ClickHouse alias
