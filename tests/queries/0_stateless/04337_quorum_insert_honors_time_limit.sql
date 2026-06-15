@@ -31,14 +31,16 @@ SYSTEM STOP FETCHES quorum_throw_r2;
 SYSTEM STOP FETCHES quorum_break_r2;
 
 -- timeout_overflow_mode = 'throw' (default): checkTimeLimit() throws TIMEOUT_EXCEEDED directly.
+-- async_insert = 0 so this is a synchronous quorum INSERT regardless of the run configuration (the AsyncInsert
+-- stateless runs force async_insert = 1, and async inserts with quorum require insert_quorum_parallel = 1).
 INSERT INTO quorum_throw_r1
-SETTINGS insert_quorum = 2, insert_quorum_parallel = 0, insert_quorum_timeout = 6000000, max_execution_time = 3, timeout_overflow_mode = 'throw', insert_keeper_fault_injection_probability = 0
+SETTINGS insert_quorum = 2, insert_quorum_parallel = 0, insert_quorum_timeout = 6000000, max_execution_time = 3, timeout_overflow_mode = 'throw', async_insert = 0, insert_keeper_fault_injection_probability = 0
 VALUES (1); -- { serverError TIMEOUT_EXCEEDED }
 
 -- timeout_overflow_mode = 'break': checkTimeLimit() returns false; the wait must still stop and fail rather than
 -- hang until insert_quorum_timeout or report a successful "break" with unknown quorum status.
 INSERT INTO quorum_break_r1
-SETTINGS insert_quorum = 2, insert_quorum_parallel = 0, insert_quorum_timeout = 6000000, max_execution_time = 3, timeout_overflow_mode = 'break', insert_keeper_fault_injection_probability = 0
+SETTINGS insert_quorum = 2, insert_quorum_parallel = 0, insert_quorum_timeout = 6000000, max_execution_time = 3, timeout_overflow_mode = 'break', async_insert = 0, insert_keeper_fault_injection_probability = 0
 VALUES (1); -- { serverError TIMEOUT_EXCEEDED }
 
 DROP TABLE quorum_throw_r1 SYNC;
