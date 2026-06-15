@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS c;
 DROP TABLE IF EXISTS d;
 DROP TABLE IF EXISTS e;
 
+SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 1;
 
 CREATE TABLE a (x Int32, z String, w Int32) ENGINE = MergeTree ORDER BY tuple();
