@@ -1,5 +1,6 @@
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+#include <Common/UTF8Helpers.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
@@ -62,6 +63,23 @@ bool hasExactlyOneBracketsExpansion(const std::string & input)
 
 namespace GlobAST
 {
+
+namespace
+{
+/// Zero-padding width for a range, matching the legacy regex contract: padding is
+/// derived from the LOWER endpoint after normalization. It applies only when the
+/// lower endpoint's text has a leading zero and more than one digit; the width is
+/// then the maximum of both endpoints' digit counts. So {0..010} -> width 1 ->
+/// unpadded (matches f10, not f010), while {00..10} -> width 2.
+size_t rangePadWidth(const Range & range)
+{
+    const bool lo_is_start = range.start <= range.end;
+    const size_t lo_digits = lo_is_start ? range.start_digit_count : range.end_digit_count;
+    const size_t hi_digits = lo_is_start ? range.end_digit_count : range.start_digit_count;
+    const bool lo_leading_zero = lo_is_start ? range.start_zero_padded : range.end_zero_padded;
+    return (lo_leading_zero && lo_digits > 1) ? std::max(lo_digits, hi_digits) : 0;
+}
+}
 
 std::string Expression::dump() const
 {
@@ -349,12 +367,7 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
                     "Consider simplifying the glob pattern.",
                     result.size(), range_size, max_expansion);
 
-            /// Determine zero-padding width: if either endpoint is zero-padded with >1 digit,
-            /// use the max digit count; otherwise no padding (values are unpadded).
-            const size_t pad_width = ((range.start_zero_padded && range.start_digit_count > 1)
-                                       || (range.end_zero_padded && range.end_digit_count > 1))
-                ? std::max(range.start_digit_count, range.end_digit_count)
-                : 0;
+            const size_t pad_width = rangePadWidth(range);
 
             std::vector<std::string> expanded;
             expanded.reserve(result.size() * range_size);
@@ -440,10 +453,15 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                 {
                     case WildcardType::QUESTION:
                     {
-                        /// Match exactly one character that is not '/'.
+                        /// Match exactly one character that is not '/'. Like RE2's
+                        /// `[^/]` in UTF-8 mode, a multibyte code point counts as one
+                        /// character, so advance by the whole UTF-8 sequence.
                         if (pos >= candidate.size() || candidate[pos] == '/')
                             return memoize(false);
-                        ++pos;
+                        size_t char_len = UTF8::seqLength(static_cast<UInt8>(candidate[pos]));
+                        if (pos + char_len > candidate.size())
+                            char_len = 1;
+                        pos += char_len;
                         ++expr_idx;
                         break;
                     }
@@ -464,12 +482,30 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
 
                     case WildcardType::DOUBLE_ASTERISK:
                     {
-                        /// Match zero or more characters that are not '{' or '}'.
+                        /// Legacy translates "**" to the regex `[^/]*[^{}]*`: a run of
+                        /// non-'/' characters followed by a run of non-'{','}' ones.
+                        /// A consumed prefix is valid iff no brace appears at or after
+                        /// the first '/'. Since braces and slashes only accumulate as the
+                        /// prefix grows, once invalid it stays invalid, so we can stop.
                         ++expr_idx;
+                        size_t first_slash = std::string_view::npos;
+                        size_t last_brace = std::string_view::npos;
                         for (size_t len = 0; pos + len <= candidate.size(); ++len)
                         {
-                            if (len > 0 && (candidate[pos + len - 1] == '{' || candidate[pos + len - 1] == '}'))
-                                break;
+                            if (len > 0)
+                            {
+                                const char c = candidate[pos + len - 1];
+                                if (c == '/' && first_slash == std::string_view::npos)
+                                    first_slash = len - 1;
+                                if (c == '{' || c == '}')
+                                    last_brace = len - 1;
+
+                                const bool valid = first_slash == std::string_view::npos
+                                    || last_brace == std::string_view::npos
+                                    || last_brace < first_slash;
+                                if (!valid)
+                                    break;
+                            }
                             if (matchesImpl(candidate, pos + len, expr_idx, memo))
                                 return memoize(true);
                         }
@@ -485,34 +521,30 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
 
                 const size_t lo = std::min(range.start, range.end);
                 const size_t hi = std::max(range.start, range.end);
-                const size_t pad_width = ((range.start_zero_padded && range.start_digit_count > 1)
-                                          || (range.end_zero_padded && range.end_digit_count > 1))
-                    ? std::max(range.start_digit_count, range.end_digit_count)
-                    : 0;
+                const size_t pad_width = rangePadWidth(range);
 
                 if (pad_width > 0)
                 {
                     /// Zero-padded range: consume exactly pad_width digits.
                     if (pos + pad_width > candidate.size())
                         return memoize(false);
-                    for (size_t i = 0; i < pad_width; ++i)
-                        if (candidate[pos + i] < '0' || candidate[pos + i] > '9')
-                            return memoize(false);
-
-                    /// Overflow guard: size_t can hold at most 19 decimal digits (10^19 < 2^64).
-                    if (pad_width > 19)
-                        return memoize(false);
 
                     size_t value = 0;
+                    bool overflow = false;
                     for (size_t i = 0; i < pad_width; ++i)
                     {
-                        value = value * 10 + static_cast<size_t>(candidate[pos + i] - '0');
-                        /// Early exit: once value exceeds hi, no further digits can bring it back.
-                        if (value > hi)
+                        const char ch = candidate[pos + i];
+                        if (ch < '0' || ch > '9')
+                            return memoize(false);
+                        /// Checked accumulation instead of a digit-count cap, so the full
+                        /// size_t range (e.g. up to 18446744073709551615) is matchable.
+                        overflow |= common::mulOverflow<size_t>(value, 10, value);
+                        overflow |= common::addOverflow<size_t>(value, static_cast<size_t>(ch - '0'), value);
+                        if (overflow || value > hi)
                             return memoize(false);
                     }
 
-                    if (value < lo || value > hi)
+                    if (value < lo)
                         return memoize(false);
 
                     pos += pad_width;
@@ -538,23 +570,22 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                         if (digit_count > 1 && candidate[pos] == '0')
                             break; /// all longer counts would also have a leading zero
 
-                        /// Overflow guard: size_t can hold at most 19 decimal digits.
-                        if (digit_count > 19)
-                            break;
-
                         size_t value = 0;
-                        bool overflows_hi = false;
+                        bool overflow = false;
                         for (size_t i = 0; i < digit_count; ++i)
                         {
-                            value = value * 10 + static_cast<size_t>(candidate[pos + i] - '0');
-                            if (value > hi)
-                            {
-                                overflows_hi = true;
+                            overflow |= common::mulOverflow<size_t>(value, 10, value);
+                            overflow |= common::addOverflow<size_t>(value, static_cast<size_t>(candidate[pos + i] - '0'), value);
+                            if (overflow || value > hi)
                                 break;
-                            }
                         }
 
-                        if (!overflows_hi && value >= lo && value <= hi)
+                        /// Once the value exceeds hi (or overflows size_t), every longer
+                        /// digit count only makes it larger, so we can stop entirely.
+                        if (overflow || value > hi)
+                            break;
+
+                        if (value >= lo)
                         {
                             if (matchesImpl(candidate, pos + digit_count, expr_idx, memo))
                                 return memoize(true);
@@ -570,12 +601,40 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                 const auto & enum_values = std::get<std::vector<std::string_view>>(expr.getData());
                 ++expr_idx;
 
+                /// Match one alternative against candidate starting at `start`. A '?' in an
+                /// alternative is a wildcard for one non-'/' code point (legacy allows '?'
+                /// inside enums); other characters match literally. Returns the candidate
+                /// position past the alternative, or nullopt on mismatch.
+                auto match_alternative = [&](std::string_view alt, size_t start) -> std::optional<size_t>
+                {
+                    size_t cp = start;
+                    for (size_t ap = 0; ap < alt.size(); ++ap)
+                    {
+                        if (cp >= candidate.size())
+                            return std::nullopt;
+                        if (alt[ap] == '?')
+                        {
+                            if (candidate[cp] == '/')
+                                return std::nullopt;
+                            size_t char_len = UTF8::seqLength(static_cast<UInt8>(candidate[cp]));
+                            if (cp + char_len > candidate.size())
+                                char_len = 1;
+                            cp += char_len;
+                        }
+                        else
+                        {
+                            if (candidate[cp] != alt[ap])
+                                return std::nullopt;
+                            ++cp;
+                        }
+                    }
+                    return cp;
+                };
+
                 /// Try each alternative.
                 for (const auto & alt : enum_values)
                 {
-                    if (pos + alt.size() <= candidate.size()
-                        && candidate.substr(pos, alt.size()) == alt
-                        && matchesImpl(candidate, pos + alt.size(), expr_idx, memo))
+                    if (auto end = match_alternative(alt, pos); end && matchesImpl(candidate, *end, expr_idx, memo))
                         return memoize(true);
                 }
                 return memoize(false);
@@ -661,6 +720,16 @@ void GlobString::parse()
                 continue;
             }
 
+            /// Legacy treats a brace group containing '*' as literal text, not an enum
+            /// (its enum pattern excludes '*'). Treat the '{' as a literal character so
+            /// the '*' inside is parsed as a wildcard, matching legacy semantics.
+            if (matcher_expression.contains('*'))
+            {
+                expressions.emplace_back(input.substr(position, 1));
+                position += 1;
+                continue;
+            }
+
             auto enum_matcher = tryParseEnumMatcher(matcher_expression);
 
             if (enum_matcher.empty())
@@ -671,6 +740,12 @@ void GlobString::parse()
 
             has_globs = true;
             has_enums = true;
+
+            /// Enum alternatives may contain '?' wildcards (legacy allows them inside
+            /// enums). Flag this so callers do not treat the alternatives as exact keys
+            /// for expansion — the '?' must be matched, not taken literally.
+            if (matcher_expression.contains('?'))
+                has_question_or_asterisk = true;
 
             continue;
         }

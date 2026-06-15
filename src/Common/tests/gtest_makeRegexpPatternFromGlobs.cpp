@@ -244,6 +244,14 @@ TEST(Common, GlobASTExpand)
     EXPECT_EQ(GlobAST::GlobString("f{01..03}.csv").expand(1000, true), V({"f01.csv", "f02.csv", "f03.csv"}));
     EXPECT_EQ(GlobAST::GlobString("f{001..003}.csv").expand(1000, true), V({"f001.csv", "f002.csv", "f003.csv"}));
 
+    // Mixed-width padding derives from the lower endpoint (legacy parity):
+    // {0..010} has a one-digit lower endpoint, so values are unpadded.
+    EXPECT_EQ(GlobAST::GlobString("f{0..010}.csv").expand(1000, true),
+              V({"f0.csv", "f1.csv", "f2.csv", "f3.csv", "f4.csv", "f5.csv", "f6.csv", "f7.csv", "f8.csv", "f9.csv", "f10.csv"}));
+    // {00..10} has a two-digit lower endpoint, so values are padded to width 2.
+    EXPECT_EQ(GlobAST::GlobString("f{00..10}.csv").expand(1000, true),
+              V({"f00.csv", "f01.csv", "f02.csv", "f03.csv", "f04.csv", "f05.csv", "f06.csv", "f07.csv", "f08.csv", "f09.csv", "f10.csv"}));
+
     // Range + enum cartesian product.
     EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expand(1000, true), V({"a1.csv", "a2.csv", "a3.csv", "b1.csv", "b2.csv", "b3.csv"}));
 
@@ -430,7 +438,39 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("f{0..10}{0..10}", "f00", true),
         std::make_tuple("f{0..10}{0..10}", "f1010", true),
         std::make_tuple("f{0..10}{0..10}", "f55", true),
-        std::make_tuple("f{0..10}{0..10}", "f110", true)  // 1+10: both in range
+        std::make_tuple("f{0..10}{0..10}", "f110", true),  // 1+10: both in range
+
+        // --- Wildcards inside enum alternatives (legacy parity: '?' is a wildcard) ---
+        std::make_tuple("file{a?,b?}.csv", "filea1.csv", true),
+        std::make_tuple("file{a?,b?}.csv", "fileb9.csv", true),
+        std::make_tuple("file{a?,b?}.csv", "filec1.csv", false),  // 'c' not an alternative
+        std::make_tuple("file{a?,b?}.csv", "filea.csv", false),   // '?' needs one char
+        std::make_tuple("file{a?,b?}.csv", "filea/.csv", false),  // '?' does not match '/'
+        std::make_tuple("{ab?,cd?}", "abx", true),
+        std::make_tuple("{ab?,cd?}", "cd9", true),
+        std::make_tuple("{ab?,cd?}", "ab", false),
+        // '*' inside braces is not an enum — braces are literal, '*' is a wildcard.
+        std::make_tuple("{a*,b*}", "axyz", false),
+        std::make_tuple("{a*,b*}", "{axyz,b}", true),
+
+        // --- Mixed-width range padding derives from the lower endpoint (legacy parity) ---
+        std::make_tuple("f{0..010}", "f10", true),    // width 1 -> unpadded
+        std::make_tuple("f{0..010}", "f5", true),
+        std::make_tuple("f{0..010}", "f010", false),  // not zero-padded to 3
+        std::make_tuple("f{00..10}", "f00", true),    // width 2 -> padded
+        std::make_tuple("f{00..10}", "f0", false),
+
+        // --- Full size_t range endpoints (checked accumulation, no 19-digit cap) ---
+        std::make_tuple("v{0..18446744073709551615}", "v18446744073709551615", true),
+        std::make_tuple("v{0..18446744073709551615}", "v42", true),
+
+        // --- '?' matches a whole UTF-8 code point, like RE2 [^/] ---
+        std::make_tuple("file?.csv", "file\xc3\xa9.csv", true),  // fileé.csv
+        std::make_tuple("?", "\xc3\xa9", true),                     // é
+
+        // --- "**" allows braces before the first slash (legacy [^/]*[^{}]*) ---
+        std::make_tuple("/**", "/a{b}c", true),
+        std::make_tuple("/**", "/dir/file", true)
     )
 );
 
