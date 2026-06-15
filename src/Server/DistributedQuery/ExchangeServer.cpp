@@ -1,0 +1,264 @@
+#ifdef OS_LINUX
+#include <Server/DistributedQuery/ExchangeServer.h>
+#include <Server/DistributedQuery/ExchangeConnections.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Common/PODArray.h>
+#include <Common/Stopwatch.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/CurrentMetrics.h>
+#include <Poco/Net/NetException.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ExchangeServerThreads;
+    extern const Metric ExchangeServerThreadsActive;
+    extern const Metric ExchangeServerThreadsScheduled;
+}
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int PROTOCOL_VERSION_MISMATCH;
+}
+
+/// Bounds the handshake thread pool: enough threads to absorb bursts of concurrent connections
+/// without serializing on the accept thread, while staying bounded. Handshakes are short-lived,
+/// so idle threads are not retained.
+static constexpr size_t HANDSHAKE_POOL_MAX_THREADS = 64;
+static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 0;
+static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
+
+ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_)
+    : connections(std::move(connections_))
+    , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
+    , accept_thread("ExchangeServer")
+    , handshake_pool(
+        CurrentMetrics::ExchangeServerThreads,
+        CurrentMetrics::ExchangeServerThreadsActive,
+        CurrentMetrics::ExchangeServerThreadsScheduled,
+        HANDSHAKE_POOL_MAX_THREADS, HANDSHAKE_POOL_MAX_FREE_THREADS, HANDSHAKE_POOL_QUEUE_SIZE)
+    , stopped(true)
+    , log(getLogger("ExchangeServer"))
+{
+}
+
+ExchangeServer::~ExchangeServer()
+{
+    try
+    {
+        stop();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
+
+void ExchangeServer::start()
+{
+    LOG_DEBUG(log, "Starting ExchangeServer on {}", server_socket.address().toString());
+    stopped = false;
+    accept_thread.start(*this);
+}
+
+
+void ExchangeServer::stop()
+{
+    if (!stopped)
+    {
+        stopped = true;
+        accept_thread.join();
+        /// Finish in-flight handshakes (each bounded by HELLO_TIMEOUT_SECONDS) before `connections`
+        /// is torn down.
+        handshake_pool.wait();
+    }
+}
+
+void ExchangeServer::run()
+{
+    while (!stopped)
+    {
+        Poco::Timespan timeout(250000);
+        try
+        {
+            if (server_socket.poll(timeout, Poco::Net::Socket::SELECT_READ))
+            {
+                Poco::Net::StreamSocket socket;
+                try
+                {
+                    socket = server_socket.acceptConnection();
+                }
+                // Termination request
+                catch (Poco::InvalidArgumentException &)
+                {
+                    break;
+                }
+
+                /// Run the handshake on the pool, not inline, so a slow peer does not stall the
+                /// accept loop and block subsequent connections. Drop the connection if the pool
+                /// rejects the job (queue full or shutting down).
+                try
+                {
+                    handshake_pool.scheduleOrThrowOnError(
+                        [accepted = socket, conns = connections, task_log = log]()
+                        {
+                            try
+                            {
+                                handleConnection(accepted, conns, task_log);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(task_log);
+                            }
+                        });
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
+            }
+        }
+        catch (Poco::Exception &)
+        {
+            tryLogCurrentException(log);
+            Poco::Thread::sleep(50);
+        }
+    }
+}
+
+namespace
+{
+    /// Read exactly `size` bytes from a blocking socket. Throws on EOF or transport error.
+    /// On a blocking socket with setReceiveTimeout, EAGAIN cannot surface (Poco raises
+    /// TimeoutException instead), so the would-block return from `tryReceive` would
+    /// indicate the socket was reconfigured non-blocking by mistake — we treat it as an error.
+    void receiveAll(Poco::Net::StreamSocket & socket, void * buffer, size_t size, const String & description, const Stopwatch & handshake_watch)
+    {
+        char * dst = static_cast<char *>(buffer);
+        size_t position = 0;
+        while (position < size)
+        {
+            /// Absolute deadline across the whole handshake: the per-call receive timeout alone does
+            /// not stop a peer that dribbles one byte just under the timeout and keeps this inline
+            /// accept thread (and thus all later connections) occupied indefinitely.
+            if (handshake_watch.elapsedSeconds() > StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS)
+                throw Poco::Net::NetException(fmt::format(
+                    "Handshake from {} exceeded {}s while receiving {}",
+                    socket.peerAddress().toString(), StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, description));
+
+            ssize_t received = StreamingExchangeProtocol::tryReceive(socket, dst + position, size - position, description);
+            if (received == 0)
+                throw Poco::Net::NetException(fmt::format(
+                    "Failed to receive {} from {}, socket reported would-block on a blocking handshake after {} of {} bytes",
+                    description, socket.peerAddress().toString(), position, size));
+            position += received;
+        }
+    }
+}
+
+void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log)
+{
+    LOG_TRACE(log, "Connection from {}", socket.peerAddress().toString());
+
+    /// The handshake runs inline on the accept thread on a blocking socket.
+    /// Apply per-call timeouts so a silent or stalling peer cannot hold this thread
+    /// (and block subsequent accepts) for longer than HELLO_TIMEOUT_SECONDS.
+    Poco::Timespan hello_timeout(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0);
+    socket.setReceiveTimeout(hello_timeout);
+    socket.setSendTimeout(hello_timeout);
+
+    Stopwatch handshake_watch;
+
+    StreamingExchangeProtocol::PacketHeader header{};
+    receiveAll(socket, &header, sizeof(header), "SourceHello header", handshake_watch);
+
+    if (header.packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Unexpected packet type 0x{:x} from {} (expected SourceHello 0x{:x})",
+            header.packet_type, socket.peerAddress().toString(),
+            static_cast<UInt64>(StreamingExchangeProtocol::PacketType::SourceHello));
+
+    if (header.bytes_size > StreamingExchangeProtocol::MAX_HELLO_BODY_BYTES)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "SourceHello body size {} from {} exceeds the limit {}",
+            header.bytes_size, socket.peerAddress().toString(),
+            StreamingExchangeProtocol::MAX_HELLO_BODY_BYTES);
+
+    if (header.bytes_size < sizeof(UInt64))
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "SourceHello body size {} from {} is too small to contain the protocol version",
+            header.bytes_size, socket.peerAddress().toString());
+
+    PODArray<char> body_buffer(header.bytes_size);
+    if (!body_buffer.empty())
+        receiveAll(socket, body_buffer.data(), body_buffer.size(), "SourceHello body", handshake_watch);
+
+    /// Read only the version field first. The layout of fields after it can change between
+    /// protocol versions, so a peer on a different version must not have its body further parsed.
+    ReadBufferFromMemory body_in(body_buffer.data(), body_buffer.size());
+    StreamingExchangeProtocol::SourceHelloBody source_hello;
+    source_hello.source_version = StreamingExchangeProtocol::SourceHelloBody::readVersion(body_in);
+
+    WriteBufferFromOwnString reply_body;
+    StreamingExchangeProtocol::SinkHelloBody sink_hello{.sink_version = StreamingExchangeProtocol::PROTOCOL_VERSION};
+    sink_hello.write(reply_body);
+    reply_body.finalize();
+    const std::string & reply_body_str = reply_body.str();
+
+    StreamingExchangeProtocol::PacketHeader reply_header{
+        .packet_type = StreamingExchangeProtocol::PacketType::SinkHello,
+        .bytes_size = reply_body_str.size(),
+    };
+
+    /// On version mismatch, send SinkHello on a best-effort basis so the peer can produce
+    /// a precise diagnostic naming both versions, then throw locally. The connection is
+    /// not registered. On version match, the SinkHello send must succeed for the handshake
+    /// to be considered complete; let any write error propagate and abort the registration.
+    auto send_sink_hello = [&]
+    {
+        WriteBufferFromPocoSocket out(socket);
+        out.write(reinterpret_cast<const char *>(&reply_header), sizeof(reply_header));
+        if (!reply_body_str.empty())
+            out.write(reply_body_str.data(), reply_body_str.size());
+        out.finalize();
+    };
+
+    if (source_hello.source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
+    {
+        try
+        {
+            send_sink_hello();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to send SinkHello to {}", socket.peerAddress().toString()));
+        }
+        throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
+            "Streaming exchange protocol version mismatch from {}: peer speaks version {}, this node speaks version {}",
+            socket.peerAddress().toString(), source_hello.source_version,
+            StreamingExchangeProtocol::PROTOCOL_VERSION);
+    }
+
+    /// Versions match - body layout is known, parse the rest.
+    source_hello.readAfterVersion(body_in);
+
+    LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}",
+        source_hello.query_id, source_hello.stream_name, source_hello.source_version);
+
+    send_sink_hello();
+
+    connections->addConnection(source_hello.query_id, source_hello.stream_name, socket);
+}
+
+}
+#endif

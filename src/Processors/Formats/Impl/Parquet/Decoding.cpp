@@ -5,6 +5,7 @@
 #include <Common/FloatUtils.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
+#include <arrow/util/byte_stream_split_internal.h>
 
 namespace DB::ErrorCodes
 {
@@ -944,11 +945,10 @@ struct ByteStreamSplitDecoder : public PageDecoder
         temp_buffer.resize(num_values * num_streams);
         char * to = temp_buffer.data();
         requireRemainingBytes(num_values);
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            for (size_t stream = 0; stream < num_streams; ++stream)
-                to[i * num_streams + stream] = data[i + stream * stream_size];
-        }
+        arrow::util::internal::ByteStreamSplitDecode(
+            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
+            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
+            reinterpret_cast<uint8_t *>(to));
         data += num_values;
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
@@ -987,35 +987,12 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
         requireRemainingBytes(num_values);
 
-        size_t i = 0;
-        while (i < num_values)
-        {
-            if (num_values - i >= 8)
-            {
-                /// Slightly faster code path that reads 8 bytes at once.
-                /// Arrow has ByteStreamSplitDecode with various fancy simd implementations, maybe
-                /// we should reuse that instead.
-                for (size_t stream = 0; stream < num_streams; ++stream)
-                {
-                    UInt64 x = unalignedLoad<UInt64>(&data[i + stream * stream_size]);
-                    to[(i + 0) * num_streams + stream] = char(UInt8(x >> 0));
-                    to[(i + 1) * num_streams + stream] = char(UInt8(x >>  8));
-                    to[(i + 2) * num_streams + stream] = char(UInt8(x >> 16));
-                    to[(i + 3) * num_streams + stream] = char(UInt8(x >> 24));
-                    to[(i + 4) * num_streams + stream] = char(UInt8(x >> 32));
-                    to[(i + 5) * num_streams + stream] = char(UInt8(x >> 40));
-                    to[(i + 6) * num_streams + stream] = char(UInt8(x >> 48));
-                    to[(i + 7) * num_streams + stream] = char(UInt8(x >> 56));
-                }
-                i += 8;
-            }
-            else
-            {
-                for (size_t stream = 0; stream < num_streams; ++stream)
-                    to[i * num_streams + stream] = data[i + stream * stream_size];
-                i += 1;
-            }
-        }
+        /// De-interleave the byte streams back into values. Arrow has SIMD (NEON/AVX2/SSE4.2) implementations of
+        /// exactly this transpose, gated behind the ARROW_HAVE_* defines enabled in contrib/arrow-cmake.
+        arrow::util::internal::ByteStreamSplitDecode(
+            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
+            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
+            reinterpret_cast<uint8_t *>(to));
         data += num_values;
 
         if (!direct)

@@ -44,6 +44,7 @@ public:
     void setDistributedRead(size_t bucket_count);
     Strings getShardsForDistributedRead() const;
 
+    bool isSerializable() const override { return true; }
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 #endif

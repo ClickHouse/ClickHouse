@@ -44,6 +44,8 @@
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
+#include <Analyzer/Passes/OptimizeLimitByFunctionKeysPass.h>
+#include <Analyzer/Passes/OptimizeLimitByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/OptimizeTrivialGroupByLimitPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
@@ -325,6 +327,10 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
+
+    manager.addPass(std::make_unique<OptimizeLimitByFunctionKeysPass>());
+    manager.addPass(std::make_unique<OptimizeLimitByInjectiveFunctionsPass>());
+
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
     manager.addPass(std::make_unique<TruncateOrderByAfterGroupByKeysPass>());

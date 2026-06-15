@@ -33,7 +33,7 @@ function(absl_cc_library)
   # Check if this is a header-only library
   set(ABSL_CC_SRCS "${ABSL_CC_LIB_SRCS}")
   foreach(src_file IN LISTS ABSL_CC_SRCS)
-    if(${src_file} MATCHES ".*\\.(h|inc)")
+    if(${src_file} MATCHES ".*\\.(h|inc)$")
       list(REMOVE_ITEM ABSL_CC_SRCS "${src_file}")
     endif()
   endforeach()
