@@ -55,6 +55,10 @@ namespace Paimon
         };
 
         std::vector<ColumnCondition> column_conditions;
+        /// Id of the schema this pruner was built from. Legacy (positional) value stats are encoded in the
+        /// data file's own schema field order, so positional pruning is only valid for files written with
+        /// this same schema (see `canBePruned`).
+        Int64 schema_id = -1;
         LoggerPtr log;
     };
 }

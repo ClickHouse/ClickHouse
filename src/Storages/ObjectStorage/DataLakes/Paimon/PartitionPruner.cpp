@@ -135,7 +135,8 @@ namespace Paimon
         const DB::PaimonTableSchema & table_schema_,
         const DB::ActionsDAG & filter_dag,
         DB::ContextPtr context)
-        : log(getLogger("MinMaxIndexPruner"))
+        : schema_id(table_schema_.id)
+        , log(getLogger("MinMaxIndexPruner"))
     {
         if (filter_dag.getOutputs().empty())
             return;
@@ -202,6 +203,16 @@ namespace Paimon
         ///     so we treat both null and empty the same as legacy mode.
         ///   non-empty list (dense mode) : position j = column named valueStatsCols[j]
         const bool legacy_mode = !file.value_stats_cols.has_value() || file.value_stats_cols->empty();
+
+        /// In legacy mode the value stats are positional, encoded in the data file's own schema field order.
+        /// We map those positions to query columns via `schema_idx`, which is the field index in the schema
+        /// this pruner was built from. That mapping is only valid when the file was written with the same
+        /// schema: after schema evolution an older file's position can refer to a different column or type,
+        /// so `mayBeTrueInRange` could falsely prune a file that still contains matching rows. Fail closed and
+        /// skip min/max pruning for such files (they are read in full, which is always correct).
+        /// Dense mode (`_VALUE_STATS_COLS` present) matches stats by column name below and is unaffected.
+        if (legacy_mode && file.schema_id != schema_id)
+            return false;
 
         std::unordered_map<String, Int32> col_to_pos;
         if (!legacy_mode)
