@@ -3,10 +3,6 @@
 #include <memory>
 #include <vector>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
-
 #include <base/getL2CacheSize.h>
 
 #include <Columns/ColumnConst.h>
