@@ -876,26 +876,32 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
     /// present between heavy-cadence refreshes. They are emitted only after
     /// a successful /proc/self/smaps sample; in environments where smaps
-    /// cannot be read the metrics stay absent rather than reporting a fake
-    /// zero. On kernels older than Linux 5.17 the kernel does not support
-    /// `PR_SET_VMA_ANON_NAME`, so no VMA carries the `clickhouse_stack` tag
-    /// and the metrics report 0; `setThreadName` warns once in that case.
+    /// cannot be read, or on kernels older than Linux 5.17 that do not
+    /// support `PR_SET_VMA_ANON_NAME`, the metrics stay absent rather than
+    /// reporting a fake zero. `updateThreadStackStats` surfaces the kernel
+    /// limitation via `system.warnings` and a one-shot log line.
     if (thread_stack_stats.available)
     {
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
             "Approximate resident set size of pthread stacks, summed from `Rss:`"
             " of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]` via"
             " `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics"
-            " cadence. Requires Linux 5.17 or newer; older kernels report 0." };
+            " cadence. Requires Linux 5.17 or newer; absent on older kernels"
+            " (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
+            " `system.warnings`)." };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
             "Approximate virtual size of pthread stacks, summed from `Size:` of"
             " /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`."
             " Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or"
-            " newer; older kernels report 0." };
+            " newer; absent on older kernels (see the"
+            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
+            " `system.warnings`)." };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
             "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]`"
             " in /proc/self/smaps. Refreshed on the heavy-metrics cadence."
-            " Requires Linux 5.17 or newer; older kernels report 0." };
+            " Requires Linux 5.17 or newer; absent on older kernels (see the"
+            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
+            " `system.warnings`)." };
     }
 #endif
 }
