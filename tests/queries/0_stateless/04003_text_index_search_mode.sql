@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas
 
 SET optimize_or_like_chain = 0;
+-- Pin so the printed direct read mode does not flip with settings randomization.
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS t_search_mode;
 

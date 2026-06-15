@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
+# --query_plan_text_index_add_hint is pinned so the printed direct read mode does not flip with settings randomization.
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --query_plan_text_index_add_hint 1"
 
 function run_query()
 {
