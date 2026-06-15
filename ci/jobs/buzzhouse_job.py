@@ -166,7 +166,7 @@ def main():
 
     allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
-    max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 100)
+    max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 30)
     min_insert_rows = random.randint(1, 100)
     max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 3000)
     min_string_length = random.randint(0, 100)
