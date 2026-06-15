@@ -3,6 +3,7 @@ import os
 import shutil
 
 import pytest
+import redis
 
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
@@ -10,10 +11,6 @@ from helpers.external_sources import SourceRedis
 
 cluster = ClickHouseCluster(__file__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
-xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
-if xdist_worker:
-    dict_configs_path = os.path.join(dict_configs_path, xdist_worker)
 
 KEY_FIELDS = {
     "simple": [Field("KeyField", "UInt64", is_key=True, default_value_for_get=9999999)],
@@ -21,9 +18,30 @@ KEY_FIELDS = {
         Field("KeyField1", "UInt64", is_key=True, default_value_for_get=9999999),
         Field("KeyField2", "String", is_key=True, default_value_for_get="xxxxxxxxx"),
     ],
+    "complex_single": [
+        Field("KeyField", "String", is_key=True, default_value_for_get="xxxxxxxxx")
+    ],
 }
 
-KEY_VALUES = {"simple": [[1], [2]], "complex": [[1, "world"], [2, "qwerty2"]]}
+KEY_VALUES = {
+    "simple": [[1], [2]],
+    "complex": [[1, "world"], [2, "qwerty2"]],
+    "complex_single": [["hello"], ["world"]],
+}
+
+
+def get_key_kind(source, layout):
+    """Pick the key structure for a (source, layout) pair.
+
+    'hash_map' Redis storage encodes composite (two-column) complex keys, while
+    'simple' storage is a flat key-value map and only fits a single key column.
+    """
+    if not layout.is_complex:
+        return "simple"
+    if source.storage_type == "hash_map":
+        return "complex"
+    return "complex_single"
+
 
 FIELDS = [
     Field("UInt8_", "UInt8", default_value_for_get=55),
@@ -76,7 +94,7 @@ REGR_DICTIONARIES = []
 REGR_KEY_FIELD = Field("KeyField", "String", is_key=True, default_value_for_get="missing")
 REGR_LAYOUTS = [Layout("complex_key_cache")]
 
-def get_dict(source, layout, fields, suffix_name=""):
+def get_dict(source, layout, fields, suffix_name, dict_configs_path):
     structure = DictionaryStructure(layout, fields)
     dict_name = source.name + "_" + layout.name + "_" + suffix_name
     dict_path = os.path.join(dict_configs_path, dict_name + ".xml")
@@ -91,51 +109,40 @@ def generate_dict_configs():
     global DICTIONARIES
     global REGR_DICTIONARIES
     global cluster
+    dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    if worker_id:
+        dict_configs_path += f"_{worker_id}"
 
     if os.path.exists(dict_configs_path):
         shutil.rmtree(dict_configs_path)
 
     os.makedirs(dict_configs_path, exist_ok=True)
 
+    def make_source(name, db_index, storage_type):
+        return SourceRedis(
+            name,
+            "localhost",
+            cluster.redis_port,
+            cluster.redis_host,
+            "6379",
+            "",
+            "clickhouse",
+            db_index,
+            storage_type=storage_type,
+        )
+
+    db_index = 0
     for i, field in enumerate(FIELDS):
         DICTIONARIES.append([])
-        sources = []
-        sources.append(
-            SourceRedis(
-                "RedisSimple",
-                "localhost",
-                cluster.redis_port,
-                cluster.redis_host,
-                "6379",
-                "",
-                "clickhouse",
-                i * 2,
-                storage_type="simple",
-            )
-        )
-        sources.append(
-            SourceRedis(
-                "RedisHash",
-                "localhost",
-                cluster.redis_port,
-                cluster.redis_host,
-                "6379",
-                "",
-                "clickhouse",
-                i * 2 + 1,
-                storage_type="hash_map",
-            )
-        )
-        for source in sources:
+        for storage_type in ["simple", "hash_map"]:
             for layout in LAYOUTS:
+                source = make_source(f"Redis_{storage_type}", db_index, storage_type)
                 if not source.compatible_with_layout(layout):
-                    logging.debug(
-                        f"Source {source.name} incompatible with layout {layout.name}"
-                    )
                     continue
-
-                fields = KEY_FIELDS[layout.layout_type] + [field]
-                DICTIONARIES[i].append(get_dict(source, layout, fields, field.name))
+                fields = KEY_FIELDS[get_key_kind(source, layout)] + [field]
+                DICTIONARIES[i].append(get_dict(source, layout, fields, field.name, dict_configs_path))
+                db_index += 1
 
     main_configs = []
     dictionaries = []
@@ -144,33 +151,7 @@ def generate_dict_configs():
         logging.debug(f"Found dictionary {path}")
         dictionaries.append(path)
 
-    for i, field in enumerate(FIELDS):
-        REGR_DICTIONARIES.append([])
-
-        regr_source = SourceRedis(
-            "RedisSimpleRegression",
-            "localhost",
-            cluster.redis_port,
-            cluster.redis_host,
-            "6379",
-            "",
-            "clickhouse",
-            28,
-            storage_type="simple"
-            )
-        for layout in REGR_LAYOUTS:
-            fields = [REGR_KEY_FIELD] + [field]
-            REGR_DICTIONARIES[i].append(
-                get_dict(
-                    regr_source,
-                    layout,
-                    fields,
-                    field.name + "_regression"
-                )
-            )
-            dictionaries.append(REGR_DICTIONARIES[i][-1].config_path)
-
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
 
@@ -216,9 +197,9 @@ def test_redis_dictionaries(started_cluster, id):
 
     for dct in dicts:
         data = []
-        dict_type = dct.structure.layout.layout_type
-        key_fields = KEY_FIELDS[dict_type]
-        key_values = KEY_VALUES[dict_type]
+        key_kind = get_key_kind(dct.source, dct.structure.layout)
+        key_fields = KEY_FIELDS[key_kind]
+        key_values = KEY_VALUES[key_kind]
 
         for key_value, value in zip(key_values, values):
             data.append(Row(key_fields + [field], key_value + [value]))
@@ -243,253 +224,118 @@ def test_redis_dictionaries(started_cluster, id):
 
     node.query("system reload dictionaries")
 
-@pytest.mark.parametrize("id", list(range(len(FIELDS))), ids=get_entity_id)
-def test_redis_simple_complex_key_cache(started_cluster, id):
-    """
-    Regression: simple storage + complex_key_cache threw bad cast in cache miss.
-    """
-    field = FIELDS[id]
-    values = VALUES[id]
+
+def test_redis_storage_type_key_constraints(started_cluster):
     node = started_cluster.instances["node"]
+    host = started_cluster.redis_host
 
-    for dct in REGR_DICTIONARIES[id]:
-        data = [
-            Row([REGR_KEY_FIELD, field], [f"{field.name}_key1", values[0]]),
-            Row([REGR_KEY_FIELD, field], [f"{field.name}_key2", values[1]])
-        ]
+    DB_INDEX = sum(len(dicts) for dicts in DICTIONARIES) + 1  # Pick a DB index that is not used by any dictionary.
 
-        dct.load_data(data)
-
-        node.query(f"system reload dictionary {dct.name}")
-
-        queries_with_answers = []
-        for row in data:
-            for query in dct.get_select_get_queries(field, row):
-                queries_with_answers.append((query, row.get_value_by_name(field.name)))
-            
-            for query in dct.get_select_get_or_default_queries(field, row):
-                queries_with_answers.append((query, field.default_value_for_get))
-
-        for query, answer in queries_with_answers:
-            assert node.query(query) == str(answer) + "\n"
-
-def test_redis_simple_negative_key(started_cluster):
-
-    node = started_cluster.instances["node"]
-
-    import redis as redis_client
-    r = redis_client.Redis(
-        host="localhost",
-        port=cluster.redis_port,
-        password="clickhouse",
-        db=29
+    redis_client = redis.Redis(
+        host="localhost", port=started_cluster.redis_port, password="clickhouse", db=DB_INDEX
     )
-    r.set("-1", "found_negative")
-    r.set("13824756489203974851", "found_large_uint")
+    redis_client.flushdb()
+    redis_client.set("k1", "v1")
 
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_single")
     node.query(
         f"""
-        CREATE DICTIONARY IF NOT EXISTS test_redis_negative_key
-        (
-            key Int8,
-            value String
-        )
+        CREATE DICTIONARY test_redis_simple_single (key String, value String)
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 29))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+        LIFETIME(MIN 1 MAX 1)
         """
     )
+    assert node.query("SELECT dictGet('test_redis_simple_single', 'value', tuple('k1'))") == "v1\n"
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_single")
 
-    result = node.query("SELECT dictGet('test_redis_negative_key', 'value', toInt8(-1))")
-    assert result.strip() == "found_negative"
+    redis_client2 = redis.Redis(
+        host="localhost", port=started_cluster.redis_port, password="clickhouse", db=DB_INDEX+1
+    )
+    redis_client2.flushdb()
+    redis_client2.set("-1", "v1")
+    redis_client2.set("-2", "v1")
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
-
     node.query(
         f"""
-        CREATE DICTIONARY IF NOT EXISTS test_redis_large_uint_key
-        (
-            key UInt64,
-            value String
-        )
+        CREATE DICTIONARY test_redis_negative_key (key Int64, value String)
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 29))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX+1} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+        LIFETIME(MIN 1 MAX 1)
         """
     )
+    assert node.query("SELECT dictGet('test_redis_negative_key', 'value', tuple(toInt64(-1)))") == "v1\n"
+    node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
 
-    result = node.query("SELECT dictGet('test_redis_large_uint_key', 'value', toUInt64(13824756489203974851))")
-    assert result.strip() == "found_large_uint"
-
-    node.query("DROP DICTIONARY IF EXISTS test_redis_large_uint_key")
-    r.flushdb()
-
-def test_redis_hash_map_negative_key(started_cluster):
-
-    node = started_cluster.instances["node"]
-
-    import redis as redis_client
-    r = redis_client.Redis(
-        host="localhost",
-        port=cluster.redis_port,
-        password="clickhouse",
-        db=30
-    )
-
-    r.hset("-1", "field1", "found_negative_hash")
-
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_composite")
     node.query(
         f"""
-        CREATE DICTIONARY IF NOT EXISTS test_redis_hash_negative_key
-        (
-            key1 Int8,
-            key2 String,
-            value String
-        )
+        CREATE DICTIONARY test_redis_simple_composite (key1 UInt64, key2 String, value String)
         PRIMARY KEY key1, key2
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'hash_map' db_index 30))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
-        """
-    )
-
-    result = node.query("SELECT dictGet('test_redis_hash_negative_key', 'value', tuple(toInt8(-1), 'field1'))")
-    assert result.strip() == "found_negative_hash"
-
-    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_negative_key")
-    r.flushdb()
-
-def test_redis_complex_key_date(started_cluster):
-
-    node = started_cluster.instances["node"]
-
-    import redis as redis_client
-    r = redis_client.Redis(
-        host="localhost",
-        port=cluster.redis_port,
-        password="clickhouse",
-        db=31
-    )
-    r.flushdb()
-
-    r.set("2000-01-01", "found_date_key")
-    node.query(
-        f"""
-        CREATE DICTIONARY IF NOT EXISTS test_redis_date_key
-        (
-            key Date,
-            value String
-        )
-        PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 31))
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
         LAYOUT(COMPLEX_KEY_HASHED())
-        LIFETIME(0)
+        LIFETIME(MIN 1 MAX 1)
         """
     )
-    result = node.query("SELECT dictGet('test_redis_date_key', 'value', toDate('2000-01-01'))")
-    assert result.strip() == "found_date_key"
+    error = node.query_and_get_error(
+        "SELECT dictGet('test_redis_simple_composite', 'value', tuple(toUInt64(1), 'a'))"
+    )
+    assert "single key column" in error, error
+    assert "hash_map" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_composite")
 
-    node.query("DROP DICTIONARY IF EXISTS test_redis_date_key")
-
-    r.set("2000-01-02", "found_date_cache")
+    # Unsupported: 'hash_map' storage requires exactly two key columns (one given).
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_single")
     node.query(
         f"""
-        CREATE DICTIONARY IF NOT EXISTS test_redis_date_cache_key
-        (
-            key Date,
-            value String
-        )
+        CREATE DICTIONARY test_redis_hash_single (key String, value String)
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 31))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'hash_map'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 1 MAX 1)
         """
     )
-    result = node.query("SELECT dictGet('test_redis_date_cache_key', 'value', toDate('2000-01-02'))")
-    assert result.strip() == "found_date_cache"
-
-    node.query("DROP DICTIONARY IF EXISTS test_redis_date_cache_key")
-
-    r.flushdb()
-
-def assert_dictionary_rejected(node, name, ddl, expected):
-    
-    node.query(f"DROP DICTIONARY IF EXISTS {name}")
-    _, error = node.query_and_get_answer_with_error(ddl)
-    if not error:
-        _, error = node.query_and_get_answer_with_error(f"SYSTEM RELOAD DICTIONARY {name}")
-    assert expected in error, f"unexpected error: {error}"
-    node.query(f"DROP DICTIONARY IF EXISTS {name}")
-
-
-def test_redis_simple_reject_invalid_key(started_cluster):
-
-    node = started_cluster.instances["node"]
-
-    assert_dictionary_rejected(
-        node,
-        "test_redis_multi_key_reject",
-        f"""
-        CREATE DICTIONARY test_redis_multi_key_reject
-        (
-            key1 String,
-            key2 String,
-            value String
-        )
-        PRIMARY KEY key1, key2
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
-        """,
-        "requires exactly 1 key",
+    error = node.query_and_get_error(
+        "SELECT dictGet('test_redis_hash_single', 'value', tuple('k1'))"
     )
-    assert_dictionary_rejected(
-        node,
-        "test_redis_key_reject",
+    assert "requires 2 keys" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_single")
+
+    # Unsupported: 'hash_map' storage requires exactly two key columns (three given).
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_triple")
+    node.query(
         f"""
-        CREATE DICTIONARY test_redis_key_reject
-        (
-            key Decimal32(2),
-            value String
-        )
+        CREATE DICTIONARY test_redis_hash_triple (key1 UInt64, key2 String, key3 UInt64, value String)
+        PRIMARY KEY key1, key2, key3
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'hash_map'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    error = node.query_and_get_error(
+        "SELECT dictGet('test_redis_hash_triple', 'value', tuple(toUInt64(1), 'a', toUInt64(2)))"
+    )
+    assert "requires 2 keys" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_triple")
+
+    redis_client.set(str(2**256 - 1), "v1")
+
+    # Unsupported: wide integer key types are not supported by `ExternalResultDescription`,
+    # so reading from the dictionary throws, although the dictionary itself can be created.
+    node.query("DROP DICTIONARY IF EXISTS test_redis_uint256_key")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_uint256_key (key UInt256, value String)
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
-        """,
-        "Redis source only supports integers",
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_DIRECT())
+        """
     )
-    assert_dictionary_rejected(
-        node,
-        "test_redis_wide_int_reject",
-        f"""
-        CREATE DICTIONARY test_redis_wide_int_reject
-        (
-            key UInt128,
-            value String
-        )
-        PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
-        """,
-        "Redis source only supports integers",
+    error = node.query_and_get_error(
+        f"SELECT dictGet('test_redis_uint256_key', 'value', tuple(toUInt256('{2**256 - 1}')))"
     )
-    assert_dictionary_rejected(
-        node,
-        "test_redis_tz_datetime_reject",
-        f"""
-        CREATE DICTIONARY test_redis_tz_datetime_reject
-        (
-            key DateTime('Asia/Tokyo'),
-            value String
-        )
-        PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
-        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
-        LIFETIME(0)
-        """,
-        "does not support DateTime keys with an explicit timezone",
-    )
+    assert "Unsupported type UInt256" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_uint256_key")

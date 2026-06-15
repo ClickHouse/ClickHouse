@@ -7,6 +7,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -95,28 +96,23 @@ namespace DB
                         key.name,
                         key.type->getName());
         }
-        else if (configuration.storage_type == RedisStorageType::SIMPLE && dict_struct.key)
+        else if (dict_struct.key)
         {
+            /// Complex-key layouts (e.g. 'complex_key_cache', 'complex_key_direct') load keys via loadKeys.
+            /// 'simple' storage is a flat Redis key-value map, so it can only encode a single key column.
+            /// Composite keys have no canonical mapping to a single Redis key - use 'hash_map' storage for them.
             if (dict_struct.key->size() != 1)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                            "Redis source with storage type 'simple' requires exactly 1 key, got {}",
-                            dict_struct.key->size());
+                    "Redis source with storage type 'simple' supports only a single key column, but {} were given; "
+                    "use storage type 'hash_map' for composite keys",
+                    dict_struct.key->size());
 
-            const auto & key = dict_struct.key->at(0);
-            const WhichDataType which(key.type);
-            if (!which.isNativeInt() && !which.isNativeUInt() && !which.isNativeFloat() && !which.isDate() &&
-                !which.isDateTime() && !which.isUUID() && !isString(key.type))
+            const auto & key = dict_struct.key->front();
+            if (!isInteger(key.type) && !isString(key.type))
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                                "Redis source only supports integers, float32, float64, string, date, datetime and uuid, but key '{}' of type {} given",
-                                key.name,
-                                key.type->getName());
-
-            if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(key.type.get());
-                date_time_type && date_time_type->hasExplicitTimeZone())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                                "Redis source does not support DateTime keys with an explicit timezone, but key '{}' of type {} given",
-                                key.name,
-                                key.type->getName());
+                    "Redis source supports only integer or string key, but key '{}' of type {} given",
+                    key.name,
+                    key.type->getName());
         }
     }
 
@@ -191,49 +187,38 @@ namespace DB
         if (key_columns.size() != dict_struct.key->size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
+        const auto serialize_key = [&](RedisArray & out, size_t column, size_t row)
+        {
+            const auto & type = dict_struct.key->at(column).type;
+            if (isNativeInt(type))
+                out << DB::toString(key_columns[column]->getInt(row));
+            else if (isNativeUInt(type))
+                out << DB::toString(key_columns[column]->getUInt(row));
+            else if (isInteger(type))
+                out << applyVisitor(FieldVisitorToString(), (*key_columns[column])[row]);
+            else if (isString(type))
+                out << (*key_columns[column])[row].safeGet<String>();
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
+        };
+
+        if (configuration.storage_type == RedisStorageType::SIMPLE && key_columns.size() != 1)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected exactly one key column for 'simple' storage type");
+
         RedisArray keys;
         for (auto row : requested_rows)
         {
             if (configuration.storage_type == RedisStorageType::SIMPLE)
             {
-                const auto & type = dict_struct.key->at(0).type;
-                if (isInteger(type))
-                {
-                    if (WhichDataType(type).isUInt())
-                        keys << DB::toString(key_columns[0]->get64(row));
-                    else
-                        keys << DB::toString(key_columns[0]->getInt(row));
-                }
-                else if (isString(type))
-                    keys << (*key_columns[0])[row].safeGet<String>();
-                else
-                {
-                    String str_key;
-                    WriteBufferFromString buf(str_key);
-                    auto serialization = type->getDefaultSerialization();
-                    serialization->serializeText(*key_columns[0], row, buf, FormatSettings{});
-                    buf.finalize();
-                    keys << str_key;
-                }
+                /// 'simple' storage is read with MGET, which expects a flat list of keys (one per row).
+                serialize_key(keys, 0, row);
             }
             else
             {
+                /// 'hash_map' storage is read with HMGET, which expects a nested array per row.
                 RedisArray key;
                 for (size_t i = 0; i < key_columns.size(); ++i)
-                {
-                    const auto & type = dict_struct.key->at(i).type;
-                    if (isInteger(type))
-                    {
-                        if (WhichDataType(type).isUInt())
-                            key << DB::toString(key_columns[i]->get64(row));
-                        else
-                            key << DB::toString(key_columns[i]->getInt(row));
-                    }
-                    else if (isString(type))
-                        key << (*key_columns[i])[row].safeGet<String>();
-                    else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
-                }
+                    serialize_key(key, i, row);
                 keys.add(key);
             }
         }
