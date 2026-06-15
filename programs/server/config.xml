@@ -1808,7 +1808,7 @@
         rules are checked from top to bottom, first match runs the handler
             url - to match request URL path (query string is excluded), you can use 'regex:' prefix to use regex match,
                   or 'prefix:' prefix to match a base path and everything below it (optional)
-            full_url - to match the complete request URL `schema://host:port/path` (host is an IP address here;
+            full_url - to match the complete request URL `scheme://host:port/path` (host is an IP address here;
                        query string is excluded), you can use 'regex:' prefix to use regex match,
                        or 'prefix:' prefix to match a base path and everything below it (optional)
             empty_query_string - check that there is no query string in the URL

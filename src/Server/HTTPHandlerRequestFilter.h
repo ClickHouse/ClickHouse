@@ -24,7 +24,7 @@ HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config
 /// Matches the request URL path. The query string is ignored when matching.
 HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
 
-/// Matches the complete request URL `schema://host:port/path`. The query string is ignored when matching.
+/// Matches the complete request URL `scheme://host:port/path`. The query string is ignored when matching.
 HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
 
 /// Matches requests whose URI has no query string.
