@@ -153,7 +153,7 @@ void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string> & rec
 
     while (it != recs.end())
     {
-        if (seen.find(*it) != seen.end())
+        if (seen.contains(*it))
         {
             it = recs.erase(it);
         }
@@ -306,6 +306,12 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token> & tokens) co
             continue;
         }
 
+        /// After squashing we decrement `i` and must restart the outer loop, otherwise the checks
+        /// below would read `tokens[i - 1]` with a possibly-zero `i` (e.g. an incomplete `NOT IN x `
+        /// squashes the first two tokens, leaving `i == 0` and reading before the vector). A plain
+        /// `continue` inside the inner `for` would only restart the inner loop, so use a flag.
+        bool squashed = false;
+
         for (const auto & word : after_not)
         {
             if (isBareWordEqualToString(tokens[i - 1], "NOT") && isBareWordEqualToString(tokens[i], word))
@@ -315,8 +321,13 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token> & tokens) co
                 squashTokens(tokens, i - 1, i, operator_literal);
                 i--;
                 replaced_2_cnt++;
+                squashed = true;
+                break;
             }
         }
+
+        if (squashed)
+            continue;
 
         for (const auto & word : before_not)
         {
@@ -327,8 +338,13 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token> & tokens) co
                 squashTokens(tokens, i - 1, i, operator_literal);
                 i--;
                 replaced_2_cnt++;
+                squashed = true;
+                break;
             }
         }
+
+        if (squashed)
+            continue;
 
 
         if (tokens[i - 1].type == DB::TokenType::Minus)
