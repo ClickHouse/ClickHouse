@@ -10,6 +10,11 @@
 -- rabitq: nearest neighbour of a row is itself
 <dbpedia:Honda>
 <dbpedia:Pizza>
+-- rescoring off: each estimator alone still ranks a row nearest to itself
+<dbpedia:Honda>
+<dbpedia:Honda>
+<dbpedia:Honda>
+<dbpedia:Honda>
 -- all quantizations return the requested number of rows
 4
 4

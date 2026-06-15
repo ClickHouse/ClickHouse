@@ -86,6 +86,15 @@ SELECT '-- rabitq: nearest neighbour of a row is itself';
 SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Honda>')) LIMIT 1;
 SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Pizza>')) LIMIT 1;
 
+
+-- With rescoring OFF the result comes purely from the quantized estimator (no full-precision re-rank to fall back
+-- on), so these fail if a scoring path (e.g. raBitQDistanceFast / turboQuantDistanceFast) is not actually wired in.
+SELECT '-- rescoring off: each estimator alone still ranks a row nearest to itself';
+SELECT id FROM tab_b1 ORDER BY cosineDistance(vec, (SELECT vec FROM tab_b1 WHERE id = '<dbpedia:Honda>')) LIMIT 1 SETTINGS vector_search_with_rescoring = 0;
+SELECT id FROM tab_proj ORDER BY cosineDistance(vec, (SELECT vec FROM tab_proj WHERE id = '<dbpedia:Honda>')) LIMIT 1 SETTINGS vector_search_with_rescoring = 0;
+SELECT id FROM tab_tq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_tq WHERE id = '<dbpedia:Honda>')) LIMIT 1 SETTINGS vector_search_with_rescoring = 0;
+SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Honda>')) LIMIT 1 SETTINGS vector_search_with_rescoring = 0;
+
 SELECT '-- all quantizations return the requested number of rows';
 SELECT count() FROM (SELECT id FROM tab_b1 ORDER BY cosineDistance(vec, (SELECT vec FROM tab_b1 WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 SELECT count() FROM (SELECT id FROM tab_proj ORDER BY cosineDistance(vec, (SELECT vec FROM tab_proj WHERE id = '<dbpedia:Honda>')) LIMIT 4);
