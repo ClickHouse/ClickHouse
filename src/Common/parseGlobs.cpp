@@ -252,7 +252,7 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
 
     Range range;
     ReadBufferFromString read_buffer(input);
-    size_t first_digit_pos;
+    size_t first_digit_pos = 0;
 
     bool ok = true;
 
