@@ -9,10 +9,10 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t04303;
 CREATE TABLE t04303 (minute DateTime, value Float64) ENGINE = MergeTree ORDER BY minute;
-INSERT INTO t04303 VALUES (now(), 1.0);
+INSERT INTO t04303 VALUES ('2025-05-04 10:00:02', 1.0);
 
 SELECT count()
-FROM ( SELECT toStartOfHour(now()) - toIntervalHour(number) AS hour FROM numbers(1, 24) ) AS h
+FROM ( SELECT toStartOfHour(materialize(toDateTime('2025-05-04 10:10:10'))) - toIntervalHour(number) AS hour FROM numbers(1, 24) ) AS h
 CROSS JOIN ( SELECT '24h' AS window, 24 * 60 AS minutes
              UNION ALL SELECT '7d', 7 * 24 * 60 ) AS w
 INNER JOIN t04303 AS v
