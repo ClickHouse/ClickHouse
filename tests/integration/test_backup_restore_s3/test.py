@@ -288,6 +288,7 @@ def check_system_tables(cluster, backup_query_id=None):
         ("default", "Local", "None", "None"),
         ("disk_s3", "ObjectStorage", "S3", "Local"),
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_mv_repro", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
         ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
