@@ -73,7 +73,7 @@ std::pair<String, String> splitDatabaseAndNamespacePrefix(const String & resolve
             break;
 
         String db_candidate = resolved.substr(0, pos);
-        if (catalog.isDatalakeCatalog(db_candidate) && catalog.isDatabaseExist(db_candidate))
+        if (catalog.isRemoteDatabase(db_candidate) && catalog.isDatabaseExist(db_candidate))
             return {std::move(db_candidate), resolved.substr(pos + 1)};
 
         --pos;
