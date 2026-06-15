@@ -1806,12 +1806,11 @@
     <!-- Uncomment to use custom http handlers.
 
         rules are checked from top to bottom, first match runs the handler
-            url - to match request URL (path and query string only), you can use 'regex:' prefix to use regex match,
-                  or 'prefix:' prefix to match a base path and everything below it on a path-segment boundary
-                  (e.g. 'prefix:/api/v1' matches /api/v1, /api/v1/ and /api/v1/write, but not /api/v1beta) (optional)
-            full_url - to match request **full** URL (schema, host:port, path and query string), you can use 'regex:'
-                       or 'prefix:' prefix as for 'url' (optional)
-                       note, ClickHouse does not support "virtual hosts" so "host" will contain IP address not the "Host" header.
+            url - to match request URL path (query string is excluded), you can use 'regex:' prefix to use regex match,
+                  or 'prefix:' prefix to match a base path and everything below it (optional)
+            full_url - to match request the complete request URL `schema://host:port/path` (host is an IP address here;
+                       query string is excluded), you can use 'regex:' prefix to use regex match,
+                       or 'prefix:' prefix to match a base path and everything below it (optional)
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match(optional)

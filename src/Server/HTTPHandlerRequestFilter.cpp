@@ -62,7 +62,7 @@ bool checkExpression(std::string_view match_str, const FilterExpression & expres
 {
     if (expression.is_url)
     {
-        /// URL filters match the path (and host) only, not the query string.
+        /// The query string is not used for matching `url`/`full_url` filters.
         const auto * query_string = find_first_symbols<'?'>(match_str.data(), match_str.data() + match_str.size());
         match_str = match_str.substr(0, query_string - match_str.data());
     }

@@ -21,11 +21,10 @@ using HTTPRequestFilter = std::function<bool(const HTTPServerRequest &)>;
 /// Matches the request method against a comma-separated list of methods (e.g. "GET,POST"). Case-insensitive.
 HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
 
-/// Matches the request URI (path and query string; the query string is stripped before matching).
-/// A "prefix:" value is matched on path-segment ('/') boundaries.
+/// Matches the request URL path. The query string is ignored when matching.
 HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
 
-/// Like urlFilter, but matches the full URL including scheme and host:port.
+/// Matches the complete request URL `schema://host:port/path`. The query string is ignored when matching.
 HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
 
 /// Matches requests whose URI has no query string.
