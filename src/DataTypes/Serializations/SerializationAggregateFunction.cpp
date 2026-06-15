@@ -37,7 +37,6 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
     hash.update(type_name_.size());
     hash.update(type_name_);
     hash.update(version_);
-    hash.update(static_cast<UInt8>(function_->getStateVariant()));
     return hash.get128();
 }
 
@@ -311,13 +310,9 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
 }
 
 
-void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    auto str = serializeToString(function, column, row_num, version);
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(str, ostr);
-    else
-        writeQuotedString(str, ostr);
+    writeQuotedString(serializeToString(function, column, row_num, version), ostr);
 }
 
 

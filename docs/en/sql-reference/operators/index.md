@@ -7,6 +7,8 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
+# Operators
+
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
@@ -115,15 +117,6 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-## Operators for Working with Strings {#operators-for-working-with-strings}
-
-### OVERLAY {#overlay}
-
-- `OVERLAY(string PLACING replacement FROM offset)` - The `overlay(string, replacement, offset)` function.
-- `OVERLAY(string PLACING replacement FROM offset FOR length)` - The `overlay(string, replacement, offset, length)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset)` - The `overlayUTF8(string, replacement, offset)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - The `overlayUTF8(string, replacement, offset, length)` function.
-
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
 See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
@@ -156,11 +149,13 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 
 Query with ALL:
 
-```sql title="Query"
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -171,11 +166,13 @@ SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3,
 
 Query with ANY:
 
-```sql title="Query"
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┐
 │ 4 │
 │ 5 │
@@ -198,9 +195,6 @@ Extract parts from a given date. For example, you can retrieve a month from a gi
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
-- `NANOSECOND` — The nanosecond. Possible values: 0–999999999.
-- `MICROSECOND` — The microsecond. Possible values: 0–999999.
-- `MILLISECOND` — The millisecond. Possible values: 0–999.
 - `SECOND` — The second. Possible values: 0–59.
 - `MINUTE` — The minute. Possible values: 0–59.
 - `HOUR` — The hour. Possible values: 0–23.
@@ -217,12 +211,10 @@ The `part` parameter specifies which part of the date to retrieve. The following
 - `CENTURY` — The century. For example, the year 2024 is in the 21st century.
 - `DECADE` — The decade (year divided by 10). For example, the year 2024 has decade 202.
 - `MILLENNIUM` — The millennium. For example, the year 2024 is in the 3rd millennium.
-- `TIMEZONE_HOUR` — The signed hour part of the UTC offset of the operand's timezone. For example, `+5:30` returns `5`, `-3:30` returns `-3`.
-- `TIMEZONE_MINUTE` — The signed minute part of the UTC offset of the operand's timezone. For example, `+5:30` returns `30`, `-3:30` returns `-30`.
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the value to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), and [Interval](../../sql-reference/data-types/special-data-types/interval.md) types are supported. When `date` is an `Interval`, the requested `part` must match the interval's stored kind (e.g. `EXTRACT(DAY FROM INTERVAL 5 DAY)` is allowed; `EXTRACT(HOUR FROM INTERVAL 5 DAY)` is rejected, because ClickHouse intervals are single-kind). The result for an `Interval` operand is `Int64`.
+The `date` parameter specifies the date or the time to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), and [DateTime64](../../sql-reference/data-types/datetime64.md) types are supported.
 
 Examples:
 
@@ -233,10 +225,6 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
 SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
 SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
-SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
-SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
-SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
-SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
 ```
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
@@ -503,34 +491,3 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 ```
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
-
-## Checking Boolean Values {#checking-boolean-values}
-
-ClickHouse supports the `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE`, and `IS NOT UNKNOWN` operators.
-They are used with [Bool](../../sql-reference/data-types/boolean.md) and `Nullable(Bool)` expressions.
-
-- `expr IS TRUE` returns `1` only if `expr` is `true`.
-- `expr IS FALSE` returns `1` only if `expr` is `false`.
-- `expr IS UNKNOWN` returns `1` only if `expr` is `NULL`.
-- `expr IS NOT TRUE` returns `1` if `expr` is `false` or `NULL`.
-- `expr IS NOT FALSE` returns `1` if `expr` is `true` or `NULL`.
-- `expr IS NOT UNKNOWN` returns `1` if `expr` is not `NULL`.
-
-For boolean expressions, `IS UNKNOWN` is equivalent to `IS NULL`, and `IS NOT UNKNOWN` is equivalent to `IS NOT NULL`.
-
-<!-- -->
-
-```sql
-CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
-INSERT INTO t_bool VALUES (true), (false), (NULL);
-
-SELECT
-    x,
-    x IS TRUE,
-    x IS FALSE,
-    x IS UNKNOWN,
-    x IS NOT TRUE,
-    x IS NOT FALSE,
-    x IS NOT UNKNOWN
-FROM t_bool;
-```

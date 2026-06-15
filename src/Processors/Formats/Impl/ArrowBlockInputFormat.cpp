@@ -81,7 +81,8 @@ Chunk ArrowBlockInputFormat::read()
         {
             auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
             if (!rows.ok())
-                throwFromArrowStatus(rows.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
             return getChunkForCount(*rows);
         }
 
@@ -89,16 +90,13 @@ Chunk ArrowBlockInputFormat::read()
     }
 
     if (!batch_result.ok())
-        throwFromArrowStatus(batch_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
-
-    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
-    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
-    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
-    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch_result);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throwFromArrowStatus(table_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
 
@@ -155,7 +153,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 
     if (in.available() >= sizeof(int32_t))
     {
-        int32_t first_int = 0;
+        int32_t first_int;
         memcpy(&first_int, in.position(), sizeof(int32_t));
         /// Arrow IPC uses little-endian byte order on the wire.
         first_int = DB::fromLittleEndian(first_int);
@@ -172,14 +170,12 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     options.memory_pool = ArrowMemoryPool::instance();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
-        throwFromArrowStatus(stream_reader_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table");
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+                        "Error while opening a table: {}", stream_reader_status.status().ToString());
     return *stream_reader_status;
 }
 
-static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
-    ReadBuffer & in,
-    const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped)
+static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadBuffer & in, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Arrow", ARROW_MAGIC_BYTES);
     if (is_stopped)
@@ -189,7 +185,8 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
     options.memory_pool = ArrowMemoryPool::instance();
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
-        throwFromArrowStatus(file_reader_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table");
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while opening a table: {}", file_reader_status.status().ToString());
     return *file_reader_status;
 }
 
@@ -282,12 +279,11 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
 
     auto rows = file_reader->CountRows();
     if (!rows.ok())
-        throwFromArrowStatus(rows.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
 
     return *rows;
 }
 
-void registerInputFormatArrow(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -311,7 +307,6 @@ void registerInputFormatArrow(FormatFactory & factory)
         });
 }
 
-void registerArrowSchemaReader(FormatFactory & factory);
 void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -344,8 +339,6 @@ void registerArrowSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatArrow(FormatFactory &);
-void registerArrowSchemaReader(FormatFactory &);
 void registerInputFormatArrow(FormatFactory &)
 {
 }

@@ -128,6 +128,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
+        addSettingsChanges(settings_changes_history, "26.4",
+        {
+            {"show_remote_databases_in_system_tables", false, false, "Renamed from `show_data_lake_catalogs_in_system_tables` and broadened to also hide `MySQL` and `PostgreSQL` databases from `system.tables`, `system.columns` and `system.completions` by default, since enumerating their tables requires expensive remote calls. Users who relied on the previous behavior must set this setting to `true`. The old name is kept as an alias."},
             {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
@@ -149,6 +152,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_for_lazy_final", 256000000, 256000000, "New setting for maximum number of bytes in the set for lazy FINAL optimization"},
             {"min_filtered_ratio_for_lazy_final", 0.5, 0.5, "New setting for minimum ratio of marks filtered for lazy FINAL optimization to proceed"},
             {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
+            {"enable_materialized_cte", false, false, "New setting"},
             {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
@@ -177,6 +181,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
+            {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.4 (backport) to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the new-settings check accepts the newly-introduced name on this branch."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -232,6 +237,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
+            {"apply_row_policy_after_final", true, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
             {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
@@ -308,6 +314,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"apply_row_policy_after_final", true, true, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
             {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
@@ -351,6 +358,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
+            {"allow_experimental_alias_table_engine", false, false, "New setting"},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
