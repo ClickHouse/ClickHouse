@@ -261,7 +261,8 @@ void attachSystemView(
         columns,
         comment,
         /* is_parameterized_view_ */ false,
-        security_barrier);
+        security_barrier,
+        /* is_system_storage_ */ true);
     system_database.attachTable(context, view_name, view, path);
 }
 

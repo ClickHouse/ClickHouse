@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -875,8 +876,19 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error,
         getContext());
 
-    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadataPtr(getContext(), false)->comment));
+    auto & create = create_table_query->as<ASTCreateQuery &>();
+    if (storage->isView())
+    {
+        create.is_ordinary_view = true;
+        create.reset(create.storage);
+        applyMetadataChangesToCreateQuery(create_table_query, *metadata_ptr, getContext(), /* validate_new_create_query */ false);
+        if (!create.select && metadata_ptr->getSelectQuery().inner_query)
+            create.set(create.select, metadata_ptr->getSelectQuery().inner_query->clone());
+    }
+    else
+    {
+        create_table_query->set(create.comment, make_intrusive<ASTLiteral>(metadata_ptr->comment));
+    }
 
     return create_table_query;
 }

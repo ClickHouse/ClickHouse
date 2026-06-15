@@ -171,9 +171,11 @@ StorageView::StorageView(
     const ColumnsDescription & columns_,
     const String & comment,
     bool is_parameterized_view_,
-    bool security_barrier_)
+    bool security_barrier_,
+    bool is_system_storage_)
     : StorageWithCommonVirtualColumns(table_id_)
     , security_barrier(security_barrier_)
+    , is_system_storage(is_system_storage_)
 {
     StorageInMemoryMetadata storage_metadata;
     const auto columns = security_barrier ? getSecurityBarrierColumnsDescription(columns_) : columns_;
