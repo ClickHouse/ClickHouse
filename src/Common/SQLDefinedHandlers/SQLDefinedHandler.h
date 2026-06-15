@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Names.h>
 #include <Common/re2.h>
 
 #include <map>
@@ -42,6 +43,10 @@ struct SQLDefinedHandler
 
     /// The SQL query to be executed by the handler (the part after AS).
     String query;
+
+    /// Query parameters expected by `query` (URL params, form variables, headers, regexp capture groups),
+    /// precomputed at build time so the request path does not re-parse the query on every matching request.
+    NameSet receive_params;
 
     /// The canonical CREATE HANDLER statement, used for persistence and introspection.
     String create_statement;

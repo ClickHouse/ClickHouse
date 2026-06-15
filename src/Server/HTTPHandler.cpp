@@ -1004,7 +1004,7 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
     : PredefinedQueryHandler(
         server_,
         connection_config,
-        analyzeReceiveQueryParams(handler.query),
+        handler.receive_params,
         handler.query,
         handler.url_match_type == SQLDefinedHandler::URLMatchType::Regexp ? handler.url_regex : CompiledRegexPtr{},
         {},

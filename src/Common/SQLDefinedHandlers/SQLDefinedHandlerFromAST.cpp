@@ -1,6 +1,7 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
@@ -65,6 +66,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         handler->methods = {"GET"};
 
     handler->query = create.query->formatWithSecretsOneLine();
+    /// Precompute the set of query parameters once, so the per-request handler path does not re-parse the query.
+    handler->receive_params = analyzeReceiveQueryParams(handler->query);
 
     /// Build a normalized, complete CREATE HANDLER statement for persistence and introspection.
     auto normalized = create.clone();
