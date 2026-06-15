@@ -24,19 +24,14 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Number of times a flat directory may be recursively split so that the leaf ranges are roughly
-    /// `num_threads`-many (each split fans out by the key alphabet, typically ~16 for hex/UUID names).
-    size_t flatSplitBudget(size_t num_threads)
-    {
-        size_t budget = 1;
-        size_t ranges = 16;
-        while (ranges < num_threads && budget < 4)
-        {
-            ranges *= 16;
-            ++budget;
-        }
-        return budget;
-    }
+    /// A flat directory is split a single level: its keyspace is fanned out by the byte alphabet
+    /// observed in the first page (typically ~16 for hex/UUID names), and each resulting sub-range is
+    /// paginated serially in parallel with the others. Recursive (multi-level) splitting is deliberately
+    /// avoided: for keys that share a long common prefix (e.g. `pageviews-YYYYMMDD-HH`) the alphabet does
+    /// not divide them, so deeper levels only issue empty boundary probes (pure overhead) while one
+    /// sub-range still holds all the keys. A single level captures the win for uniformly distributed keys
+    /// without ever being slower than serial for clustered keys.
+    constexpr size_t FLAT_SPLIT_BUDGET = 1;
 }
 
 ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
@@ -60,7 +55,7 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     ListRange root;
     root.prefix = std::move(root_prefix_);
     root.split_pos = root.prefix.size();
-    root.split_budget = flatSplitBudget(num_threads);
+    root.split_budget = FLAT_SPLIT_BUDGET;
     root.use_delimiter = true;
     ranges_to_list.push_back(std::move(root));
     outstanding_ranges = 1;
@@ -174,6 +169,19 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     }
     /// `boundaries` are distinct (distinct bytes appended to a fixed base) and built in byte order.
 
+    /// Bound the number of sub-ranges (hence the number of possibly-empty boundary probes) to a small
+    /// multiple of the worker count; sample evenly across the sorted boundaries if the alphabet is large.
+    const size_t max_boundaries = std::max<size_t>(num_threads * 4, 32);
+    if (boundaries.size() > max_boundaries)
+    {
+        std::vector<std::string> sampled;
+        sampled.reserve(max_boundaries);
+        for (size_t i = 0; i < max_boundaries; ++i)
+            sampled.push_back(boundaries[i * boundaries.size() / max_boundaries]);
+        sampled.erase(std::unique(sampled.begin(), sampled.end()), sampled.end());
+        boundaries = std::move(sampled);
+    }
+
     if (boundaries.empty())
         return result; /// Nothing to split into; caller paginates the remainder.
 
@@ -189,6 +197,28 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     }
     result.push_back(ListRange{range.prefix, prev, range.end, pos + 1, range.split_budget - 1, /* use_delimiter */ false});
     return result;
+}
+
+bool ObjectStorageParallelListingIterator::splitWouldHelp(
+    const ListRange & range, const std::string & delimiter, const std::string & last_key) const
+{
+    if (range.split_pos >= last_key.size())
+        return false;
+    const auto bucket_byte = static_cast<unsigned char>(last_key[range.split_pos]);
+    if (bucket_byte == 0xff)
+        return false; /// No higher bucket: everything left is in the current bucket.
+
+    /// The smallest key of the *next* bucket; listing after it returns keys whose byte at the split
+    /// position is greater than the current one (i.e. any data beyond the current bucket).
+    std::string probe = last_key.substr(0, range.split_pos);
+    probe.push_back(static_cast<char>(static_cast<unsigned char>(bucket_byte + 1)));
+
+    auto result = list_level(range.prefix, delimiter, probe, std::string{});
+    if (!result.objects.empty() && (range.end.empty() || result.objects.front()->getPath() <= range.end))
+        return true;
+    if (!result.common_prefixes.empty() && (range.end.empty() || result.common_prefixes.front() <= range.end))
+        return true;
+    return false;
 }
 
 bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
@@ -254,7 +284,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
                 {
                     keep_paginating = true;
                 }
-                else
+                else if (splitWouldHelp(range, delimiter, last_key))
                 {
                     auto split = splitFlatRange(range, last_key, batch.empty() ? result.objects : batch);
                     if (split.empty())
@@ -262,6 +292,10 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
                     else
                         for (auto & s : split)
                             follow_up.push_back(std::move(s));
+                }
+                else
+                {
+                    keep_paginating = true; /// Keys share a common prefix; splitting would only waste requests.
                 }
             }
 

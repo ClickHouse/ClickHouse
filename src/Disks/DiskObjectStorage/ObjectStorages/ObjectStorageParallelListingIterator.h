@@ -85,6 +85,10 @@ private:
     /// Tiles `(last_key, range.end)` into contiguous sub-ranges using boundaries derived from the byte
     /// alphabet of `sample`. Returns empty if the range cannot be usefully split (caller paginates).
     std::vector<ListRange> splitFlatRange(const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample) const;
+    /// One cheap probe: is there any key beyond the bucket `last_key` sits in (within the range)?
+    /// If not, the keys share a common prefix and splitting cannot parallelize them — so the caller
+    /// paginates serially instead of issuing a fan of empty boundary probes.
+    bool splitWouldHelp(const ListRange & range, const std::string & delimiter, const std::string & last_key) const;
 
     std::optional<RelativePathsWithMetadata> popBatch(std::unique_lock<std::mutex> & lock);
     void ensureStarted(std::unique_lock<std::mutex> & lock);
