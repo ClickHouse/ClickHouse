@@ -390,7 +390,7 @@ void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_r
 
 void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
-    LOG_TEST(getLogger("LimitByTransform"), "Transform a chunk in LimitBySortedStreamTransform");
+    LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Transform a chunk in LimitBySortedStreamTransform");
 
     chassert(output_slices.empty());
 
