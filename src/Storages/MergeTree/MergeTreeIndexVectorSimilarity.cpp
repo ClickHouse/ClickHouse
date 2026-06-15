@@ -805,6 +805,16 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
             work[i] *= flip[i];
         walshHadamardTransform(work, padded);
     }
+
+    /// The Walsh-Hadamard rounds are unnormalized, so a finite (but large) Float32 input can overflow to Inf/NaN here.
+    /// The downstream encoders/scans feed `work` into norms, `std::lround`, and integer casts, so a non-finite value
+    /// would be undefined behaviour or a garbage code. Fail loud instead. This is a single linear pass over the used
+    /// coordinates, cheap relative to the O(padded log padded) transform above, and only fires for extreme inputs.
+    for (size_t i = 0; i < dimensions; ++i)
+        if (!std::isfinite(work[i]))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Vector for vector similarity index overflowed to a non-finite value during the random projection; "
+                "its magnitude is too large for the 'fastknn' projection-based quantizations");
 }
 
 /// RaBitQ (1-bit, asymmetric estimator), data-oblivious / no codebook (Gao & Long, "RaBitQ", SIGMOD 2024).
