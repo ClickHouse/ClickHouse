@@ -346,6 +346,13 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
+# `StorageKafka2` + `Exception during get topic partitions from Kafka: Local: Broker transport failure` is
+#       the wrapper-exception variant of the same class of error: the `KafkaConsumer2` background poll loop
+#       (`KafkaConsumer2::getAllTopicPartitionOffsets` -> `cppkafka::HandleException`) keeps polling while the
+#       Redpanda broker is in transition during the upgrade restart sequence and logs `<Error>` for each retry.
+#       Filtered via regex in the secondary pipe below to require both the `StorageKafka2` engine context AND
+#       the `Broker transport failure` symptom together, so real `StorageKafka2` regressions (auth errors,
+#       timeouts, protocol errors, other broker errors) still surface.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -368,6 +375,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       RaftInstance errors are not masked.
+# `Failed to flush system log system.metric_log` + `DEADLOCK_AVOIDED` is a transient lock-timeout emitted by
+#       `SystemLog<MetricLogElement>::flushImpl` when the background `MetricLog` flush loop races with the
+#       ongoing upgrade-test shutdown sequence. Another worker (DROP/RENAME/DETACH on `system.metric_log`,
+#       or a parallel mutation/merge) holds the table-level write lock, the flush blocks for the 60s timeout,
+#       and then aborts with code 473 (`DEADLOCK_AVOIDED`). Losing a few `MetricLogElement` samples during
+#       shutdown is harmless; the upgrade-check stage is not asserting on metric continuity. Filtered via
+#       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
+#       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
+#       `metric_log` errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -447,8 +463,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
+    | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
+    | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

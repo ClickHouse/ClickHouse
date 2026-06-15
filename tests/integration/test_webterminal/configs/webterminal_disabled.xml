@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- The web terminal is enabled by default; this config exercises the
+         explicit opt-out. With `enable_webterminal` set to `false`, every
+         request to `/webterminal` must be rejected with `403 Forbidden`
+         before any WebSocket upgrade or HTML page is served. -->
+    <enable_webterminal>false</enable_webterminal>
+</clickhouse>
