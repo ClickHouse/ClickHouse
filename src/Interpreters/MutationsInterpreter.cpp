@@ -1191,6 +1191,22 @@ void MutationsInterpreter::prepare(bool dry_run)
                     materialized_statistics.insert(column_desc.name);
                 }
             }
+
+            /// A TTL expression reading any rewritten column must be recalculated too, so the new
+            /// part's `ttl_infos` reflect the new values. This mirrors the UPDATE path, which obtains
+            /// these dependencies via `getAllColumnDependencies(updated_columns)` at the top of
+            /// `prepare`; MATERIALIZE COLUMN keeps its targets out of `updated_columns`, so without
+            /// this the new part's `ttl.txt` would be copied from the source part and keep stale
+            /// min/max bounds. For example, after `MODIFY COLUMN c2 ...; MATERIALIZE COLUMN c2` on a
+            /// table with `TTL c2 + INTERVAL 1 DAY`, TTL scheduling/deletes/moves would still use the
+            /// old bounds. The required TTL input columns are fed into the mutation stream as well,
+            /// just like `MATERIALIZE TTL` does for the UPDATE/DELETE case.
+            for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, rewritten_columns, has_dependency))
+            {
+                if (dependency.kind == ColumnDependency::TTL_EXPRESSION
+                    || dependency.kind == ColumnDependency::TTL_TARGET)
+                    dependencies.insert(dependency);
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {

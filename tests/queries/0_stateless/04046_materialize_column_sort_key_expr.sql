@@ -165,3 +165,19 @@ ALTER TABLE t_mat_dep_index MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
 SELECT count() FROM t_mat_dep_index WHERE m = 501 SETTINGS force_data_skipping_indices = 'idx_m';
 SELECT count() FROM t_mat_dep_index WHERE m = 51 SETTINGS force_data_skipping_indices = 'idx_m';
 DROP TABLE t_mat_dep_index;
+
+-- Case 16: Materializing a column read by a TTL expression must recalculate the part's TTL bounds,
+-- mirroring the UPDATE path. Without this the new part's ttl_infos are copied from the source part
+-- and keep stale min/max, so TTL scheduling/deletes/moves would use the old bounds. We change the
+-- expression first so the recomputed values differ, then check that the stored delete-TTL bound
+-- matches the current (recomputed) c2 value; with a stale (hardlinked) ttl.txt it would not.
+-- Both the old and the new bounds are far in the future so no row is ever expired/deleted.
+DROP TABLE IF EXISTS t_mat_ttl_recalc;
+CREATE TABLE t_mat_ttl_recalc (a Int, c2 DateTime MATERIALIZED toDateTime(1800000000 + a))
+    ENGINE = MergeTree() ORDER BY a TTL c2 + INTERVAL 1 DAY;
+INSERT INTO t_mat_ttl_recalc (a) VALUES (1);
+ALTER TABLE t_mat_ttl_recalc MODIFY COLUMN c2 DateTime MATERIALIZED toDateTime(1900000000 + a);
+ALTER TABLE t_mat_ttl_recalc MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT delete_ttl_info_min = (SELECT c2 + INTERVAL 1 DAY FROM t_mat_ttl_recalc LIMIT 1)
+    FROM system.parts WHERE table = 't_mat_ttl_recalc' AND active AND database = currentDatabase();
+DROP TABLE t_mat_ttl_recalc;
