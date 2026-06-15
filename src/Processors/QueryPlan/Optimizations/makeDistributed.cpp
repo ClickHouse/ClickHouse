@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace QueryPlanOptimizations
@@ -58,6 +59,18 @@ bool canExecuteRemotely(const QueryPlan::Node & node)
         if (!canExecuteRemotely(*child))
             return false;
     return true;
+}
+
+/// A bucket count sizes the exchange fan-out: each bucket becomes a separate task and a scatter
+/// output port. The cap limits memory consumption.
+constexpr UInt64 MAX_DISTRIBUTED_PLAN_BUCKET_COUNT = 256;
+
+static void validateBucketCount(UInt64 bucket_count, const char * setting_name)
+{
+    if (bucket_count > MAX_DISTRIBUTED_PLAN_BUCKET_COUNT)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The value of the setting `{}` is too large: {}, maximum allowed value is {}",
+            setting_name, bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
 }
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
@@ -810,6 +823,13 @@ String dumpQueryPlanShort(const QueryPlan & query_plan)
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto logger = getLogger("makeDistributedPlan");
+
+    /// The cap can be raised once the planner sizes bucket counts from statistics, available nodes
+    /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
+    validateBucketCount(optimization_settings.distributed_plan_default_shuffle_join_bucket_count,
+        "distributed_plan_default_shuffle_join_bucket_count");
+    validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
+        "distributed_plan_default_reader_bucket_count");
 
     size_t exchange_id = 0;
 
