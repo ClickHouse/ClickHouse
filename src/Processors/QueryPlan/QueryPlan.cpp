@@ -599,12 +599,15 @@ void QueryPlan::explainPlan(
     const ExplainPlanOptions & options,
     size_t offset,
     size_t max_description_length,
-    const PrettyNames & precomputed_pretty_names,
+    const PrettyNames * precomputed_pretty_names,
     const std::string & parent_tree_prefix,
     bool is_last_child_plan,
     AnalyzeStepsStats * steps_to_stats) const
 {
     checkInitialized();
+
+    static const PrettyNames empty_pretty_names;
+    const PrettyNames & pretty_names = precomputed_pretty_names ? *precomputed_pretty_names : empty_pretty_names;
 
     IQueryPlanStep::FormatSettings settings{
         .out = buffer,
@@ -613,8 +616,8 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
-        .pretty_names = precomputed_pretty_names.pretty_names,
-        .runtime_filter_names = precomputed_pretty_names.runtime_filter_names
+        .pretty_names = pretty_names.pretty_names,
+        .runtime_filter_names = pretty_names.runtime_filter_names
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {

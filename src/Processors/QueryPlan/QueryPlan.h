@@ -6,8 +6,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
-#if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -20,6 +18,8 @@ namespace DB
 {
 
 class AnalyzeStepsStats;
+
+struct PrettyNames;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -143,10 +143,11 @@ public:
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
-        const PrettyNames & precomputed_pretty_names = {},
+        const PrettyNames * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
         bool is_last_child_plan = true,
         AnalyzeStepsStats * steps_to_stats = nullptr) const;
+
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
