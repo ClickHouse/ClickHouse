@@ -1,7 +1,7 @@
 #include <string>
-#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
+#include <base/defines.h>
 #include <base/scope_guard.h>
 #include <DataFile.hh>
 #include <GenericDatum.hh>
@@ -18,6 +18,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -536,14 +537,16 @@ namespace
         {
             auto snapshots = metadata->getArray(f_snapshots);
             if (!snapshots)
-                return {};
+                throw DB::Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No 'snapshots' found in metadata");
+
             for (auto i = 0ull; i < snapshots->size(); ++i)
             {
                 auto snapshot = snapshots->getObject(static_cast<uint32_t>(i));
                 if (snapshot && snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == id)
                     return snapshot;
             }
-            return {};
+
+            throw DB::Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot with id '{}' found in metadata", id);
         }
     };
 
@@ -620,9 +623,8 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             context->getWriteSettings());
 
         auto schema = avro::compileJsonSchemaFromString(manifest_list_v2_schema); // NOLINT
-
         auto writer = [&]() mutable -> avro::DataFileWriter<avro::GenericDatum> {
-            auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
+            auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(*buf);
             return avro::DataFileWriter<avro::GenericDatum>(std::move(adapter), schema);
         }();
 
@@ -649,6 +651,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         }
 
         auto parent_snapshot = MetadataJsonView{.metadata = state.metadata_object}.findSnapshot(parent_snapshot_id);
+        chassert(parent_snapshot);
         auto parent_manifest_list_path = SnapshotJsonView{parent_snapshot, components.path_resolver}.getManifestPathResolved();
 
         forEachAvroEntry(
@@ -722,7 +725,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
 
     /// TODO: can be optimized, instead of failing and repeat whole operation, recreate all files
     /// we can just update summary and keep untouched in manifest list
-    /// e.g. if thre previous operation was an APPEND
+    /// e.g. if the previous operation was an APPEND
     committed = commitMetadataJSON(state, filename_generator, list_result.metadata_info);
     if (!committed)
         return false;

@@ -580,8 +580,79 @@ void generateManifestList(
     }
 
     if (use_previous_snapshots)
-        carryOverParentManifestListEntries(
-            path_resolver, metadata, new_snapshot, writer, schema, version, object_storage, context, /*skip_manifest_paths=*/{});
+    {
+        auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+        auto snapshots = metadata->getArray(Iceberg::f_snapshots);
+        for (size_t i = 0; i < snapshots->size(); ++i)
+        {
+            if (snapshots->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == parent_snapshot_id)
+            {
+                auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
+                    snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list));
+
+                auto resolved_manifest_list_path = path_resolver.resolve(manifest_list);
+                forEachAvroEntry(resolved_manifest_list_path, object_storage, context, "IcebergWrites",
+                    [&](const avro::GenericDatum & datum)
+                    {
+                        const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
+                        avro::GenericDatum new_datum(schema.root());
+                        avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
+                        new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
+                        new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
+                        new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
+                        /// In some version, iceberg-spark has changed the type of field `f_added_snapshot_id`
+                        /// from 'null, long' to 'long'. See https://github.com/apache/iceberg/pull/11626.
+                        /// Just in case that we read the old type 'null, long', we do this conversion: read every field
+                        /// and write it again with new, correct schema.
+                        if (old_entry.hasField(Iceberg::f_added_snapshot_id))
+                        {
+                            const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
+                            if (old_added_snapshot_id_entry.isUnion())
+                            {
+                                if (old_added_snapshot_id_entry.unionBranch() == 0) /// it means add_snapshot_id is null
+                                {
+                                    /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
+                                    throw Exception(
+                                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                        "Manifest list {} has null value for field '{}', but it is required",
+                                        resolved_manifest_list_path,
+                                        Iceberg::f_added_snapshot_id);
+                                }
+                            }
+                            new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
+                        }
+                        else
+                            /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
+                            throw Exception(
+                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                "Manifest list {} has null value for field '{}', but it is required",
+                                resolved_manifest_list_path,
+                                Iceberg::f_added_snapshot_id);
+                        auto add_field_to_datum = [&](const String & field)
+                        {
+                            if (old_entry.hasField(field))
+                                new_entry.field(field) = old_entry.field(field);
+                        };
+                        add_field_to_datum(Iceberg::f_added_files_count);
+                        add_field_to_datum(Iceberg::f_existing_files_count);
+                        add_field_to_datum(Iceberg::f_deleted_files_count);
+                        add_field_to_datum(Iceberg::f_partitions);
+                        add_field_to_datum(Iceberg::f_added_rows_count);
+                        add_field_to_datum(Iceberg::f_existing_rows_count);
+                        add_field_to_datum(Iceberg::f_deleted_rows_count);
+                        add_field_to_datum(Iceberg::f_key_metadata);
+                        if (version == 2)
+                        {
+                            add_field_to_datum(Iceberg::f_content);
+                            add_field_to_datum(Iceberg::f_sequence_number);
+                            add_field_to_datum(Iceberg::f_min_sequence_number);
+                        }
+                        writer.write(new_datum);
+                    });
+                break;
+            }
+        }
+    }
 
     writer.close();
 }
@@ -663,7 +734,7 @@ void generateExistingManifestFile(
         /// corrupt the manifest, so refuse instead.
         if (!parsed.parsed_snapshot_id.has_value())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Cannot re-emit Iceberg manifest entry as EXISTING: snapshot_id is missing");
         set_versioned_field(*parsed.parsed_snapshot_id, Iceberg::f_snapshot_id);
 
