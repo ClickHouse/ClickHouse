@@ -714,11 +714,17 @@ def test_optimize_manifest_files_dropped_partition_source_column_schema_header(
         TBLPROPERTIES ('format-version' = '2')
         """
     )
+    # Three separate inserts under spec 0 over the same two partitions (us, eu). Each Spark append
+    # writes one manifest, so spec 0 ends up with more manifests (3) than it has unique partition
+    # groups (2). This is what makes a manifest-only rewrite actually consolidate — otherwise
+    # `writeConsolidatedManifestFile` finds the manifests already optimal (one per partition) and
+    # writes nothing, leaving no compacted manifest to inspect the `schema` header of.
     spark.sql(
         f"INSERT INTO {TABLE_NAME} VALUES "
         f"(0, 'a', 'us'), (1, 'b', 'us'), (2, 'c', 'eu'), (3, 'd', 'eu')"
     )
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'e', 'us'), (5, 'f', 'eu')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (8, 'i', 'us'), (9, 'j', 'eu')")
 
     # Evolve: drop the partition field → new unpartitioned spec 1. Insert more rows under the new
     # spec while 'region' still exists (dropping it leaves spec 0 unbindable by Spark).
