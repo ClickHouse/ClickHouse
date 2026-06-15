@@ -292,11 +292,9 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
         = (identifier_quoting_rule == IdentifierQuotingRule::Always
            || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
 
-    if (!must_quote && (identifier_quoting_rule == IdentifierQuotingRule::UserDisplay
-                        || identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary))
+    if (identifier_quoting_rule == IdentifierQuotingRule::UserDisplay && !must_quote)
     {
-        /// Quote `name` if it is a keyword to avoid round-trip ambiguity (e.g. ARRAY[n] would be
-        /// re-parsed as an array constructor rather than an identifier subscript without quoting).
+        // Quote `name` if it is one of the keywords when `identifier_quoting_rule` is `IdentifierQuotingRule::UserDisplay`
         const auto & keyword_set = getKeyWordSet();
         must_quote = keyword_set.contains(Poco::toUpper(name));
     }
