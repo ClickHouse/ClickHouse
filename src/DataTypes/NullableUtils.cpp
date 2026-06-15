@@ -119,8 +119,8 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 }
 
 
-ColumnPtr applyParentNullMapToExtractedSubcolumn(
-    ColumnPtr column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset, size_t length)
+void applyParentNullMapToExtractedSubcolumn(
+    const MutableColumnPtr & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset, size_t length)
 {
     chassert(column_offset + length <= column->size());
 
@@ -131,44 +131,28 @@ ColumnPtr applyParentNullMapToExtractedSubcolumn(
     for (size_t i = 0; i < length; ++i)
         keep_mask[column_offset + i] = !parent_null_map[parent_null_map_offset + i];
 
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    if (auto * nullable = typeid_cast<ColumnNullable *>(column.get()))
     {
-        auto res = ColumnNullable::create(nullable->getNestedColumnPtr(), IColumn::mutate(nullable->getNullMapColumnPtr()));
-        assert_cast<ColumnNullable &>(res->assumeMutableRef()).applyNegatedNullMap(keep_mask);
-        return res;
+        nullable->applyNegatedNullMap(keep_mask);
+        return;
     }
 
-    if (checkAndGetColumn<ColumnVariant>(column.get()) || checkAndGetColumn<ColumnDynamic>(column.get()))
+    if (auto * variant = typeid_cast<ColumnVariant *>(column.get()))
     {
-        auto mutable_column = IColumn::mutate(std::move(column));
-
-        if (auto * variant = typeid_cast<ColumnVariant *>(mutable_column.get()))
-            variant->applyNegatedNullMap(keep_mask);
-        else
-            assert_cast<ColumnDynamic &>(*mutable_column).applyNegatedNullMap(keep_mask);
-
-        return mutable_column;
+        variant->applyNegatedNullMap(keep_mask);
+        return;
     }
 
-    if (const auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(column.get()))
+    if (auto * dynamic = typeid_cast<ColumnDynamic *>(column.get()))
     {
-        if (!low_cardinality->nestedIsNullable())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot apply the parent null map to LowCardinality subcolumn {} with a non-nullable dictionary",
-                column->getName());
+        dynamic->applyNegatedNullMap(keep_mask);
+        return;
+    }
 
-        /// NULL is represented by the index of the null value in the dictionary, which is always 0 for a
-        /// nullable dictionary. Filter out the indexes at the rows that are NULL in the parent and expand
-        /// the indexes column back: expanding fills the removed positions with zeros, i.e. with NULL.
-        /// Only the indexes are rewritten; the dictionary is shared unchanged.
-        chassert(low_cardinality->getDictionary().getNullValueIndex() == 0);
-
-        auto indexes = IColumn::mutate(low_cardinality->getIndexesPtr());
-        indexes->filter(keep_mask);
-        indexes->expand(keep_mask, false);
-
-        return ColumnLowCardinality::create(low_cardinality->getDictionaryPtr(), std::move(indexes), low_cardinality->isSharedDictionary());
+    if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(column.get()))
+    {
+        low_cardinality->applyNegatedNullMap(keep_mask);
+        return;
     }
 
     throw Exception(
@@ -209,7 +193,9 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     if (null_map && canContainNull(*prev))
     {
         const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        return applyParentNullMapToExtractedSubcolumn(prev, outer_null_map_data, 0, 0, prev->size());
+        auto mutable_column = IColumn::mutate(prev);
+        applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0, mutable_column->size());
+        return mutable_column;
     }
 
     return prev;

@@ -115,7 +115,9 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
     size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
-    column = applyParentNullMapToExtractedSubcolumn(std::move(column), parent_null_map_data, prev_size, parent_offset, new_rows);
+    auto mutable_column = IColumn::mutate(std::move(column));
+    applyParentNullMapToExtractedSubcolumn(mutable_column, parent_null_map_data, prev_size, parent_offset, new_rows);
+    column = std::move(mutable_column);
 }
 
 }
