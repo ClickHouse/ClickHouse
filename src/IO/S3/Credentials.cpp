@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
 #include <Common/ListWithMemoryTracking.h>
@@ -794,12 +795,12 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
-    Strings retryable_errors;
-    retryable_errors.push_back("IDPCommunicationError");
-    retryable_errors.push_back("InvalidIdentityToken");
-
-    aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(
-        retryable_errors, /* maxRetries = */3);
+    /// Use ClickHouse's retry strategy so the STS web-identity client stays bounded and respects query
+    /// cancellation / max_execution_time (its ShouldRetry checks isQueryCanceled), instead of the AWS SDK
+    /// strategy which is not cancellation-aware.
+    auto credentials_retry_strategy = aws_client_configuration.retry_strategy;
+    credentials_retry_strategy.max_retries = 3;
+    aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
 
     client = std::make_unique<Aws::Internal::STSCredentialsClient>(aws_client_configuration);
     LOG_INFO(logger, "Creating STS AssumeRole with web identity creds provider.");
@@ -905,11 +906,12 @@ void SSOCredentialsProvider::Reload()
     aws_client_configuration.region = sso_region;
     LOG_TEST(logger, "Passing config to client for region: {}", sso_region);
 
-    Aws::Vector<Aws::String> retryable_errors;
-    retryable_errors.push_back("TooManyRequestsException");
-
-    aws_client_configuration.retryStrategy = Aws::MakeShared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(
-        SSO_CREDENTIALS_PROVIDER_LOG_TAG, retryable_errors, /*maxRetries=*/3);
+    /// Use ClickHouse's retry strategy so the SSO client stays bounded and respects query cancellation /
+    /// max_execution_time (its ShouldRetry checks isQueryCanceled), instead of the AWS SDK strategy which is
+    /// not cancellation-aware.
+    auto credentials_retry_strategy = aws_client_configuration.retry_strategy;
+    credentials_retry_strategy.max_retries = 3;
+    aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
     client = Aws::MakeUnique<Aws::Internal::SSOCredentialsClient>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, aws_client_configuration);
 
     LOG_TRACE(logger, "Requesting credentials with AWS_ACCESS_KEY: {}", sso_account_id);
@@ -1124,7 +1126,10 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.connectTimeoutMs = 50;
             aws_client_configuration.requestTimeoutMs = 1000;
 
-            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+            /// Cancellation-aware, bounded retry (IMDS is local and fast; keep a single retry as before).
+            auto credentials_retry_strategy = aws_client_configuration.retry_strategy;
+            credentials_retry_strategy.max_retries = 1;
+            aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
 
             AddProvider(AWSInstanceProfileCredentialsProvider::create(
                 aws_client_configuration, !credentials_configuration.use_insecure_imds_request));
@@ -1260,7 +1265,24 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
-    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, client_configuration, sts_endpoint_override);
+    /// The STS AssumeRole client uses the AWS SDK's own request/retry loop (not Client::doRequest), so it
+    /// only honors the retry strategy and timeouts set on its own configuration. Give it ClickHouse's
+    /// bounded, cancellation-aware retry strategy (its ShouldRetry checks isQueryCanceled), so an
+    /// AssumeRole against an unreachable / slow STS endpoint stays bounded and respects query cancellation
+    /// and max_execution_time instead of retrying for minutes with the AWS SDK default strategy. Also bound
+    /// each attempt's time so cancellation is observed promptly (it is checked between attempts, so a single
+    /// in-flight request is the granularity); never lengthen the caller's configured timeouts.
+    auto sts_client_configuration = client_configuration;
+    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
+    if (sts_retry_strategy.max_retries > 3)
+        sts_retry_strategy.max_retries = 3;
+    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
+    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > 1000)
+        sts_client_configuration.connectTimeoutMs = 1000;
+    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > 10000)
+        sts_client_configuration.requestTimeoutMs = 10000;
+
+    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
