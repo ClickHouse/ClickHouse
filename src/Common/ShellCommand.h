@@ -75,8 +75,8 @@ public:
         bool collect_resource_usage = false;
 
         /// When true, the child pid is tracked in the global `UDFProcessRegistry`
-        /// from spawn until reaped. Off by default; only set to true by the executable
-        /// UDF loader, for both executable and executable_pool UDFs.
+        /// from spawn until reaped. Off by default; enabled only for executable
+        /// and executable_pool UDFs.
         bool register_in_udf_process_registry = false;
     };
 
