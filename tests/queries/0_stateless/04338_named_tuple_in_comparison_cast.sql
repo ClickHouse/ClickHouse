@@ -31,7 +31,9 @@ DROP TABLE t_named_tuple_pk;
 
 -- Explicit CAST keeps the permissive named tuple semantics: the elements are matched by name,
 -- extra source fields are dropped and missing destination fields are filled with default values.
-SELECT (1 AS a, 2 AS b)::Tuple(a UInt32, c UInt32);
+-- The explicit tuple(name, ...)(value, ...) syntax is used so the names are present in both
+-- analyzers (the automatic naming from aliases, like in `(1 AS a, 2 AS b)`, is analyzer-only).
+SELECT tuple('a', 'b')(1, 2)::Tuple(a UInt32, c UInt32);
 SELECT accurateCast(tuple('b', 'a')(1, 2), 'Tuple(a Int8, b Int8)');
 
 DROP TABLE t_named_tuple_in;
