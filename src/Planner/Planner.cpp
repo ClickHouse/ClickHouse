@@ -1667,6 +1667,15 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     const OrderedMaterializedCTEs & materialized_ctes
 )
 {
+    /// Logical plans are built for serialization to a remote node. `DelayedMaterializingCTEsStep`
+    /// is stripped on the way out (`Serialization.cpp`), and the only surviving side effect of
+    /// building it here would be to populate the shared `MaterializedCTE::plan` with a logical
+    /// (serialize-only) version that the non-logical planner pass would then reuse for local
+    /// execution and crash on. The materialization is owned by the non-logical pass; remote
+    /// nodes read from the temp storage by name.
+    if (select_query_options.build_logical_plan)
+        return;
+
     if (materialized_ctes.empty())
         return;
 
@@ -2034,7 +2043,7 @@ void Planner::buildPlanForUnionNode()
     /// Fix: add a DelayedMaterializingCTEsStep at the UNION level so that resolveMaterializingCTEs
     /// (which walks pre-order) claims the CTE here first, ensuring materialization completes before
     /// any child starts reading.
-    if (!select_query_options.only_analyze)
+    if (!select_query_options.only_analyze && !select_query_options.build_logical_plan)
     {
         auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
