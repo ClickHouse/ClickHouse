@@ -401,9 +401,11 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     /// to push it down to the partial aggregation that this remote plan
     /// represents.  The check covers the same conditions as the coordinator's
     /// `tryOptimizeGroupByLimitPushdown`; it intentionally skips collator and
-    /// composite-expression cases that we do not yet serialize.
+    /// composite-expression cases that we do not yet serialize.  We match
+    /// against the AST of the same query tree the interpreter planned (see
+    /// `InterpreterSelectQueryAnalyzer`, which derives its AST the same way).
     if (new_context->getSettingsRef()[Setting::enable_group_by_top_k_optimization])
-        tryPushDownTopKToPartialAggregation(*query_plan, query_ast, new_context);
+        tryPushDownTopKToPartialAggregation(*query_plan, remote_query_tree->toAST(), new_context);
 
     return query_plan;
 }
