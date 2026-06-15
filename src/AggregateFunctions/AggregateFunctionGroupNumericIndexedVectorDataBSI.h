@@ -1233,7 +1233,7 @@ public:
         }
         else if (rhs.allValuesEqualOne())
         {
-            lhs.andBitmap(*rhs.getDataArrayAt(lhs.fraction_bit_num), res);
+            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
             return;
         }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
