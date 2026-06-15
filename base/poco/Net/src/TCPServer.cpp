@@ -153,9 +153,9 @@ void TCPServer::run()
                     }
                 }
                 // Termination request
-                catch (Poco::InvalidArgumentException& exc)
+                catch (Poco::InvalidArgumentException&)
                 {
-                    ErrorHandler::logMessage(Message::PRIO_INFORMATION, "Shutting down TCPServer: " + exc.displayText());
+                    break;
                 }
                 catch (Poco::Exception& exc)
                 {

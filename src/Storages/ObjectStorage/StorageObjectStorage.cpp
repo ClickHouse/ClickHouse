@@ -813,9 +813,10 @@ void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & comm
     /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
     /// does not call it before invoking `mutate`.
     updateExternalDynamicMetadataIfExists(context_);
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -836,10 +837,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
-
-    if (catalog)
-        return;
+    configuration->alter(object_storage, params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)

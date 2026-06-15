@@ -43,7 +43,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheReserveAttempts;
-    extern const Event FilesystemCacheFailedReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
@@ -77,7 +76,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_cache_stall_free_space_ratio_keeping_thread[];
-    extern const char file_cache_pause_before_do_eviction[];
 }
 
 namespace FileCacheSetting
@@ -174,13 +172,11 @@ std::string FileCacheReserveStat::Stat::toString() const
     wb << "non-releasable count: " << non_releasable_count << ", ";
     wb << "evicting count: " << evicting_count << ", ";
     wb << "moving count: " << moving_count << ", ";
-    wb << "invalidated count: " << invalidated_count << ", ";
-    wb << "candidates iteration steps: " << candidates_iteration_steps << ", ";
-    wb << "clients iterated: " << clients_iterated;
+    wb << "invalidated count: " << invalidated_count;
     return wb.str();
 }
 
-static double normalizeProbability(double probability)
+double normalizeProbability(double probability)
 {
     if (probability < 0.0)
         probability = .0;
@@ -425,7 +421,7 @@ void FileCache::initialize()
 
         if (load_metadata_asynchronously)
         {
-            load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+            load_metadata_main_thread = ThreadFromGlobalPool([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
         }
         else
         {
@@ -653,13 +649,13 @@ void FileCache::fillHolesWithEmptyFileSegments(
     ///
     /// For each such hole create a file_segment_metadata with file segment state EMPTY.
 
-    chassert(!file_segments.empty());
+    assert(!file_segments.empty());
 
     auto it = file_segments.begin();
     size_t processed_count = 0;
     auto segment_range = (*it)->range();
 
-    size_t current_pos = 0;
+    size_t current_pos;
     if (segment_range.left < range.left)
     {
         ///    [_______     -- requested range
@@ -691,7 +687,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             continue;
         }
 
-        chassert(current_pos < segment_range.left);
+        assert(current_pos < segment_range.left);
 
         auto hole_size = segment_range.left - current_pos;
 
@@ -1109,12 +1105,9 @@ bool FileCache::tryReserve(
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
-    const bool success = doTryReserve(
+    return doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
         failure_reason);
-    if (!success)
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
-    return success;
 }
 
 bool FileCache::doTryReserve(
@@ -1208,8 +1201,6 @@ bool FileCache::doTryReserve(
     EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
-    FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
-
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
     if (!doEviction(
@@ -1284,9 +1275,9 @@ bool FileCache::doTryReserve(
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
-    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
+    if (!file_segment.getKeyMetadata()->createBaseDirectory())
     {
-        failure_reason = "Failed to create base directory for key, error: " + ec.message();
+        failure_reason = "not enough space on device";
         return false;
     }
 
@@ -1932,7 +1923,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
     {
         auto offset_with_suffix = offset_it->path().filename().string();
-        bool parsed = false;
+        bool parsed;
         UInt64 offset = 0;
 
         auto delim_pos = offset_with_suffix.find('_');
@@ -2084,8 +2075,8 @@ void FileCache::deactivateBackgroundOperations()
     shutdown.store(true);
 
     stop_loading_metadata = true;
-    if (load_metadata_main_thread && load_metadata_main_thread->joinable())
-        load_metadata_main_thread->join();
+    if (load_metadata_main_thread.joinable())
+        load_metadata_main_thread.join();
 
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
@@ -2581,13 +2572,13 @@ bool FileCache::doDynamicResizeImpl(
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const FilesystemCacheSettings & cache_settings)
+    const String & query_id, const ReadSettings & read_settings)
 {
-    if (!query_limit || cache_settings.max_download_size_per_query == 0)
+    if (!query_limit || read_settings.filesystem_cache_max_download_size == 0)
         return {};
 
     auto lock = cache_guard.writeLock();
-    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
+    auto context = query_limit->getOrSetQueryContext(query_id, read_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
 }
 

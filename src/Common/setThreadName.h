@@ -164,7 +164,6 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
-    M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
 
 
 enum class ThreadName : uint8_t

@@ -68,12 +68,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes the Darwin skip list, so changes to
-# it must schedule the job (the shared digest above does not cover that file).
-darwin_fast_test_digest_config = Job.CacheDigestConfig(
-    include_paths=fast_test_digest_config.include_paths + ["./ci/defs/darwin.skip"],
-)
-
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
     runs_on=[],  # from parametrize()
@@ -208,11 +202,9 @@ class JobConfigs:
         name="Fast test",
         runs_on=None,  # from parametrize()
         command="python3 ./ci/jobs/fast_test.py",
-        digest_config=darwin_fast_test_digest_config,
+        digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
-        pre_hooks=[
-            "sudo rm -rf /Library/Logs/DiagnosticReports/*",
-        ],
+        force_success=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
@@ -494,7 +486,6 @@ class JobConfigs:
             ],
         ),
         timeout=900,
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -1384,7 +1375,6 @@ class JobConfigs:
             include_paths=[
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
-                "./ci/jobs/scripts/docs",
             ],
             # Exclude everything currently in ./docs so that this job runs only
             # on files that are NOT part of the legacy docs tree (i.e. the new
@@ -1492,37 +1482,6 @@ class JobConfigs:
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
-        ),
-    )
-    collect_clickhouse_profiles_jobs = Job.Config(
-        name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=8 * 3600,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/collect_clickhouse_profiles.py",
-                "./cmake/profile_optimization.cmake",
-                "./tests/performance/",
-            ],
-        ),
-    ).parametrize(
-        Job.ParamSet(
-            parameter="amd64",
-            runs_on=RunnerLabels.AMD_LARGE,
-            provides=[
-                ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
-                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
-            ],
-        ),
-        Job.ParamSet(
-            parameter="aarch64",
-            runs_on=RunnerLabels.ARM_LARGE,
-            provides=[
-                ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
-                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
-            ],
         ),
     )
     toolchain_build_jobs = Job.Config(

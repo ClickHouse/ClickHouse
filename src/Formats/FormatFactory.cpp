@@ -78,8 +78,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     if (dict.end() != it)
         return it->second;
     auto hints = this->getHints(name);
-    auto hint_string = hints.empty() ? "" : fmt::format(". Maybe you meant: {}", toString(hints));
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}{}", name, hint_string);
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -112,8 +111,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
     format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
     format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
-    format_settings.avro.schema_registry_retry.max_retries = settings[Setting::format_avro_schema_registry_max_retries];
-    format_settings.avro.schema_registry_retry.initial_backoff_ms = settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms];
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
     format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
@@ -206,7 +203,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
-    format_settings.float_precision = settings[Setting::output_format_float_precision];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
@@ -270,7 +266,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
     format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
     format_settings.pretty.row_numbers = settings[Setting::output_format_pretty_row_numbers];
-    format_settings.pretty.use_nbsp_for_padding = settings[Setting::output_format_pretty_use_nbsp_for_padding];
     format_settings.pretty.single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
     format_settings.pretty.display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
     format_settings.pretty.display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
@@ -427,23 +422,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
     }
 
-    /// Schema Registry retry policy: bound retries and backoff.
-    {
-        static constexpr UInt64 max_retries_limit = 20;
-        static constexpr UInt64 max_initial_backoff_ms = 60000;
-        const auto & retry = format_settings.avro.schema_registry_retry;
-        if (retry.max_retries > max_retries_limit)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_max_retries' must be between 0 and {}, got {}",
-                max_retries_limit, retry.max_retries);
-        if (retry.initial_backoff_ms == 0 || retry.initial_backoff_ms > max_initial_backoff_ms)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_retry_initial_backoff_ms' must be greater than 0 and less than or equal to {}, got {}",
-                max_initial_backoff_ms, retry.initial_backoff_ms);
-    }
-
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
         && context->getSettingsRef()[Setting::http_write_exception_in_output_format].value)
     {
@@ -520,7 +498,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
     row_input_format_params.connection_handling = format_settings.connection_handling;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
-    row_input_format_params.allow_errors_ratio = static_cast<double>(format_settings.input_allow_errors_ratio);
+    row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
     row_input_format_params.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
 

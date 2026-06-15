@@ -4,7 +4,4 @@ dict = all.dict
 rss_limit_mb = 8192
 
 [fuzzer_arguments]
-max_parser_backtracks = 7000
-max_parser_depth = 50
-max_ast_depth = 200
-max_ast_elements = 10000
+max_parser_backtracks = 10000
