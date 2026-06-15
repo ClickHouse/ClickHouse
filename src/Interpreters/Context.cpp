@@ -4693,6 +4693,13 @@ void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConf
         size = max_cache_size;
         LOG_DEBUG(shared->log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
     }
+    /// Mirror the startup clamp (see `Server.cpp`) so that `SYSTEM RELOAD CONFIG` cannot let the on-disk
+    /// cache grow past the same `max_cache_size` cap that is applied on boot.
+    if (disk_cache_max_size_in_bytes > max_cache_size)
+    {
+        disk_cache_max_size_in_bytes = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered query result cache size on disk to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(disk_cache_max_size_in_bytes));
+    }
     shared->query_result_cache->updateConfiguration(size, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows, disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes, disk_cache_max_entry_size_in_rows);
 }
 

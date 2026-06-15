@@ -2244,7 +2244,7 @@ try
     if (query_result_cache_on_disk_max_size_in_bytes > max_cache_size)
     {
         query_result_cache_on_disk_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query result cache size on disk to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
+        LOG_INFO(log, "Lowered query result cache size on disk to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_on_disk_max_size_in_bytes));
     }
 
     bool query_result_cache_persist_cache = config().getBool("query_cache.persist_cache", true);
