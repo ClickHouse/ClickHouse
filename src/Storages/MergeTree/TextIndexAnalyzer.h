@@ -41,6 +41,14 @@ public:
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
+    struct PostingsReadPlanEntry
+    {
+        String token;
+        TokenPostingsInfoPtr token_info;
+        std::vector<size_t> blocks_to_read;
+        size_t covered_rows = 0;
+    };
+
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
     bool alwaysFalse() const { return always_false; }
@@ -66,6 +74,13 @@ public:
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
+    /// Builds a plan for unread posting blocks. `All` queries are sorted to prove an empty
+    /// result earlier; other query modes preserve token order.
+    std::vector<PostingsReadPlanEntry> buildPostingsReadPlan(const QueryBuilder & query_builder, const RowsRange & range) const;
+    static std::vector<PostingsReadPlanEntry> buildPostingsReadPlan(
+        const QueryBuilder & query_builder,
+        const RowsRange & range,
+        const absl::flat_hash_set<String> & tokens_with_postings);
     size_t memoryUsageBytes() const;
 
 private:

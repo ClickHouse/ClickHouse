@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <cmath>
 
 namespace ProfileEvents
@@ -313,6 +314,66 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
                 queries_by_token[query_token].erase(hash);
         }
     }
+}
+
+std::vector<TextIndexAnalyzer::PostingsReadPlanEntry> TextIndexAnalyzer::buildPostingsReadPlan(
+    const QueryBuilder & query_builder,
+    const RowsRange & range) const
+{
+    return buildPostingsReadPlan(query_builder, range, tokens_with_postings);
+}
+
+std::vector<TextIndexAnalyzer::PostingsReadPlanEntry> TextIndexAnalyzer::buildPostingsReadPlan(
+    const QueryBuilder & query_builder,
+    const RowsRange & range,
+    const absl::flat_hash_set<String> & tokens_with_postings)
+{
+    std::vector<PostingsReadPlanEntry> plan;
+    plan.reserve(query_builder.tokens.size());
+
+    for (const auto & [token, token_info] : query_builder.tokens)
+    {
+        if (tokens_with_postings.contains(token))
+            continue;
+
+        auto blocks_to_read = token_info->getBlocksToRead(range);
+        size_t covered_rows = 0;
+        for (const auto block_idx : blocks_to_read)
+        {
+            if (auto intersection = token_info->ranges[block_idx].intersectWith(range))
+                covered_rows += intersection->end - intersection->begin + 1;
+        }
+
+        plan.push_back(
+        {
+            .token = token,
+            .token_info = token_info,
+            .blocks_to_read = std::move(blocks_to_read),
+            .covered_rows = covered_rows,
+        });
+    }
+
+    if (query_builder.query->search_mode != TextSearchMode::All)
+        return plan;
+
+    std::stable_sort(plan.begin(), plan.end(), [](const auto & lhs, const auto & rhs)
+    {
+        if (lhs.blocks_to_read.empty() != rhs.blocks_to_read.empty())
+            return lhs.blocks_to_read.empty();
+
+        if (lhs.blocks_to_read.size() != rhs.blocks_to_read.size())
+            return lhs.blocks_to_read.size() < rhs.blocks_to_read.size();
+
+        if (lhs.covered_rows != rhs.covered_rows)
+            return lhs.covered_rows < rhs.covered_rows;
+
+        if (lhs.token_info->cardinality != rhs.token_info->cardinality)
+            return lhs.token_info->cardinality < rhs.token_info->cardinality;
+
+        return lhs.token < rhs.token;
+    });
+
+    return plan;
 }
 
 template <typename Operation>

@@ -894,12 +894,10 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
     auto & state = *context.state;
     auto & postings_serialization = *context.postings_serialization;
 
-    for (const auto & [token, token_info] : query_builder.tokens)
+    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range))
     {
-        if (analyzer->hasReadPostings(token))
-            continue;
-
-        auto blocks_to_read = token_info->getBlocksToRead(*current_range);
+        const auto & token_info = entry.token_info;
+        const auto & blocks_to_read = entry.blocks_to_read;
         if (blocks_to_read.empty())
             continue;
 
@@ -946,12 +944,10 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
     auto & state = *context.state;
     auto & postings_serialization = *context.postings_serialization;
 
-    for (const auto & [token, token_info] : query_builder.tokens)
+    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range))
     {
-        if (analyzer->hasReadPostings(token))
-            continue;
-
-        auto blocks_to_read = token_info->getBlocksToRead(*current_range);
+        const auto & token_info = entry.token_info;
+        const auto & blocks_to_read = entry.blocks_to_read;
         if (blocks_to_read.empty())
             return false;
 
