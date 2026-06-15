@@ -2239,6 +2239,10 @@ void DatabaseReplicated::dropDetachedTable(
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
+    bool digest_updated = false;
+
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2247,15 +2251,20 @@ void DatabaseReplicated::dropDetachedTable(
         {
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
 
-            std::lock_guard lock{metadata_mutex};
-            UInt64 new_digest = tables_metadata_digest;
             new_digest -= getMetadataHash(table_name);
+            digest_updated = true;
             if (!is_recovering)
                 txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
         }
     }
 
     DatabaseAtomic::dropDetachedTable(local_context, table_name, sync, dependency_cleanup);
+
+    if (digest_updated)
+    {
+        tables_metadata_digest = new_digest;
+        assertDigest(local_context);
+    }
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
