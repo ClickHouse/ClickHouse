@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -341,7 +342,28 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+static const ActionsDAG::Node * combineFiltersForRowEstimate(
+    const ActionsDAG::Node * existing_filter,
+    const ActionsDAG::Node * new_filter,
+    std::list<ActionsDAG> & temporary_filter_dags)
+{
+    if (!existing_filter)
+        return new_filter;
+    if (!new_filter)
+        return existing_filter;
+
+    auto combined_filter_dag = ActionsDAG::buildFilterActionsDAG({existing_filter, new_filter});
+    if (!combined_filter_dag || combined_filter_dag->getOutputs().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to combine filters for row-count estimation");
+
+    temporary_filter_dags.emplace_back(std::move(*combined_filter_dag));
+    return temporary_filter_dags.back().getOutputs().front();
+}
+
+static RelationStats estimateReadRowsCountImpl(
+    QueryPlan::Node & node,
+    const ActionsDAG::Node * filter,
+    std::list<ActionsDAG> & temporary_filter_dags)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -414,7 +436,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+        return estimateReadRowsCountImpl(*reading->getSubplanReferenceRoot(), filter, temporary_filter_dags);
     }
 
     if (node.children.size() != 1)
@@ -422,7 +444,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -431,7 +453,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -440,14 +462,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        const auto * combined_filter = combineFiltersForRowEstimate(filter, predicate, temporary_filter_dags);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), combined_filter, temporary_filter_dags);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
@@ -462,7 +485,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -473,7 +496,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
 #if CLICKHOUSE_CLOUD
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
 #endif
 
     /// Generic pass-through for any single-input transformation that preserves the row count
@@ -482,9 +505,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// `ReadFromMergeTree` from this walker and force callers to fall back to no stats.
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
 
     return {};
+}
+
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+{
+    std::list<ActionsDAG> temporary_filter_dags;
+    return estimateReadRowsCountImpl(node, filter, temporary_filter_dags);
 }
 
 
