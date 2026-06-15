@@ -998,14 +998,21 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
-    auto skip_index = [&files_to_skip, &mrk_extension](const MergeTreeIndexPtr & index)
+    auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
         auto index_substreams = index->getSubstreams();
 
         for (const auto & index_substream : index_substreams)
         {
-            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
-            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
+            String stream_name = index->getFileName() + index_substream.suffix;
+
+            auto actual_data_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, source_part->checksums);
+            if (actual_data_stream_name)
+                files_to_skip.insert(*actual_data_stream_name + index_substream.extension);
+
+            auto actual_mark_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
+            if (actual_mark_stream_name)
+                files_to_skip.insert(*actual_mark_stream_name + mrk_extension);
         }
     };
 
@@ -1086,27 +1093,36 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            static const std::array<String, 2> extensions = {".idx2", ".idx"};
-            static const std::array<String, 3> substreams = {"", ".dct", ".pst"};
-
-            for (const auto & substream : substreams)
+            MergeTreeIndexPtr index;
+            for (const auto & idx : metadata_snapshot->getSecondaryIndices())
             {
-                for (const auto & extension : extensions)
+                if (idx.name == command.column_name)
                 {
-                    const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
-                    const String stream_name = index_filename + substream;
+                    index = MergeTreeIndexFactory::instance().get(idx);
+                    break;
+                }
+            }
 
-                    /// Check for both original and hashed filenames (hashed if the index name is too long)
-                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
-                    if (actual_stream_name)
-                    {
-                        add_rename(*actual_stream_name + extension, "");
+            if (!index)
+                continue;
 
-                        /// Also try to remove the mark file (check for both original and hashed)
-                        auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
-                        if (actual_mark_name)
-                            add_rename(*actual_mark_name + mrk_extension, "");
-                    }
+            const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
+            auto index_substreams = index->getSubstreams();
+
+            for (const auto & index_substream : index_substreams)
+            {
+                const String stream_name = index_filename + index_substream.suffix;
+
+                /// Check for both original and hashed filenames (hashed if the index name is too long)
+                auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, source_part->checksums);
+                if (actual_stream_name)
+                {
+                    add_rename(*actual_stream_name + index_substream.extension, "");
+
+                    /// Also try to remove the mark file (check for both original and hashed)
+                    auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
+                    if (actual_mark_name)
+                        add_rename(*actual_mark_name + mrk_extension, "");
                 }
             }
         }

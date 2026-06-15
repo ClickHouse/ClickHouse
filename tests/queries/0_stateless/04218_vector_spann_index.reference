@@ -25,3 +25,6 @@ Description: vector_spann GRANULARITY 100000000
 Name: idx
 Description: vector_spann GRANULARITY 100000000
 3	3
+12. multi-granule without _distance projection
+4	4
+0

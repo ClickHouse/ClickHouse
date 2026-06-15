@@ -338,3 +338,50 @@ SELECT count(*), uniqExact(id) FROM (
 );
 
 DROP TABLE tab_spann_centroid_k;
+
+SELECT '12. multi-granule without _distance projection';
+DROP TABLE IF EXISTS tab_spann_no_distance;
+
+-- GRANULARITY 1 with index_granularity = 2 forces multiple vector_spann index granules per part,
+-- exercising the cross-granule merge path when distances are not projected (read hints get reset).
+-- centroid_ratio = 1.0 makes the index exact, so ANN result must equal brute force.
+CREATE TABLE tab_spann_no_distance
+(
+    id Int32,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2, 'bf16', 32, 128, 1.0) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab_spann_no_distance VALUES
+    (0, [0.0, 0.0]), (1, [0.0, 0.01]), (2, [0.0, 0.02]), (3, [0.0, 0.03]),
+    (4, [0.0, 0.04]), (5, [0.0, 0.05]), (6, [0.0, 0.06]), (7, [0.0, 0.07]);
+
+SELECT count(), uniqExact(id) FROM (
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_no_distance
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 4
+    SETTINGS use_skip_indexes = 1
+);
+
+SELECT count() FROM (
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_no_distance
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 4
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_no_distance
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 4
+    SETTINGS use_skip_indexes = 0
+);
+
+DROP TABLE tab_spann_no_distance;
