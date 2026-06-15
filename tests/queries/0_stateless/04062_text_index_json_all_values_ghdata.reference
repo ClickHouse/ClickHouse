@@ -1,109 +1,109 @@
 -- Point lookup by string value
 SELECT count() FROM ghdata WHERE data.actor.login = 'dependabot[bot]'
 33
-Condition: (search_mode: All, direct_read: Hint, tokens: ["bot", "dependabot"]); (global_search_mode: All, analyzed_tokens: ["bot", "dependabot"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["bot", "dependabot"]); global: (search_mode: All, tokens: ["bot" (analyzed in 1/1 parts), "dependabot" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 25/50
 -- Point lookup by numeric value
 SELECT count() FROM ghdata WHERE data.repo.id = 323586805
 3
-Condition: (search_mode: All, direct_read: Hint, tokens: ["323586805"]); (global_search_mode: All, analyzed_tokens: ["323586805"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["323586805"]); global: (search_mode: All, tokens: ["323586805" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 2/50
 -- Equality on event type
 SELECT count() FROM ghdata WHERE data.type = 'WatchEvent'
 282
-Condition: (search_mode: All, direct_read: Hint, tokens: ["watchevent"]); (global_search_mode: All, analyzed_tokens: ["watchevent"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["watchevent"]); global: (search_mode: All, tokens: ["watchevent" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 50/50
 -- Equality on nested path
 SELECT count() FROM ghdata WHERE data.payload.action = 'opened'
 227
-Condition: (search_mode: All, direct_read: Hint, tokens: ["opened"]); (global_search_mode: All, analyzed_tokens: ["opened"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["opened"]); global: (search_mode: All, tokens: ["opened" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 50/50
 -- LIKE pattern matching (index cannot help, all granules scanned)
 SELECT count() FROM ghdata WHERE data.repo.name LIKE '%python%'
 36
-Condition: (search_mode: All, direct_read: Hint, tokens: []); (global_search_mode: All, analyzed_tokens: [], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: []); global: (search_mode: All, tokens: [])
 Parts: 1/1
 Granules: 50/50
 -- hasToken on string field
 SELECT count() FROM ghdata WHERE hasToken(data.actor.login, 'dependabot')
 37
-Condition: (search_mode: All, direct_read: Hint, tokens: ["dependabot"]); (global_search_mode: All, analyzed_tokens: ["dependabot"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["dependabot"]); global: (search_mode: All, tokens: ["dependabot" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 28/50
 -- hasAllTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAllTokens(data.payload.pull_request.title::String, 'Fix spelling')
 4
-Condition: (search_mode: All, direct_read: Hint, tokens: ["fix", "spelling"]); (global_search_mode: All, analyzed_tokens: ["fix", "spelling"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["fix", "spelling"]); global: (search_mode: All, tokens: ["fix" (analyzed in 1/1 parts), "spelling" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 4/50
 -- hasAnyTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAnyTokens(data.payload.pull_request.title::String, ['Fix', 'fix'])
 18
-Condition: (search_mode: Any, direct_read: Hint, tokens: ["Fix", "fix"]); (global_search_mode: Any, analyzed_tokens: ["Fix", "fix"], runtime_tokens: [])
+Condition: (search_mode: Any, direct_read: Hint, tokens: ["Fix", "fix"]); global: (search_mode: Any, tokens: ["Fix" (analyzed in 1/1 parts), "fix" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 50/50
 -- IN operator on string field (rare values, granules should be skipped)
 SELECT count() FROM ghdata WHERE data.type::String IN ('MemberEvent', 'ForkEvent')
 112
-Condition: (search_mode: All, direct_read: None, tokens: ["memberevent"]) | (search_mode: All, direct_read: None, tokens: ["forkevent"]); (global_search_mode: Any, analyzed_tokens: ["forkevent", "memberevent"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: None, tokens: ["memberevent"]) | (search_mode: All, direct_read: None, tokens: ["forkevent"]); global: (search_mode: Any, tokens: ["forkevent" (analyzed in 1/1 parts), "memberevent" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 45/50
 -- IN operator on nested path (rare values, granules should be skipped)
 SELECT count() FROM ghdata WHERE data.payload.action::String IN ('reopened', 'published')
 42
-Condition: (search_mode: All, direct_read: None, tokens: ["reopened"]) | (search_mode: All, direct_read: None, tokens: ["published"]); (global_search_mode: Any, analyzed_tokens: ["published", "reopened"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: None, tokens: ["reopened"]) | (search_mode: All, direct_read: None, tokens: ["published"]); global: (search_mode: Any, tokens: ["published" (analyzed in 1/1 parts), "reopened" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 32/50
 -- Combined conditions on different paths
 SELECT count() FROM ghdata WHERE data.type = 'WatchEvent' AND data.repo.name = 'leonardomso/33-js-concepts'
 3
-Condition: and((search_mode: All, direct_read: Hint, tokens: ["watchevent"]), (search_mode: All, direct_read: Hint, tokens: ["33", "concepts", "js", "leonardomso"])); (global_search_mode: All, analyzed_tokens: ["33", "concepts", "js", "leonardomso", "watchevent"], runtime_tokens: [])
+Condition: and((search_mode: All, direct_read: Hint, tokens: ["watchevent"]), (search_mode: All, direct_read: Hint, tokens: ["33", "concepts", "js", "leonardomso"])); global: (search_mode: All, tokens: ["33" (analyzed in 1/1 parts), "concepts" (analyzed in 1/1 parts), "js" (analyzed in 1/1 parts), "leonardomso" (analyzed in 1/1 parts), "watchevent" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 3/50
 -- Schema-agnostic search with JSONAllValues and hasAllTokens
 SELECT count() FROM ghdata WHERE hasAllTokens(JSONAllValues(data), ['football', 'team'])
 3
-Condition: (search_mode: All, direct_read: Exact, tokens: ["football", "team"]); (global_search_mode: All, analyzed_tokens: ["football", "team"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Exact, tokens: ["football", "team"]); global: (search_mode: All, tokens: ["football" (analyzed in 1/1 parts), "team" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 2/50
 -- Schema-agnostic search with JSONAllValues and hasAnyTokens
 SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 'calculator'])
 11
-Condition: (search_mode: Any, direct_read: Exact, tokens: ["calculator", "football"]); (global_search_mode: Any, analyzed_tokens: ["calculator", "football"], runtime_tokens: [])
+Condition: (search_mode: Any, direct_read: Exact, tokens: ["calculator", "football"]); global: (search_mode: Any, tokens: ["calculator" (analyzed in 1/1 parts), "football" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 7/50
 -- Array: has() on nested array of labels in pull requests
 SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'bug')
 3
-Condition: (search_mode: All, direct_read: Hint, tokens: ["bug"]); (global_search_mode: All, analyzed_tokens: ["bug"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["bug"]); global: (search_mode: All, tokens: ["bug" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 42/50
 -- Array: has() on nested array of labels in issues
 SELECT count() FROM ghdata WHERE has(data.payload.issue.labels[].name::Array(String), 'bug')
 14
-Condition: (search_mode: All, direct_read: Hint, tokens: ["bug"]); (global_search_mode: All, analyzed_tokens: ["bug"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["bug"]); global: (search_mode: All, tokens: ["bug" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 42/50
 -- Array: has() with a less common label
 SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'enhancement')
 2
-Condition: (search_mode: All, direct_read: Hint, tokens: ["enhancement"]); (global_search_mode: All, analyzed_tokens: ["enhancement"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["enhancement"]); global: (search_mode: All, tokens: ["enhancement" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 25/50
 -- Array: equality on array subcolumn
 SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']
 5
-Condition: (search_mode: All, direct_read: Hint, tokens: ["dependencies", "submodules"]); (global_search_mode: All, analyzed_tokens: ["dependencies", "submodules"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["dependencies", "submodules"]); global: (search_mode: All, tokens: ["dependencies" (analyzed in 1/1 parts), "submodules" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 3/50
 -- SELECT JSONAllValues with filter returning 1 row
 SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id::UInt64 = 14690746673
 310	1997184657549209849	310	15450791830078104110
-Condition: (search_mode: All, direct_read: Hint, tokens: ["14690746673"]); (global_search_mode: All, analyzed_tokens: ["14690746673"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["14690746673"]); global: (search_mode: All, tokens: ["14690746673" (analyzed in 1/1 parts)])
 Parts: 1/1
 Granules: 1/50
 -- Verify correctness: results match with index disabled

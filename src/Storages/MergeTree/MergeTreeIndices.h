@@ -231,7 +231,7 @@ public:
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
 
-    virtual std::string getDescription(MergeTreeIndexGranulePtr granule) const = 0;
+    virtual std::string getDescription(const std::vector<MergeTreeIndexGranulePtr> & granules) const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;

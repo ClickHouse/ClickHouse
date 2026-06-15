@@ -1,8 +1,8 @@
 300
-Condition: (search_mode: All, direct_read: Hint, tokens: ["12", "23"]); (global_search_mode: All, analyzed_tokens: ["12", "23"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["12", "23"]); global: (search_mode: All, tokens: ["12" (analyzed in 1/1 parts), "23" (analyzed in 1/1 parts)])
 580
-Condition: or((search_mode: All, direct_read: Hint, tokens: ["12", "23"]), (search_mode: All, direct_read: Hint, tokens: ["23", "34"])); (global_search_mode: Any, analyzed_tokens: ["12", "23", "34"], runtime_tokens: [])
+Condition: or((search_mode: All, direct_read: Hint, tokens: ["12", "23"]), (search_mode: All, direct_read: Hint, tokens: ["23", "34"])); global: (search_mode: Any, tokens: ["12" (analyzed in 1/1 parts), "23" (analyzed in 1/1 parts), "34" (analyzed in 1/1 parts)])
 20
-Condition: and((search_mode: All, direct_read: Hint, tokens: ["12", "23"]), (search_mode: All, direct_read: Hint, tokens: ["23", "34"])); (global_search_mode: All, analyzed_tokens: ["12", "23", "34"], runtime_tokens: [])
+Condition: and((search_mode: All, direct_read: Hint, tokens: ["12", "23"]), (search_mode: All, direct_read: Hint, tokens: ["23", "34"])); global: (search_mode: All, tokens: ["12" (analyzed in 1/1 parts), "23" (analyzed in 1/1 parts), "34" (analyzed in 1/1 parts)])
 280
-Condition: and((search_mode: All, direct_read: Hint, tokens: ["12", "23"]), unknown); (global_search_mode: All, analyzed_tokens: ["12", "23"], runtime_tokens: [])
+Condition: and((search_mode: All, direct_read: Hint, tokens: ["12", "23"]), unknown); global: (search_mode: All, tokens: ["12" (analyzed in 1/1 parts), "23" (analyzed in 1/1 parts)])

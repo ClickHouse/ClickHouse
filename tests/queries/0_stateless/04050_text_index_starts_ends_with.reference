@@ -65,7 +65,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (search_mode: All, direct_read: Hint, tokens: ["Ful", "ull"]); (global_search_mode: All, analyzed_tokens: ["Ful", "ull"], runtime_tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: ["Ful", "ull"]); global: (search_mode: All, tokens: ["Ful" (analyzed in 3/3 parts), "ull" (analyzed in 3/3 parts)])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1
@@ -80,7 +80,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (search_mode: All, direct_read: Hint, tokens: ["Ful", "ull"]); (global_search_mode: All, analyzed_tokens: ["Ful", "ull"], runtime_tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: ["Ful", "ull"]); global: (search_mode: All, tokens: ["Ful" (analyzed in 3/3 parts), "ull" (analyzed in 3/3 parts)])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1
@@ -95,7 +95,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (search_mode: All, direct_read: Hint, tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"]); (global_search_mode: All, analyzed_tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"], runtime_tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"]); global: (search_mode: All, tokens: [" da" (analyzed in 3/3 parts), "aba" (analyzed in 3/3 parts), "al " (analyzed in 3/3 parts), "aly" (analyzed in 3/3 parts), "ana" (analyzed in 3/3 parts), "ase" (analyzed in 3/3 parts), "ata" (analyzed in 3/3 parts), "bas" (analyzed in 3/3 parts), "cal" (analyzed in 3/3 parts), "dat" (analyzed in 3/3 parts), "ica" (analyzed in 3/3 parts), "l d" (analyzed in 3/3 parts), "lyt" (analyzed in 3/3 parts), "nal" (analyzed in 3/3 parts), "tab" (analyzed in 3/3 parts), "tic" (analyzed in 3/3 parts), "yti" (analyzed in 3/3 parts)])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1
@@ -111,7 +111,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (search_mode: All, direct_read: Hint, tokens: []); (global_search_mode: All, analyzed_tokens: [], runtime_tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: []); global: (search_mode: All, tokens: [])
         Parts: 3/3
         Granules: 3/3
       Ranges: 3
@@ -126,7 +126,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (search_mode: All, direct_read: Hint, tokens: []); (global_search_mode: All, analyzed_tokens: [], runtime_tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: []); global: (search_mode: All, tokens: [])
         Parts: 3/3
         Granules: 3/3
       Ranges: 3
@@ -141,7 +141,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (search_mode: All, direct_read: Hint, tokens: ["database"]); (global_search_mode: All, analyzed_tokens: ["database"], runtime_tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: ["database"]); global: (search_mode: All, tokens: ["database" (analyzed in 3/3 parts)])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1

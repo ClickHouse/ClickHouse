@@ -425,7 +425,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     return false;
 }
 
-std::string MergeTreeIndexConditionSet::getDescription(MergeTreeIndexGranulePtr /*granule*/) const
+std::string MergeTreeIndexConditionSet::getDescription(const std::vector<MergeTreeIndexGranulePtr> & /*granules*/) const
 {
     return condition.getDescription().condition;
 }

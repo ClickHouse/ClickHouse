@@ -4,7 +4,7 @@
 1
 2
 -- the required substring ngrams are folded into every alternative
-Condition: (search_mode: All, direct_read: None, tokens: [" de", " on", " tw", "a t", "abc", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two"]) | (search_mode: All, direct_read: None, tokens: [" de", " on", " tw", "a t", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two", "xyz"]); (global_search_mode: Any, analyzed_tokens: [" de", " on", " tw", "a t", "abc", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two", "xyz"], runtime_tokens: [])
+Condition: (search_mode: All, direct_read: None, tokens: [" de", " on", " tw", "a t", "abc", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two"]) | (search_mode: All, direct_read: None, tokens: [" de", " on", " tw", "a t", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two", "xyz"]); global: (search_mode: Any, tokens: [" de" (analyzed in 1/1 parts), " on" (analyzed in 1/1 parts), " tw" (analyzed in 1/1 parts), "a t" (analyzed in 1/1 parts), "abc" (analyzed in 1/1 parts), "del" (analyzed in 1/1 parts), "e d" (analyzed in 1/1 parts), "elt" (analyzed in 1/1 parts), "lta" (analyzed in 1/1 parts), "ne " (analyzed in 1/1 parts), "one" (analyzed in 1/1 parts), "ta " (analyzed in 1/1 parts), "two" (analyzed in 1/1 parts), "xyz" (analyzed in 1/1 parts)])
 -- so the text index prunes to the 2 matching granules (out of 5)
 Granules: 5/5
 Granules: 2/5
