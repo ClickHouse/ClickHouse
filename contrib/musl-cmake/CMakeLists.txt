@@ -1,23 +1,15 @@
 set(MUSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl")
 
-# Only arches with a matching contrib/musl/crt/${MUSL_ARCH}/ subtree (crti.s,
-# crtn.s, ...) are supported here. riscv64 and loongarch64 are absent from the
-# vendored musl source tree, so they cannot be built even though the ARCH_*
-# flags exist elsewhere in the build system.
+# musl is supported only on amd64 and aarch64. Other arches are explicitly out
+# of scope: the mem*/math replacements (see contrib/libllvmlibc-cmake) and the
+# perf validation only cover these two.
 if (ARCH_AMD64)
     set(MUSL_ARCH "x86_64")
 elseif (ARCH_AARCH64)
     set(MUSL_ARCH "aarch64")
-elseif (ARCH_PPC64LE)
-    set(MUSL_ARCH "powerpc64")
-elseif (ARCH_S390X)
-    set(MUSL_ARCH "s390x")
 else()
-    message(FATAL_ERROR "USE_MUSL is not supported for ${CMAKE_SYSTEM_PROCESSOR}: contrib/musl has no CRT sources for this arch")
+    message(FATAL_ERROR "USE_MUSL is supported only on amd64 and aarch64, not ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
-
-message(STATUS "Building musl libc for architecture: ${MUSL_ARCH}")
-
 
 set(MUSL_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
 file(MAKE_DIRECTORY "${MUSL_GENERATED_DIR}/bits")
@@ -1527,140 +1519,6 @@ elseif (ARCH_AARCH64)
     )
     set(MUSL_LDSO_ARCH_ASM_SOURCES
     )
-elseif (ARCH_PPC64LE)
-    set(MUSL_ARCH_REMOVE_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/fenv.c"
-    "${MUSL_SOURCE_DIR}/src/ldso/dlsym.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/longjmp.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/setjmp.c"
-    "${MUSL_SOURCE_DIR}/src/signal/restore.c"
-    "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"
-    "${MUSL_SOURCE_DIR}/src/thread/clone.c"
-    "${MUSL_SOURCE_DIR}/src/thread/syscall_cp.c"
-    )
-    set(MUSL_ARCH_C_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/powerpc64/fenv.c"
-    )
-    set(MUSL_ARCH_ASM_SOURCES
-    "${MUSL_SOURCE_DIR}/src/ldso/powerpc64/dlsym.s"
-    "${MUSL_SOURCE_DIR}/src/setjmp/powerpc64/longjmp.s"
-    "${MUSL_SOURCE_DIR}/src/setjmp/powerpc64/setjmp.s"
-    "${MUSL_SOURCE_DIR}/src/signal/powerpc64/restore.s"
-    "${MUSL_SOURCE_DIR}/src/signal/powerpc64/sigsetjmp.s"
-    "${MUSL_SOURCE_DIR}/src/thread/powerpc64/__set_thread_area.s"
-    "${MUSL_SOURCE_DIR}/src/thread/powerpc64/__unmapself.s"
-    "${MUSL_SOURCE_DIR}/src/thread/powerpc64/clone.s"
-    "${MUSL_SOURCE_DIR}/src/thread/powerpc64/syscall_cp.s"
-    )
-    set(MUSL_LDSO_ARCH_C_SOURCES
-    )
-    set(MUSL_LDSO_ARCH_ASM_SOURCES
-    )
-elseif (ARCH_S390X)
-    set(MUSL_ARCH_REMOVE_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/fenv.c"
-    "${MUSL_SOURCE_DIR}/src/ldso/dlsym.c"
-    "${MUSL_SOURCE_DIR}/src/math/sqrtl.c"
-    "${MUSL_SOURCE_DIR}/src/process/vfork.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/longjmp.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/setjmp.c"
-    "${MUSL_SOURCE_DIR}/src/signal/restore.c"
-    "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"
-    "${MUSL_SOURCE_DIR}/src/thread/clone.c"
-    "${MUSL_SOURCE_DIR}/src/thread/syscall_cp.c"
-    )
-    set(MUSL_ARCH_C_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/s390x/fenv.c"
-    "${MUSL_SOURCE_DIR}/src/math/s390x/sqrtl.c"
-    )
-    set(MUSL_ARCH_ASM_SOURCES
-    "${MUSL_SOURCE_DIR}/src/ldso/s390x/dlsym.s"
-    "${MUSL_SOURCE_DIR}/src/process/s390x/vfork.s"
-    "${MUSL_SOURCE_DIR}/src/setjmp/s390x/longjmp.s"
-    "${MUSL_SOURCE_DIR}/src/setjmp/s390x/setjmp.s"
-    "${MUSL_SOURCE_DIR}/src/signal/s390x/restore.s"
-    "${MUSL_SOURCE_DIR}/src/signal/s390x/sigsetjmp.s"
-    "${MUSL_SOURCE_DIR}/src/thread/s390x/__set_thread_area.s"
-    "${MUSL_SOURCE_DIR}/src/thread/s390x/__tls_get_offset.s"
-    "${MUSL_SOURCE_DIR}/src/thread/s390x/__unmapself.s"
-    "${MUSL_SOURCE_DIR}/src/thread/s390x/clone.s"
-    "${MUSL_SOURCE_DIR}/src/thread/s390x/syscall_cp.s"
-    )
-    set(MUSL_LDSO_ARCH_C_SOURCES
-    )
-    set(MUSL_LDSO_ARCH_ASM_SOURCES
-    )
-elseif (ARCH_RISCV64)
-    set(MUSL_ARCH_REMOVE_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/fenv.c"
-    "${MUSL_SOURCE_DIR}/src/ldso/dlsym.c"
-    "${MUSL_SOURCE_DIR}/src/ldso/tlsdesc.c"
-    "${MUSL_SOURCE_DIR}/src/process/vfork.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/longjmp.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/setjmp.c"
-    "${MUSL_SOURCE_DIR}/src/signal/restore.c"
-    "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"
-    "${MUSL_SOURCE_DIR}/src/thread/clone.c"
-    "${MUSL_SOURCE_DIR}/src/thread/syscall_cp.c"
-    )
-    set(MUSL_ARCH_C_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/riscv64/fenv-sf.c"
-    )
-    set(MUSL_ARCH_ASM_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/riscv64/fenv.S"
-    "${MUSL_SOURCE_DIR}/src/ldso/riscv64/dlsym.s"
-    "${MUSL_SOURCE_DIR}/src/ldso/riscv64/tlsdesc.s"
-    "${MUSL_SOURCE_DIR}/src/process/riscv64/vfork.s"
-    "${MUSL_SOURCE_DIR}/src/setjmp/riscv64/longjmp.S"
-    "${MUSL_SOURCE_DIR}/src/setjmp/riscv64/setjmp.S"
-    "${MUSL_SOURCE_DIR}/src/signal/riscv64/restore.s"
-    "${MUSL_SOURCE_DIR}/src/signal/riscv64/sigsetjmp.s"
-    "${MUSL_SOURCE_DIR}/src/thread/riscv64/__set_thread_area.s"
-    "${MUSL_SOURCE_DIR}/src/thread/riscv64/__unmapself.s"
-    "${MUSL_SOURCE_DIR}/src/thread/riscv64/clone.s"
-    "${MUSL_SOURCE_DIR}/src/thread/riscv64/syscall_cp.s"
-    )
-    set(MUSL_LDSO_ARCH_C_SOURCES
-    )
-    set(MUSL_LDSO_ARCH_ASM_SOURCES
-    )
-elseif (ARCH_LOONGARCH64)
-    set(MUSL_ARCH_REMOVE_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/fenv.c"
-    "${MUSL_SOURCE_DIR}/src/ldso/dlsym.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/longjmp.c"
-    "${MUSL_SOURCE_DIR}/src/setjmp/setjmp.c"
-    "${MUSL_SOURCE_DIR}/src/signal/restore.c"
-    "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
-    "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"
-    "${MUSL_SOURCE_DIR}/src/thread/clone.c"
-    "${MUSL_SOURCE_DIR}/src/thread/syscall_cp.c"
-    )
-    set(MUSL_ARCH_C_SOURCES
-    )
-    set(MUSL_ARCH_ASM_SOURCES
-    "${MUSL_SOURCE_DIR}/src/fenv/loongarch64/fenv.S"
-    "${MUSL_SOURCE_DIR}/src/ldso/loongarch64/dlsym.s"
-    "${MUSL_SOURCE_DIR}/src/setjmp/loongarch64/longjmp.S"
-    "${MUSL_SOURCE_DIR}/src/setjmp/loongarch64/setjmp.S"
-    "${MUSL_SOURCE_DIR}/src/signal/loongarch64/restore.s"
-    "${MUSL_SOURCE_DIR}/src/signal/loongarch64/sigsetjmp.s"
-    "${MUSL_SOURCE_DIR}/src/thread/loongarch64/__set_thread_area.s"
-    "${MUSL_SOURCE_DIR}/src/thread/loongarch64/__unmapself.s"
-    "${MUSL_SOURCE_DIR}/src/thread/loongarch64/clone.s"
-    "${MUSL_SOURCE_DIR}/src/thread/loongarch64/syscall_cp.s"
-    )
-    set(MUSL_LDSO_ARCH_C_SOURCES
-    )
-    set(MUSL_LDSO_ARCH_ASM_SOURCES
-    )
 else()
     message(FATAL_ERROR "Unsupported architecture for musl: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
@@ -1736,19 +1594,12 @@ set(MUSL_COMPAT_SOURCES
     "${MUSL_SOURCE_DIR}/compat/time32/wait4_time32.c"
 )
 
-message(STATUS "Musl math: explicit file list (LLVM-libc replacements excluded)")
-
 # Enable assembly language
 enable_language(ASM)
 
-# ============================================================================
 # Separate ASM sources from C sources
-# ============================================================================
-
-# Collect all ASM sources
 set(MUSL_ALL_ASM_SOURCES ${MUSL_ARCH_ASM_SOURCES} ${MUSL_LDSO_ARCH_ASM_SOURCES})
 
-# Combine C sources only (no ASM)
 set(MUSL_SOURCES_BASE ${MUSL_SOURCES_BASE_COMMON})
 list(REMOVE_ITEM MUSL_SOURCES_BASE ${MUSL_ARCH_REMOVE_SOURCES})
 
@@ -1789,28 +1640,18 @@ set(MUSL_C_SOURCES
 list(REMOVE_DUPLICATES MUSL_C_SOURCES)
 list(REMOVE_DUPLICATES MUSL_ALL_ASM_SOURCES)
 
-list(LENGTH MUSL_C_SOURCES MUSL_C_SOURCE_COUNT)
-list(LENGTH MUSL_ALL_ASM_SOURCES MUSL_ASM_SOURCE_COUNT)
-message(STATUS "Building musl with ${MUSL_C_SOURCE_COUNT} C sources and ${MUSL_ASM_SOURCE_COUNT} ASM sources (full math library)")
-
-# ============================================================================
-# Build Main musl Library (C + ASM sources combined)
-# ============================================================================
-
-# Combine ALL sources (C and ASM) into a single static library
-# This avoids circular dependency issues with OBJECT libraries
+# Build the musl static library. C and ASM go into a single static library to
+# avoid circular dependency issues with OBJECT libraries.
 set(MUSL_ALL_SOURCES ${MUSL_C_SOURCES} ${MUSL_ALL_ASM_SOURCES})
 
 add_library(musl STATIC ${MUSL_ALL_SOURCES})
 set_target_properties(musl PROPERTIES FOLDER "contrib/musl-cmake")
 
-# Set ASM language explicitly for assembly files
 foreach(asm_file ${MUSL_ALL_ASM_SOURCES})
     set_source_files_properties(${asm_file} PROPERTIES
         LANGUAGE ASM
-        # Per-file compile flags for ASM:
-        # -Qunused-arguments prevents errors about C flags being unused by assembler
-        # -Wa,--noexecstack marks stack as non-executable
+        # -Qunused-arguments: don't error on C flags unused by the assembler;
+        # -Wa,--noexecstack: mark the stack non-executable.
         COMPILE_FLAGS "-Qunused-arguments -Wa,--noexecstack"
     )
 endforeach()
@@ -1818,21 +1659,17 @@ endforeach()
 # Ensure generated headers are created first
 add_dependencies(musl musl-headers)
 
-# ============================================================================
-# Include Directories
-# ============================================================================
-
-# CRITICAL: For building musl itself, the include order MUST be:
+# Include directories.
+#
+# For building musl itself, the include order is:
 #   1. arch/${MUSL_ARCH}     - arch-specific headers (e.g. x86_64/ksigaction.h)
 #   2. arch/generic          - generic arch fallbacks
 #   3. src/include           - internal overrides (features.h with 'hidden' macro)
 #   4. src/internal          - internal headers (generic ksigaction.h etc.)
 #   5. generated dir         - bits/alltypes.h, bits/syscall.h
 #   6. build dir             - version.h
-#   7. include-override      - stub headers for external consumers (execinfo.h)
-
-# Override directory with stub headers for consumers (execinfo.h)
-set(MUSL_OVERRIDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include-override")
+#   7. include               - stub headers for external consumers (execinfo.h)
+set(MUSL_OVERRIDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Private includes for building musl.
 # Use -iquote for arch-specific header directories so they win over
@@ -1858,7 +1695,7 @@ target_include_directories(musl BEFORE PRIVATE
 
 # Public includes for external code that links to musl
 # These provide bits/*.h headers to dependents
-# include-override comes first to provide stub headers (e.g. execinfo.h)
+# the override directory comes first to provide stub headers (e.g. execinfo.h)
 # that musl does not have but some consumers expect
 target_include_directories(musl SYSTEM PUBLIC
     "${MUSL_OVERRIDE_DIR}"
@@ -1868,44 +1705,28 @@ target_include_directories(musl SYSTEM PUBLIC
     "${MUSL_SOURCE_DIR}/arch/generic"
 )
 
-# ============================================================================
-# Compiler Flags
-# ============================================================================
-
+# Compiler flags
 target_compile_options(musl PRIVATE
-    # Standard C99
     -std=c99
-
-    # Freestanding environment (no hosted libc)
     -ffreestanding
-
-    # Don't use compiler builtins (we provide them)
     -fno-builtin
-
-    # No stack protector (we're the libc!)
     -fno-stack-protector
-
-    # Performance: omit frame pointers
     -fomit-frame-pointer
 
-    # CRITICAL for unwinding (from clickhouse-configure script)
-    # These flags tell the compiler to generate unwind tables
-    # Required for C++ exceptions and stack traces
+    # Unwind tables: required for C++ exceptions and stack traces through musl.
     -funwind-tables
     -fasynchronous-unwind-tables
 
-    # Optimization for size and performance
     -ffunction-sections
     -fdata-sections
 
-    # Warnings as errors for common mistakes
     -Werror=implicit-function-declaration
     -Werror=implicit-int
     -Werror=pointer-sign
     -Werror=pointer-arith
 )
 
-# Suppress some expected warnings in musl code
+# Suppress warnings expected in musl's own code
 target_compile_options(musl PRIVATE
     -Wno-unused-function
     -Wno-unused-variable
@@ -1918,31 +1739,23 @@ target_compile_options(musl PRIVATE
     -Wno-ignored-attributes
 )
 
-# ============================================================================
-# Compiler Definitions
-# ============================================================================
-
+# Compiler definitions
 target_compile_definitions(musl PRIVATE
-    # POSIX feature level
     -D_XOPEN_SOURCE=700
 )
 
 target_compile_definitions(musl PUBLIC
-    # Mark this as musl
     -D__MUSL__=1
 )
 
-# ============================================================================
-# Build CRT Objects (Startup/Shutdown code)
-# ============================================================================
-
-# These are separate object files linked at specific positions:
-# Link order: crti.o -> [crtbegin.o] -> program objects -> [crtend.o] -> crtn.o
+# Build CRT objects (startup/shutdown code). These are separate object files
+# linked at specific positions:
+# crti.o -> [crtbegin.o] -> program objects -> [crtend.o] -> crtn.o
 
 # Build Scrt1.o (static position-independent startup)
 add_library(musl-Scrt1 OBJECT "${MUSL_SOURCE_DIR}/crt/Scrt1.c")
 target_include_directories(musl-Scrt1 PRIVATE
-    # MUST include src/include FIRST for features.h with 'hidden' and 'weak' macros
+    # src/include first: provides features.h with the 'hidden' and 'weak' macros
     "${MUSL_SOURCE_DIR}/src/include"
     "${MUSL_SOURCE_DIR}/src/internal"
     "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
@@ -1960,7 +1773,7 @@ add_dependencies(musl-Scrt1 musl-headers)
 # Build crt1.o (static non-PIC startup)
 add_library(musl-crt1 OBJECT "${MUSL_SOURCE_DIR}/crt/crt1.c")
 target_include_directories(musl-crt1 PRIVATE
-    # MUST include src/include FIRST for features.h with 'hidden' and 'weak' macros
+    # src/include first: provides features.h with the 'hidden' and 'weak' macros
     "${MUSL_SOURCE_DIR}/src/include"
     "${MUSL_SOURCE_DIR}/src/internal"
     "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
@@ -1980,7 +1793,6 @@ set_source_files_properties(
     "${MUSL_SOURCE_DIR}/crt/${MUSL_ARCH}/crti.s"
     PROPERTIES LANGUAGE ASM
 )
-# -Qunused-arguments prevents errors about C flags being unused by assembler
 target_compile_options(musl-crti PRIVATE -Qunused-arguments -Wa,--noexecstack)
 
 # Build crtn.o (initialization epilogue)
@@ -1989,27 +1801,7 @@ set_source_files_properties(
     "${MUSL_SOURCE_DIR}/crt/${MUSL_ARCH}/crtn.s"
     PROPERTIES LANGUAGE ASM
 )
-# -Qunused-arguments prevents errors about C flags being unused by assembler
 target_compile_options(musl-crtn PRIVATE -Qunused-arguments -Wa,--noexecstack)
 
-# ============================================================================
-# Installation/Export (optional, for later)
-# ============================================================================
-
-# For now, musl library will be linked via target_link_libraries
-# CRT objects will be linked via $<TARGET_OBJECTS:musl-crt*>
-
-# ============================================================================
-# Summary
-# ============================================================================
-
-message(STATUS "")
-message(STATUS "=== Musl libc configuration ===")
-message(STATUS "  Version:        ${MUSL_VERSION}")
-message(STATUS "  Architecture:   ${MUSL_ARCH}")
-message(STATUS "  Source files:   ${MUSL_C_SOURCE_COUNT} C + ${MUSL_ASM_SOURCE_COUNT} ASM")
-message(STATUS "  Math functions: explicit list (LLVM-libc replacements excluded)")
-message(STATUS "  Unwinding:      ENABLED (-funwind-tables)")
-message(STATUS "  Generated:      ${MUSL_GENERATED_DIR}/bits/")
-message(STATUS "================================")
-message(STATUS "")
+# The musl library is linked via target_link_libraries; CRT objects via
+# $<TARGET_OBJECTS:musl-crt*>.

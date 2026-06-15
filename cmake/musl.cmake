@@ -39,7 +39,7 @@ target_link_libraries(global-libs INTERFACE musl)
 
 target_include_directories(global-libs SYSTEM BEFORE INTERFACE
     # Override headers (e.g. stub execinfo.h) - HIGHEST PRIORITY
-    "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include-override"
+    "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include"
     # Generated headers
     "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include"
     # Architecture-specific headers
@@ -64,31 +64,6 @@ elseif(ARCH_AARCH64)
         "${KERNEL_HEADERS_SYSROOT}"
         "${KERNEL_HEADERS_SYSROOT}/aarch64-linux-gnu"
     )
-elseif(ARCH_PPC64LE)
-    set(KERNEL_HEADERS_SYSROOT "${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-powerpc64le/powerpc64le-linux-gnu/libc/usr/include")
-    target_include_directories(global-libs SYSTEM INTERFACE
-        "${KERNEL_HEADERS_SYSROOT}"
-        "${KERNEL_HEADERS_SYSROOT}/powerpc64le-linux-gnu"
-    )
-elseif(ARCH_S390X)
-    set(KERNEL_HEADERS_SYSROOT "${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-s390x/s390x-linux-gnu/libc/usr/include")
-    target_include_directories(global-libs SYSTEM INTERFACE
-        "${KERNEL_HEADERS_SYSROOT}"
-        "${KERNEL_HEADERS_SYSROOT}/s390x-linux-gnu"
-    )
-elseif(ARCH_RISCV64)
-    set(KERNEL_HEADERS_SYSROOT "${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-riscv64/usr/include")
-    target_include_directories(global-libs SYSTEM INTERFACE
-        "${KERNEL_HEADERS_SYSROOT}"
-    )
 else()
-    message(WARNING "No kernel headers sysroot configured for this architecture with USE_MUSL")
-endif()
-
-message(STATUS "Using built musl libc (math functions from LLVM-libc)")
-message(STATUS "  Musl architecture: ${MUSL_ARCH}")
-message(STATUS "  Musl headers: ${ClickHouse_SOURCE_DIR}/contrib/musl/include")
-message(STATUS "  Generated headers: ${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
-if (KERNEL_HEADERS_SYSROOT)
-    message(STATUS "  Kernel headers: ${KERNEL_HEADERS_SYSROOT}")
+    message(FATAL_ERROR "USE_MUSL is supported only on amd64 and aarch64, not ${CMAKE_SYSTEM_PROCESSOR}")
 endif()

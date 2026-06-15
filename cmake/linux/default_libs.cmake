@@ -17,6 +17,13 @@ if (ENABLE_LLVM_LIBC_MATH)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 endif()
 
+# musl ships only slow byte-loop mem*/math implementations; we rely on llvm-libc
+# to replace them. Building musl without llvm-libc is never intended, so reject
+# it instead of silently producing a slow binary.
+if (USE_MUSL AND NOT ENABLE_LLVM_LIBC_MATH)
+    message(FATAL_ERROR "USE_MUSL requires ENABLE_LLVM_LIBC_MATH=ON")
+endif()
+
 if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
@@ -50,18 +57,9 @@ if (USE_MUSL)
         set(MUSL_ARCH "x86_64" CACHE INTERNAL "Musl architecture")
     elseif (ARCH_AARCH64)
         set(MUSL_ARCH "aarch64" CACHE INTERNAL "Musl architecture")
-    elseif (ARCH_PPC64LE)
-        set(MUSL_ARCH "powerpc64" CACHE INTERNAL "Musl architecture")
-    elseif (ARCH_S390X)
-        set(MUSL_ARCH "s390x" CACHE INTERNAL "Musl architecture")
-    elseif (ARCH_RISCV64)
-        set(MUSL_ARCH "riscv64" CACHE INTERNAL "Musl architecture")
-    elseif (ARCH_LOONGARCH64)
-        set(MUSL_ARCH "loongarch64" CACHE INTERNAL "Musl architecture")
     else()
-        message(FATAL_ERROR "Unsupported architecture for musl: ${CMAKE_SYSTEM_PROCESSOR}")
+        message(FATAL_ERROR "USE_MUSL is supported only on amd64 and aarch64, not ${CMAKE_SYSTEM_PROCESSOR}")
     endif()
-    message(STATUS "MUSL_ARCH set early to: ${MUSL_ARCH}")
 endif()
 
 include (cmake/unwind.cmake)
