@@ -1,9 +1,11 @@
 #include <charconv>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <base/scope_guard.h>
 
@@ -1622,6 +1624,8 @@ enum class ExtractUnit : uint8_t
     Century,
     Decade,
     Millennium,
+    TimezoneHour,
+    TimezoneMinute,
 };
 
 /// Builds the AST corresponding to `EXTRACT(unit FROM expr)` /
@@ -1648,23 +1652,40 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
             return makeASTFunction("toISOYear", expr);
         case ExtractUnit::Century:
             /// century = (year - 1) / 100 + 1
+            /// `__toYearCalendarOnly` rejects `Interval` operands; the plain `toYear`
+            /// accepts `IntervalYear` (used by `EXTRACT(YEAR FROM INTERVAL ...)`),
+            /// which would otherwise let `EXTRACT(CENTURY FROM INTERVAL 5 YEAR)` slip
+            /// through the same-kind contract and silently compute `(5-1)/100+1 = 1`.
             return makeASTFunction("plus",
                 makeASTFunction("intDiv",
-                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    makeASTFunction("minus", makeASTFunction("__toYearCalendarOnly", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(100))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
         case ExtractUnit::Decade:
             /// decade = year / 10
             return makeASTFunction("intDiv",
-                makeASTFunction("toYear", expr),
+                makeASTFunction("__toYearCalendarOnly", expr),
                 make_intrusive<ASTLiteral>(UInt64(10)));
         case ExtractUnit::Millennium:
             /// millennium = (year - 1) / 1000 + 1
             return makeASTFunction("plus",
                 makeASTFunction("intDiv",
-                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    makeASTFunction("minus", makeASTFunction("__toYearCalendarOnly", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(1000))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::TimezoneHour:
+            /// `toInt64(...)` keeps the divisor signed without using a bare `Int64` literal,
+            /// which would format as plain "3600" and re-parse as UInt64, breaking the AST
+            /// roundtrip check.
+            return makeASTFunction("intDiv",
+                makeASTFunction("timezoneOffset", expr),
+                makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(3600))));
+        case ExtractUnit::TimezoneMinute:
+            return makeASTFunction("intDiv",
+                makeASTFunction("modulo",
+                    makeASTFunction("timezoneOffset", expr),
+                    makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(3600)))),
+                makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(60))));
         case ExtractUnit::None:
             UNREACHABLE();
     }
@@ -1766,6 +1787,10 @@ static bool tryParseExtractUnitFromString(const std::string & unit_lower, Interv
         extract_unit = ExtractUnit::Decade;
     else if (unit_lower == "millennium")
         extract_unit = ExtractUnit::Millennium;
+    else if (unit_lower == "timezone_hour")
+        extract_unit = ExtractUnit::TimezoneHour;
+    else if (unit_lower == "timezone_minute")
+        extract_unit = ExtractUnit::TimezoneMinute;
     else
         return false;
 
@@ -1864,6 +1889,10 @@ private:
             extract_unit = ExtractUnit::Decade;
         else if (ParserKeyword(Keyword::MILLENNIUM).ignore(pos, expected))
             extract_unit = ExtractUnit::Millennium;
+        else if (ParserKeyword(Keyword::TIMEZONE_HOUR).ignore(pos, expected))
+            extract_unit = ExtractUnit::TimezoneHour;
+        else if (ParserKeyword(Keyword::TIMEZONE_MINUTE).ignore(pos, expected))
+            extract_unit = ExtractUnit::TimezoneMinute;
         else
             return false;
 
@@ -3411,17 +3440,56 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     {
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+        bool is_subquery = true;
 
-        /// ANY and SOME are semantically identical
-        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ANY;
-        else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ALL;
+        /// `ANY`/`SOME`/`ALL` with a subquery right-hand side is the existing
+        /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`.
+        ///
+        /// `SOME`/`ALL` (but deliberately not `ANY`) additionally accept a
+        /// non-subquery array expression (PostgreSQL-style), rewritten here to
+        /// `has`/`NOT has` for the `=`/`<>` special cases that have an optimized
+        /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise.
+        /// `ANY` is excluded from the array form because `any` is also an aggregate
+        /// function, so `expr = any(x)` must keep its function-call meaning.
+        const bool any_kw = any_parser.ignore(pos, expected);
+        const bool some_kw = !any_kw && some_parser.ignore(pos, expected);
+        const bool all_kw = !any_kw && !some_kw && all_parser.ignore(pos, expected);
+
+        if (any_kw || some_kw || all_kw)
+        {
+            subquery_function_type = all_kw ? SubqueryFunctionType::ALL : SubqueryFunctionType::ANY;
+
+            if (subquery_parser.parse(pos, tmp, expected))
+            {
+                /// Existing subquery path: leave `is_subquery = true`.
+            }
+            else if ((some_kw || all_kw) && pos->type == TokenType::OpeningRoundBracket)
+            {
+                auto pos_at_open = pos;
+                ++pos;
+                ParserExpression expr_parser;
+                if (expr_parser.parse(pos, tmp, expected) && pos->type == TokenType::ClosingRoundBracket)
+                {
+                    ++pos;
+                    is_subquery = false;
+                }
+                else
+                {
+                    pos = pos_at_open;
+                    subquery_function_type = SubqueryFunctionType::NONE;
+                }
+            }
+            else
+            {
+                /// `ANY(<non-subquery>)` is not a quantifier; rewind (below) so the
+                /// `any(...)` aggregate function call is parsed normally.
+                subquery_function_type = SubqueryFunctionType::NONE;
+            }
+        }
 
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function;
             ASTPtr argument;
 
             if (!layers.back()->popOperator(prev_op))
@@ -3429,10 +3497,68 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (!layers.back()->popOperand(argument))
                 return Action::NONE;
 
-            function = makeASTFunction(prev_op, argument, tmp);
+            ASTPtr function;
+            if (is_subquery)
+            {
+                function = makeASTFunction(prev_op, argument, tmp);
 
-            if (!modifyAST(function, subquery_function_type))
-                return Action::NONE;
+                if (!modifyAST(function, subquery_function_type))
+                    return Action::NONE;
+            }
+            else
+            {
+                /// `expr = SOME(arr)` and `expr <> ALL(arr)` map to the optimized
+                /// `has`/`NOT has` (this is what `IN`/`NOT IN` already lowers to
+                /// for non-subquery RHS, but spelled directly here so we don't
+                /// depend on the analyzer recognising the lambda form).
+                const bool is_equals = prev_op.function_name == "equals";
+                const bool is_not_equals = prev_op.function_name == "notEquals";
+
+                if (some_kw && is_equals)
+                {
+                    function = makeASTFunction("has", tmp, argument);
+                }
+                else if (all_kw && is_not_equals)
+                {
+                    function = makeASTOperator("not", makeASTFunction("has", tmp, argument));
+                }
+                else
+                {
+                    /// General form: lambda `_a -> argument OP _a` wrapped in
+                    /// `arrayExists` (for `SOME`) or `arrayAll` (for `ALL`). Walk
+                    /// `argument` to find a lambda variable name that does not
+                    /// collide with any identifier it references (otherwise the
+                    /// lambda parameter would shadow that identifier).
+                    std::unordered_set<String> used_identifiers;
+                    std::function<void(const IAST *)> collect_identifiers = [&](const IAST * node)
+                    {
+                        if (!node)
+                            return;
+                        if (const auto * ident = node->as<ASTIdentifier>())
+                        {
+                            /// Record the full name and every part. A compound identifier
+                            /// such as `_a.x` binds its first part (`_a`) during analysis,
+                            /// so the lambda variable must avoid colliding with `_a`, not
+                            /// just with the whole `_a.x`.
+                            used_identifiers.insert(ident->name());
+                            for (const auto & part : ident->name_parts)
+                                used_identifiers.insert(part);
+                        }
+                        for (const auto & child : node->children)
+                            collect_identifiers(child.get());
+                    };
+                    collect_identifiers(argument.get());
+
+                    String lambda_var = "_a";
+                    for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
+                        lambda_var = "_a" + std::to_string(suffix);
+
+                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    auto lambda = makeASTLambda({lambda_var}, std::move(body));
+                    const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
+                    function = makeASTFunction(fn_name, std::move(lambda), tmp);
+                }
+            }
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
