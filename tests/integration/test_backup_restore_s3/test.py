@@ -1170,3 +1170,58 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
             DROP DATABASE IF EXISTS restored SYNC;
             """
         )
+
+
+def test_backup_fails_when_mv_inner_table_object_removed(cluster):
+    # A regular (non-refreshable) MV's inner table is backed up part by part. If a part's object
+    # storage blob is gone when the backup copies it (a concurrent merge GCs it in production),
+    # the copy fails with S3_ERROR "The specified key does not exist". Made deterministic here by
+    # removing the inner table's S3 object out-of-band while the part stays active.
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS test_mv_inner SYNC")
+    node.query("CREATE DATABASE test_mv_inner")
+    try:
+        node.query(
+            "CREATE TABLE test_mv_inner.src (x UInt64) ENGINE=MergeTree ORDER BY tuple()"
+        )
+        # The inner table lives on S3, so the backup copies it from object storage (server-side
+        # CopyObject) - the exact path that fails in production.
+        node.query(
+            "CREATE MATERIALIZED VIEW test_mv_inner.view (x UInt64) "
+            "ENGINE=MergeTree ORDER BY tuple() SETTINGS storage_policy='policy_s3' "
+            "AS SELECT x FROM test_mv_inner.src"
+        )
+        node.query("INSERT INTO test_mv_inner.src SELECT number FROM numbers(100)")
+
+        # Precondition: the view is a regular MV (not refreshable), so the RMV skip does not apply.
+        assert (
+            node.query(
+                "SELECT count() FROM system.view_refreshes "
+                "WHERE database='test_mv_inner' AND view='view'"
+            ).strip()
+            == "0"
+        )
+
+        # The inner table's part data lives as objects under the S3 disk's prefix. Remove them
+        # out-of-band, as a concurrent merge/GC on another node would.
+        objects = list(
+            node.cluster.minio_client.list_objects(
+                "root", "data/disks/disk_s3/", recursive=True
+            )
+        )
+        assert len(objects) > 0, "the MV inner table must have objects on S3"
+        for obj in objects:
+            node.cluster.minio_client.remove_object("root", obj.object_name)
+
+        backup_name = new_backup_name()
+        backup_destination = (
+            f"S3('http://minio1:9001/root/data/backups/{backup_name}', "
+            f"'minio', '{minio_secret_key}')"
+        )
+        error = node.query_and_get_error(
+            f"BACKUP DATABASE test_mv_inner TO {backup_destination}"
+        )
+        assert "The specified key does not exist" in error, error
+    finally:
+        node.query("DROP DATABASE IF EXISTS test_mv_inner SYNC")
