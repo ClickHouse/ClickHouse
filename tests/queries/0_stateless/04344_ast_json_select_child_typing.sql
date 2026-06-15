@@ -19,6 +19,9 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT COLUMNS(a, b) FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a INNER JOIN b USING (x)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM (SELECT 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`n` Nested(a UInt8, b String)) ENGINE = Memory'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (a, b) FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (\'re\') FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (\'\') FROM t'));
 
 -- ---------------------------------------------------------------------------
 -- `ASTInsertQuery.select` is an `ASTSelectWithUnionQuery` (insert execution downcasts it).
@@ -84,3 +87,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (`n` Nested(
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM (SELECT 1)'), '"subquery":{"type":"Subquery"', '"subquery":{"type":"ExpressionList"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN b USING (x)'), '"using_expression_list":{"type":"ExpressionList"', '"using_expression_list":{"type":"Identifier","name":"u"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTAsterisk.transformers` is an `ASTColumnsTransformerList`; `ASTColumnsExceptTransformer`'s
+-- explicit column children are `ASTIdentifier`s (`buildColumnTransformers` downcasts each).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * EXCEPT (a) FROM t'), '"transformers":{"type":"ColumnsTransformerList"', '"transformers":{"type":"Identifier","name":"x"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * EXCEPT (a, b) FROM t'), '"ColumnsExceptTransformer","children":[{"type":"Identifier","name":"a"}', '"ColumnsExceptTransformer","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}')); -- { serverError BAD_ARGUMENTS }

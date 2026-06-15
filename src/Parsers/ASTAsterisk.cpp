@@ -1,4 +1,5 @@
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -23,7 +24,10 @@ void ASTAsterisk::readJSON(const Poco::JSON::Object & json)
         this->expression = child;
         this->children.push_back(this->expression);
     }
-    child = r.readChild("transformers");
+    /// The parser only attaches an `ASTColumnsTransformerList` here; analyzer paths call
+    /// `buildColumnTransformers(asterisk->transformers, ...)` and treat it as the transformer-list
+    /// container, so reject any other node type from malformed `clickhouse_json`.
+    child = r.readChildOfType<ASTColumnsTransformerList>("transformers");
     if (child)
     {
         this->transformers = child;

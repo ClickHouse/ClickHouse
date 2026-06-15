@@ -510,10 +510,14 @@ void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     is_strict = r.getBool("is_strict");
-    String pattern_str = r.getString("pattern");
-    if (!pattern_str.empty())
-        setPattern(std::move(pattern_str));
-    children = r.readChildren();
+    /// Distinguish an empty regexp pattern (`EXCEPT('')`) from the column-list form by key presence,
+    /// not by empty string: `writeJSON` emits "pattern" exactly when the regexp form was used, so
+    /// `EXCEPT('')` must round-trip rather than be misread as "no pattern" (and then rejected).
+    if (r.has("pattern"))
+        setPattern(r.getString("pattern"));
+    /// In the column-list form, `QueryTreeBuilder::buildColumnTransformers` downcasts each child to
+    /// `ASTIdentifier`, so reject any other child type here.
+    children = r.readChildrenOfType<ASTIdentifier>("ColumnsExceptTransformer");
 
     /// `formatImpl`, `appendColumnName`, and `transform` rely on exactly one of the two
     /// mutually exclusive shapes: a regexp `pattern` or an explicit list of column children.
