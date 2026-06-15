@@ -214,9 +214,9 @@ std::string_view GlobString::consumeMatcher(const std::string_view & input) cons
 
 std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_view & input) const
 {
-    assert(input.length() > 2);
-    assert(input.front() == '{');
-    assert(input.back() == '}');
+    chassert(input.length() > 2);
+    chassert(input.front() == '{');
+    chassert(input.back() == '}');
 
     auto separator = ',';
 
@@ -243,7 +243,7 @@ std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_
 
 std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & input) const
 {
-    assert(input.length() > 2);
+    chassert(input.length() > 2);
 
     /// Range matcher must contain "..", like in "{0..10}".
     auto double_dot_pos = input.find("..");
