@@ -273,7 +273,7 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE hasTokenOrNull(message, 'foo');
 
 SELECT '';
-SELECT '-- Skip for hasTokenOrNull with ill-formed token';
+SELECT '-- No skip for hasTokenOrNull with ill-formed token';
 
 SELECT trim(explain)
 FROM (
