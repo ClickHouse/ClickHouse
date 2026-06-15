@@ -29,7 +29,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
-    extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
 }
 
@@ -366,13 +365,18 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
                     column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
             }
 
-            part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
+            /// Use the effective (capped) prefetch buffer size, not the raw public setting. The actual
+            /// read buffer is allocated at `read_settings.remote_fs_settings.large_buffer_size`, which
+            /// `Context::getReadSettings` caps at DBMS_MAX_READ_BUFFER_SIZE. Accounting the raw value
+            /// here would overcharge memory and disable prefetches that the capped reads would fit.
+            const size_t prefetch_buffer_size = reader_settings.read_settings.remote_fs_settings.large_buffer_size;
+            part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, prefetch_buffer_size);
             ++part_stat.required_readers_num;
         };
 
         /// adjustBufferSize(), which is done in MergeTreeReaderStream and MergeTreeReaderCompact,
         /// lowers buffer size if file size (or required read range) is less. So we know that the
-        /// settings[Setting::prefetch_buffer_size] will be lowered there, therefore we account it here as well.
+        /// prefetch buffer size will be lowered there, therefore we account it here as well.
         /// But here we make a more approximate lowering (because we do not have loaded marks yet),
         /// while in adjustBufferSize it will be presize.
         for (const auto & column : read_info.task_columns.columns)
