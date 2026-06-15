@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -509,7 +510,9 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         children.push_back(table_function);
     }
 
-    child = r.readChild("subquery");
+    /// `subquery` is parser-produced as an `ASTSubquery`; table-expression helpers read
+    /// `subquery->children.at(0)`, so reject any other node type here.
+    child = r.readChildOfType<ASTSubquery>("subquery");
     if (child)
     {
         subquery = child;
@@ -530,7 +533,8 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         children.push_back(sample_offset);
     }
 
-    child = r.readChild("column_aliases");
+    /// `column_aliases` is parser-produced as an `ASTExpressionList`; alias handling expects that shape.
+    child = r.readChildOfType<ASTExpressionList>("column_aliases");
     if (child)
     {
         column_aliases = child;
@@ -572,7 +576,9 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
     kind = parseJoinKind(r.getString("kind"));
     is_natural = r.getBool("is_natural");
 
-    auto child = r.readChild("using_expression_list");
+    /// `using_expression_list` is parser-produced as an `ASTExpressionList`; `TranslateQualifiedNamesVisitor`
+    /// and `QueryTreeBuilder::buildExpressionList` downcast it, so reject any other node type here.
+    auto child = r.readChildOfType<ASTExpressionList>("using_expression_list");
     if (child)
     {
         using_expression_list = child;
@@ -605,7 +611,9 @@ void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTArrayJoin has invalid 'kind' value '{}' (expected 'Left' or 'Inner') during AST JSON deserialization", kind_str);
 
-    auto child = r.readChild("expression_list");
+    /// `expression_list` is parser-produced as an `ASTExpressionList`; downstream array-join handling
+    /// downcasts it, so reject any other node type at the JSON boundary.
+    auto child = r.readChildOfType<ASTExpressionList>("expression_list");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTArrayJoin is missing required 'expression_list' child during AST JSON deserialization");

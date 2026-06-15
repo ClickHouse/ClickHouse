@@ -1,4 +1,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -276,7 +279,7 @@ void ASTColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
     expression = r.readChild("expression");
     if (expression)
         children.push_back(expression);
-    transformers = r.readChild("transformers");
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
     if (transformers)
         children.push_back(transformers);
 }
@@ -287,11 +290,15 @@ void ASTColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
     expression = r.readChild("expression");
     if (expression)
         children.push_back(expression);
-    column_list = r.readChild("column_list");
+    column_list = r.readChildOfType<ASTExpressionList>("column_list");
     if (!column_list)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'column_list' field in `ColumnsListMatcher` during AST JSON deserialization");
+    /// `QueryTreeBuilder` downcasts each `column_list` child with `as<ASTIdentifier &>`.
+    for (const auto & column : column_list->children)
+        if (!column || !column->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ColumnsListMatcher` 'column_list' must contain only identifiers during AST JSON deserialization");
     children.push_back(column_list);
-    transformers = r.readChild("transformers");
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
     if (transformers)
         children.push_back(transformers);
 }
@@ -302,11 +309,11 @@ void ASTQualifiedColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
     if (!r.has("pattern"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'pattern' field in `QualifiedColumnsRegexpMatcher` during AST JSON deserialization");
     setPattern(r.getString("pattern"));
-    qualifier = r.readChild("qualifier");
+    qualifier = r.readChildOfType<ASTIdentifier>("qualifier");
     if (!qualifier)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedColumnsRegexpMatcher` during AST JSON deserialization");
     children.push_back(qualifier);
-    transformers = r.readChild("transformers");
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
     if (transformers)
         children.push_back(transformers);
 }
@@ -314,15 +321,19 @@ void ASTQualifiedColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
 void ASTQualifiedColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    qualifier = r.readChild("qualifier");
+    qualifier = r.readChildOfType<ASTIdentifier>("qualifier");
     if (!qualifier)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedColumnsListMatcher` during AST JSON deserialization");
     children.push_back(qualifier);
-    column_list = r.readChild("column_list");
+    column_list = r.readChildOfType<ASTExpressionList>("column_list");
     if (!column_list)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'column_list' field in `QualifiedColumnsListMatcher` during AST JSON deserialization");
+    /// `QueryTreeBuilder` downcasts each `column_list` child with `as<ASTIdentifier &>`.
+    for (const auto & column : column_list->children)
+        if (!column || !column->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`QualifiedColumnsListMatcher` 'column_list' must contain only identifiers during AST JSON deserialization");
     children.push_back(column_list);
-    transformers = r.readChild("transformers");
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
     if (transformers)
         children.push_back(transformers);
 }
