@@ -20,3 +20,9 @@ SETTINGS max_memory_usage = 50000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
 -- MEMORY_LIMIT_EXCEEDED. Before the fix the DOM used a raw allocator that bypassed the tracker.
 SELECT JSONLength(concat('[0', repeat(',0', 1000000), repeat(',0', 1000000), ']'))
 SETTINGS allow_simdjson = 0, max_memory_usage = 48000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
+
+-- JSONMergePatch: the parsed DOM is now accounted against the memory tracker. A single large
+-- object is rejected with MEMORY_LIMIT_EXCEEDED; the result length is tiny, so without the fix the
+-- untracked DOM would have parsed successfully instead.
+SELECT length(JSONMergePatch(concat('{"a":0', repeat(',"a":0', 1000000), '}')))
+SETTINGS max_memory_usage = 24000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
