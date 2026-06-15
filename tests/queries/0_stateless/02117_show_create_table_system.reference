@@ -333,7 +333,11 @@ CREATE TABLE system.formats
     `has_external_schema` UInt8,
     `prefers_large_blocks` UInt8,
     `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `supports_subsets_of_columns` UInt8,
+    `description` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -1169,7 +1173,12 @@ CREATE TABLE system.table_engines
     `supports_ttl` UInt8,
     `supports_replication` UInt8,
     `supports_deduplication` UInt8,
-    `supports_parallel_insert` UInt8
+    `supports_parallel_insert` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableEngines
 COMMENT 'Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)'
