@@ -1581,12 +1581,12 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
@@ -1606,7 +1606,7 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
         }
     };
@@ -2725,7 +2725,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
+        /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
+                && !vector_search_parameters.has_value())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -3398,14 +3400,14 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
-    /// Vector similarity indexes are "statically" analyzed; top-k filtering with a threshold tracker needs a reader.
-    const bool will_have_skip_index_reader =
-        indexes->skip_indexes.skip_index_for_top_k_filtering
-        || std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
-        {
-            return !idx.index->isVectorSimilarityIndex();
-        });
-    if (!will_have_skip_index_reader)
+    /// When a vector similarity index is present, disable the use_skip_indexes_on_data_read path entirely and apply
+    /// all skip indexes during index analysis instead - the vector index runs first (it is the most selective) and the
+    /// remaining skip indexes run after it.
+    const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+    {
+        return idx.index->isVectorSimilarityIndex();
+    });
+    if (has_vector_similarity_index)
         return false;
 
     const auto & settings = context->getSettingsRef();

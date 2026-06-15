@@ -644,7 +644,7 @@ profiles:
             return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print(f"Server replica {replica_num} ready")
@@ -823,7 +823,21 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.save_system_metadata_files_from_remote_database_disk()
 
-        print("Terminate ClickHouse processes")
+        self.stop_server(force=force)
+
+        return self
+
+    def stop_server(self, force=False):
+        """Gracefully stop only the ClickHouse server processes.
+
+        Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
+        MinIO and its webhooks) running. It is used between bugfix-validation
+        iterations so the server binary can be swapped and restarted without
+        tearing down the rest of the test environment: otherwise a changed test
+        relying on Kafka or MinIO webhooks would pass under the first build type
+        and spuriously "reproduce" a bug under the next one.
+        """
+        print("Stop ClickHouse processes")
 
         Shell.check(f"ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
@@ -855,6 +869,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 except subprocess.TimeoutExpired:
                     proc.kill()
 
+        return self
+
+    def clean_logs(self):
+        """
+        Remove server logs from `log_dir`.
+
+        Used between bugfix validation iterations to keep logs from different
+        build types from being mixed together.
+        """
+        Utils.clean_dir(Path(self.log_dir))
         return self
 
     @staticmethod
