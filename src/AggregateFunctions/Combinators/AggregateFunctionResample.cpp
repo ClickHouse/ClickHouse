@@ -100,7 +100,10 @@ public:
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumResample`), it partitions the data into intervals `[start, end)` of width `step` according to a resampling key column and aggregates each interval separately, returning an array of results. The interval bounds and step are passed in the first parameter list; the nested aggregate function arguments and the resampling key are passed in the second.",
+        .syntax = "<aggregate_function>Resample(start, end, step)(<aggregate_function_arguments>, resampling_key)",
+        .related = {}});
 }
 
 }

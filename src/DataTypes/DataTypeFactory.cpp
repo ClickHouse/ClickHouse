@@ -250,7 +250,7 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
     return type;
 }
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
@@ -267,9 +267,11 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
     if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
+
+    data_type_documentations.emplace(family_name, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
@@ -280,10 +282,10 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -291,17 +293,24 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
         res.first->setCustomization(std::move(res.second));
 
         return res.first;
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
 {
     registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
+}
+
+Documentation DataTypeFactory::getDocumentation(const String & family_name) const
+{
+    if (auto it = data_type_documentations.find(family_name); it != data_type_documentations.end())
+        return it->second;
+    return {};
 }
 
 template <bool nullptr_on_error>
