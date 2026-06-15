@@ -72,9 +72,17 @@ static struct InitFiu
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
+    ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
+    ONCE(distributed_cache_fail_simple_request) \
+    ONCE(distributed_cache_server_fail_read_request) \
+    ONCE(distributed_cache_server_fail_metrics_request) \
+    ONCE(distributed_cache_server_fail_show_request) \
+    ONCE(distributed_cache_server_fail_show_streaming) \
+    REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
