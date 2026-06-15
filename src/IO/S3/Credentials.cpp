@@ -2,7 +2,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
-#include <IO/S3/Client.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
 #include <Common/ListWithMemoryTracking.h>
@@ -1274,8 +1273,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     /// in-flight request is the granularity); never lengthen the caller's configured timeouts.
     auto sts_client_configuration = client_configuration;
     auto sts_retry_strategy = sts_client_configuration.retry_strategy;
-    if (sts_retry_strategy.max_retries > 3)
-        sts_retry_strategy.max_retries = 3;
+    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
     sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
     if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > 1000)
         sts_client_configuration.connectTimeoutMs = 1000;
