@@ -1100,6 +1100,70 @@ def test_uppercase_table_name_single_storage(started_cluster):
     pg_manager.execute(f'DROP TABLE "{table}"')
 
 
+def test_publication_name_case_collision_single_storage(started_cluster):
+    # Two PostgreSQL tables in the same database whose names differ only by case must each get their
+    # own publication and replicate independently. Folding the publication name to lower case would
+    # make `"Pub_Case_Collision"` and `"pub_case_collision"` collide on a single `..._ch_publication`
+    # (the second `CREATE` dropping/recreating the first), diverging the first table's ongoing
+    # replication. The publication name is kept case-preserving (and quoted when handed to the
+    # `pgoutput` plugin), so there is no collision. A unique replication consumer identifier is used
+    # so the (always lower-cased) replication slot names do not collide for this same-case-fold pair.
+    # Related: https://github.com/ClickHouse/ClickHouse/issues/64891
+    upper = "Pub_Case_Collision"
+    lower = "pub_case_collision"
+
+    # Disjoint key ranges per table, so a publication collision (one table's rows leaking into the
+    # other, or replication stalling) would be visible as a synchronization mismatch.
+    initial = {upper: (0, 50), lower: (1000, 50)}
+    ongoing = {upper: (50, 50), lower: (1050, 50)}
+
+    for name in (upper, lower):
+        pg_manager.create_postgres_table(name)
+        start, count = initial[name]
+        instance.query(
+            f"INSERT INTO postgres_database.`{name}` SELECT number, number from numbers({start}, {count})"
+        )
+
+        instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
+        instance.query(
+            f"""
+            SET allow_experimental_materialized_postgresql_table=1;
+            CREATE TABLE `{name}` (key Int32, value Int32)
+            ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{name}', 'postgres', '{pg_pass}')
+            ORDER BY key
+            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1
+            """
+        )
+
+    for name in (upper, lower):
+        check_tables_are_synchronized(
+            instance,
+            name,
+            postgres_database=pg_manager.get_default_database(),
+            materialized_database="default",
+        )
+
+    # Ongoing replication for both must keep working after the initial snapshots (the path that a
+    # publication collision would break for the table whose publication was dropped).
+    for name in (upper, lower):
+        start, count = ongoing[name]
+        instance.query(
+            f"INSERT INTO postgres_database.`{name}` SELECT number, number from numbers({start}, {count})"
+        )
+
+    for name in (upper, lower):
+        check_tables_are_synchronized(
+            instance,
+            name,
+            postgres_database=pg_manager.get_default_database(),
+            materialized_database="default",
+        )
+
+    for name in (upper, lower):
+        instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
+        pg_manager.execute(f'DROP TABLE "{name}"')
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
