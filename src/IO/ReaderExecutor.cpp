@@ -567,7 +567,15 @@ void ReaderExecutor::seek(size_t new_position)
     /// fast path above keeps the plan only for a forward seek into the in-flight window,
     /// where the bank stays contiguous.) The OFF path re-plans lazily and uses no bank.
     if (schedule_driven)
+    {
+        /// Reap outstanding deferred-fill (put) machines FIRST: each holds writer_origins
+        /// into this plan's `bufs`, and `reapPutMachine` writes its writers back into
+        /// `read_plan.bufs[origin]`. Dropping the plan with puts still in flight would
+        /// reap them against the next plan's (smaller) bufs - an out-of-range origin.
+        /// `observeAndSchedule` does the same drain before every re-plan; mirror it here.
+        sweepPutMachines(/*wait=*/true);
         read_plan = {};
+    }
     else if (spine_build)  /// jumped position; reconstruct against the (possibly surviving) plan
         shadowReconstructCursor();
 
