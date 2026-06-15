@@ -35,3 +35,7 @@ preprocessed needle maps to no index token but a preprocessor is active (was a f
 coarse + preprocessor, non-prunable hasToken ANDed with a matching atom (was a false negative)
 - non-prunable hasToken AND matching atom, with index	1
 - non-prunable hasToken AND matching atom, no index	1
+ill-formed needle (contains a separator): index must not hide the row-level BAD_ARGUMENTS
+ill-formed needle with a conservative ngrams index: hint path must not hide the error
+ill-formed raw needle but a preprocessor strips the separator: index stays usable
+- separator-stripping preprocessor, with index	1

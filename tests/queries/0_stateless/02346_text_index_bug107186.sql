@@ -125,3 +125,37 @@ INSERT INTO tab VALUES ('aaa bbb, zzz');
 SELECT '- non-prunable hasToken AND matching atom, with index', count() FROM tab WHERE hasToken(s, 'aaa') AND hasAllTokens(s, 'zzz');
 SELECT '- non-prunable hasToken AND matching atom, no index', count() FROM tab WHERE hasToken(s, 'aaa') AND hasAllTokens(s, 'zzz') SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
+
+SELECT 'ill-formed needle (contains a separator): index must not hide the row-level BAD_ARGUMENTS';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('a b');
+-- 'a-b' splits to ['a', 'b'] under splitByNonAlpha, but the needle itself contains a separator, so row-level
+-- hasToken throws BAD_ARGUMENTS. Exact direct read used to return the row 'a b' and hide the error; it must now
+-- throw with the index too, matching use_skip_indexes = 0.
+SELECT count() FROM tab WHERE hasToken(s, 'a-b'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE hasToken(s, 'a-b') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE tab;
+
+SELECT 'ill-formed needle with a conservative ngrams index: hint path must not hide the error';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = ngrams(2))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('a b');
+-- The ngrams hint path used to prune the granule (returning 0) instead of letting row-level hasToken throw.
+SELECT count() FROM tab WHERE hasToken(s, 'a-b'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE hasToken(s, 'a-b') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE tab;
+
+SELECT 'ill-formed raw needle but a preprocessor strips the separator: index stays usable';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(s, '-', ''))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ('a-b');
+-- The validation runs on the preprocessed needle: replaceAll('a-b', '-', '') = 'ab' is well-formed, so the index
+-- path keeps the documented rewrite and matches the indexed token 'ab' (must be 1). Without the index the raw
+-- case-sensitive hasToken('a-b', 'a-b') throws BAD_ARGUMENTS (documented preprocessor divergence).
+SELECT '- separator-stripping preprocessor, with index', count() FROM tab WHERE hasToken(s, 'a-b');
+SELECT count() FROM tab WHERE hasToken(s, 'a-b') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE tab;

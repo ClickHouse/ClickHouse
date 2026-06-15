@@ -152,6 +152,11 @@ private:
     /// asciiCJK, sparseGrams) can omit a row-level token and must not prune.
     bool isConservativeHasTokenTokenizer() const;
 
+    /// True when the preprocessed needle contains an ASCII token separator. Row-level hasToken rejects such a
+    /// needle (BAD_ARGUMENTS, or NULL for hasTokenOrNull), so a text-index condition must not prune or replace
+    /// the predicate and hide that error.
+    bool isIllFormedHasTokenNeedle(const Field & field) const;
+
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;

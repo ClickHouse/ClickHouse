@@ -563,6 +563,17 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(con
     return tokenizer->compactTokens(tokens);
 }
 
+bool MergeTreeIndexConditionText::isIllFormedHasTokenNeedle(const Field & field) const
+{
+    if (field.getType() != Field::Types::String)
+        return false;
+    /// Validate the preprocessed (rewritten) needle: it is what the row-level hasToken evaluates after the
+    /// preprocessor rewrite. Mirror HasTokenImpl::isTokenSeparator (an ASCII non-alphanumeric byte), which is
+    /// what makes row-level hasToken throw BAD_ARGUMENTS / return NULL.
+    const String value = preprocessor->processConstant(field.safeGet<String>());
+    return std::ranges::any_of(value, [](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
+}
+
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
 {
     VectorWithMemoryTracking<String> tokens;
@@ -943,12 +954,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         auto tokens = stringToTokens(value_field);
-        /// The preprocessed needle maps to no index token (separator-only, or shorter than the tokenizer
-        /// can represent, e.g. "abc" with ngrams(4)), so the index cannot prove a row matches.
-        if (tokens.empty())
+        /// The index cannot stand in for the row-level predicate when the preprocessed needle either maps to no
+        /// index token (separator-only, or shorter than the tokenizer can represent, e.g. "abc" with ngrams(4)),
+        /// or contains a token separator (row-level hasToken then throws BAD_ARGUMENTS / returns NULL for
+        /// hasTokenOrNull, and the index must not prune or replace the predicate and hide that).
+        if (tokens.empty() || isIllFormedHasTokenNeedle(value_field))
         {
             /// Without a preprocessor the index offers nothing over row-level evaluation: decline and let
-            /// the raw row-level hasToken decide (it returns the match, or throws BAD_ARGUMENTS / returns
+            /// the raw row-level hasToken decide (it returns the match, throws BAD_ARGUMENTS, or returns
             /// NULL for an invalid needle).
             if (!preprocessor || !preprocessor->hasActions())
                 return false;
@@ -956,7 +969,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// With a preprocessor the condition still carries the documented hasToken rewrite
             /// (hasToken(s, n) -> hasToken(preproc(s), preproc(n))). Keep it in None mode and non-prunable
             /// so the index neither prunes a granule nor replaces the predicate; the preprocessed row-level
-            /// hasToken decides. Same shape as the coarse-tokenizer preprocessor path below.
+            /// hasToken decides (including its own BAD_ARGUMENTS / NULL for an ill-formed needle). The
+            /// posting-list tokens are unusable here, so drop them. Same shape as the empty-token case.
+            tokens.clear();
             out.function = RPNElement::FUNCTION_EQUALS;
             auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens));
             query->prunable = false;
