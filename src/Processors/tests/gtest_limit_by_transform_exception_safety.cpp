@@ -83,8 +83,9 @@ Chunk makeSortedGroupedChunk(UInt64 first_key, UInt64 num_groups, UInt64 group_s
 /// (STID 2508-2fed). `output_slices` is a member scratch buffer that was cleared only on
 /// the success path. When `transform` threw after populating it (for example
 /// MEMORY_LIMIT_EXCEEDED while the grouping hash table grows), `ISimpleTransform::work`
-/// kept the transform alive and could call `transform` again on the next chunk, tripping
-/// the entry `chassert(output_slices.empty())`. The fix clears the buffer on every exit.
+/// kept the transform alive and could call `transform` again on the next chunk, where the
+/// stale slices corrupted the next result (and tripped a `chassert`). The fix clears the
+/// buffer at the start of `transform`.
 TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
 {
     MainThreadStatus::getInstance();
@@ -125,9 +126,9 @@ TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
     ASSERT_TRUE(threw) << "expected the first chunk to hit the memory limit mid-transform";
 
     /// Re-enter `transform` exactly as the pipeline executor would after catching the
-    /// exception. Before the fix this tripped `chassert(output_slices.empty())` in debug
-    /// builds (and used stale, out-of-range slices in release builds). Use keys outside
-    /// the first chunk's range so the result is independent of how far the first chunk got.
+    /// exception. Before the fix the leaked slices from the first chunk corrupted this call
+    /// (out-of-range reuse, tripping a `chassert` in debug builds). Use keys outside the
+    /// first chunk's range so the result is independent of how far the first chunk got.
     Chunk second_chunk = makeDistinctKeyChunk(/*first_key=*/ 1000000000, /*count=*/ 4);
     ASSERT_NO_THROW(runTransform(transform, second_chunk));
 
@@ -141,8 +142,8 @@ TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
 /// Same regression but for the sorted-stream variant `LimitBySortedStreamTransform`, which
 /// has its own `output_slices` scratch buffer and its own after-slice throw point: the
 /// chunk-sized filter mask allocated inside `materializeSlicesIntoChunk` once the slices are
-/// populated. Without the matching SCOPE_EXIT clear in `LimitBySortedStreamTransform::transform`,
-/// re-entry on the next chunk trips `chassert(output_slices.empty())`.
+/// populated. Without the matching clear in `LimitBySortedStreamTransform::transform`,
+/// re-entry on the next chunk reuses the stale slices.
 TEST(LimitBySortedStreamTransform, ClearsOutputSlicesWhenTransformThrows)
 {
     MainThreadStatus::getInstance();
@@ -186,8 +187,8 @@ TEST(LimitBySortedStreamTransform, ClearsOutputSlicesWhenTransformThrows)
     ASSERT_TRUE(threw) << "expected the first chunk to hit the memory limit mid-transform";
 
     /// Re-enter `transform` exactly as the pipeline executor would after catching the
-    /// exception. Before the fix this tripped `chassert(output_slices.empty())` in debug
-    /// builds (and used stale, out-of-range slices in release builds). Keys ascend past the
+    /// exception. Before the fix the leaked slices from the first chunk corrupted this call
+    /// (out-of-range reuse, tripping a `chassert` in debug builds). Keys ascend past the
     /// first chunk's range so the second chunk stays valid sorted-stream input.
     Chunk second_chunk = makeDistinctKeyChunk(/*first_key=*/ 1000000000, /*count=*/ 4);
     ASSERT_NO_THROW(runTransform(transform, second_chunk));
