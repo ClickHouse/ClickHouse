@@ -1,6 +1,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
+#include <Databases/IDatabase.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -63,6 +64,16 @@ std::pair<String, String> splitDatabaseAndNamespacePrefix(const String & resolve
     if (catalog.isDatabaseExist(resolved))
         return {resolved, {}};
 
+    /// Only DataLake catalogs expose a namespace hierarchy addressable as
+    /// `catalog.ns1.ns2`. Other remote engines (MySQL, PostgreSQL) have no such
+    /// concept and ignore the namespace hint, so splitting their names would only
+    /// turn a clear "database does not exist" error into an empty result.
+    auto is_datalake_catalog = [&](const String & db_name)
+    {
+        auto database = catalog.tryGetDatabase(db_name);
+        return database && database->isDataLakeCatalog();
+    };
+
     /// Walk from the longest prefix to the shortest, preferring the most
     /// specific match (e.g. for `a.b.c` try `a.b` before `a`).
     size_t pos = std::string::npos;
@@ -73,7 +84,7 @@ std::pair<String, String> splitDatabaseAndNamespacePrefix(const String & resolve
             break;
 
         String db_candidate = resolved.substr(0, pos);
-        if (catalog.isRemoteDatabase(db_candidate) && catalog.isDatabaseExist(db_candidate))
+        if (is_datalake_catalog(db_candidate))
             return {std::move(db_candidate), resolved.substr(pos + 1)};
 
         --pos;
