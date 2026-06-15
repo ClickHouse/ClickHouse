@@ -209,6 +209,8 @@ private:
         /// S3 credentials.
         credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
 
+        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
+
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -217,7 +219,9 @@ private:
             settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
             settings.auth_settings.server_side_encryption_kms_config,
             std::move(headers),
-            std::move(credentials_configuration));
+            std::move(credentials_configuration),
+            /*session_token=*/"",
+            shared_cache);
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
