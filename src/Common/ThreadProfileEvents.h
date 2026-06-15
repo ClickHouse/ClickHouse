@@ -159,6 +159,11 @@ struct PerfEventsCounters
 
 
     void initializeProfileEvents(const std::string & events_list);
+    /// Reads the current perf-event values and accounts the deltas since the previous read,
+    /// without disabling the events, so profiling continues afterwards. Used for live snapshots
+    /// (e.g. system.part_log) taken while the thread is still attached to its group.
+    void updateProfileEvents(ProfileEvents::Counters & profile_events);
+    /// Same as updateProfileEvents, but also disables the events first. Used at thread detach.
     void finalizeProfileEvents(ProfileEvents::Counters & profile_events);
     void closeEventDescriptors();
     bool processThreadLocalChanges(const std::string & needed_events_list);
@@ -177,6 +182,7 @@ extern thread_local PerfEventsCounters current_thread_counters;
 struct PerfEventsCounters
 {
     void initializeProfileEvents(const std::string & /* events_list */) {}
+    void updateProfileEvents(ProfileEvents::Counters & /* profile_events */) {}
     void finalizeProfileEvents(ProfileEvents::Counters & /* profile_events */) {}
     void closeEventDescriptors() {}
 };

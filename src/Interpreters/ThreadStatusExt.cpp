@@ -187,8 +187,11 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
 std::shared_ptr<ProfileEvents::Counters::Snapshot> ThreadGroup::getProfileCountersSnapshot() const
 {
     /// If the current thread is attached to this group or to one of its descendants, flush its
-    /// pending rusage/taskstats deltas: thread counters propagate through the whole parent chain,
-    /// so the flush reaches this group's counters before the snapshot is taken below.
+    /// pending rusage/taskstats and perf-event deltas: thread counters propagate through the whole
+    /// parent chain, so the flush reaches this group's counters before the snapshot is taken below.
+    /// updateProfileEvents reads the perf events without disabling them (unlike the detach-time
+    /// finalizeProfileEvents), so PerfCPUCycles/PerfInstructions/... are not missing from a snapshot
+    /// taken while the thread is still attached.
     if (current_thread)
     {
         for (const auto * group = current_thread->getThreadGroup().get(); group; group = group->parent.get())
@@ -196,6 +199,7 @@ std::shared_ptr<ProfileEvents::Counters::Snapshot> ThreadGroup::getProfileCounte
             if (group == this)
             {
                 current_thread->updatePerformanceCounters();
+                current_thread_counters.updateProfileEvents(current_thread->performance_counters);
                 break;
             }
         }
