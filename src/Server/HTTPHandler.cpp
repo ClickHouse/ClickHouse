@@ -21,7 +21,6 @@
 #include <Interpreters/Session.h>
 #include <Processors/Port.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
@@ -44,6 +43,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
 #include <boost/algorithm/string/trim.hpp>
