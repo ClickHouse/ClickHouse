@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Common/parseGlobs.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <future>
 #include <optional>
