@@ -50,7 +50,8 @@ public:
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
     void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
-    void dropDetachedTable(ContextPtr context, const String & table_name, bool sync, const std::function<void()> & dependency_cleanup);
+    virtual void
+    dropDetachedTable(ContextPtr context, const String & table_name, bool sync, const std::function<void()> & dependency_cleanup);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & name) override;

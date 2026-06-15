@@ -1503,6 +1503,22 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
+    /// If the UUID is in Reserved state (from DROP DETACHED TABLE or restart recovery),
+    /// we need to promote it to Attached before calling addUUIDMapping in attachTableUnlocked.
+    /// This is safe because we're about to attach the table back.
+    if (dropped_table.table_id.uuid != UUIDHelpers::Nil)
+    {
+        UUIDToStorageMapPart & uuid_map_part = uuid_map[getFirstLevelIdx(dropped_table.table_id.uuid)];
+        std::lock_guard lock{uuid_map_part.mutex};
+        auto it = uuid_map_part.map.find(dropped_table.table_id.uuid);
+        if (it != uuid_map_part.map.end() && it->second.state == UUIDMappingState::Reserved)
+        {
+            it->second.state = UUIDMappingState::Attached;
+            it->second.database = getDatabase(dropped_table.table_id.database_name);
+            /// table will be set by attachTableUnlocked
+        }
+    }
+
     LOG_INFO(log, "Attaching undropped table {} (metadata moved from {})",
              dropped_table.table_id.getNameForLogs(), latest_metadata_dropped_path);
 

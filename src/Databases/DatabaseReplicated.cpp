@@ -2232,6 +2232,28 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assertDigest(local_context);
 }
 
+void DatabaseReplicated::dropDetachedTable(
+    ContextPtr local_context, const String & table_name, bool sync, const std::function<void()> & dependency_cleanup)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropDetachedTable");
+    waitDatabaseStarted();
+
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    if (txn && txn->isInitialQuery())
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+
+        std::lock_guard lock{metadata_mutex};
+        UInt64 new_digest = tables_metadata_digest;
+        new_digest -= getMetadataHash(table_name);
+        if (!is_recovering)
+            txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+    }
+
+    DatabaseAtomic::dropDetachedTable(local_context, table_name, sync, dependency_cleanup);
+}
+
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
