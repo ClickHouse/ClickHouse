@@ -49,6 +49,48 @@ SELECT
     hex(encrypt('aes-128-cbc', plain, vkey, 'iviviviviviviviv')) AS vkey_civ
 ORDER BY n;
 
+-- CTR and OFB are streaming modes that do not use the ECB/CBC fast path, but they
+-- share the same per-row key-schedule cache: a key match resets only the IV, a key
+-- change re-expands the schedule. Alternating keys force a cache miss every row, a
+-- constant key with a varying IV exercises the IV-only reset, and zero-length rows
+-- exercise the empty-input skip path that must not corrupt the cipher state. Output
+-- must depend only on the current row's key and IV, never on the previous row's state.
+WITH
+    arrayJoin(range(20)) AS n,
+    leftPad(toString(n), 3, '0') AS n3,
+    concat('key-key-key-k', n3) AS vkey,
+    concat('iviviviviviiv', n3) AS viv,
+    concat('key-key-key-k', leftPad(toString(n % 2), 3, '0')) AS akey,
+    repeat('s', (n * 7) % 40) AS plain
+SELECT
+    n,
+    hex(encrypt('aes-128-ctr', plain, vkey, viv)) AS ctr_vkey_viv,
+    hex(encrypt('aes-128-ctr', plain, akey, viv)) AS ctr_akey_viv,
+    hex(encrypt('aes-128-ctr', plain, 'key-key-key-key+', viv)) AS ctr_ckey_viv,
+    hex(encrypt('aes-128-ctr', plain, vkey, 'iviviviviviviviv')) AS ctr_vkey_civ,
+    hex(encrypt('aes-128-ofb', plain, vkey, viv)) AS ofb_vkey_viv,
+    hex(encrypt('aes-128-ofb', plain, akey, viv)) AS ofb_akey_viv,
+    hex(encrypt('aes-128-ofb', plain, 'key-key-key-key+', viv)) AS ofb_ckey_viv,
+    hex(encrypt('aes-128-ofb', plain, vkey, 'iviviviviviviviv')) AS ofb_vkey_civ
+ORDER BY n;
+
+-- Round trips through the same cache transitions must recover the plaintext for the
+-- streaming modes regardless of how the key and IV change between rows, both with an
+-- explicit IV and with no IV.
+WITH
+    arrayJoin(range(20)) AS n,
+    leftPad(toString(n), 3, '0') AS n3,
+    concat('key-key-key-k', leftPad(toString(n % 2), 3, '0')) AS akey,
+    concat('iviviviviviiv', n3) AS viv,
+    repeat('w', (n * 11) % 50) AS plain
+SELECT
+    n,
+    decrypt('aes-128-ctr', encrypt('aes-128-ctr', plain, akey, viv), akey, viv) = plain AS ctr_rt,
+    decrypt('aes-128-ofb', encrypt('aes-128-ofb', plain, akey, viv), akey, viv) = plain AS ofb_rt,
+    decrypt('aes-128-ctr', encrypt('aes-128-ctr', plain, akey), akey) = plain AS ctr_noiv_rt,
+    decrypt('aes-128-ofb', encrypt('aes-128-ofb', plain, akey), akey) = plain AS ofb_noiv_rt
+ORDER BY n;
+
 -- Round trips must recover the plaintext.
 WITH
     arrayJoin([0, 1, 15, 16, 17, 63, 64, 65, 256]) AS len,
