@@ -1007,10 +1007,6 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
-
-        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
-        if (file_name)
-            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
     else if (is_interactive)
     {
@@ -1019,6 +1015,17 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     else
     {
         default_output_format = "TSV";
+    }
+
+    /// Detect output compression independently of format selection.
+    /// Even when the user specifies --output-format or --format explicitly,
+    /// stdout may still be redirected to a compressed file (e.g., output.gz).
+    if (default_output_compression_method == CompressionMethod::None
+        && isFileDescriptorSuitableForInput(stdout_fd))
+    {
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
+        if (file_name)
+            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
     if (getClientConfiguration().has("input-format"))
@@ -1045,7 +1052,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = *format_from_file_name;
         else
             default_input_format = "auto";
+    }
 
+    /// Detect input compression independently of format selection.
+    /// Even when the user specifies --input-format or --format explicitly,
+    /// stdin may still be redirected from a compressed file (e.g., input.gz).
+    if (default_input_compression_method == CompressionMethod::None)
+    {
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
@@ -2707,6 +2720,16 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                 ++token_iterator;
             this_query_begin = token_iterator->end;
+
+            /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
+            /// matches the state a successful query would leave behind. Otherwise stale
+            /// exceptions from a prior statement (executed under `ignore_error`) survive and
+            /// `Client::main` returns their code as the process exit, even though the loop
+            /// elected to skip past the failing query and continue.
+            have_error = false;
+            error_code = 0;
+            client_exception.reset();
+            server_exception.reset();
 
             return MultiQueryProcessingStage::CONTINUE_PARSING;
         }
