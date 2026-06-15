@@ -1023,7 +1023,8 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
     /// building the type) with an explicit limit, so inference stays cheap and interruptible instead
     /// of overflowing the native stack in this recursive descent. checkStackSize is a last-resort
     /// backstop for when max_parser_depth is raised above the default.
-    if (depth > format_settings.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
             "Too deep recursion while inferring the BSON schema: the nesting depth exceeds the limit ({}). "

@@ -13,6 +13,19 @@ TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# Reads a query's combined output from stdin. If it contains $2, print a stable "<label>: <marker>"
+# line; otherwise print the actual output so a CI failure shows what really happened instead of FAIL.
+expect_contains() {
+    local label="$1" marker="$2" out
+    out=$(cat)
+    if printf '%s\n' "$out" | grep -qF "$marker"; then
+        echo "$label: $marker"
+    else
+        echo "$label: expected '$marker', got:"
+        printf '%s\n' "$out" | head -3
+    fi
+}
+
 # One JSON row whose field x is an array nested 200000 deep. max_parser_depth is raised far above
 # the nesting so the explicit limit does not short-circuit; the depth is large enough to exhaust the
 # native stack in any build, so the checkStackSize backstop must reject it (build-independent).
@@ -22,4 +35,4 @@ open('${TMP_DIR}/deep.jsonl', 'wb').write(b'{\"x\":' + b'[' * N + b'1' + b']' * 
 "
 
 $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep.jsonl', JSONEachRow) SETTINGS max_parser_depth=100000000 FORMAT Null" 2>&1 \
-    | grep -qF 'TOO_DEEP_RECURSION' && echo 'json_inference_backstop OK' || echo 'json_inference_backstop FAIL'
+    | expect_contains json_inference_backstop TOO_DEEP_RECURSION

@@ -1,2 +1,2 @@
-orc_explicit_deep_rejected OK
-0
+orc_explicit_deep_rejected: TOO_DEEP_RECURSION
+moderate_read: 0

@@ -1,2 +1,3 @@
-parser_depth_limit OK
-orc_library_depth_limit OK
+parser_depth_limit: TOO_DEEP_RECURSION
+orc_library_depth_limit: nesting depth exceeds the limit
+unlimited_depth: accepted

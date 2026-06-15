@@ -204,7 +204,8 @@ static DataTypePtr parseORCType(
     /// the nesting, so reject deep nesting early (before building the type) with an explicit limit.
     /// This keeps schema inference cheap and interruptible instead of recursing over (and later
     /// walking) a pathologically deep type. checkStackSize is a last-resort backstop.
-    if (depth > max_depth)
+    /// max_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (max_depth != 0 && depth > max_depth)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
             "Too deep recursion while parsing the ORC schema: the nesting depth exceeds the limit ({}). "

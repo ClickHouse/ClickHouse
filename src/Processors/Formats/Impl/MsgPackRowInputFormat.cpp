@@ -634,7 +634,8 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, siz
     /// with an explicit limit: this keeps inference cheap and interruptible instead of walking and
     /// allocating a pathologically deep type that later code (e.g. makeNullableRecursively) would
     /// also recurse over. checkStackSize is a last-resort backstop if max_parser_depth is raised.
-    if (depth > format_settings.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
             "Too deep recursion while inferring the MsgPack schema: the nesting depth exceeds the limit ({}). "

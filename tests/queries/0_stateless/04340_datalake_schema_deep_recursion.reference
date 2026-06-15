@@ -1,3 +1,3 @@
-delta_depth OK
-iceberg_depth OK
-paimon_depth OK
+delta_depth: JSONException
+iceberg_depth: JSONException
+paimon_depth: JSONException

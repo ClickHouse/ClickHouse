@@ -13,11 +13,35 @@ TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# Reads a query's combined output from stdin. If it contains $2, print a stable "<label>: <marker>"
+# line; otherwise print the actual output so a CI failure shows what really happened instead of FAIL.
+expect_contains() {
+    local label="$1" marker="$2" out
+    out=$(cat)
+    if printf '%s\n' "$out" | grep -qF "$marker"; then
+        echo "$label: $marker"
+    else
+        echo "$label: expected '$marker', got:"
+        printf '%s\n' "$out" | head -3
+    fi
+}
+
+# Same, but asserts the marker is ABSENT (used for the "accepted" cases).
+expect_absent() {
+    local label="$1" marker="$2" out
+    out=$(cat)
+    if printf '%s\n' "$out" | grep -qF "$marker"; then
+        echo "$label: unexpectedly found '$marker':"
+        printf '%s\n' "$out" | head -3
+    else
+        echo "$label: accepted"
+    fi
+}
+
 # Craft a minimal Parquet file whose schema is N nested REQUIRED groups + one REQUIRED INT32 leaf.
 # The flat thrift schema list is O(depth), so this avoids pyarrow's super-linear nested-type build.
-# 60000 is far above the default max_parser_depth (1000) and deep enough to overflow the native
-# stack in any build, so the rejection is build-independent.
-python3 - 60000 "${TMP_DIR}/deep.parquet" <<'PYEOF'
+gen_parquet() { # $1=depth $2=path
+    python3 - "$1" "$2" <<'PYEOF'
 import struct as st, sys
 def varint(n):
     o = bytearray()
@@ -49,6 +73,16 @@ sch  = lst([root] + [grp] * N + [leaf])
 fmd  = stru([(1, 5, i(1)), (2, 9, sch), (3, 6, i(0)), (4, 9, lst([]))])
 open(sys.argv[2], "wb").write(b"PAR1" + fmd + st.pack("<i", len(fmd)) + b"PAR1")
 PYEOF
+}
 
+# Case 1 - default max_parser_depth (1000): 60000 nested REQUIRED groups is far above the limit and
+# deep enough to overflow the native stack in any build, so the rejection is build-independent.
+gen_parquet 60000 "${TMP_DIR}/deep.parquet"
 $CLICKHOUSE_LOCAL --query "DESCRIBE TABLE file('${TMP_DIR}/deep.parquet', Parquet) FORMAT Null" 2>&1 \
-    | grep -qF 'TOO_DEEP_RECURSION' && echo 'parquet_required_depth OK' || echo 'parquet_required_depth FAIL'
+    | expect_contains parquet_required_depth TOO_DEEP_RECURSION
+
+# Case 2 - max_parser_depth=0 means unlimited (matching the SQL parser), so a shallow schema must
+# still be inferred normally rather than rejected by the explicit limit.
+gen_parquet 2 "${TMP_DIR}/shallow.parquet"
+$CLICKHOUSE_LOCAL --query "DESCRIBE TABLE file('${TMP_DIR}/shallow.parquet', Parquet) SETTINGS max_parser_depth = 0 FORMAT Null" 2>&1 \
+    | expect_absent unlimited_depth TOO_DEEP_RECURSION

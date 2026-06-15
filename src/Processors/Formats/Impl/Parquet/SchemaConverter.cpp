@@ -174,10 +174,11 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
     /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
     /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
     checkStackSize();
     ++recursion_depth;
     SCOPE_EXIT({ --recursion_depth; });
-    if (recursion_depth > options.format.max_parser_depth)
+    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
             "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "

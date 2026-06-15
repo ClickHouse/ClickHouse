@@ -14,6 +14,19 @@ TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# Reads a query's combined output from stdin. If it contains $2, print a stable "<label>: <marker>"
+# line; otherwise print the actual output so a CI failure shows what really happened instead of FAIL.
+expect_contains() {
+    local label="$1" marker="$2" out
+    out=$(cat)
+    if printf '%s\n' "$out" | grep -qF "$marker"; then
+        echo "$label: $marker"
+    else
+        echo "$label: expected '$marker', got:"
+        printf '%s\n' "$out" | head -3
+    fi
+}
+
 # A deeply nested ORC file: a single column of list nested 2000 levels deep (Array(Array(...))).
 python3 -c "
 import pyarrow as pa, pyarrow.orc as orc
@@ -27,7 +40,7 @@ orc.write_table(pa.table({'x': pa.array([], type=t)}), '${TMP_DIR}/deep.orc')
 # (the type cannot even be parsed that deep), not crash.
 deep_type=$(python3 -c "print('Array(' * 2000 + 'Int32' + ')' * 2000)")
 $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/deep.orc', ORC, 'x ${deep_type}') FORMAT Null" 2>&1 \
-    | grep -qF 'TOO_DEEP_RECURSION' && echo 'orc_explicit_deep_rejected OK' || echo 'orc_explicit_deep_rejected FAIL'
+    | expect_contains orc_explicit_deep_rejected TOO_DEEP_RECURSION
 
 # A moderately nested explicit type over the same kind of file must still read fine.
 python3 -c "
@@ -38,4 +51,4 @@ for _ in range(50):
 orc.write_table(pa.table({'x': pa.array([], type=t)}), '${TMP_DIR}/moderate.orc')
 "
 moderate_type=$(python3 -c "print('Array(' * 50 + 'Int32' + ')' * 50)")
-$CLICKHOUSE_LOCAL --query "SELECT count() FROM file('${TMP_DIR}/moderate.orc', ORC, 'x ${moderate_type}')"
+echo "moderate_read: $($CLICKHOUSE_LOCAL --query "SELECT count() FROM file('${TMP_DIR}/moderate.orc', ORC, 'x ${moderate_type}')" 2>&1)"
