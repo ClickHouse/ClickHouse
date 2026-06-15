@@ -519,7 +519,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
 
     mutable OnceFlag workload_entity_storage_initialized;
-    mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
+    mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
     mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
 
@@ -977,14 +977,27 @@ struct ContextSharedPart : boost::noncopyable
         TransactionLog::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
-        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
+        // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
+        // initialize it (a concurrent read/write of the same `shared_ptr` object would be a data race).
+        {
+            std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage_to_stop;
+            {
+                SharedLockGuard lock(mutex);
+                workload_entity_storage_to_stop = workload_entity_storage;
+            }
+            if (workload_entity_storage_to_stop)
+            {
+                LOG_DEBUG(log, "Shutting down workload entity storage");
+                workload_entity_storage_to_stop->stopWatching();
+            }
+        }
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
-        std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
+        std::shared_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
@@ -3766,13 +3779,16 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
-IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
+std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
-        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
+        auto storage = createWorkloadEntityStorage(getGlobalContext());
+        std::lock_guard lock(shared->mutex);
+        shared->workload_entity_storage = std::move(storage);
     });
 
-    return *shared->workload_entity_storage;
+    SharedLockGuard lock(shared->mutex);
+    return shared->workload_entity_storage;
 }
 
 WasmModuleManager * Context::initWasmModuleManager()
@@ -8058,6 +8074,14 @@ PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uu
 
 const ServerSettings & Context::getServerSettings() const
 {
+    return shared->server_settings;
+}
+
+ServerSettings Context::getServerSettingsCopy() const
+{
+    /// Synchronize with the runtime writers of `shared->server_settings`
+    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
+    SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
 }
 
