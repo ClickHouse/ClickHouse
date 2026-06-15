@@ -689,6 +689,7 @@ private:
         uint32_t allowed_clauses,
         std::optional<String> recursive,
         Select * sel);
+    void generateExprIn(RandomGenerator & rg, ExprInType * expr);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);

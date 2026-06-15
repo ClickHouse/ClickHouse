@@ -1741,7 +1741,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
                 expr1 = ein->mutable_expr()->mutable_expr();
                 if (rg.nextBool())
                 {
-                    ExprList * elist = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
+                    ExprList * elist = rg.nextBool() ? ein->mutable_in_type()->mutable_tuple() : ein->mutable_in_type()->mutable_array();
                     const uint32_t nclauses = rg.nextSmallNumber();
 
                     for (uint32_t i = 0; i < nclauses; i++)
@@ -1756,7 +1756,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
                 }
                 else
                 {
-                    addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), ein->mutable_single_expr());
+                    addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), ein->mutable_in_type()->mutable_single_expr());
                 }
             }
             else

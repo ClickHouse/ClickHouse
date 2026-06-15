@@ -270,8 +270,12 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
         const auto & gcols = gen.levels[gen.current_level].gcols;
         if (!gcols.empty())
         {
-            BinaryExpr * hexpr
-                = inner_ssc->mutable_groupby()->mutable_having_expr()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+            BinaryExpr * hexpr = inner_ssc->mutable_groupby()
+                                     ->mutable_having_expr()
+                                     ->mutable_expr()
+                                     ->mutable_expr()
+                                     ->mutable_comp_expr()
+                                     ->mutable_binary_expr();
             hexpr->set_op(BinaryOperator::BINOP_EQ);
             hexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
                 SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);

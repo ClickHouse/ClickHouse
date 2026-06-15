@@ -2068,14 +2068,14 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"connection_pool_max_wait_ms", CHSetting(timeoutMillisRange, {}, false)},
              {"distributed_replica_error_half_life", CHSetting(timeoutSecondsRange, {}, false)},
              {"format_avro_schema_registry_retry_initial_backoff_ms",
-             CHSetting(
-                 [](RandomGenerator & rg, FuzzConfig &)
-                 {
-                     const std::vector<uint32_t> choices{0, 1, 10, 100, 1000};
-                     return std::to_string(rg.pickRandomly(choices));
-                 },
-                 {},
-                 false)},
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &)
+                  {
+                      const std::vector<uint32_t> choices{0, 1, 10, 100, 1000};
+                      return std::to_string(rg.pickRandomly(choices));
+                  },
+                  {},
+                  false)},
              {"handshake_timeout_ms", CHSetting(timeoutMillisRange, {}, false)},
              {"hedged_connection_timeout_ms", CHSetting(timeoutMillisRange, {}, false)},
              {"http_connection_timeout", CHSetting(timeoutSecondsRange, {}, false)},
@@ -2268,7 +2268,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         {{"bool_false_representation", CHSetting(nastyStrings, {}, false)},
          {"bool_true_representation", CHSetting(nastyStrings, {}, false)},
          {"format_avro_schema_registry_max_retries",
-         CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {}, false)},
+          CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {}, false)},
          {"format_binary_max_array_size", CHSetting(rowsRange, {}, false)},
          {"format_binary_max_object_size", CHSetting(bytesRange, {}, false)},
          {"format_binary_max_string_size", CHSetting(rowsRange, {}, false)},
