@@ -222,7 +222,10 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecALP(*this);
     registerCodecIguana(*this);
 
-    default_codec = get("LZ4", {});
+    /// FIXME (performance testing only — DO NOT MERGE): the default compression method is set to the
+    /// experimental Iguana codec so that every column without an explicit CODEC is compressed with it,
+    /// to measure its impact across the whole CI performance suite. The production default is LZ4.
+    default_codec = get("Iguana", {});
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
