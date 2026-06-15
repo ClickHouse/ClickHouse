@@ -148,7 +148,7 @@ void HandshakeResponse::readPayloadImpl(ReadBuffer & payload)
     }
     else if (capability_flags & CLIENT_SECURE_CONNECTION)
     {
-        char len = 0;
+        char len;
         payload.readStrict(len);
         auth_response.resize(static_cast<unsigned int>(len));
         payload.readStrict(auth_response.data(), len);
