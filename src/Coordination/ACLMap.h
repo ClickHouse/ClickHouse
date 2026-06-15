@@ -42,6 +42,8 @@ private:
     ACLId max_acl_id{1};
 
     mutable SharedMutex map_mutex;
+
+    MapEntry & numToAcl(ACLId id); // like num_to_acl.at(id), but with better exception on error
 public:
 
     /// Convert ACL to number. If it's new ACL than adds it to map with new id.

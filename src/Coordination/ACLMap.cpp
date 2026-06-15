@@ -40,6 +40,14 @@ bool ACLMap::ACLsComparator::operator()(const Coordination::ACLs & left, const C
     return true;
 }
 
+ACLMap::MapEntry & ACLMap::numToAcl(ACLId id)
+{
+    auto it = num_to_acl.find(id);
+    if (it == num_to_acl.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACL with id {} does not exist", id);
+    return it->second;
+}
+
 ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
 {
     if (acls.empty())
@@ -47,10 +55,9 @@ ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
 
     {
         std::shared_lock shared_lock(map_mutex);
-        auto it = acl_to_num.find(acls);
-        if (it != acl_to_num.end())
+        if (auto it = acl_to_num.find(acls); it != acl_to_num.end())
         {
-            ++num_to_acl.at(it->second).usage;
+            ++numToAcl(it->second).usage;
             return it->second;
         }
     }
@@ -59,10 +66,9 @@ ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
 
     /// Re-check after re-locking.
     {
-        auto it = acl_to_num.find(acls);
-        if (it != acl_to_num.end())
+        if (auto it = acl_to_num.find(acls); it != acl_to_num.end())
         {
-            ++num_to_acl.at(it->second).usage;
+            ++numToAcl(it->second).usage;
             return it->second;
         }
     }
@@ -114,14 +120,11 @@ void ACLMap::addMapping(ACLId acls_id, const Coordination::ACLs & acls)
 {
     std::lock_guard lock(map_mutex);
 
-    if (num_to_acl.contains(acls_id))
+    if (!num_to_acl.emplace(std::piecewise_construct,
+            std::forward_as_tuple(acls_id), std::forward_as_tuple(acls, 0)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACL with id {} already exists", acls_id);
-    if (acl_to_num.contains(acls))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACLs with id {} and {} are identical", acls_id, acl_to_num.at(acls));
-
-    num_to_acl.emplace(std::piecewise_construct,
-        std::forward_as_tuple(acls_id), std::forward_as_tuple(acls, 0));
-    acl_to_num[acls] = acls_id;
+    if (auto [it, inserted] = acl_to_num.emplace(acls, acls_id); !inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACLs with id {} and {} are identical", acls_id, it->second);
     max_acl_id = std::max(acls_id + 1, max_acl_id); /// max_acl_id pointer next slot
 }
 
@@ -131,10 +134,7 @@ void ACLMap::addUsage(ACLId acl_id)
         return;
 
     std::shared_lock shared_lock(map_mutex);
-    auto it = num_to_acl.find(acl_id);
-    if (it == num_to_acl.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACL with id {} does not exist", acl_id);
-    it->second.usage++;
+    numToAcl(acl_id).usage++;
 }
 
 void ACLMap::removeUsage(ACLId acl_id)
@@ -145,7 +145,7 @@ void ACLMap::removeUsage(ACLId acl_id)
     {
         /// Fast path: decrement without locking the mutex exclusively.
         std::shared_lock shared_lock(map_mutex);
-        uint64_t usage = --num_to_acl.at(acl_id).usage;
+        uint64_t usage = --numToAcl(acl_id).usage;
         chassert(usage < INT64_MAX);
         if (usage != 0)
             return;

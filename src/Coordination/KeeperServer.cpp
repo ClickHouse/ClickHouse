@@ -949,7 +949,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             keeper_context->setLocalLogsPreprocessed();
             auto log_store = state_manager->load_log_store();
             chassert(state_machine->getLogStore() != nullptr);
-            state_machine->preprocessUncommittedLogEntries(state_machine->last_commit_index() + 1, log_store->next_slot(), /*entries=*/ nullptr, /*lock_mutex=*/ true);
+            state_machine->preprocessUncommittedLogEntries(
+                state_machine->last_commit_index() + 1, log_store->next_slot(), /*entries=*/nullptr, /*lock_mutex=*/true);
         };
 
         switch (type)
