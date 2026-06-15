@@ -171,9 +171,26 @@ struct TopKAggregationHeap
         while (heap_indices.size() > capacity)
         {
             std::pop_heap(heap_indices.begin(), heap_indices.end(), cmp);
-            const size_t evicted = heap_indices.back();
+            const size_t candidate = heap_indices.back();
+
+            /// Never evict a key that ties with the boundary.  Distinct keys can
+            /// compare equal (-0.0/+0.0, NaN payloads, collation), and an equal
+            /// key is a legitimate member of the top-K result - the downstream
+            /// LIMIT may break the tie either way.  Evicting it would destroy
+            /// its aggregate state while later rows for it are re-admitted
+            /// (they also tie with the boundary), surfacing an incomplete
+            /// group.  Everything still in the heap is equal or better than the
+            /// front, so stop trimming and retry once the heap grows further.
+            const size_t new_front = heap_indices.front();
+            if (!cmp(candidate, new_front) && !cmp(new_front, candidate))
+            {
+                std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
+                compaction_threshold = std::max(compaction_threshold, heap_indices.size() + capacity / 2 + 1);
+                break;
+            }
+
             heap_indices.pop_back();
-            on_evict(evicted);
+            on_evict(candidate);
             ++evicted_count;
         }
 
