@@ -1,8 +1,10 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
+#include <algorithm>
 #include <cstring>
 #include <optional>
+#include <ranges>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
@@ -139,21 +141,15 @@ size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const 
 size_t getHostNameLongestCommonPrefix(const std::string & local_hostname, const std::string & host)
 {
     /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
-    size_t length = std::min(local_hostname.length(), host.length());
-    size_t common = 0;
-    while (common < length && local_hostname[common] == host[common])
-        ++common;
-    return common;
+    const auto [it, _] = std::ranges::mismatch(local_hostname, host);
+    return static_cast<size_t>(it - local_hostname.begin());
 }
 
 size_t getHostNameLongestCommonSuffix(const std::string & local_hostname, const std::string & host)
 {
     /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
-    size_t length = std::min(local_hostname.length(), host.length());
-    size_t common = 0;
-    while (common < length && local_hostname[local_hostname.length() - 1 - common] == host[host.length() - 1 - common])
-        ++common;
-    return common;
+    const auto [it, _] = std::ranges::mismatch(local_hostname | std::views::reverse, host | std::views::reverse);
+    return static_cast<size_t>(it - local_hostname.rbegin());
 }
 
 }
