@@ -116,46 +116,39 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
             "Silk::FiberStreamSocketImpl::sendBytes: non-zero flags ({}) not supported",
             flags);
 
-    int total = 0;
-    const char * ptr = static_cast<const char *>(buffer);
-    Poco::Timespan timeout = getSendTimeout();
-    while (total < length)
+    throttleSend(static_cast<size_t>(length), getBlocking());
+
+    uint64_t bytes_written = 0;
+    silk::FiberScheduler::IoFuture future;
+    iovec iov{const_cast<void *>(buffer), static_cast<size_t>(length)};
+    silk::FiberScheduler::write(sockfd(), &iov, 1, 0, &bytes_written, &future);
+
+    const Poco::Timespan timeout = getSendTimeout();
+    int r = 0;
+    if (timeout.totalMicroseconds() > 0)
     {
-        throttleSend(static_cast<size_t>(length - total), getBlocking());
-
-        uint64_t bytes_written = 0;
-        silk::FiberScheduler::IoFuture future;
-        iovec iov{const_cast<char *>(ptr), static_cast<size_t>(length - total)};
-        silk::FiberScheduler::write(sockfd(), &iov, 1, 0, &bytes_written, &future);
-
-        int r = 0;
-        if (timeout.totalMicroseconds() > 0)
+        r = silk::FiberFuture::waitWithTimeout(
+            &future,
+            static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000);
+        if (r == ETIMEDOUT)
         {
-            r = silk::FiberFuture::waitWithTimeout(
-                &future,
-                static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000);
-            if (r == ETIMEDOUT)
-            {
-                future.cancel();
-                r = future.wait();
-                if (r == ECANCELED)
-                    throw Poco::TimeoutException("Send timed out", peerAddress().toString());
-            }
-        }
-        else
-        {
+            future.cancel();
             r = future.wait();
+            if (r == ECANCELED)
+                throw Poco::TimeoutException("Send timed out", peerAddress().toString());
         }
-
-        if (r)
-            error(r, "send");
-
-        useSendThrottlerBudget(static_cast<int>(bytes_written));
-
-        total += static_cast<int>(bytes_written);
-        ptr += bytes_written;
     }
-    return total;
+    else
+    {
+        r = future.wait();
+    }
+
+    if (r)
+        error(r, "send");
+
+    useSendThrottlerBudget(static_cast<int>(bytes_written));
+
+    return static_cast<int>(bytes_written);
 }
 
 int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
@@ -199,6 +192,16 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
     useRecvThrottlerBudget(static_cast<int>(bytes_read));
 
     return static_cast<int>(bytes_read);
+}
+
+void FiberStreamSocketImpl::setBlocking(bool flag)
+{
+    if (!flag)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Non-blocking mode is not supported for Silk fibers aware sockets.");
+
+    Poco::Net::StreamSocketImpl::setBlocking(flag);
 }
 
 }
