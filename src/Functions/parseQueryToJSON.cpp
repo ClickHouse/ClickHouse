@@ -136,7 +136,7 @@ session settings.
     }
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 4}, category};
+    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 6}, category};
 
     factory.registerFunction<FunctionParseQueryToJSON>(documentation);
 }

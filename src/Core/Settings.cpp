@@ -110,6 +110,7 @@ Supported values:
 - `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
 - `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `allow_experimental_json_ast_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
