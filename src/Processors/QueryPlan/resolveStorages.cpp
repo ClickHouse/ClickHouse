@@ -54,8 +54,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
-Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context);
-
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -71,8 +69,6 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
-
-std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {

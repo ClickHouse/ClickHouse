@@ -105,7 +105,7 @@ protected:
 
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
-    size_t field_index{};
+    size_t field_index;
 
 private:
     DataTypePtr getDefaultType(size_t column) const;
