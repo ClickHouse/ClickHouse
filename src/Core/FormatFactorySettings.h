@@ -214,8 +214,11 @@ Verify page checksums when reading parquet files.
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
-Allow seeks while reading in ORC/Parquet/Arrow input formats.
-
+Allow seeks (or range reads) while reading ORC, Parquet, and Arrow input formats.
+When enabled and the source supports it (e.g. local file, S3, HTTP with range support and known size),
+ClickHouse can read only the needed byte ranges and use less memory.
+When disabled, or when the source does not support seeks (e.g. no file size, or stream not seekable),
+some readers may fall back to loading the full file into memory.
 Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
@@ -829,6 +832,12 @@ For AvroConfluent format: send timeout in seconds for the Confluent Schema Regis
     DECLARE(UInt64, format_avro_schema_registry_receive_timeout, 1, R"(
 For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
 )", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_max_retries, 5, R"(
+For AvroConfluent format: maximum number of retries for transient failures when communicating with the Confluent Schema Registry (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429). Set to 0 to disable retries. The maximum allowed value is 20. Schema validation errors (HTTP 409, malformed Avro JSON) are not retried.
+)", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_retry_initial_backoff_ms, 100, R"(
+For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0 and less than or equal to 60000.
+)", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
 )", 0) \
@@ -1111,6 +1120,8 @@ If the data rendered in Pretty formats arrived in multiple chunks, even after a 
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
 Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default).
+
+In interactive mode, `clickhouse-client` automatically switches to `ASCII` when the terminal does not support UTF-8 (as determined by the `LC_ALL`, `LC_CTYPE` and `LANG` environment variables), unless this setting is specified explicitly.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_display_footer_column_names, true, R"(
 Display column names in the footer if there are many table rows.
@@ -1232,10 +1243,17 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(UInt64, output_format_float_precision, 0, R"(
+When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
+When 0 (the default), use the shortest round-trip representation.
+
+Values too large for fixed notation, and values whose magnitude is so small that rounding to the requested precision would lose all significant digits (the mantissa would become `±0`), are emitted in scientific notation instead. In these fallback cases the mantissa may carry more than the requested number of fractional digits.
+
+Valid range: 0 to 100.
+)", 0) \
     DECLARE(Bool, output_format_trim_fixed_string, false, R"(
 Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
-    \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
@@ -1344,6 +1362,11 @@ Enabled by default
 )", 0) \
     DECLARE(Bool, output_format_pretty_row_numbers, true, R"(
 Add row numbers before each row for pretty output format
+)", 0) \
+    DECLARE(Bool, output_format_pretty_use_nbsp_for_padding, false, R"(
+If enabled, padding in `Pretty` output formats is rendered with `U+00A0` instead of an ASCII space.
+The output remains visually identical in monospace, but the padding survives tools that compress or trim runs of regular spaces.
+Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
 )", 0) \
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.
@@ -1517,6 +1540,28 @@ Set the quoting rule for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
+)", 0) \
+    DECLARE(UInt64, output_format_image_width, 1024, R"(
+The width of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(UInt64, output_format_image_height, 1024, R"(
+The height of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(String, output_format_image_terminal_mode, "", R"(
+For image output formats such as `PNG`, output the image directly to the terminal using an inline image protocol instead of writing the raw image bytes.
+
+Possible values:
+- `` (empty) — write the raw image bytes (the default).
+- `iterm` — use the iTerm2 inline image protocol.
+- `kitty` — use the Kitty graphics protocol.
+- `sixel` — use the Sixel protocol.
+- `auto` — if the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes.
+
+Default value: `` (empty).
 )", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.

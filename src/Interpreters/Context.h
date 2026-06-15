@@ -101,6 +101,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class UniqueKeyIndexCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
@@ -278,6 +279,12 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
+/// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
+/// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
+struct IRuntimeFilterLookup;
+using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -295,13 +302,6 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
-
-/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
-/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
-/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -351,7 +351,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared;
+    ContextSharedPart * shared{};
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -367,6 +367,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -566,6 +567,11 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
+    /// and internal backup coordination.
+    /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
+    /// this flag can only be set server-side and is safe to use for security-sensitive checks.
+    bool is_ddl_or_on_cluster_internal = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -624,7 +630,7 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
-    /// Used at query runtime to save per-query runtime filters and find them by names
+    /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
 
 public:
@@ -864,8 +870,8 @@ public:
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
     void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
     void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
-    std::vector<UUID> getCurrentProfiles() const;
-    std::vector<UUID> getEnabledProfiles() const;
+    UUIDs getCurrentProfiles() const;
+    UUIDs getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -1042,6 +1048,23 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
+    /// Use it in introspection paths (e.g. reading system.functions) where instantiating
+    /// every function — and the helper functions they construct internally — must not
+    /// pollute query_log.used_functions for the user's query.
+    class SuppressQueryFactoriesInfoScope
+    {
+    public:
+        SuppressQueryFactoriesInfoScope();
+        ~SuppressQueryFactoriesInfoScope();
+
+        SuppressQueryFactoriesInfoScope(const SuppressQueryFactoriesInfoScope &) = delete;
+        SuppressQueryFactoriesInfoScope & operator=(const SuppressQueryFactoriesInfoScope &) = delete;
+
+    private:
+        bool prev;
+    };
+
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
@@ -1147,7 +1170,7 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
-    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+    std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
     WasmModuleManager & getWasmModuleManager() const;
@@ -1225,6 +1248,9 @@ public:
 
     bool getS3QueueDisableStreaming() const;
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
+
+    bool getMessageQueueDisableInsertion() const;
+    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1342,7 +1368,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher() const;
+    void shutdownKeeperDispatcher(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
@@ -1377,6 +1403,13 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
+
+    /// UNIQUE KEY index cache: ClickHouse-side `CacheBase` adapter
+    /// over the RocksDB block cache used by SST-backed UNIQUE KEY indexes.
+    void setUniqueKeyIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
+    void clearUniqueKeyIndexCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
@@ -1430,6 +1463,8 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
+    bool getCanUseQueryResultCache() const;
+    void setCanUseQueryResultCache(bool can_use_query_result_cache_);
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
@@ -1585,6 +1620,12 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
+    /// Server-wide override for the new analyzer in mutations.
+    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
+    /// Set from the main config reload callback.
+    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
+    std::optional<bool> getMutationsUseAnalyzerOverride() const;
+
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
@@ -1624,6 +1665,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
+    void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
@@ -1777,8 +1821,8 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
-    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
-    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
+    /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
+    /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
@@ -1786,6 +1830,13 @@ public:
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
+
+    /// Returns a consistent snapshot (copy) of the server settings taken under `shared->mutex`.
+    /// A few server settings are mutated at runtime on config reload (e.g. `s3queue_disable_streaming`),
+    /// so reading the whole struct without synchronization races with those writers. Use this accessor
+    /// whenever a copy of the settings is needed; the reference returned by `getServerSettings` must only
+    /// be used to read fields that are never changed after startup.
+    ServerSettings getServerSettingsCopy() const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

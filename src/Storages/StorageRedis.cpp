@@ -3,6 +3,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -44,7 +45,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource : public ISource
+class RedisDataSource final : public ISource
 {
 public:
     RedisDataSource(
@@ -109,7 +110,7 @@ public:
             return {};
 
         RedisArray scan_keys;
-        RedisIterator next_iterator;
+        RedisIterator next_iterator = 0;
 
         std::tie(next_iterator, scan_keys) = storage.scan(iterator == -1 ? 0 : iterator, pattern, max_block_size);
         iterator = next_iterator;
@@ -146,14 +147,14 @@ private:
     FieldVector::const_iterator it;
 
     /// For full scan
-    RedisIterator iterator;
+    RedisIterator iterator{};
     String pattern;
 
     const size_t max_block_size;
 };
 
 
-class RedisSink : public SinkToStorage
+class RedisSink final : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
@@ -312,8 +313,8 @@ void ReadFromRedis::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t num_threads = std::min<size_t>(num_streams, keys->size());
         num_threads = std::min<size_t>(num_threads, storage.configuration.pool_size);
 
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
+        chassert(num_keys <= std::numeric_limits<uint32_t>::max());
+        chassert(num_threads <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
         {
@@ -577,7 +578,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto connection = getRedisConnection(pool, configuration);
 
     auto * truncate_query = query->as<ASTDropQuery>();
-    assert(truncate_query != nullptr);
+    chassert(truncate_query != nullptr);
 
     RedisCommand cmd_flush_db("FLUSHDB");
     if (!truncate_query->sync)
@@ -607,7 +608,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     if (commands.empty())
         return;
 
-    assert(commands.size() == 1);
+    chassert(commands.size() == 1);
 
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
@@ -650,8 +651,9 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         return;
     }
 
-    assert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().column_to_update_expression.contains(primary_key))
+    chassert(commands.front().type == MutationCommand::Type::UPDATE);
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
@@ -673,6 +675,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 }
 
 /// TODO support ttl
+void registerStorageRedis(StorageFactory & factory);
 void registerStorageRedis(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -681,7 +684,155 @@ void registerStorageRedis(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
-    factory.registerStorage("Redis", createStorageRedis, features);
+    factory.registerStorage("Redis", createStorageRedis, features, Documentation{
+        .description = R"DOCS_MD(
+This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Redis({host:port[, db_index[, password[, pool_size]]] | named_collection[, option=value [,..]] })
+PRIMARY KEY(primary_key_name);
+```
+
+**Engine Parameters**
+
+- `host:port` — Redis server address, you can ignore port and default Redis port 6379 will be used.
+- `db_index` — Redis db index range from 0 to 15, default is 0.
+- `password` — User password, default is blank string.
+- `pool_size` — Redis max connection pool size, default is 16.
+- `primary_key_name` - any column name in the column list.
+
+:::note Serialization
+`PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
+Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
+:::
+
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
+
+:::note Filtering
+Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
+:::
+
+## Usage example {#usage-example}
+
+Create a table in ClickHouse using `Redis` engine with plain arguments:
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
+```
+
+Or using [named collections](/operations/named-collections.md):
+
+```xml
+<named_collections>
+    <redis_creds>
+        <host>localhost</host>
+        <port>6379</port>
+        <password>****</password>
+        <pool_size>16</pool_size>
+        <db_index>0</db_index>
+    </redis_creds>
+</named_collections>
+```
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis(redis_creds) PRIMARY KEY(key);
+```
+
+Insert:
+
+```sql title="Query"
+INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+```
+
+```sql title="Query"
+SELECT COUNT(*) FROM redis_table;
+```
+
+```text title="Response"
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE key='1';
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 1   │  1 │ 1  │  1 │
+└─────┴────┴────┴────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE v1=2;
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 2   │  2 │ 2  │  2 │
+└─────┴────┴────┴────┘
+```
+
+Update:
+
+Note that the primary key cannot be updated.
+
+```sql title="Query"
+ALTER TABLE redis_table UPDATE v1=2 WHERE key='1';
+```
+
+Delete:
+
+```sql title="Query"
+ALTER TABLE redis_table DELETE WHERE key='1';
+```
+
+Truncate:
+
+Flush Redis db asynchronously. Also `Truncate` support SYNC mode.
+
+```sql title="Query"
+TRUNCATE TABLE redis_table SYNC;
+```
+
+Join:
+
+Join with other tables.
+
+```sql title="Query"
+SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
+```
+
+## Limitations {#limitations}
+
+Redis engine also supports scanning queries, such as `where k > xx`, but it has some limitations:
+1. Scanning query may produce some duplicated keys in a very rare case when it is rehashing. See details in [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
+2. During the scanning, keys could be created and deleted, so the resulting dataset can not represent a valid point in time.
+)DOCS_MD",
+        .syntax = "ENGINE = Redis('host:port' [, db_index [, password [, pool_size]]]) PRIMARY KEY(key)",
+        .related = {"EmbeddedRocksDB"}});
 }
 
 }

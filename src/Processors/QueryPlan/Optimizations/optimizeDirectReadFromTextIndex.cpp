@@ -1,4 +1,6 @@
+#include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
@@ -419,8 +421,16 @@ private:
                 continue;
 
             auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
-            if (!search_query || search_query->direct_read_mode == TextIndexDirectReadMode::None)
+            if (!search_query)
                 continue;
+
+            /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
+            if (search_query->direct_read_mode == TextIndexDirectReadMode::None)
+            {
+                selected_conditions.emplace_back(search_query, index_name, String{}, &info);
+                used_index_columns.insert(index_header.begin()->name);
+                continue;
+            }
 
             auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
             if (!virtual_column_name)
@@ -491,7 +501,7 @@ private:
         if (arg_needles->type != ActionsDAG::ActionType::COLUMN || !arg_needles->column)
             return;
 
-        if (arg_needles->column->empty() || arg_needles->column->isNullAt(0))
+        if (arg_needles->column->onlyNull())
             return;
 
         Field needles_field = (*arg_needles->column)[0];
@@ -533,17 +543,16 @@ private:
             auto tokenizer_description = tokenizer->getDescription();
 
             /// Add argument with tokenizer definition.
-            ColumnWithTypeAndName arg;
-            arg.type = std::make_shared<DataTypeString>();
-            arg.column = arg.type->createColumnConst(1, Field(tokenizer_description));
-            arg.name = quoteString(tokenizer_description);
-            new_children.push_back(&actions_dag.addColumn(std::move(arg)));
+            auto arg_type = std::make_shared<DataTypeString>();
+            auto arg_column = arg_type->createColumnConst(0, Field(tokenizer_description));
+            new_children.push_back(&actions_dag.addColumn(std::move(arg_column), std::move(arg_type), quoteString(tokenizer_description)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
-            if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
+            const bool convert_needle_to_array = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+            if (convert_needle_to_array && needles_field.getType() == Field::Types::String)
             {
-                std::vector<String> needles_array;
+                VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
                 needles_array = tokenizer->compactTokens(needles_array);
@@ -553,11 +562,8 @@ private:
         }
 
         /// Recreate an argument with needles.
-        ColumnWithTypeAndName arg;
-        arg.type = needles_type;
-        arg.column = needles_type->createColumnConst(1, needles_field);
-        arg.name = applyVisitor(FieldVisitorToString(), needles_field);
-        new_children[1] = &actions_dag.addColumn(std::move(arg));
+        auto needles_column = needles_type->createColumnConst(0, needles_field);
+        new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
         /// Recreate a function object because we have modified the arguments.
         auto new_function_base = FunctionFactory::instance().get(function_name, context);
@@ -572,11 +578,21 @@ private:
     /// Optimizes text-search functions by replacing them with virtual columns.
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
-        const std::vector<SelectedCondition> & selected_conditions,
+        const std::vector<SelectedCondition> & all_conditions,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {
         const auto & function_node = *replacement.node;
+
+        std::vector<SelectedCondition> selected_conditions;
+        for (const auto & condition : all_conditions)
+        {
+            if (condition.search_query->direct_read_mode != TextIndexDirectReadMode::None)
+                selected_conditions.push_back(condition);
+        }
+        if (selected_conditions.empty())
+            return;
+
         bool has_exact_search = false;
         bool has_materialized_index = false;
 

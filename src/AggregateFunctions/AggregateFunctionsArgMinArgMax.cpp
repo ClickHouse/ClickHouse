@@ -49,7 +49,10 @@ template <class ValueType>
 struct AggregateFunctionArgMinMaxDataGeneric
 {
 private:
-    SingleValueDataBaseMemoryBlock result_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock result_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     ValueType value_data;
 
 public:
@@ -58,12 +61,13 @@ public:
     ValueType & value() { return value_data; }
     const ValueType & value() const { return value_data; }
 
-    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric()
+    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
-    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) : value_data()
+    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        : value_data()
     {
         generateSingleValueFromType(result_type, result_data);
     }
@@ -114,13 +118,18 @@ public:
                 type_val->getName(),
                 getName());
 
-        if (isDynamic(this->type_val) || isVariant(this->type_val))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->type_val->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    this->type_val->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*this->type_val);
+        this->type_val->forEachChild(check_not_dynamic_or_variant);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool return_both_)
@@ -433,6 +442,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 
 }
 
+void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
@@ -578,6 +588,9 @@ SELECT argMax(a, (b,a)) FROM test;
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, false); },
          documentation_argMax, properties});
+
+    factory.registerAlias("min_by", "argMin", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("max_by", "argMax", AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.

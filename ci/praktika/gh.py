@@ -70,45 +70,92 @@ class GH:
             repo_name = info.repo_name
             sha = info.sha
         else:
-            repo_name = Shell.get_output(
-                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
-                strict=True,
+            repo_url = Shell.get_output(
+                "git config --get remote.origin.url", strict=True
             )
+            repo_name = cls._repo_name_from_git_remote_url(repo_url)
+            if not repo_name:
+                raise RuntimeError(
+                    f"Failed to extract repository name from remote URL [{repo_url}]"
+                )
             sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
 
         assert repo_name
         print(repo_name)
 
-        for attempt in range(3):
-            # store changed files
-            if info.pr_number > 0:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
-                )
-                assert exit_code == 0, "Failed to retrieve changed files list"
-            else:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
-                )
+        # Include both sides of renames: .filename is the destination path and
+        # .previous_filename (REST API only, absent for non-renames) is the
+        # source path. Without the source path a rename out of a watched
+        # directory is invisible to consumers such as job filtering and the
+        # read-only docs guard. Rename sources do not exist in the checkout at
+        # HEAD, same as deleted files, which were always included.
+        jq_both_sides = ".filename, (.previous_filename // empty)"
 
+        if info.pr_number > 0:
+            command = (
+                f"gh api repos/{repo_name}/pulls/{info.pr_number}/files "
+                f"--paginate --jq '.[] | {jq_both_sides}'"
+            )
+        else:
+            command = (
+                f"gh api repos/{repo_name}/commits/{sha} "
+                f"--jq '.files[] | {jq_both_sides}'"
+            )
+
+        # The GitHub API call is an idempotent read that occasionally fails with
+        # a transient error (rate limiting, a 5xx, or a GraphQL "Something went
+        # wrong" hiccup). Retry a few times with a small backoff so a momentary
+        # blip does not take down the whole workflow. Every non-zero exit code
+        # is treated as retryable: this is a read, so a spurious retry is cheap
+        # and we cannot reliably tell transient from permanent errors apart by
+        # the exit code alone.
+        attempts = 5
+        last_exit_code = 0
+        last_err = ""
+        last_out = ""
+        for attempt in range(attempts):
+            exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(command)
             if exit_code == 0:
-                res = changed_files_str.split("\n") if changed_files_str else []
-                break
-            else:
-                print(
-                    f"Failed to get changed files, attempt [{attempt+1}], exit code [{exit_code}], error [{err}]"
+                res = (
+                    list(dict.fromkeys(changed_files_str.split("\n")))
+                    if changed_files_str
+                    else []
                 )
-                if exit_code > 1:
-                    # assume that exit code == 1 is retryable - Fix if not true
-                    # exit_code 1 for this type of errors:  WARNING: stderr: GraphQL: Something went wrong while executing your query on 2025-08-05T15:33:56Z. Please include `E746:1CAA99:44F9F67:8B9B520:68922464` when reporting this issue.
-                    print("error is not retryable - break")
-                    break
-                time.sleep(1)
+                break
 
-        if res is None and strict:
-            raise RuntimeError("Failed to get changed files")
+            last_exit_code, last_err, last_out = exit_code, err, changed_files_str
+            print(
+                f"Failed to get changed files, attempt [{attempt + 1}/{attempts}], "
+                f"exit code [{exit_code}], stderr [{err}]"
+            )
+            if attempt + 1 < attempts:
+                time.sleep(attempt + 1)
+
+        if res is None:
+            # Surface the actual command, exit code and stderr so the failure is
+            # diagnosable directly from the report, instead of resurfacing later
+            # as a confusing "NoneType is not iterable" in a downstream consumer
+            # that read the (never stored) changed files from the KV data.
+            message = (
+                f"Failed to retrieve the list of changed files after {attempts} attempts.\n"
+                f"  command:   {command}\n"
+                f"  exit code: {last_exit_code}\n"
+                f"  stderr:    {last_err}\n"
+                f"  stdout:    {last_out}"
+            )
+            print(message)
+            if strict:
+                raise RuntimeError(message)
 
         return res
+
+    @staticmethod
+    def _repo_name_from_git_remote_url(repo_url: str) -> str:
+        match = re.match(
+            r"^(?:https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/\s]+/[^/\s]+?)(?:\.git)?/?$",
+            repo_url,
+        )
+        return match.group(1) if match else ""
 
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):
@@ -340,13 +387,17 @@ class GH:
 
         Each thread carries its node ``id`` (the value to pass to the
         resolve/unresolve mutations), ``isResolved``, ``isOutdated``,
-        ``path``, ``line``, and the full list of comments under it (with
-        ``databaseId`` for use as ``in_reply_to`` when replying, and
-        ``createdAt`` for per-comment timestamps). Both
-        the thread list and each thread's comments are paginated, so
-        long PRs do not silently truncate. Raises ``RuntimeError`` on
-        any transport / parse failure: a failure to read prior
-        discussion must not be confused with "no prior discussion".
+        ``resolvedBy`` (``{login}`` of the user who most recently
+        resolved the thread, or ``null`` if never resolved -- consumers
+        use this to tell apart bot-resolved from author-resolved
+        threads in stateless CI runs), ``path``, ``line``, and the
+        full list of comments under it (with ``databaseId`` for use as
+        ``in_reply_to`` when replying, and ``createdAt`` for per-comment
+        timestamps). Both the thread list and each thread's comments
+        are paginated, so long PRs do not silently truncate. Raises
+        ``RuntimeError`` on any transport / parse failure: a failure
+        to read prior discussion must not be confused with "no prior
+        discussion".
         """
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -360,7 +411,7 @@ class GH:
             "pullRequest(number:$pr){"
             "reviewThreads(first:100,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{id isResolved isOutdated path line "
+            "nodes{id isResolved isOutdated resolvedBy{login} path line "
             "comments(first:50){"
             "pageInfo{hasNextPage endCursor}"
             "nodes{databaseId createdAt author{login} body path line originalLine}"
@@ -804,6 +855,32 @@ class GH:
         return output == "CONFLICTING"
 
     @classmethod
+    def check_labels_exist(cls, labels: List[str], repo="", verbose=False):
+        """
+        Raise a clear error if any of `labels` does not exist in `repo`.
+
+        `gh issue create` rejects the entire request with an opaque
+        `could not add label: '<name>' not found` message if a label is
+        unknown, and label sets differ between the public and private
+        repositories. Surface a precise, actionable error instead.
+        """
+        if not labels:
+            return
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        existing_raw = Shell.get_output(
+            f"gh label list --repo {shlex.quote(repo)} --limit 1000 --json name --jq '.[].name'",
+            verbose=verbose,
+        )
+        existing = {line.strip() for line in (existing_raw or "").splitlines()}
+        missing = [label for label in labels if label not in existing]
+        if missing:
+            raise RuntimeError(
+                f"Cannot create issue in {repo}: label(s) {missing} do not exist there. "
+                f"Create them in the repository first (e.g. `gh label create '{missing[0]}' --repo {repo}`)."
+            )
+
+    @classmethod
     def create_issue(
         cls,
         title,
@@ -829,6 +906,11 @@ class GH:
         if len(body) > max_body_length:
             truncation_note = "\n\n... (truncated due to GitHub body size limit)"
             body = body[: max_body_length - len(truncation_note)] + truncation_note
+
+        # `gh issue create` fails the whole call with an opaque error if any
+        # label is missing in the target repo (labels differ between the public
+        # and private repos). Check up front and surface a precise error.
+        cls.check_labels_exist(labels, repo=repo, verbose=verbose)
 
         temp_file_path = None
         try:
@@ -1016,13 +1098,61 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
-            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana links).
-            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana
+            # links, perf-comparison combined dashboard). Include regardless of success/failure
+            # so links always appear when the job runs.
+            #
+            # Dedup key = the URL set (sorted tuple of label links), not the rendered markdown.
+            # We group by *destination*: jobs that point at the same set of URLs are collapsed
+            # into one PR-comment row regardless of label text or ordering. This is what makes
+            # the 6 (or 12) `Performance Comparison` shards collapse to a single row, while
+            # `keeper-stress` jobs — whose `Grafana: Run details` URL embeds a per-run time
+            # window — stay distinct because their URL sets differ.
+            #
+            # The collapsed row's label is the longest common prefix of the job names trimmed
+            # at a natural break (`(` or `,`), so `Performance Comparison (arm_release,
+            # master_head, 1/6)` ... `6/6` becomes `Performance Comparison`.
+            def _shared_job_label(names):
+                if len(names) == 1:
+                    return names[0]
+                common = os.path.commonprefix(names)
+                for sep in (" (", ", ", "("):
+                    idx = common.rfind(sep)
+                    if idx > 0:
+                        common = common[:idx]
+                        break
+                common = common.rstrip(" ,(-")
+                return common or f"{names[0]} (+{len(names) - 1} more)"
+
+            def _url_key(res):
+                """Sorted tuple of label link URLs (the dedup key)."""
+                urls = []
+                for item in (getattr(res, "ext", {}) or {}).get("labels", []) or []:
+                    if isinstance(item, dict) and item.get("link"):
+                        urls.append(item["link"])
+                for item in (getattr(res, "ext", {}) or {}).get("hlabels", []) or []:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
+                        urls.append(item[1])
+                return tuple(sorted(urls))
+
+            groups = {}
+            group_order = []
             for job_result in getattr(result, "results", []) or []:
-                if has_label_links(job_result):
-                    links_md = extract_label_links_md(job_result)
-                    if links_md:
-                        summary.extra_links.append((job_result.name, links_md))
+                if not has_label_links(job_result):
+                    continue
+                links_md = extract_label_links_md(job_result)
+                if not links_md:
+                    continue
+                key = _url_key(job_result)
+                if key not in groups:
+                    groups[key] = {"names": [], "links_md": links_md}
+                    group_order.append(key)
+                groups[key]["names"].append(job_result.name)
+            for key in group_order:
+                group = groups[key]
+                summary.extra_links.append(
+                    (_shared_job_label(group["names"]), group["links_md"])
+                )
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
@@ -1038,14 +1168,20 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-            if self.extra_links:
-                for job_name, links_md in self.extra_links:
-                    body += f"**{job_name}:** {links_md}\n"
+            # Render each extra_links group as a plain bullet under the Summary
+            # line. Keeping the (un-bolded) job-name prefix tells the reader
+            # which job(s) the labels came from without adding extra weight.
+            for name, links_md in self.extra_links:
+                body += f"- {name}: {links_md}\n"
             if self.failed_results:
+                # Blank line so the failure section isn't parsed as continuation
+                # of the Summary paragraph or the preceding bullet list.
+                body += "\n"
                 if len(self.failed_results) > 15:
-                    body += (
-                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
-                    )
+                    # Unindented + terminated with a blank line, otherwise the
+                    # 4-space indent turns this into an indented code block that
+                    # swallows the table that follows.
+                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"

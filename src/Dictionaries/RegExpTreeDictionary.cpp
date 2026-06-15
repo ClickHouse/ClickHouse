@@ -363,7 +363,7 @@ void RegExpTreeDictionary::loadData()
         }
 
         hs_database_t * db = nullptr;
-        hs_compile_error_t * compile_error;
+        hs_compile_error_t * compile_error = nullptr;
 
         std::unique_ptr<unsigned int[]> ids;
         ids.reset(new unsigned int[patterns.size()]);
@@ -477,7 +477,7 @@ public:
     // Just occupy a space
     void addDefault(const String & attr_name, UnorderedSetWithMemoryTracking<String> * const defaults)
     {
-        assert (!collect_values_limit);
+        chassert(!collect_values_limit);
         if (!this->contains(attr_name) && !defaults->contains(attr_name))
         {
             defaults->insert(attr_name);
@@ -690,7 +690,7 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
     std::optional<size_t> collect_values_limit) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
 
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
@@ -924,7 +924,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     std::optional<size_t> collect_values_limit) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     /// valid check
     if (key_columns.size() != 1)
@@ -976,6 +976,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     return result;
 }
 
+void registerDictionaryRegExpTree(DictionaryFactory & factory);
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & /*name*/,
@@ -1019,7 +1020,10 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             context->getSettingsRef()[Setting::regexp_dict_flag_dotall]);
     };
 
-    factory.registerLayout("regexp_tree", create_layout, true);
+    factory.registerLayout("regexp_tree", create_layout, true, true, Documentation{
+        .description = "Stores a tree of regular expressions and maps an input string to the attributes of the first matching branch. Useful for tasks such as user-agent parsing.",
+        .syntax = "LAYOUT(REGEXP_TREE())",
+        .related = {}});
 }
 
 }
