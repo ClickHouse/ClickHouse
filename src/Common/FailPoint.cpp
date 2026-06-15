@@ -37,6 +37,7 @@ static struct InitFiu
     REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
+    REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
@@ -58,6 +59,7 @@ static struct InitFiu
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
     ONCE(smt_lightweight_snapshot_fail) \
+    ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
@@ -70,9 +72,17 @@ static struct InitFiu
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
+    ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
+    ONCE(distributed_cache_fail_simple_request) \
+    ONCE(distributed_cache_server_fail_read_request) \
+    ONCE(distributed_cache_server_fail_metrics_request) \
+    ONCE(distributed_cache_server_fail_show_request) \
+    ONCE(distributed_cache_server_fail_show_streaming) \
+    REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
