@@ -473,7 +473,7 @@ The following settings can be configured by sub-tags:
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `url`                | To match the request URL, you can use the 'regex:' prefix for a regex match, or the 'prefix:' prefix to match a base path and everything below it on a path-segment boundary (e.g. 'prefix:/api/v1' matches /api/v1, /api/v1/ and /api/v1/write, but not /api/v1beta) (optional) |
 | `methods`            | To match request methods, you can use commas to separate multiple method matches (optional)                                                       |
-| `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match, or 'prefix:' prefix to match a string prefix (optional) |
+| `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
 | `handler`            | The request handler                                                                                                                               |
 | `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
 
