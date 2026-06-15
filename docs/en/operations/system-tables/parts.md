@@ -72,7 +72,7 @@ Each row describes one data part.
 - `move_ttl_info.expression` ([Array(String)](/sql-reference/data-types/array)) — Array of expressions. Each expression defines a TTL MOVE rule.
 - `move_ttl_info.min` ([Array(DateTime)](/sql-reference/data-types/array)) — Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule.
 - `move_ttl_info.max` ([Array(DateTime)](/sql-reference/data-types/array)) — Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule.
-- `default_compression_codec` ([String](/sql-reference/data-types/string)) — The name of the codec used to compress this data part (in case when there is no explicit codec for columns).
+- `default_compression_codec` ([String](/sql-reference/data-types/string)) — The name of the codec used to compress this data part (when a column has no explicit codec or uses `CODEC(Default)`). With `allow_experimental_adaptive_codec_selection`, individual blocks of such columns can use other codecs, counted in `codec_block_counts` in [`parts_columns`](/operations/system-tables/parts_columns).
 - `recompression_ttl_info.expression` ([Array(String)](/sql-reference/data-types/array)) — The TTL expression.
 - `recompression_ttl_info.min` ([Array(DateTime)](/sql-reference/data-types/array)) — The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL.
 - `recompression_ttl_info.max` ([Array(DateTime)](/sql-reference/data-types/array)) — The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL.

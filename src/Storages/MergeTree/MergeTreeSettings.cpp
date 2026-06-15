@@ -2027,8 +2027,10 @@ namespace ErrorCodes
     Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
-    When enabled, `CODEC(Default)` columns are resolved at merge time to the codec that produces the smallest output per block,
-    chosen from a per-data-type pool, instead of always using the deployment's default codec. Experimental.
+    When enabled, merges and mutations adaptively choose each block's codec for columns that use the default codec
+    (no `CODEC` clause or `CODEC(Default)`). The smallest output wins among per-type candidates,
+    the default codec and `NONE`, so compression is never worse than the default and incompressible blocks are stored raw.
+    Inserts are unaffected. Per-block codecs are visible in `codec_block_counts` in `system.parts_columns`.
     )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
