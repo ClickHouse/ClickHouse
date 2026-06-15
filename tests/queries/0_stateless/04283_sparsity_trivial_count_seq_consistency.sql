@@ -28,6 +28,11 @@ SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
          serialization_info_version = 'with_types',
          min_bytes_for_wide_part = 0;
 
+-- Make sure r2's ZK session is established before the quorum=2 insert; otherwise
+-- the freshly-created r2 may not be in r1's active-replicas view yet and the
+-- insert fails with `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE` (replicas: only r1).
+SYSTEM SYNC REPLICA t_sparse_seq_consistency_r2;
+
 -- First insert, quorum-confirmed by both replicas: 4000 default zeros + 1000 ones.
 SET insert_quorum = 2, insert_quorum_parallel = 0;
 INSERT INTO t_sparse_seq_consistency_r1
