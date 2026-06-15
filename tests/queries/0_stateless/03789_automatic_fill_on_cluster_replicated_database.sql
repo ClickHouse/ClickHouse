@@ -103,4 +103,34 @@ SELECT count() > 0 FROM system.query_log WHERE type = 'QueryFinish'
   AND query LIKE concat('%DROP DATABASE%', {CLICKHOUSE_DATABASE_1:String}, '%ON CLUSTER%')
   AND query NOT LIKE '%query_log%';
 
+SELECT 'Test 7: ALTER DATABASE of a Replicated database IS rewritten ON CLUSTER';
+-- A database-level ALTER (MODIFY COMMENT/SETTING) is not coordinated by the Replicated database engine:
+-- InterpreterAlterQuery::executeToDatabase applies it on the initiator only. Like DROP DATABASE, it
+-- needs ON CLUSTER to reach every node, so auto-fill must add it. This is unlike table-level ALTERs in
+-- a Replicated database (Test 2), which the engine replicates on its own and which therefore stay local.
+ALTER DATABASE {CLICKHOUSE_DATABASE:Identifier} MODIFY COMMENT 'auto fill on cluster comment';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 7 verification: ALTER DATABASE contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE type = 'QueryFinish'
+  AND query LIKE concat('ALTER DATABASE %', {CLICKHOUSE_DATABASE:String}, '%ON CLUSTER%')
+  AND query NOT LIKE '%query_log%';
+
+SELECT 'Test 8: RENAME DATABASE of a Replicated database IS rewritten ON CLUSTER';
+-- RENAME DATABASE is a database-level operation that the Replicated engine does not coordinate
+-- (InterpreterRenameQuery::executeToDatabase renames the local catalog entry directly), so like
+-- DROP DATABASE it must be distributed ON CLUSTER to reach every node.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+  ENGINE = Replicated('/clickhouse/databases/03789_repl_db8_{database}', 'shard1', 'replica1');
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 8 verification: RENAME DATABASE contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE type = 'QueryFinish'
+  AND query LIKE concat('RENAME DATABASE %', {CLICKHOUSE_DATABASE_1:String}, '%ON CLUSTER%')
+  AND query NOT LIKE '%query_log%';
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};

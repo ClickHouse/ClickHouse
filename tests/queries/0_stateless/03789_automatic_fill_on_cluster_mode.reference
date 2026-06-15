@@ -11,11 +11,17 @@ Test 4: DROP TABLE with automatic mode executed successfully
 Test 4 verification: DROP TABLE contains ON CLUSTER
 1
 Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER
-Test 6: CREATE/DROP FUNCTION is not rewritten ON CLUSTER
+Test 6: CREATE/DROP FUNCTION with non-replicated storage is rewritten ON CLUSTER
 2
+Test 6 verification: CREATE FUNCTION contains ON CLUSTER
+1
 Test 7: SYSTEM query is not rewritten ON CLUSTER
 Test 7 verification: SYSTEM query does NOT contain ON CLUSTER
 1
 Test 8: implicit DROP/TRUNCATE TABLE of a temporary table stays local
 Test 8 verification: TRUNCATE emptied the session table	1
 Test 8 verification: DROP removed the session table	1
+Test 9: ALTER TABLE ATTACH PARTITION is not rewritten ON CLUSTER
+Test 9 verification: ATTACH PARTITION restored the data	1
+Test 9 verification: ATTACH PARTITION does NOT contain ON CLUSTER
+1

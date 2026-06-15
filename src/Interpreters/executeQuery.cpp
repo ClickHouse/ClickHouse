@@ -30,6 +30,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
@@ -60,6 +61,9 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -1458,16 +1462,21 @@ static BlockIO executeQueryImpl(
                 /// query into one that throws, so skip auto-fill for temporary objects.
                 bool target_is_temporary = false;
 
-                /// User-defined functions, workloads and resources are replicated automatically and
-                /// their interpreters explicitly reject a non-empty cluster with `ON CLUSTER is not
-                /// allowed because ... are replicated automatically`. Although these statements inherit
-                /// `ASTQueryWithOnCluster`, filling the cluster here would turn an ordinary local query
-                /// into one that throws, so skip auto-fill for them.
-                bool target_forbids_on_cluster
-                    = out_ast->as<ASTCreateSQLFunctionQuery>() || out_ast->as<ASTCreateWasmFunctionQuery>()
-                    || out_ast->as<ASTDropFunctionQuery>() || out_ast->as<ASTCreateWorkloadQuery>()
-                    || out_ast->as<ASTDropWorkloadQuery>() || out_ast->as<ASTCreateResourceQuery>()
-                    || out_ast->as<ASTDropResourceQuery>();
+                /// User-defined functions, workloads and resources accept `ON CLUSTER` only when their
+                /// storage is *not* replicated. With replicated storage the corresponding interpreters
+                /// reject a non-empty cluster with `ON CLUSTER is not allowed because ... are replicated
+                /// automatically` (these objects then replicate on their own), so filling the cluster
+                /// would turn an ordinary local query into one that throws. With the default,
+                /// non-replicated storage `ON CLUSTER` is valid and distributes the statement, so it is
+                /// eligible for auto-fill. Decide per storage instead of skipping these families outright.
+                bool target_forbids_on_cluster = false;
+
+                if (out_ast->as<ASTCreateSQLFunctionQuery>() || out_ast->as<ASTCreateWasmFunctionQuery>()
+                    || out_ast->as<ASTDropFunctionQuery>())
+                    target_forbids_on_cluster = context->getUserDefinedSQLObjectsStorage().isReplicated();
+                else if (out_ast->as<ASTCreateWorkloadQuery>() || out_ast->as<ASTDropWorkloadQuery>()
+                    || out_ast->as<ASTCreateResourceQuery>() || out_ast->as<ASTDropResourceQuery>())
+                    target_forbids_on_cluster = context->getWorkloadEntityStoragePtr()->isReplicated();
 
                 /// Some statements inherit `ASTQueryWithOnCluster` but cannot carry a meaningful
                 /// `ON CLUSTER` clause, so filling the cluster would turn an ordinary local query
@@ -1485,6 +1494,22 @@ static BlockIO executeQueryImpl(
                     for (const auto & element : backup_query->elements)
                     {
                         if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
+                        {
+                            target_forbids_on_cluster = true;
+                            break;
+                        }
+                    }
+                }
+
+                /// Some `ALTER` commands (e.g. `ATTACH PARTITION`, `FETCH PARTITION`) are rejected by the
+                /// distributed DDL worker: `executeDDLQueryOnCluster` throws `Unsupported type of ALTER query`
+                /// for them. Filling the cluster for such an `ALTER` would turn a valid local query into an
+                /// exception, so skip auto-fill when any of its commands is unsupported `ON CLUSTER`.
+                if (const auto * alter_query = out_ast->as<ASTAlterQuery>(); alter_query && alter_query->command_list)
+                {
+                    for (const auto & command : alter_query->command_list->children)
+                    {
+                        if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand &>().type))
                         {
                             target_forbids_on_cluster = true;
                             break;
@@ -1565,17 +1590,36 @@ static BlockIO executeQueryImpl(
                 else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {
                     target_is_temporary = query_with_table->isTemporary();
-                    target_is_replicated_database = is_replicated_database(query_with_table->getDatabase());
+
+                    /// A database-level `ALTER` (`ALTER DATABASE ... MODIFY COMMENT/SETTING`) is not
+                    /// coordinated by the `Replicated` database engine: `InterpreterAlterQuery::executeToDatabase`
+                    /// applies it directly on the initiator only. Like `DROP DATABASE`, it therefore needs
+                    /// `ON CLUSTER` to reach every node, so do not treat a `Replicated` target database as a
+                    /// reason to skip auto-fill. Table-level statements stay local, since the engine replicates
+                    /// them on its own.
+                    const auto * alter_query = out_ast->as<ASTAlterQuery>();
+                    bool is_database_level_alter
+                        = alter_query && alter_query->alter_object == ASTAlterQuery::AlterObjectType::DATABASE;
+                    if (!is_database_level_alter)
+                        target_is_replicated_database = is_replicated_database(query_with_table->getDatabase());
                 }
                 else if (const auto * rename_query = out_ast->as<ASTRenameQuery>())
                 {
-                    for (const auto & element : rename_query->getElements())
+                    /// `RENAME DATABASE` is a database-level operation that the `Replicated` engine does not
+                    /// coordinate (`InterpreterRenameQuery::executeToDatabase` renames the local catalog entry
+                    /// directly), so like `DROP DATABASE` it must be distributed `ON CLUSTER`. Only `RENAME
+                    /// TABLE`/`DICTIONARY` whose source or destination lives in a `Replicated` database must
+                    /// stay local, because the engine replicates those on its own.
+                    if (!rename_query->database)
                     {
-                        if (is_replicated_database(element.from.getDatabase())
-                            || is_replicated_database(element.to.getDatabase()))
+                        for (const auto & element : rename_query->getElements())
                         {
-                            target_is_replicated_database = true;
-                            break;
+                            if (is_replicated_database(element.from.getDatabase())
+                                || is_replicated_database(element.to.getDatabase()))
+                            {
+                                target_is_replicated_database = true;
+                                break;
+                            }
                         }
                     }
                 }

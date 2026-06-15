@@ -57,14 +57,21 @@ SELECT 'Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER';
 CREATE TEMPORARY TABLE test_auto_fill_temp (id UInt32) ENGINE = Memory;
 DROP TEMPORARY TABLE test_auto_fill_temp;
 
-SELECT 'Test 6: CREATE/DROP FUNCTION is not rewritten ON CLUSTER';
--- User-defined functions are replicated automatically and reject a non-empty cluster with
--- `ON CLUSTER is not allowed because used-defined functions are replicated automatically`,
--- so auto-fill must skip them. Both statements must succeed locally instead of throwing.
+SELECT 'Test 6: CREATE/DROP FUNCTION with non-replicated storage is rewritten ON CLUSTER';
+-- User-defined functions reject ON CLUSTER only when their storage is replicated (they then replicate
+-- on their own). With the default, non-replicated storage ON CLUSTER is valid and distributes the
+-- statement, so auto-fill fills it. The function must still be created, usable and dropped.
 DROP FUNCTION IF EXISTS test_auto_fill_function;
 CREATE FUNCTION test_auto_fill_function AS (x) -> x + 1;
 SELECT test_auto_fill_function(1);
 DROP FUNCTION test_auto_fill_function;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 6 verification: CREATE FUNCTION contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'CREATE FUNCTION test_auto_fill_function%'
+  AND query LIKE '%ON CLUSTER%';
 
 SELECT 'Test 7: SYSTEM query is not rewritten ON CLUSTER';
 -- Several SYSTEM subcommands (e.g. SYSTEM REFRESH VIEW) inherit ASTQueryWithOnCluster but are
@@ -95,3 +102,23 @@ DROP TABLE test_auto_fill_implicit_temp;
 CREATE TEMPORARY TABLE test_auto_fill_implicit_temp (id UInt32) ENGINE = Memory;
 SELECT 'Test 8 verification: DROP removed the session table', 1;
 DROP TEMPORARY TABLE test_auto_fill_implicit_temp;
+
+SELECT 'Test 9: ALTER TABLE ATTACH PARTITION is not rewritten ON CLUSTER';
+-- ATTACH PARTITION (and FETCH PARTITION) are rejected by the distributed DDL worker with
+-- `Unsupported type of ALTER query`. Auto-fill must skip such ALTERs, otherwise a valid local
+-- statement would turn into an exception. Verify the partition round-trips through the session table.
+CREATE TABLE test_auto_fill_attach (id UInt32) ENGINE = MergeTree ORDER BY id PARTITION BY id;
+INSERT INTO test_auto_fill_attach VALUES (1);
+ALTER TABLE test_auto_fill_attach DETACH PARTITION 1;
+ALTER TABLE test_auto_fill_attach ATTACH PARTITION 1;
+SELECT 'Test 9 verification: ATTACH PARTITION restored the data', count() FROM test_auto_fill_attach;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 9 verification: ATTACH PARTITION does NOT contain ON CLUSTER';
+-- `DETACH PARTITION` is supported ON CLUSTER and may be rewritten, so match `ATTACH PARTITION`
+-- specifically (the double-T literal is not a substring of `DETACH PARTITION`).
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'ALTER TABLE test_auto_fill_attach%ATTACH PARTITION%'
+  AND query LIKE '%ON CLUSTER%';
+DROP TABLE test_auto_fill_attach;
