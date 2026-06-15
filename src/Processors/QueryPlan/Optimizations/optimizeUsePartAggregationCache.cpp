@@ -28,6 +28,10 @@ namespace Setting
     extern const SettingsBool allow_experimental_part_aggregation_cache;
     extern const SettingsBool enable_reads_from_part_aggregation_cache;
     extern const SettingsBool enable_writes_to_part_aggregation_cache;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsUInt64 max_bytes_to_read_leaf;
 }
 
 namespace QueryPlanOptimizations
@@ -135,10 +139,32 @@ void optimizeUsePartAggregationCache(
 
     /// Apply the same `ReadFromMergeTree` eligibility gates as aggregate projections. The
     /// populator reads raw per-part rows with `createMergeTreeSequentialSource` and therefore
-    /// cannot preserve read semantics such as `FINAL`, `SAMPLE`, read-in-order, parallel-replica
-    /// constraints, or pending mutations/patch parts. Caching under those modes would store
-    /// pre-`FINAL` (or otherwise incomplete) aggregate states and return incorrect results.
+    /// cannot preserve read semantics such as `FINAL`, `SAMPLE`, read-in-order, or pending
+    /// mutations/patch parts. Caching under those modes would store pre-`FINAL` (or otherwise
+    /// incomplete) aggregate states and return incorrect results. Parallel-replica reads need a
+    /// stronger guard than this helper provides and are rejected separately below.
     if (!canUseProjectionForReadingStep(reading))
+        return;
+
+    /// `canUseProjectionForReadingStep` still permits parallel-replica reads when projection support
+    /// is enabled (`parallel_replicas_support_projection`). Aggregate projections then rely on the
+    /// initiator coordinating part assignment so each part is read by exactly one replica. This cache
+    /// path does not preserve that contract: for a warm cache it builds a local
+    /// `PartAggregationCacheSource` from every selected part on every replica (see below), so two
+    /// replicas would each emit the cached state for the same part and the final merge would
+    /// double-count `sum`/`count`. Reject parallel-replica reads (fail-closed).
+    if (reading->isParallelReadingEnabled())
+        return;
+
+    /// Read limits (`max_rows_to_read`, `max_bytes_to_read`, and their `_leaf` variants) are enforced
+    /// by the `ReadFromMergeTree` storage read over raw rows. This optimization replaces that read
+    /// with `PartAggregationCacheSource`, which emits already-aggregated state rows, and the
+    /// populator's own per-part reads do not feed these limits either. As a result an eligible
+    /// `GROUP BY` over a part with more rows than `max_rows_to_read` would silently return a cached
+    /// aggregate instead of throwing or honoring `read_overflow_mode`. Skip the optimization when any
+    /// read limit is active (fail-closed).
+    if (settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
+        || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf])
         return;
 
     /// Row-level security filters are not part of the cache key and are not applied by the
