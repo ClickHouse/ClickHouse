@@ -42,11 +42,14 @@ def cache_on_disk_entries():
     )
 
 
-def run_cached(query, query_id):
+def run_cached(query, query_id, extra_settings=None):
+    settings = {"use_query_cache": 1}
+    if extra_settings:
+        settings.update(extra_settings)
     return node.query(
         query,
         query_id=query_id,
-        settings={"use_query_cache": 1},
+        settings=settings,
     )
 
 
@@ -93,17 +96,28 @@ def test_query_result_cache_survives_restart():
 # before it decompresses, so the `ColumnReplicated` reconstructed by decompression used to reach
 # the serialization unchanged and trigger a "Bad cast" logical error. The replicated column must
 # be materialized before compression so the result is persisted and served after a restart.
+#
+# `arrayJoin` is the vehicle that fans out the right side into several rows with the same join
+# key; it is classified as a non-deterministic function, so caching it requires
+# `query_cache_nondeterministic_function_handling = 'save'`. The result is content-deterministic
+# (the array is a constant), so the exact-match assertion across the restart still holds.
 REPLICATED_COLUMN_QUERY = """SELECT l.s
 FROM (SELECT materialize('replicated value') AS s, 1 AS k) AS l
 INNER JOIN (SELECT arrayJoin([1, 1, 1]) AS k) AS r ON l.k = r.k
 ORDER BY l.s"""
+
+REPLICATED_COLUMN_SETTINGS = {"query_cache_nondeterministic_function_handling": "save"}
 
 
 def test_query_result_cache_on_disk_replicated_columns():
     node.query("SYSTEM DROP QUERY CACHE")
 
     # First execution: the result contains a replicated column and is written through to disk.
-    expected = run_cached(REPLICATED_COLUMN_QUERY, "qrc_disk_replicated_first")
+    expected = run_cached(
+        REPLICATED_COLUMN_QUERY,
+        "qrc_disk_replicated_first",
+        extra_settings=REPLICATED_COLUMN_SETTINGS,
+    )
     assert expected != ""
     assert cache_on_disk_entries() >= 1
 
@@ -112,6 +126,10 @@ def test_query_result_cache_on_disk_replicated_columns():
     assert cache_on_disk_entries() >= 1
 
     # Served from disk after the restart; the materialized result must match exactly.
-    result = run_cached(REPLICATED_COLUMN_QUERY, "qrc_disk_replicated_after_restart")
+    result = run_cached(
+        REPLICATED_COLUMN_QUERY,
+        "qrc_disk_replicated_after_restart",
+        extra_settings=REPLICATED_COLUMN_SETTINGS,
+    )
     assert result == expected
     assert cache_hits_for("qrc_disk_replicated_after_restart") == 1
