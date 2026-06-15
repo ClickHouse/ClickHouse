@@ -25,6 +25,9 @@
 -- on: SELECT * from sibling with `b.f1` does not over-qualify the existing `f1` projection
 f1	b.f1
 1	2
+-- on: alias-qualified short-name lookup is not hijacked by sibling literal column
+1
+-- default-off: same shape errors with master-equivalent UNKNOWN_IDENTIFIER
 -- on: explicit canonical alias shadows the short name
 10
 -- on: explicit dotted projection in subquery (related: #94558)

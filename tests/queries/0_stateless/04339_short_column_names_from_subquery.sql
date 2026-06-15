@@ -163,6 +163,28 @@ SELECT '-- on: SELECT * from sibling with `b.f1` does not over-qualify the exist
 -- short-name binding (which was driving qualifier decisions) keeps headers stable.
 SELECT * FROM (SELECT 1 AS f1) AS a, (SELECT 2 AS `b.f1`) AS q FORMAT TSVWithNames;
 
+SELECT '-- on: alias-qualified short-name lookup is not hijacked by sibling literal column';
+
+-- Bot finding (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3411043139):
+-- For `SELECT q.f1 FROM (SELECT 1 AS b.f1) AS q CROSS JOIN (SELECT 2 AS q.f1) AS r`, the
+-- user clearly intends the alias-qualified `q.f1` to mean "f1 from the table aliased q",
+-- which under the new setting resolves to q's `b.f1` via the short-name fallback (-> 1).
+-- An earlier draft of the two-pass logic let pass 1 silently soft-fail on q's
+-- alias-prefix miss instead of throwing as master does, which let r's literal `q.f1`
+-- column hijack the resolution and return `2`. We fix that by preserving the
+-- master-equivalent throw in pass 1 and catching it at the join-tree level so pass 2 can
+-- retry — only when retry is actually allowed.
+SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r;
+
+SELECT '-- default-off: same shape errors with master-equivalent UNKNOWN_IDENTIFIER';
+
+-- Sanity check: with the setting off, the same alias-qualified lookup must still throw,
+-- so that enabling the setting strictly *adds* successful resolutions — never silently
+-- changes which column an existing successful query returns.
+SET analyzer_enable_short_column_names_from_subquery = 0;
+SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r; -- { serverError UNKNOWN_IDENTIFIER }
+SET analyzer_enable_short_column_names_from_subquery = 1;
+
 SELECT '-- on: explicit canonical alias shadows the short name';
 
 WITH t1 AS (SELECT 1 AS f1, 2 AS f2),

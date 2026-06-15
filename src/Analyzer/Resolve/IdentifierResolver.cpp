@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -705,20 +706,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     if (!result_expression)
     {
         if (can_be_not_found)
-            return {};
-
-        /** Two-pass join-tree resolution (issue #87022 and friends): when the resolver is
-          * in the "short-name fallback disabled" pass and the identifier did not match
-          * canonically, soft-fail so the second pass (with the fallback enabled) gets a
-          * chance to resolve via the short-name index. The throw below produces the
-          * user-visible "cannot be resolved" error, which we want only on the final pass.
-          *
-          * For the explicitly-disabled JOIN USING context (no two-pass retry, see
-          * `tryResolveIdentifierFromJoinTree`), the caller checks for a null result and
-          * throws a more targeted "USING identifier ... cannot be resolved from left/right
-          * table expression" error, which is strictly nicer than the generic message here.
-          */
-        if (!short_name_fallback_enabled)
             return {};
 
         std::unordered_set<Identifier> valid_identifiers;
@@ -1764,16 +1751,39 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
       * If the resolver entered with the fallback already disabled (e.g. JOIN USING
       * resolution explicitly disabled it), we don't retry — that disabled state is the
       * caller's intent and must be preserved.
+      *
+      * Pass 1 may throw `UNKNOWN_IDENTIFIER` from the alias-prefix branch of
+      * `tryResolveIdentifierFromTableExpression` (e.g. for `q.f1` against table `q`
+      * exposing only `b.f1`). On master that throw kills cross-join sibling resolution,
+      * which is exactly the semantic we want to preserve so the alias-prefix lookup
+      * cannot be hijacked by an unrelated sibling that happens to expose a literal
+      * column with the same name (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3411043139).
+      * We catch only that specific error and only when retry is allowed; pass 2 then
+      * runs with short-name enabled and either resolves via the new fallback or throws
+      * the same error normally.
       */
     const bool retry_with_short_name_fallback = short_name_fallback_enabled;
+    SCOPE_EXIT({ short_name_fallback_enabled = retry_with_short_name_fallback; });
+
     short_name_fallback_enabled = false;
-    auto result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, *join_tree_node_ptr, scope);
-    if (!result.resolved_identifier && retry_with_short_name_fallback)
+    IdentifierResolveResult result;
+    bool pass1_threw_unknown_identifier = false;
+    try
+    {
+        result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, *join_tree_node_ptr, scope);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER || !retry_with_short_name_fallback)
+            throw;
+        pass1_threw_unknown_identifier = true;
+    }
+
+    if ((!result.resolved_identifier || pass1_threw_unknown_identifier) && retry_with_short_name_fallback)
     {
         short_name_fallback_enabled = true;
         result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, *join_tree_node_ptr, scope);
     }
-    short_name_fallback_enabled = retry_with_short_name_fallback;
     return result;
 }
 
