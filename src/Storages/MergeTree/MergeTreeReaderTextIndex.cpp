@@ -308,7 +308,7 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto * postings_cache = condition_text.postingsCache().get();
     const auto & index_id_for_cache = granule->getIndexIdForCaches();
 

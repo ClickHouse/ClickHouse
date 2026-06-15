@@ -22,6 +22,7 @@
 
 #include <base/defines.h>
 
+#include <mutex>
 #include <unordered_map>
 #include <ranges>
 
@@ -54,7 +55,7 @@ void fillPartitionConstantsSubstitution(
             continue;
 
         auto column = node.result_type->createColumnConst(1, partition_constants.at(match.node));
-        substitutions.emplace(&node, ColumnWithTypeAndName{column, node.result_type, node.result_name});
+        substitutions.emplace(&node, ColumnWithTypeAndName{column->getPtr(), node.result_type, node.result_name});
     }
 }
 
@@ -65,7 +66,7 @@ void fillVirtualConstantsSubstitution(
     const std::string & partition_id,
     const MergeTreePartition & partition)
 {
-    const auto add_virtual = [&](const String & name, const Field & value)
+    const auto add_virtual = [&](const std::string & name, const Field & value)
     {
         if (!metadata_snapshot->isVirtualColumn(name))
             return;
@@ -79,7 +80,7 @@ void fillVirtualConstantsSubstitution(
                 continue;
 
             auto column = column_desc.type->createColumnConst(1, value);
-            substitutions.emplace(&node, ColumnWithTypeAndName{column, column_desc.type, node.result_name});
+            substitutions.emplace(&node, ColumnWithTypeAndName{column->getPtr(), column_desc.type, node.result_name});
         }
     };
 
@@ -90,7 +91,7 @@ void fillVirtualConstantsSubstitution(
 ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
     const MergeTreePartition & partition,
-    const String & partition_id,
+    const std::string & partition_id,
     const StorageMetadataPtr & metadata_snapshot)
 {
     chassert(predicate_node);
@@ -114,10 +115,53 @@ Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const
 {
     Cond condition = factory(substituted_dag, root);
 
-    for (const auto & transformer : transformers)
-        transformer(condition);
+    for (const auto & transform : transformers)
+        transform(condition);
 
     return condition;
+}
+
+template <typename Cond>
+const Cond * ConditionTemplate<Cond>::lookupUnsubstituted() const
+{
+    std::unique_lock lock(mutex);
+
+    if (unsubstituted.has_value())
+        return &unsubstituted.value();
+
+    return nullptr;
+}
+
+template <typename Cond>
+const Cond & ConditionTemplate<Cond>::setUnsubstituted(Cond && cond) const
+{
+    std::unique_lock lock(mutex);
+
+    if (!unsubstituted.has_value())
+        unsubstituted.emplace(std::forward<Cond>(cond));
+
+    return unsubstituted.value();
+}
+
+template <typename Cond>
+const Cond * ConditionTemplate<Cond>::lookupSubstituted(const std::string & cache_key) const
+{
+    std::unique_lock lock(mutex);
+
+    if (auto it = cache.find(cache_key); it != cache.end())
+        return &it->second;
+
+    return nullptr;
+}
+
+template <typename Cond>
+const Cond & ConditionTemplate<Cond>::setSubstituted(const std::string & cache_key, Cond && cond) const
+{
+    std::unique_lock lock(mutex);
+
+    const auto [it, _] = cache.emplace(cache_key, std::forward<Cond>(cond));
+
+    return it->second;
 }
 
 template <typename Cond>
@@ -139,16 +183,13 @@ ConditionTemplate<Cond>::ConditionTemplate(
 template <typename Cond>
 const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 {
-    std::unique_lock lock(mutex);
-    if (unsubstituted.has_value())
-        return unsubstituted.value();
+    if (const auto * cond = lookupUnsubstituted())
+        return *cond;
 
     const ActionsDAG * unsubsituted = dag && dag->dag.has_value() ? &dag->dag.value() : nullptr;
     const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
     Cond produced = generate(unsubsituted, predicate);
-    unsubstituted.emplace(std::move(produced));
-
-    return unsubstituted.value();
+    return setUnsubstituted(std::move(produced));
 }
 
 template <typename Cond>
@@ -157,11 +198,9 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     if (skip_folding || !dag || !dag->predicate)
         return generateUnsubstituted();
 
-    std::unique_lock lock(mutex);
-
-    const String partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    if (auto it = cache.find(partition_id); it != cache.end())
-        return it->second;
+    const std::string partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+    if (const auto * cond = lookupSubstituted(partition_id))
+        return *cond;
 
     try
     {
@@ -169,14 +208,10 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
         chassert(!specialized.getOutputs().empty());
 
         Cond produced = generate(&specialized, specialized.getOutputs().front());
-        const auto [it, inserted] = cache.emplace(partition_id, std::move(produced));
-        chassert(inserted);
-
-        return it->second;
+        return setSubstituted(partition_id, std::move(produced));
     }
     catch (...) /// Ok. Substitution is done in best-effort way.
     {
-        lock.unlock();
         return generateUnsubstituted();
     }
 }

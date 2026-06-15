@@ -22,6 +22,12 @@ class ConditionTemplate
 {
     Cond generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root) const;
 
+    const Cond * lookupUnsubstituted() const;
+    const Cond & setUnsubstituted(Cond && cond) const;
+
+    const Cond * lookupSubstituted(const std::string & cache_key) const;
+    const Cond & setSubstituted(const std::string & cache_key, Cond && cond) const;
+
 public:
     using Factory = std::function<Cond(const ActionsDAG *, const ActionsDAG::Node *)>;
     using Transformer = std::function<void(Cond &)>;
@@ -54,7 +60,7 @@ private:
 
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;
-    mutable std::unordered_map<String, Cond> cache;
+    mutable std::unordered_map<std::string, Cond> cache;
 };
 
 }

@@ -984,7 +984,7 @@ void ActionsDAG::substitute(const std::unordered_map<const Node *, ColumnWithTyp
         chassert(replacement.type->equals(*node.result_type));
 
         node.type = ActionType::COLUMN;
-        node.column = replacement.column;
+        node.column = typeid_cast<const ColumnConst *>(replacement.column.get())->getPtr();
         node.result_type = replacement.type;
         node.children.clear();
         node.function = nullptr;
