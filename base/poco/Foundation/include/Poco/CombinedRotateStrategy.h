@@ -132,6 +132,7 @@ private:
             return std::nullopt; /// Return std::nullopt if fails to parse
 
         /// Try to skip ','
+        while (it != end && Ascii::isSpace(*it)) ++it;
         if (it != end && *it == ',') ++it;
 
         pos = it - str.begin();
