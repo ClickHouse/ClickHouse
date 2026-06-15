@@ -400,7 +400,7 @@ public:
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
         , fallback_searcher{needle, needle_size}
     {
-#if !(USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON)))
+#if !(USE_MULTITARGET_CODE && defined(__AVX2__))
         if (fallback)
             return;
 
@@ -436,7 +436,9 @@ public:
 
         const auto * haystack_end = haystack + haystack_size;
 
-#if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+        /// Bypassing Volnitsky's n-gram hash to search directly with the fallback searcher has proven useful
+        /// only when targeting AVX2 or AVX-512, and detrimental on NEON and SSE2, so restrict it to AVX2+.
+#if USE_MULTITARGET_CODE && defined(__AVX2__)
         return fallback_searcher.search(haystack, haystack_end);
 #else
 
