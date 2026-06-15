@@ -4,6 +4,7 @@ ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
+ACCESS_DENIED
 -- Reading only the readable column (name) is allowed
 OK
 OK
@@ -11,6 +12,7 @@ OK
 -- Virtual columns in the predicate need no SELECT grant
 OK
 -- With SELECT(id): reading id via WHERE or the SET right-hand side is allowed
+OK
 OK
 OK
 OK

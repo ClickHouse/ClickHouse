@@ -1,0 +1,6 @@
+-- Without SELECT(id): WHERE on id is denied on the initiator (before enqueue)
+ACCESS_DENIED
+ACCESS_DENIED
+-- With SELECT(id): allowed
+OK
+OK

@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user_name="${CLICKHOUSE_DATABASE}_user_04327"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab, tab_shadow;
 DROP USER IF EXISTS $user_name;
 
 CREATE TABLE tab (id UInt32, name String) ENGINE = MergeTree ORDER BY id
@@ -45,6 +45,7 @@ check_access "ALTER TABLE tab UPDATE name = '' WHERE id = 1"
 check_access "DELETE FROM tab WHERE id = 42"
 check_access "UPDATE tab SET name = '' WHERE id = 1 SETTINGS enable_lightweight_update = 1"
 check_access "ALTER TABLE tab UPDATE name = toString(id) WHERE name = 'a'"
+check_access "UPDATE tab SET name = toString(id) WHERE name = 'a' SETTINGS enable_lightweight_update = 1"
 
 echo "-- Reading only the readable column (name) is allowed"
 check_access "ALTER TABLE tab DELETE WHERE name = 'x'"
@@ -62,6 +63,7 @@ check_access "ALTER TABLE tab UPDATE name = '' WHERE id = 1"
 check_access "DELETE FROM tab WHERE id = 42"
 check_access "UPDATE tab SET name = '' WHERE id = 1 SETTINGS enable_lightweight_update = 1"
 check_access "ALTER TABLE tab UPDATE name = toString(id) WHERE name = 'a'"
+check_access "UPDATE tab SET name = toString(id) WHERE name = 'a' SETTINGS enable_lightweight_update = 1"
 
 # A real column whose name shadows a virtual column (e.g. `_part`) is real data and still needs SELECT,
 # so without SELECT(`_part`) the mutation is denied (rather than reading the column for free). We only
