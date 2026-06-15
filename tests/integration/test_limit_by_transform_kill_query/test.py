@@ -77,12 +77,12 @@ def run_kill_query_test(query, log_line_pattern):
 def test_common_kill_query(started_cluster):
     run_kill_query_test(
         TRANSFORM_COMMON_QUERY,
-        "Transform a chunk in transformCommon",
+        "Transform a chunk in LimitByTransform",
     )
 
 
 def test_inorder_kill_query(started_cluster):
     run_kill_query_test(
         TRANSFORM_INORDER_QUERY,
-        "Transform a chunk in transformInOrder",
+        "Transform a chunk in LimitBySortedStreamTransform",
     )

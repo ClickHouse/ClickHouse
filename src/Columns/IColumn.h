@@ -28,7 +28,6 @@ namespace DB
 class Arena;
 class ColumnGathererStream;
 class Field;
-class WeakHash32;
 class ColumnConst;
 class ColumnReplicated;
 class IDataType;
@@ -384,10 +383,34 @@ public:
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 
-    /// Get hash function value. Hash is calculated for each element.
-    /// It's a fast weak hash function. Mainly need to scatter data between threads.
-    /// WeakHash32 must have the same size as column.
-    virtual WeakHash32 getWeakHash32() const = 0;
+    /// Per-row weak hash kernel. Writes a 32-bit CRC32C-based hash for each row in
+    /// [row_begin, row_end) into the caller-provided buffer `hash_out` (which must hold at
+    /// least row_end - row_begin entries). It's a fast weak hash, mainly needed to scatter
+    /// data between threads (sharded aggregation, `grace_hash` joins, parallel-window
+    /// partitioning, hash-join scatter).
+    ///
+    /// `h(row)` denotes the finalized per-row hash. With `initial == true` the buffer is
+    /// overwritten with it; with `initial == false` the buffer is combined with it via
+    /// `combineWeakHash32`, composing hashes across multiple key columns without an
+    /// intermediate per-column array:
+    ///     initial:  hash_out[i] = h(row_begin + i)
+    ///     combine:  hash_out[i] = combineWeakHash32(h(row_begin + i), hash_out[i])
+    /// Scatter consumers seed `hash_out` with `WEAK_HASH32_INITIAL_VALUE` and chain
+    /// `computeHashInto(..., initial=false)` over every key column.
+    ///
+    /// REPRESENTATION-INDEPENDENCE CONTRACT: the non-initial path must combine the same
+    /// finalized `h(row)`, not a column-private intermediate (e.g. the raw value before
+    /// hashing). This makes two physically different but logically equal columns — a
+    /// materialized column and a transparent wrapper of the same values (`ColumnConst`,
+    /// `ColumnLowCardinality`, `ColumnSparse`, `ColumnReplicated`) — produce identical
+    /// composed hashes. A wrapper can only obtain the nested column's finalized `h` (via
+    /// `computeHashInto(initial=true)`), so every column must combine `h`, never its
+    /// pre-finalized form. Violating this routes equal multi-column keys to different
+    /// aggregation shards or `grace_hash` join partitions.
+    ///
+    /// Primitive columns must not allocate; composite columns may use a transient scratch
+    /// buffer for their nested columns.
+    virtual void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const = 0;
 
     /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;
@@ -708,7 +731,11 @@ public:
     virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
+    /// A nullptr in the list is interpreted as a default value
     virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
+
+    /// Same as above but assumes every entry in the list is non-null
+    virtual void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -981,7 +1008,11 @@ private:
     void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of columns and row numbers
+    /// A nullptr in the list is interpreted as a default value
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
+
+    /// Same as above but assumes every entry in the list is non-null
+    void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;

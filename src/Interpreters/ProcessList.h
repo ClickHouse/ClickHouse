@@ -291,8 +291,8 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 /// Information of process list for user.
 struct ProcessListForUserInfo
 {
-    Int64 memory_usage;
-    Int64 peak_memory_usage;
+    Int64 memory_usage{};
+    Int64 peak_memory_usage{};
 
     // Optional field, filled by request.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;

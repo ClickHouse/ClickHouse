@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -62,6 +63,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char remote_query_executor_cancel_before_send[];
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -125,7 +131,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         if (!result.entry.isNull() && result.is_usable)
         {
             chassert(result.entry->isConnected());
@@ -205,7 +211,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::vector<IConnectionPool::Entry> && connections_,
+    ConnectionPoolEntries && connections_,
     const String & query_,
     SharedHeader header_,
     ContextPtr context_,
@@ -265,7 +271,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 #endif
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
@@ -415,6 +421,9 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
 
 void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
+    /// Emulate a concurrent cancel() landing right before the query is sent.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_before_send, { was_cancelled = true; });
+
     if (sent_query || was_cancelled)
         return;
 
@@ -452,7 +461,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     // Collect all roles granted on this node and pass those to the remote node
-    std::vector<String> local_granted_roles;
+    Strings local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
@@ -534,6 +543,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     if (!sent_query)
     {
         sendQuery();
+
+        /// `connections` stays null if sendQuery() was cancelled before sending,
+        /// so guard the dereference below (as every other use of it does).
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
+        }
 
         if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
             return ReadResult(Block());
@@ -768,7 +785,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     return ReadResult(ReadResult::Type::Nothing);
 }
 
-bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
+bool RemoteQueryExecutor::setPartUUIDs(const UUIDs & uuids)
 {
     auto query_context = context->getQueryContext();
     auto duplicates = query_context->getPartUUIDs()->add(uuids);
@@ -950,7 +967,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 /// It is required to be able CTE materialization plan with parallel replicas (avoiding
                 /// circular dependency between CTE materialization and parallel replicas external tables.
                 auto materialized_cte = storage_memory->getMaterializedCTE();
-                if (materialized_cte != nullptr && !materialized_cte->is_built)
+                if (materialized_cte != nullptr && !materialized_cte->isBuilt())
                 {
                     LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
                     continue;

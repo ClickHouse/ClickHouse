@@ -118,9 +118,9 @@ private:
         const std::string physical_name;
 
         /// If type is complex (array, map, struct), whether it can contain nullable values.
-        bool value_contains_null;
+        bool value_contains_null{};
         /// If type is complex (array, map, struct), list id of the child list.
-        size_t child_list_id;
+        size_t child_list_id{};
 
         size_t precision = 0; /// For Decimal.
         size_t scale = 0; /// For Decimal.
@@ -197,7 +197,7 @@ public:
 private:
     static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
     {
-        ffi::EngineSchemaVisitor visitor;
+        ffi::EngineSchemaVisitor visitor{};
         visitor.data = &data;
         visitor.make_field_list = &makeFieldList;
 
