@@ -244,18 +244,17 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        /// The context is created and initialized with the digest once per thread,
-        /// then reset before each use by passing a null `type` to `EVP_DigestInit_ex`,
-        /// which reuses the already fetched digest implementation.
-        ///
-        /// Passing a non-null `type` (e.g. `EVP_md5()`) instead would make OpenSSL
-        /// re-fetch the digest from the provider method store on every call. That
-        /// lookup takes a read lock, and with this function called once per row all
-        /// hashing threads serialize on it: with musl's `pthread_rwlock` on aarch64
-        /// this doubled `cryptographic_hashes` times in CI
-        /// (`__pthread_rwlock_tryrdlock` dominated the profile).
         using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        thread_local EVP_MD_CTX_ptr ctx = []
+
+        /// A context is initialized with the MD5 digest once, then only copied on each call
+        /// (the same approach as in FunctionsStringHashFixedString.cpp). Copying an already
+        /// initialized context with `EVP_MD_CTX_copy_ex` is faster than re-initializing with
+        /// `EVP_md5` every time: in OpenSSL 3.x the latter re-fetches the digest from the
+        /// provider method store under a read lock, and with this function called once per row
+        /// all hashing threads serialize on it (with musl's `pthread_rwlock` on aarch64 this
+        /// doubled `cryptographic_hashes` times in CI, `__pthread_rwlock_tryrdlock` dominating
+        /// the profile).
+        static const EVP_MD_CTX_ptr ctx_template = []
         {
             EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
             if (!new_ctx)
@@ -265,8 +264,17 @@ struct HalfMD5Impl
             return new_ctx;
         }();
 
-        if (EVP_DigestInit_ex(ctx.get(), nullptr, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+
+        if (!ctx)
+        {
+            ctx.reset(EVP_MD_CTX_new());
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        }
+
+        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
