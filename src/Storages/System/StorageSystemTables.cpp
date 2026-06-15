@@ -107,7 +107,7 @@ std::optional<String> namespacePrefixBeforeLastDot(const String & literal)
 }
 
 /// Walk the predicate DAG looking for top-level conjuncts of the form
-/// `name = '<ns>.<table>'` or `name LIKE '<ns>.%'` and extract the most
+/// `name = 'ns.table'` or `name LIKE 'ns.%'` and extract the most
 /// specific (longest) namespace prefix that is guaranteed to bound the
 /// matched rows. Only case-sensitive LIKE is considered — `ilike` and
 /// patterns with escapes are skipped to avoid false negatives.

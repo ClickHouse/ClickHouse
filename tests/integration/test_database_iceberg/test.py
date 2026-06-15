@@ -293,6 +293,15 @@ def test_namespace_filter_pushdown(started_cluster):
     (`name = '<ns>.<table>'`, `name LIKE '<ns>.%'`) only fetch the table list
     from the targeted namespace instead of enumerating the whole catalog.
     See issue #105022.
+
+    Checking the result rows alone is not enough: an implementation that lists
+    the whole catalog and filters in memory would return the same rows. To prove
+    the scoped catalog API is actually used we also count the per-namespace
+    `Received tables response for namespace: <ns>` log line that `RestCatalog`
+    emits for every namespace whose `.../tables` endpoint it hits. A scoped query
+    must bump the count for the targeted namespace while leaving the sibling
+    namespace untouched; a regression to a full-catalog scan would also fetch the
+    sibling and fail the assertion.
     """
     node = started_cluster.instances["node1"]
 
@@ -314,45 +323,72 @@ def test_namespace_filter_pushdown(started_cluster):
     for table in namespace_2_tables:
         create_table(catalog, namespace_2, table)
 
+    def namespace_listings(namespace):
+        # Number of times RestCatalog has fetched the table list of `namespace`
+        # so far. `count_in_log` only scans the current (non-rotated) log file,
+        # which is what we want for before/after deltas within a single test.
+        return int(
+            node.count_in_log(f"Received tables response for namespace: {namespace}")
+        )
+
+    def assert_scoped(query, expected):
+        # Run a query that should be scoped to `namespace_1` and assert both the
+        # result rows and that only the target namespace's table list was fetched.
+        before_target = namespace_listings(namespace_1)
+        before_sibling = namespace_listings(namespace_2)
+
+        assert expected == node.query(query).strip()
+
+        # The catalog requests run on a background thread pool, so the log line
+        # may land slightly after the query returns. Wait for the target listing
+        # to confirm the query really reached the catalog before checking that the
+        # sibling was left alone.
+        for _ in range(30):
+            if namespace_listings(namespace_1) > before_target:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(
+                f"Scoped query did not fetch the table list of '{namespace_1}': {query}"
+            )
+
+        assert namespace_listings(namespace_2) == before_sibling, (
+            f"Scoped query for '{namespace_1}' also fetched the sibling namespace "
+            f"'{namespace_2}' — namespace push-down regressed to a full-catalog "
+            f"scan: {query}"
+        )
+
     expected_ns1 = "\n".join(sorted(f"{namespace_1}.{t}" for t in namespace_1_tables))
 
     # Case-sensitive LIKE pushdown.
-    assert (
-        expected_ns1
-        == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{namespace_1}.%' ORDER BY name "
-            "SETTINGS show_data_lake_catalogs_in_system_tables = true"
-        ).strip()
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{namespace_1}.%' ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
     )
 
     # Equality pushdown for a fully-qualified table name.
     one_table = f"{namespace_1}.{namespace_1_tables[0]}"
-    assert (
-        one_table
-        == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
-            "SETTINGS show_data_lake_catalogs_in_system_tables = true"
-        ).strip()
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        one_table,
     )
 
     # `SHOW TABLES FROM <catalog>.<ns>` rewrites to the same tightened predicate
     # as the equivalent `SELECT ... LIKE '<ns>.%'` form. Result names are still
     # fully qualified with the namespace path, just like the SELECT variant.
-    assert (
-        expected_ns1
-        == node.query(
-            f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}`"
-        ).strip()
+    assert_scoped(
+        f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}`",
+        expected_ns1,
     )
 
     # SHOW TABLES FROM ... LIKE 'foo': the LIKE pattern is anchored to the namespace,
     # so it matches `<ns>.<foo>` rather than only `<foo>`.
     one_table_short = namespace_1_tables[0]
-    assert (
-        f"{namespace_1}.{one_table_short}"
-        == node.query(
-            f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}` LIKE '{one_table_short}'"
-        ).strip()
+    assert_scoped(
+        f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}` LIKE '{one_table_short}'",
+        f"{namespace_1}.{one_table_short}",
     )
 
 
