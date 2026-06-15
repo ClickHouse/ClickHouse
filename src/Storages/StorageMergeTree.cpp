@@ -1225,7 +1225,17 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         TransactionLog::instance().rollbackTransaction(txn);
     }
 
-    getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
+    /// Cancel already running part mutations for this mutation. A partition-scoped (`IN PARTITION`)
+    /// mutation only applies to its affected partitions, so cancel per partition (mirroring
+    /// `StorageReplicatedMergeTree::killMutation`). An empty `partition_ids` means a global mutation,
+    /// in which case the empty partition id cancels crossing mutations in all partitions. Passing
+    /// the empty partition id for a partition-scoped mutation would erroneously cancel unrelated
+    /// in-flight mutations in other partitions whose version range happens to span `block_number`.
+    if (to_kill->partition_ids.empty())
+        getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
+    else
+        for (const auto & partition_id : to_kill->partition_ids)
+            getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
