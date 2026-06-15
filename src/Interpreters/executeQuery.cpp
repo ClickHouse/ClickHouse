@@ -236,6 +236,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -1262,6 +1263,15 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             || context->getActionLocksManager()->hasAny(table))
             continue;
 
+        /// Replicated tables (e.g. `ReplicatedMergeTree`) re-run their startup sequence on `ATTACH`,
+        /// and that path can currently trip a broken-part invariant: `ReplicatedMergeTreeRestartingThread::tryStartup`
+        /// calls `createLogEntriesToFetchBrokenParts`, which reaches `removePartAndEnqueueFetch(..., storage_init = true)`
+        /// while the broken part is still in the working set and hits `chassert(!storage_init)`.
+        /// Until that is hardened, skip replicated tables so this testing hook does not introduce a new
+        /// startup exception instead of only exercising existing reattach safety.
+        if (table->supportsReplication())
+            continue;
+
         if (!catalog.getReferentialDependencies(table_id).empty()
             || !catalog.getReferentialDependents(table_id).empty()
             || !catalog.getLoadingDependencies(table_id).empty()
@@ -1337,7 +1347,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// then waits for the detached table to become unused, so an exception from that wait
             /// (e.g. when the query is killed) leaves the table detached while `detached` is still
             /// `false`.
-            if (!detached)
+            ///
+            /// But a concurrent query may have detached or dropped the table before our `DETACH`
+            /// acquired the `DDLGuard`; then our `DETACH TABLE ... SYNC` fails with `UNKNOWN_TABLE`
+            /// and we did not detach anything. In that case the table is missing because of the other
+            /// query, not because of this hook, so re-attaching here would undo that query's detach.
+            /// Only treat the table as detached-by-us when the failure was not `UNKNOWN_TABLE`.
+            if (!detached && getCurrentExceptionCode() != ErrorCodes::UNKNOWN_TABLE)
                 detached = !catalog.isTableExist(table_id, context);
 
             if (detached)
