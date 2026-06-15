@@ -1613,8 +1613,17 @@ ReturnType readDateTimeTextFallback(
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
 
         size_t size = buf.read(s_pos, remaining_date_size);
-        if (size != remaining_date_size)
+
+        if (!(size == remaining_date_size && s[4] == s[7]
+            && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])))
         {
+            if (static_cast<size_t>(buf.position() - buf.buffer().begin()) >= size)
+            {
+                buf.position() -= size;
+                datetime = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+                return ReturnType(true);
+            }
+
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
             else
@@ -1623,10 +1632,6 @@ ReturnType readDateTimeTextFallback(
 
         if constexpr (!throw_exception)
         {
-            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                return false;
-
             if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
                 return false;
         }
