@@ -5,8 +5,9 @@
 # Reproduces https://github.com/ClickHouse/ClickHouse/issues/107343
 # The native (V3) Parquet reader threw ICEBERG_SPECIFICATION_VIOLATION when an Iceberg data file
 # physically contains a reserved row-lineage column such as `_row_id` (field_id 2147483540).
-# The Iceberg spec reserves field ids >= 2147483447 and requires readers to ignore unrecognized
-# reserved ids rather than failing, so reading the table must succeed and return the projected rows.
+# The Iceberg spec reserves field ids greater than 2147483447 and requires readers to ignore
+# unrecognized reserved ids rather than failing, so reading the table must succeed and return the
+# projected rows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
