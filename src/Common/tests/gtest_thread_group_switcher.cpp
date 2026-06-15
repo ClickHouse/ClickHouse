@@ -19,28 +19,8 @@ namespace FailPoints
     extern const char thread_group_link_thread_failure[];
 }
 
-/// Regression test for https://github.com/ClickHouse/clickhouse-core-incidents/issues/1682
-///
-/// Root cause (confirmed from stack traces):
-///   In 26.4, TasksStatsCounters::reset() inside initPerformanceCounters() had no
-///   try/catch. When /proc/thread-self/schedstat returned errno=9 (EBADF), the
-///   ErrnoException escaped initPerformanceCounters and propagated up through
-///   attachToGroupImpl into the ThreadGroupSwitcher constructor's noexcept catch block.
-///   By that point all context fields (performance_counters parent, memory_tracker
-///   parent, query_context, local_data, …) were already pointing at the thread group.
-///   The catch block logged the error but left ThreadStatus fully attached to the stale
-///   group, so every subsequent task on that pool worker threw LOGICAL_ERROR:
-///     "Thread (REMOTE_FS_READ_THREAD_POOL) is already attached to a group (master_thread_id 1398)"
-///
-/// Fix: attachToGroupImpl now installs a SCOPE_EXIT_SAFE guard that calls
-/// detachFromGroup() on failure, undoing the full attachment (unlinkThread, all parent
-/// pointers, query_context, local_data, etc.). ThreadGroupSwitcher's catch block is
-/// unchanged — it just clears its own members; the ThreadStatus is already clean.
-///
-/// The failpoint thread_group_switcher_attach_failure fires after all context fields
-/// are set but before initPerformanceCounters, matching the 26.4 failure window.
-/// ThreadGroupSwitcher::ThreadGroupSwitcher is noexcept — the injected exception is
-/// swallowed internally and never reaches the test.
+/// Mid-attachment failure must leave ThreadStatus fully detached so the next switcher
+/// on the same thread can attach cleanly. Regression for incident #1682.
 TEST(ThreadGroupSwitcher, PartialAttachUndoneOnException)
 {
     auto context = getContext().context;

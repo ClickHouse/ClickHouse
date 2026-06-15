@@ -55,14 +55,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
     {
         /// Unexpected. For caller's convenience avoid throwing exceptions.
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-        /// allow_existing_group=true callers (ExceptionKeepingTransform, merge/mutate
-        /// tasks) entered already attached to prev_thread_group. We detached them above
-        /// before calling attachToGroupImpl, which then failed and rolled back to a
-        /// detached state. Best-effort restore so the caller does not continue without
-        /// query/merge accounting, memory limits, and cancellation context.
-        /// If the restore itself throws (e.g. uniform OOM), log and leave the thread
-        /// detached — that is no worse than not attempting the restore at all, and
-        /// the noexcept contract is preserved by the inner try/catch.
+        /// Best-effort restore of prev_thread_group for allow_existing_group=true callers.
         if (prev_thread_group && !CurrentThread::getGroup())
         {
             try
