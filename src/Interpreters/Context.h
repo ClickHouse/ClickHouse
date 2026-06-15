@@ -395,6 +395,7 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+    /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
@@ -561,6 +562,11 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
+    /// and internal backup coordination.
+    /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
+    /// this flag can only be set server-side and is safe to use for security-sensitive checks.
+    bool is_ddl_or_on_cluster_internal = false;
 
     inline static ContextPtr global_context_instance;
     inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
@@ -1370,7 +1376,7 @@ public:
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache(bool only_if_enabled = true) const;
     void clearIndexUncompressedCache() const;
 
     void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
@@ -1596,6 +1602,10 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
+    void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1860,6 +1870,10 @@ struct HTTPContext : public IHTTPContext
     uint64_t getMaxFieldNameSize() const override;
 
     uint64_t getMaxFieldValueSize() const override;
+
+    uint64_t getMaxRequestHeaderSize() const override;
+
+    Poco::Timespan getHeadersReadTimeout() const override;
 
     Poco::Timespan getReceiveTimeout() const override;
 

@@ -700,7 +700,7 @@ void executeQueryWithParallelReplicas(
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
         auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
-            query_ast,
+            query_tree,
             *header,
             new_context,
             processed_stage,

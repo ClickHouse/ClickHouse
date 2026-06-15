@@ -28,6 +28,8 @@ SELECT tokens('a', 'splitByString', toFixedString('c', 1)); -- { serverError ILL
 SELECT tokens('a', 'splitByString', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
 SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError BAD_ARGUMENTS }
 SELECT tokens('  a  bc d', 'splitByString', []); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('  a  bc d', 'splitByString', ['']); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('  a  bc d', 'splitByString', [' ', '']); -- { serverError BAD_ARGUMENTS }
 
 
 SELECT 'Default tokenizer';

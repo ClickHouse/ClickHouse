@@ -1206,7 +1206,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"shared_merge_tree_sync_parts_on_partition_operations", trueOrFalseSettingNoOracle},
     {"short_circuit_function_evaluation_for_nulls", trueOrFalseSetting},
     {"short_circuit_function_evaluation_for_nulls_threshold", probRangeSetting},
-    {"show_data_lake_catalogs_in_system_tables", trueOrFalseSettingNoOracle},
+    {"show_remote_databases_in_system_tables", trueOrFalseSettingNoOracle},
     {"show_create_query_identifier_quoting_rule",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)

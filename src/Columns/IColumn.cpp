@@ -98,6 +98,12 @@ void IColumn::doInsertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
+void IColumn::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (size_t i = begin; i < end; ++i)
+        updateHashWithValue(i, hash);
+}
+
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())

@@ -52,7 +52,7 @@ public:
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         const OriginInfo & origin_info = {},
-        bool best_effort = false) const override;
+        bool is_initial_load = false) const override;
 
     IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
@@ -60,7 +60,7 @@ public:
         size_t size,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
-        bool best_effort = false) override;
+        bool is_initial_load = false) override;
 
     bool tryIncreasePriority(
         Iterator & iterator,

@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
 
 
@@ -14,55 +15,59 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier s_ident;
     ParserKeyword s_as(Keyword::AS);
+    ParserKeyword s_materialized(Keyword::MATERIALIZED);
     ParserSubquery s_subquery;
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
 
     auto old_pos = pos;
-    auto with_element = make_intrusive<ASTWithElement>();
 
     // Trying to parse structure: identifier [(alias1, alias2, ...)] AS (subquery)
-    if (ASTPtr name_or_expr;
-        (s_ident.parse(pos, name_or_expr, expected) || ParserExpressionWithOptionalAlias(false).parse(pos, name_or_expr, expected)) &&
+    if (ASTPtr cte_name, aliases;
+        s_ident.parse(pos, cte_name, expected) &&
         (
             [&]() -> bool {
-                auto saved_pos = pos;
                 if (open_bracket.ignore(pos, expected))
                 {
                     if (ASTPtr expression_list_for_aliases; exp_list_for_aliases.parse(pos, expression_list_for_aliases, expected))
                     {
-                        with_element->aliases = expression_list_for_aliases;
-                        if (!close_bracket.ignore(pos, expected))
-                            return false;
-                        return true;
+                        aliases = expression_list_for_aliases;
+                        return close_bracket.ignore(pos, expected);
                     }
                     else
                     {
-                        pos = saved_pos;
                         return false;
                     }
                 }
                 return true;
             }()
         ) &&
-        s_as.ignore(pos, expected) &&
-        s_subquery.parse(pos, with_element->subquery, expected))
+        s_as.ignore(pos, expected))
     {
-        if (name_or_expr)
-            tryGetIdentifierNameInto(name_or_expr, with_element->name);
+        bool has_materialized_keyword = s_materialized.ignore(pos, expected);
 
-        with_element->children.push_back(with_element->subquery);
+        if (ASTPtr subquery; s_subquery.parse(pos, subquery, expected))
+        {
+            auto with_element = make_intrusive<ASTWithElement>();
 
-        node = with_element;
+            tryGetIdentifierNameInto(cte_name, with_element->name);
+            with_element->aliases = std::move(aliases);
+            with_element->is_materialized = has_materialized_keyword;
+            with_element->subquery = std::move(subquery);
+            with_element->children.push_back(with_element->subquery);
+
+            node = with_element;
+            return true;
+        }
     }
-    else
-    {
-        pos = old_pos;
-        ParserExpressionWithOptionalAlias s_expr(false);
-        if (!s_expr.parse(pos, node, expected))
-            return false;
-    }
+
+    /// CTE parsing failed, rollback and try to parse ordinary expression
+    pos = old_pos;
+    ParserExpressionWithOptionalAlias s_expr(false);
+    if (!s_expr.parse(pos, node, expected))
+        return false;
+
     return true;
 }
 

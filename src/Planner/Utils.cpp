@@ -38,6 +38,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
@@ -497,6 +498,12 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
 
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
+
+    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
+    /// equalities into IN (important for row policies that produce many
+    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
+    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
+    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
 
     return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
 }

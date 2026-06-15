@@ -183,9 +183,11 @@ public:
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
+    bool hasStatistics() const override { return nested_column->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }

@@ -70,13 +70,14 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
 
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
-/// There may be less DAG outputs than required_output_positions.size().
+/// The number of DAG outputs may differ from required_output_positions.size().
 std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
 
-    for (size_t i = 0; i < dag.getOutputs().size(); ++i)
+    size_t num_matched_outputs = std::min(dag.getOutputs().size(), required_output_positions.size());
+    for (size_t i = 0; i < num_matched_outputs; ++i)
     {
         if (required_output_positions[i])
             stack.push(dag.getOutputs()[i]);
@@ -275,6 +276,31 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
+bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
+{
+    while (!node->children.empty())
+    {
+        if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            if (expr_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+        {
+            if (filter_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+
+        node = node->children.front();
+    }
+
+    return true;
+}
+
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
 {
     if (root.children.size() != 1)
@@ -315,6 +341,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     if (!canUseLazyMaterializationForReadingStep(reading_step))
+        return false;
+
+    if (!allExpressionsSuitableForLazyMaterialization(sorting_node->children.front()))
         return false;
 
     const auto & sorting_header = *sorting_step->getOutputHeader();

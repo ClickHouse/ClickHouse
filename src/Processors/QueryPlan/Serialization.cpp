@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -91,7 +92,8 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto & frame = stack.top();
         auto * node = frame.node;
 
-        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
+            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
         {
             frame.node = node->children.front();
             continue;

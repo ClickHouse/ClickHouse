@@ -97,7 +97,8 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
-/// check if a DAG node only depends on sorting key columns (ActionsDAG version of isExpressionOverSortingKey)
+/// check if a DAG node only depends on sorting key columns
+/// (ActionsDAG version of isExpressionOverSortingKey)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))
@@ -108,6 +109,17 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
         return false; // already checked result_name
     for (const auto * child : node->children)
         if (!isNodeOverSortingKey(child, sorting_key_set))
+            return false;
+    return true;
+}
+
+bool isNodeDeterministic(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base && !node->function_base->isDeterministic())
+        return false;
+    for (const auto * child : node->children)
+        if (!isNodeDeterministic(child))
             return false;
     return true;
 }
@@ -218,6 +230,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool defer_partition_pruning_after_final;
 }
 
 namespace MergeTreeSetting
@@ -2042,26 +2055,9 @@ void ReadFromMergeTree::buildIndexes(
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
-                if (!top_k_filter_info || !skip_index->index.isSimpleSingleColumnIndex()
-                    || skip_index->index.type != "minmax"
-                    || top_k_filter_info->column_name != skip_index->index.column_names[0])
-                    return false;
-
-                /// The skip-index top-k path ranks granules via raw Field comparison
-                /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-                /// or collation. Only allow types where raw Field ordering matches
-                /// the ORDER BY semantics.
-                /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
-                /// nulls_direction/collator so this restriction can be lifted.
-                if (top_k_filter_info->data_type->isNullable()
-                    || !top_k_filter_info->data_type->isValueRepresentedByNumber())
-                    return false;
-
-                if (top_k_filter_info->threshold_tracker
-                    && top_k_filter_info->threshold_tracker->getCollator())
-                    return false;
-
-                return true;
+                return top_k_filter_info && skip_index->index.isSimpleSingleColumnIndex() &&
+                       skip_index->index.type == "minmax" &&
+                       top_k_filter_info->column_name == skip_index->index.column_names[0];
         };
 
         if (settings[Setting::use_skip_indexes_for_top_k] && can_skip_index_be_used_for_top_k_filtering(index_helper))
@@ -2157,15 +2153,25 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     bool defer_row_policy = settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
     bool defer_prewhere = settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
 
-    /// If row policy touches non-sorting-key columns, prewhere must be deferred too
-    if (defer_row_policy && query_info.prewhere_info)
+    if (defer_row_policy)
     {
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
         NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
 
         const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
             query_info.row_level_filter->column_name);
-        if (!isNodeOverSortingKey(filter_output, sorting_key_set))
+
+        /// Safe to apply before FINAL only if the policy is SK-only (verdict
+        /// is the same for every row of a dedup group) and deterministic
+        /// (no `rand`/`now` flipping the winner)
+        bool row_policy_over_sk =
+            isNodeOverSortingKey(filter_output, sorting_key_set)
+            && isNodeDeterministic(filter_output);
+
+        if (row_policy_over_sk)
+            defer_row_policy = false;
+
+        if (!row_policy_over_sk && query_info.prewhere_info)
             defer_prewhere = true;
     }
 
@@ -2174,9 +2180,17 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     if (defer_prewhere)
         deferred_prewhere_info = query_info.prewhere_info;
 
-    /// don't prune partitions unless the partition key is determined by the sorting key
-    /// matters when FINAL merges across partitions
-    if (!doNotMergePartsAcrossPartitionsFinal() && storage_snapshot->metadata->hasPartitionKey())
+    /// Don't prune partitions unless the partition key is determined by the sorting key:
+    /// when FINAL merges across partitions, rows with the same primary key in different
+    /// partitions must all participate in deduplication, so partition pruning would drop
+    /// rows that affect the FINAL result.
+    ///
+    /// Users whose data structure guarantees same-PK rows cannot span partitions (e.g. event-log
+    /// tables whose partition column is set at insert time and never changes) can opt out via
+    /// `defer_partition_pruning_after_final = 0` to restore pre-26.3 performance.
+    if (settings[Setting::defer_partition_pruning_after_final]
+        && !doNotMergePartsAcrossPartitionsFinal()
+        && storage_snapshot->metadata->hasPartitionKey())
     {
         const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
@@ -2839,6 +2853,23 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 {
     query_info.prewhere_info = prewhere_info_value;
 
+    /// Build sets for the new PREWHERE synchronously. PREWHERE is evaluated at the
+    /// storage level during data reading, before the pipeline-level CreatingSetsStep
+    /// has a chance to execute. If a condition with IN (subquery) was moved to PREWHERE
+    /// by optimizePrewhere after applyFilters already ran, the set would remain unbuilt
+    /// and cause a "Not-ready Set" error.
+    /// We must skip sets used in GLOBAL IN functions because ReadFromRemote needs to
+    /// attach external tables to those sets before they are built. Building them here
+    /// would cause "Trying to attach external table to a ready set" errors.
+    /// Only build sets when applyFilters has already been called for this step (indicated by
+    /// `indexes` being populated). The plan built by `considerEnablingParallelReplicas` for
+    /// statistics collection runs `optimizePrewhere` without `optimizePrimaryKeyConditionAndLimit`,
+    /// so `applyFilters` is skipped there and sets must not be built — the original plan's
+    /// `CreatingSetsStep` (added later via `addStepsToBuildSets`) handles them. Building here
+    /// would re-execute the IN-subquery and double-count its rows against `max_rows_to_read`.
+    if (query_info.prewhere_info && indexes.has_value())
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         query_info.row_level_filter,
@@ -3252,7 +3283,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         /// Do not keep data parts in snapshot.
         /// They are stored separately, and some could be released after PK analysis.
-        storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
+        /// Keep the underlying storage alive because part teardown still reaches
+        /// `data_part->storage.getContext()`.
+        auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        {
+            stripped_snapshot_data->storage = snapshot_data->storage;
+            stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+        }
+
+        storage_snapshot->data = std::move(stripped_snapshot_data);
     }
 
     /// Check if we should apply row policy and prewhere after FINAL instead of during reading

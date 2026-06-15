@@ -10,7 +10,7 @@ Positions: 2
     Join (JOIN FillRightFirst)
     Type: LEFT
     Strictness: SEMI
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.i1) = (exists(__table2).__table1.i1)]
       Expression (Left Pre Join Actions)
       Actions: INPUT :: 0 -> __table1.i1 Int64 : 0

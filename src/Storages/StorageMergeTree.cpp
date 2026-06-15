@@ -896,11 +896,6 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     return pipeline;
 }
 
-bool StorageMergeTree::hasLightweightDeletedMask() const
-{
-    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
-}
-
 namespace
 {
 
@@ -2979,7 +2974,7 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 }
 
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
 {
     for (auto part : parts)
     {

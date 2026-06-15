@@ -78,7 +78,7 @@ public:
 
     bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
     bool hasSetElements() const { return !set_elements.empty(); }
-    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
+    Columns getSetElements() const;
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -140,7 +140,7 @@ private:
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    std::vector<IColumn::WrappedPtr> set_elements;
+    MutableColumns set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,

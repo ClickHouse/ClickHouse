@@ -5,7 +5,9 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -183,10 +185,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
-    std::optional<Extension> extension_)
+    std::optional<Extension> extension_,
+    ConnectionPoolWithFailoverPtr pool)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
-    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
+    /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
+    /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
+    /// back to the pool's internal PooledObject and PoolBase structures, so the pool must
+    /// outlive all Entry objects.
+    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
     {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
         if (extension_ && extension_->replica_info)
@@ -903,8 +910,19 @@ void RemoteQueryExecutor::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 /// Send only temporary tables with StorageMemory
-                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
+                auto storage_memory = std::dynamic_pointer_cast<StorageMemory>(cur);
+                if (!storage_memory)
                     continue;
+
+                /// Skip sending Materialized CTEs when they are not built.
+                /// It is required to be able CTE materialization plan with parallel replicas (avoiding
+                /// circular dependency between CTE materialization and parallel replicas external tables.
+                auto materialized_cte = storage_memory->getMaterializedCTE();
+                if (materialized_cte != nullptr && !materialized_cte->is_built)
+                {
+                    LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
+                    continue;
+                }
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;

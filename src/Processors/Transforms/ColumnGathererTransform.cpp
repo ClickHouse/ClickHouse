@@ -79,7 +79,9 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column = ColumnSparse::create(std::move(result_column));
 
     if (result_column->hasDynamicStructure())
-        result_column->takeDynamicStructureFromSourceColumns(source_columns, max_dynamic_subcolumns);
+        result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
+    if (result_column->hasStatistics())
+        result_column->takeOrCalculateStatisticsFrom(source_columns);
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -91,21 +93,28 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
     if (source_to_fully_copy) /// Was set on a previous iteration
     {
         Chunk res;
-        /// For columns with Dynamic structure we cannot just take column source_to_fully_copy because resulting column may have
-        /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
-        /// We should insert into data resulting column using insertRangeFrom.
+        updateStats(*source_to_fully_copy->column);
+
+        /// For columns with dynamic structure we cannot just take the source column because the resulting
+        /// column may have different dynamic structure (after calling `chooseDynamicStructureForMerge`).
+        /// We need to use `cloneEmpty` + `insertRangeFrom` to properly re-insert data.
         if (result_column->hasDynamicStructure())
         {
             auto col = result_column->cloneEmpty();
             col->insertRangeFrom(*source_to_fully_copy->column, 0, source_to_fully_copy->column->size());
             res.addColumn(std::move(col));
         }
+        /// For columns with statistics only, we can reuse the source column but need to preserve merged statistics.
+        else if (result_column->hasStatistics())
+        {
+            auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
+            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+            res.addColumn(std::move(col));
+        }
         else
         {
             res.addColumn(source_to_fully_copy->column);
         }
-
-        updateStats(*source_to_fully_copy->column);
 
         source_to_fully_copy->pos = source_to_fully_copy->size;
         source_to_fully_copy = nullptr;
@@ -152,6 +161,12 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         {
             auto col = result_column->cloneEmpty();
             col->insertRangeFrom(*source_to_fully_copy->column, 0, source_to_fully_copy->column->size());
+            res.addColumn(std::move(col));
+        }
+        else if (result_column->hasStatistics())
+        {
+            auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
+            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
             res.addColumn(std::move(col));
         }
         else

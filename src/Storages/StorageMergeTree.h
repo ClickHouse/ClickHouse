@@ -96,8 +96,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
 
-    bool hasLightweightDeletedMask() const override;
-
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
@@ -297,7 +295,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

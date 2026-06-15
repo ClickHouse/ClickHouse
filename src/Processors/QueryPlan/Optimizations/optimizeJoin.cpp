@@ -305,14 +305,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName()};
-    }
-
     if (node.children.size() != 1)
         return {};
 
@@ -346,6 +338,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
@@ -735,15 +735,27 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         else
         {
             auto sources = edge.getSourceRelations();
+            bool should_pin = false;
+
             for (auto rel_id : sources)
             {
                 auto it = query_graph.join_kinds.find(rel_id);
                 if (it != query_graph.join_kinds.end())
                 {
-                    query_graph.pinned[edge] = total_inputs - 1;
+                    should_pin = true;
                     break;
                 }
             }
+
+            /// If a condition references only the preserved side of an outer join,
+            /// it must not be placed in that outer join's ON clause, because
+            /// ON-clause conditions on the preserved side only affect matching,
+            /// not filtering — rows from the preserved side are kept regardless.
+            should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
+                [&sources](const auto & partner_info) { return isSubsetOf(sources, partner_info.first); });
+
+            if (should_pin)
+                query_graph.pinned[edge] = total_inputs - 1;
         }
     }
 
@@ -1208,6 +1220,28 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     {
         join_step->setOptimized();
         return;
+    }
+
+    /// Skip join order optimization if children's output headers have overlapping column names.
+    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
+    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
+    /// table aliases collide (e.g. both sides produce `__table2`).
+    {
+        auto left_header = node.children[0]->step->getOutputHeader();
+        auto right_header = node.children[1]->step->getOutputHeader();
+
+        std::unordered_set<std::string_view> left_names;
+        for (const auto & col : *left_header)
+            left_names.insert(col.name);
+
+        for (const auto & col : *right_header)
+        {
+            if (left_names.contains(col.name))
+            {
+                join_step->setOptimized();
+                return;
+            }
+        }
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
