@@ -4649,6 +4649,53 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
+TEST(ReaderExecutor, LongConnectionOpensOnPrefetchPath)
+{
+    /// W3b: a real reader seeks to its starting mark before scanning, so a prefetch machine
+    /// is in flight from the first window and the foreground never takes the synchronous gap
+    /// path that would open the connection - the open must fire at the prefetch launch site.
+    /// Here `seek(0)` puts a machine in flight before window 1 (no manual open); with the
+    /// launch-site open, ONE connection is opened on the foreground and the worker carries +
+    /// continues it across every window, so the whole cold file is one GET. Without it every
+    /// machine would fetch a one-shot (R == window count) and the local-file mock would
+    /// count each as incomplete.
+    const size_t window = 100;
+    const size_t size = 4 * window;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 4096;
+    opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
+    opts.long_connection_limit = limit;
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    ex.seek(0);                                    /// launches a prefetch machine before the first read
+
+    String got;
+    while (true)
+    {
+        auto w = ex.readNextWindow();
+        if (w.empty())
+            break;
+        got += ropeBytes(w);
+    }
+
+    EXPECT_EQ(got, content);
+    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);     /// opened once at the prefetch launch, carried across windows
+    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);
+    EXPECT_FALSE(ex.hasLongConnForTest());          /// drained at the object end
+    EXPECT_EQ(limit->getActiveCount(), 0u);
+}
+
 TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
 {
     /// A held connection that cannot serve the next read (here after a backward seek) is

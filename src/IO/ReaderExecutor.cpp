@@ -2587,10 +2587,20 @@ void ReaderExecutor::maybeTriggerPrefetch()
     m->geometry = read_plan.geometry();
     m->extent_snapshot = read_extent_end;
 
+    /// Open the long connection HERE, on the foreground, for the gap the worker is about
+    /// to fetch: the foreground is the sole opener, so without this a prefetch-driven read
+    /// (the steady state - a machine in flight, the foreground holding nothing) would never
+    /// open one and every machine would fetch a one-shot. The aligned window's first
+    /// physical range gives the object and its object-local offset; `openLongIfWarranted`
+    /// is a no-op when not warranted / at capacity / a usable connection is already held.
+    auto prefetch_ranges = offset_map.map(next_physical_window);
+    if (!prefetch_ranges.empty())
+        openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
+            next_physical_window.offset, prefetch_ranges.front().size, stats);
+
     /// Carry the held long connection into the machine so its fetch extends the same
-    /// open GET (the foreground is the sole opener; a machine only RECEIVES one). Moved
-    /// in BEFORE scheduling so the worker sees it from the start; reclaimed below if the
-    /// schedule fails. Moves an empty optional until the open path is wired in.
+    /// open GET (a machine only RECEIVES one, never opens). Moved in BEFORE scheduling so
+    /// the worker sees it from the start; reclaimed below if the schedule fails.
     m->long_conn = takeLong(long_conn);
 
     /// The machine's single step: a PURE source fetch of the pre-bounded aligned
