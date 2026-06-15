@@ -364,6 +364,11 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
 
 void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    /// Nested Array/Tuple/Map recurse through readField; the depth is bounded by the declared column
+    /// type, but guard the native stack here (on container entry, not on every primitive field)
+    /// against a pathologically deep declared type.
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Array column", getBSONTypeName(bson_type));
 
@@ -396,6 +401,8 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
 
 void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY && bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Tuple column", getBSONTypeName(bson_type));
 
@@ -463,6 +470,8 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Map column", getBSONTypeName(bson_type));
 
@@ -501,10 +510,6 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
 
 bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
-    /// Reading nested Array/Tuple/Map recurses through readField; the depth is bounded by the
-    /// declared column type, but guard the native stack against a pathologically deep declared type.
-    checkStackSize();
-
     if (bson_type == BSONType::NULL_VALUE)
     {
         if (data_type->isNullable())
