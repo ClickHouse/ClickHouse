@@ -388,22 +388,15 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
 /// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails.
 static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
 {
-    try
-    {
-        const auto & from_type = constant_node->getResultType();
+    const auto & from_type = constant_node->getResultType();
 
-        if (from_type->equals(*expr_type))
-            return constant_node->getValue();
+    if (from_type->equals(*expr_type))
+        return constant_node->getValue();
 
-        auto converted = convertFieldToType(constant_node->getValue(), *expr_type, from_type.get(), {}, /*strict=*/true);
-        if (converted.isNull())
-            return std::nullopt;
-        return converted;
-    }
-    catch (const Exception &) /// Ok: conversion failure means we can't optimize, not an error
-    {
+    auto converted = tryConvertFieldToType(constant_node->getValue(), *expr_type, from_type.get(), {}, /*strict=*/true);
+    if (converted.isNull())
         return std::nullopt;
-    }
+    return converted;
 }
 
 enum class BoundaryCheckResult : uint8_t
