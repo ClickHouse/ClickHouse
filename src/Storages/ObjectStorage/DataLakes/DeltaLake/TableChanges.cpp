@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
@@ -162,17 +163,16 @@ DB::Chunk TableChanges::next()
         reinterpret_cast<ArrowSchema *>(&ffi_arrow_data.schema));
 
     if (!record_batch.ok())
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to create chunks batch: {}",
-            record_batch.status().ToString());
-    }
+        DB::throwFromArrowStatus(record_batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
+
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    DB::ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**record_batch);
 
     auto table_result = arrow::Table::FromRecordBatches(std::vector<std::shared_ptr<arrow::RecordBatch>>{*record_batch});
     if (!table_result.ok())
-        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while reading batch of Arrow data: {}", table_result.status().ToString());
+        DB::throwFromArrowStatus(table_result.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Error while reading batch of Arrow data");
 
     const std::shared_ptr<arrow::Table> & table = *table_result;
     const size_t num_rows = (*table_result)->num_rows();
