@@ -4,6 +4,10 @@
 -- represent pruned every granule (false negative). The count with the index must match the count without it.
 
 SET allow_experimental_full_text_index = 1;
+-- The query condition cache is keyed only by the predicate (not by use_skip_indexes), so a skip-index
+-- query that legitimately diverges from the row-level result poisons a later use_skip_indexes = 0 query.
+-- That is orthogonal to what this test checks, so disable the cache to keep the index/no-index pairs comparable.
+SET use_query_condition_cache = 0;
 
 SELECT 'asciiCJK tokenizer (was a false positive)';
 
