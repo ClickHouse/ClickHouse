@@ -1,0 +1,9 @@
+correctness
+42	a
+43	b
+44	c
+explain_check
+Filter column: __applyFilter(_runtime_filter_ID_0, __table1.id) (removed)
+FUNCTION __applyFilter(_runtime_filter_ID_0 :: 1, id :: 0) -> __applyFilter(_runtime_filter_ID_0, __table1.id) UInt8 : 3
+ReadFromMergeTree (default.big)
+BuildRuntimeFilter (Build runtime join filter on __table2.id)
