@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
@@ -323,10 +324,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         /// global top-K. Therefore per-replica pruning cannot lose a correct top-K
         /// result, though the local threshold is weaker than a global one, reducing
         /// pruning effectiveness.
-        UInt64 pruning_level = optimization_settings.topn_aggregation_pruning_level;
-        bool mode2_limit_ok = limit_value <= optimization_settings.topn_aggregation_max_limit;
-
-        if (pruning_level >= 1 && mode2_limit_ok && order_info.output_ordered_by_sort_key)
+        if (order_info.output_ordered_by_sort_key)
         {
             for (auto * union_candidate : agg_node->children)
             {
@@ -340,6 +338,20 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     /// to find the AggregatingStep and ReadFromMergeTree.
                     auto * local_replica = typeid_cast<ReadFromLocalParallelReplicaStep *>(replica_node->step.get());
                     if (!local_replica)
+                        continue;
+
+                    /// The inner plan executes under the subquery context — the same SETTINGS the
+                    /// remote replicas run with. Derive the TopN gates from that context (not from
+                    /// the initiator's `optimization_settings`), so a subquery-level
+                    /// `optimize_topn_aggregation = 0` or `serialize_query_plan = 1` disables the
+                    /// partial rewrite on the local replica too, keeping it consistent with the
+                    /// remotes (which run the standard aggregation path).
+                    auto local_context = local_replica->getContext();
+                    if (!local_context)
+                        continue;
+                    const QueryPlanOptimizationSettings subquery_settings(local_context);
+                    if (!subquery_settings.topn_aggregation || subquery_settings.topn_aggregation_pruning_level < 1
+                        || limit_value > subquery_settings.topn_aggregation_max_limit)
                         continue;
 
                     auto * inner_plan = local_replica->getQueryPlan();

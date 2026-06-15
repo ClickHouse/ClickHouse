@@ -1,0 +1,12 @@
+-- sanity: has Partial only true
+1
+-- subquery disables optimization: no Partial only
+0
+-- subquery serialize_query_plan: no Partial only
+0
+-- subquery disabled: correct top-K
+99	9999
+98	9998
+97	9997
+96	9996
+95	9995

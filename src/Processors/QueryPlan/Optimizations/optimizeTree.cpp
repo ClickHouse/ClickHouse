@@ -418,9 +418,10 @@ void optimizeTreeSecondPass(
             /// subquery's values, exactly the settings that gate an optimization which can call
             /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
             /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
-            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
-            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
-            /// must be added here too.
+            /// (`distinct_in_order`), `tryReuseStorageOrderingForWindowFunctions`
+            /// (`reuse_storage_ordering_for_window_functions`) and `optimizeTopNAggregation`
+            /// (`topn_aggregation`, `topn_aggregation_pruning_level`, `topn_aggregation_max_limit`).
+            /// If a new such optimization is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -431,6 +432,11 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
+                local_optimization_settings.topn_aggregation = subquery_optimization_settings.topn_aggregation;
+                local_optimization_settings.topn_aggregation_pruning_level
+                    = subquery_optimization_settings.topn_aggregation_pruning_level;
+                local_optimization_settings.topn_aggregation_max_limit
+                    = subquery_optimization_settings.topn_aggregation_max_limit;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
