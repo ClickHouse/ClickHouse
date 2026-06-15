@@ -159,3 +159,19 @@ INSERT INTO tab VALUES ('a-b');
 SELECT '- separator-stripping preprocessor, with index', count() FROM tab WHERE hasToken(s, 'a-b');
 SELECT count() FROM tab WHERE hasToken(s, 'a-b') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
 DROP TABLE tab;
+
+SELECT 'hasTokenOrNull + preprocessor must match hasToken (index rewrites the predicate the same way)';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(s, ' ', ''))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab VALUES ('zzz'), ('a b');
+-- The preprocessor collapses the space, so the index stores token 'ab' for row 'a b'. Needle 'a' is absent from the
+-- posting list, so the granule used to be pruned for hasTokenOrNull (returning 0) because hasTokenOrNull was not
+-- rewritten by the preprocessor while the index pruned on preprocessed tokens. It must now behave exactly like
+-- hasToken: the documented preprocessor rewrite hasTokenOrNull(s, 'a') -> hasTokenOrNull(replaceAll(s, ' ', ''), 'a')
+-- runs, so the index gives 0 (the preprocessed row 'ab' has no token 'a') and the raw no-index query gives 1.
+SELECT '- hasTokenOrNull, with index', count() FROM tab WHERE hasTokenOrNull(s, 'a');
+SELECT '- hasToken, with index', count() FROM tab WHERE hasToken(s, 'a');
+SELECT '- hasTokenOrNull, no index', count() FROM tab WHERE hasTokenOrNull(s, 'a') SETTINGS use_skip_indexes = 0;
+SELECT '- hasToken, no index', count() FROM tab WHERE hasToken(s, 'a') SETTINGS use_skip_indexes = 0;
+DROP TABLE tab;

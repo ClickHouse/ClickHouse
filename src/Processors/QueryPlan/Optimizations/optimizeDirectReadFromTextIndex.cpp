@@ -395,7 +395,10 @@ private:
 
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        /// hasTokenOrNull shares hasToken's row-level semantics, so it needs the same needle/haystack
+        /// rewrite; otherwise the index prunes on preprocessed tokens while the predicate stays raw.
+        return function_name == "hasToken" || function_name == "hasTokenOrNull"
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)

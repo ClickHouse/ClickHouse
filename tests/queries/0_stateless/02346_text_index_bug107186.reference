@@ -39,3 +39,8 @@ ill-formed needle (contains a separator): index must not hide the row-level BAD_
 ill-formed needle with a conservative ngrams index: hint path must not hide the error
 ill-formed raw needle but a preprocessor strips the separator: index stays usable
 - separator-stripping preprocessor, with index	1
+hasTokenOrNull + preprocessor must match hasToken (index rewrites the predicate the same way)
+- hasTokenOrNull, with index	0
+- hasToken, with index	0
+- hasTokenOrNull, no index	1
+- hasToken, no index	1
