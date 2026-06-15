@@ -1564,6 +1564,7 @@ class SettingsRandomizer:
         "use_statistics_for_part_pruning": lambda: random.random() > 0.05,
         "use_text_index_like_evaluation_by_dictionary_scan": lambda: random.random() > 0.05,
         "enable_join_fixed_hash_table_conversion": lambda: random.random() > 0.05,
+        "enable_join_runtime_filter_shared_fixed_hash_table": lambda: random.randint(0, 1),
         "optimize_rewrite_has_to_in": lambda: random.random() > 0.05,
         "read_in_order_use_virtual_row_per_block": lambda: random.random() < 0.3,
         "materialize_statistics_on_insert": lambda: random.random() < 0.3,
@@ -1721,6 +1722,8 @@ class MergeTreeSettingsRandomizer:
         #"add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
         #"add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
         "concurrent_part_removal_threshold_for_remote_disk": lambda: random.choice([0, 1, 16, 100]),
+        "materialize_projections_on_insert": lambda: random.randint(0, 1),
+        "materialize_projections_on_merge": lambda: random.randint(0, 1),
         #"part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
     }
 
