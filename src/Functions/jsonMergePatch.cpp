@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_RAPIDJSON
@@ -37,7 +36,7 @@ namespace
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionJSONMergePatch final : public IFunction
+    class FunctionJSONMergePatch : public IFunction
     {
     public:
         static constexpr auto name = "JSONMergePatch";
@@ -111,7 +110,7 @@ namespace
             if (!first_column_arg_string)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
-            VectorWithMemoryTracking<rapidjson::Document> merged_jsons;
+            std::vector<rapidjson::Document> merged_jsons;
             merged_jsons.reserve(input_rows_count);
 
             for (size_t i = 0; i < input_rows_count; ++i)

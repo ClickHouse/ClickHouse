@@ -30,7 +30,7 @@ SELECT columns_transformers.* EXCEPT j APPLY avg()
 FROM columns_transformers
 SELECT a.* APPLY toDate() EXCEPT (i, j) APPLY any()
 FROM columns_transformers AS a
-SELECT * REPLACE (plus(i, 1) AS i) APPLY sum()
+SELECT * REPLACE (i + 1 AS i) APPLY sum()
 FROM columns_transformers
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
@@ -49,7 +49,7 @@ SelectWithUnionQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
       TableIdentifier columns_transformers
-SELECT sum(plus(i, 1) AS m)
+SELECT sum(i + 1 AS m)
 FROM columns_transformers
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
@@ -65,11 +65,11 @@ SelectWithUnionQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
       TableIdentifier columns_transformers
-SELECT columns_transformers.* REPLACE (plus(j, 2) AS j, plus(i, 1) AS i) APPLY avg()
+SELECT columns_transformers.* REPLACE (j + 2 AS j, i + 1 AS i) APPLY avg()
 FROM columns_transformers
-SELECT a.* APPLY toDate() REPLACE (plus(i, 1) AS i) APPLY any()
+SELECT a.* APPLY toDate() REPLACE (i + 1 AS i) APPLY any()
 FROM columns_transformers AS a
-SELECT * REPLACE (plus(i, 1) AS i) REPLACE (plus(i, 1) AS i)
+SELECT * REPLACE (i + 1 AS i) REPLACE (i + 1 AS i)
 FROM columns_transformers
 220	18	347
 SELECT COLUMNS(i, j, k) APPLY sum()
