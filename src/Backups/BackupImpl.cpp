@@ -435,15 +435,13 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            /// The base backup locator is always persisted without inline `S3` credentials (locators of other
-            /// backup engines, e.g. `AzureBlobStorage`, are persisted as is for now). To open the base backup
-            /// at restore time the credentials are taken from the restore source locator (with the
-            /// `use_same_s3_credentials_for_base_backup` setting or the marker below), from the `base_backup`
-            /// setting, or from the server-side configuration. Existing backups with credentials embedded
-            /// in the metadata by older versions remain restorable as is.
-            *out << "<base_backup>" << xml << base_backup_info->withoutS3Credentials(params.context).toString() << "</base_backup>";
+            /// Persist base backup locators without inline `S3` credentials.
+            BackupInfo base_backup_info_for_metadata = base_backup_info->withoutS3Credentials(params.context);
+            bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != base_backup_info->toString();
+
+            *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
-            if (params.use_same_s3_credentials_for_base_backup)
+            if (params.use_same_s3_credentials_for_base_backup || base_backup_credentials_were_stripped)
                 *out << "<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>";
         }
     }
