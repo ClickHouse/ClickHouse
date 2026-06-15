@@ -207,20 +207,25 @@ class JobConfigs:
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()
-        command="python3 ./ci/jobs/fast_test.py",
+        # Alias 127.0.0.2+ on lo0 before the tests (macOS does not auto-route
+        # 127.0.0.0/8 like Linux) so remote()/cluster() tests can reach them.
+        # Idempotent: skip an address already aliased. Chained with && and || exit 1
+        # so a real alias failure stops before fast_test.py instead of letting the
+        # tests run and report misleading socket timeouts.
+        command=(
+            'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " '
+            "|| sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done "
+            "&& python3 ./ci/jobs/fast_test.py"
+        ),
         digest_config=darwin_fast_test_digest_config,
         result_name_for_cidb="Tests",
         pre_hooks=[
             "sudo rm -rf /Library/Logs/DiagnosticReports/*",
-            # macOS does not auto-route 127.0.0.0/8 like Linux; alias 127.0.0.2+ on
-            # lo0 so remote()/cluster() tests can reach them. Idempotent (skip if the
-            # alias is already present) and fail-closed (abort the job on a real failure
-            # instead of letting tests later report misleading socket timeouts).
-            'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " || sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done',
         ],
         post_hooks=[
-            # Remove the lo0 aliases added in pre_hooks: the macos_m2 runner is reused,
-            # so leftover aliases make 127.0.0.2+ look local to later jobs. Best-effort.
+            # Remove the lo0 aliases added before the run: the macos_m2 runner is
+            # reused, so leftover aliases make 127.0.0.2+ look local to later jobs.
+            # Best-effort (post_hooks run regardless of job pass/fail).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
