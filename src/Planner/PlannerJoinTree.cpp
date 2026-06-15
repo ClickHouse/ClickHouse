@@ -899,12 +899,12 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
+    const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
     bool is_single_table_expression,
-    bool wrap_read_columns_in_subquery,
-    bool can_drive_parallel_replicas_for_join_tree)
+    bool wrap_read_columns_in_subquery)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1319,7 +1319,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && can_drive_parallel_replicas_for_join_tree)
+                        && parent_join_tree
+                        && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
 
@@ -2040,14 +2041,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
     }
 
-    /// Eligibility for the leftmost leaf to absorb the entire join into a single
-    /// parallel-replicas plan at WithMergeableState. Non-leftmost leaves must always
-    /// pass `false`: only one leaf can drive the absorption, and the planner contract
-    /// is that it must be the leftmost. See the early-return below.
-    const auto & query_context_for_eligibility = planner_context->getQueryContext();
-    const bool leftmost_can_drive_parallel_replicas = allowParallelReplicasForJoinTree(
-        parent_join_tree_for_leftmost, query_context_for_eligibility, query_context_for_eligibility->getSettingsRef());
-
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
       *
@@ -2085,12 +2078,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
+        parent_join_tree_for_leftmost,
         select_query_info,
         select_query_options,
         planner_context,
         is_single_table_expression,
-        should_wrap_left_table /*wrap_read_columns_in_subquery*/,
-        leftmost_can_drive_parallel_replicas /*can_drive_parallel_replicas_for_join_tree*/);
+        should_wrap_left_table /*wrap_read_columns_in_subquery*/);
     if (left_table_expression_query_plan.stage != QueryProcessingStage::FetchColumns)
         return left_table_expression_query_plan;
 
@@ -2185,12 +2178,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
+                nullptr /*parent_join_tree*/,
                 select_query_info,
                 select_query_options,
                 planner_context,
                 is_single_table_expression,
-                is_remote /*wrap_read_columns_in_subquery*/,
-                /*can_drive_parallel_replicas_for_join_tree=*/ false));
+                is_remote /*wrap_read_columns_in_subquery*/));
         }
     }
 
