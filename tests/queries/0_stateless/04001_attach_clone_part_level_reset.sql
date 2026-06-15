@@ -4,8 +4,12 @@
 -- Adopting a part from a plain MergeTree into a collapsing engine (Replacing/Summing/
 -- Aggregating) used to keep the source part's merge level. A lone level>0 part is treated
 -- as fully merged and skipped by FINAL/OPTIMIZE, so duplicate ORDER BY keys survived
--- (issue #106798). The adopted part's level is now reset to 0 when the source and target
--- engines differ, so FINAL/OPTIMIZE deduplicate it.
+-- (issue #106798). The adopted part's level is now reset to 0 unless this table would merge
+-- the part with identical semantics, so FINAL/OPTIMIZE deduplicate it. The level is only
+-- preserved when the full merge semantics match (mode and every MergingParams field), not
+-- just the mode: same-mode tables can differ in columns_to_sum / is_deleted_column / etc.,
+-- and the destination would otherwise treat a part merged under different semantics as
+-- already-merged.
 
 DROP TABLE IF EXISTS src_mt;
 DROP TABLE IF EXISTS dst_rmt_clone;
@@ -17,6 +21,10 @@ DROP TABLE IF EXISTS src_mt_move;
 DROP TABLE IF EXISTS dst_rmt_move;
 DROP TABLE IF EXISTS src_rmt_same;
 DROP TABLE IF EXISTS dst_rmt_same;
+DROP TABLE IF EXISTS src_smt_b;
+DROP TABLE IF EXISTS dst_smt_c;
+DROP TABLE IF EXISTS src_rmt_ver;
+DROP TABLE IF EXISTS dst_rmt_ver_del;
 
 -- A source MergeTree part at level 1 (merged, but no dedup under MergeTree semantics).
 CREATE TABLE src_mt (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
@@ -74,6 +82,34 @@ ALTER TABLE dst_rmt_same ATTACH PARTITION tuple() FROM src_rmt_same;
 SELECT 'same engine level preserved', max(level) > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'dst_rmt_same' AND active;
 SELECT 'same engine final', count() FROM dst_rmt_same FINAL;
 
+-- Same mode (Summing), DIFFERENT columns_to_sum. checkStructureAndGetMergeTreeData does not
+-- compare MergingParams, so this ATTACH is allowed. The source row (2, 9, 0) has its
+-- destination-summed column c = 0; under the destination's columns_to_sum = c it is an
+-- all-zero row that must be dropped on merge. If the level>0 part were preserved, OPTIMIZE
+-- with optimize_skip_merged_partitions would skip the lone part and the row would survive.
+CREATE TABLE src_smt_b (k UInt32, b Int64, c Int64) ENGINE = SummingMergeTree(b) ORDER BY k;
+INSERT INTO src_smt_b VALUES (1, 5, 7);
+INSERT INTO src_smt_b VALUES (2, 9, 0);
+OPTIMIZE TABLE src_smt_b FINAL;
+CREATE TABLE dst_smt_c (k UInt32, b Int64, c Int64) ENGINE = SummingMergeTree(c) ORDER BY k;
+ALTER TABLE dst_smt_c ATTACH PARTITION tuple() FROM src_smt_b;
+SELECT 'summing diff columns_to_sum level', max(level) FROM system.parts WHERE database = currentDatabase() AND table = 'dst_smt_c' AND active;
+OPTIMIZE TABLE dst_smt_c FINAL SETTINGS optimize_skip_merged_partitions = 1;
+SELECT 'summing diff columns_to_sum rows', k, b, c FROM dst_smt_c ORDER BY k;
+
+-- Same mode (Replacing), DIFFERENT is_deleted_column. The source has no is_deleted handling;
+-- the destination uses del as is_deleted, so a level>0 part merged under the source's
+-- semantics must not be trusted as already-merged. Reset to 0 lets FINAL apply the
+-- destination's is_deleted cleanup.
+CREATE TABLE src_rmt_ver (k UInt32, ver UInt64, del UInt8) ENGINE = ReplacingMergeTree(ver) ORDER BY k;
+INSERT INTO src_rmt_ver VALUES (1, 1, 0);
+INSERT INTO src_rmt_ver VALUES (1, 2, 1);
+OPTIMIZE TABLE src_rmt_ver FINAL;
+CREATE TABLE dst_rmt_ver_del (k UInt32, ver UInt64, del UInt8) ENGINE = ReplacingMergeTree(ver, del) ORDER BY k;
+ALTER TABLE dst_rmt_ver_del ATTACH PARTITION tuple() FROM src_rmt_ver;
+SELECT 'replacing diff is_deleted level', max(level) FROM system.parts WHERE database = currentDatabase() AND table = 'dst_rmt_ver_del' AND active;
+SELECT 'replacing diff is_deleted final', count() FROM dst_rmt_ver_del FINAL;
+
 DROP TABLE src_mt;
 DROP TABLE dst_rmt_clone;
 DROP TABLE dst_rmt_attach;
@@ -84,3 +120,7 @@ DROP TABLE src_mt_move;
 DROP TABLE dst_rmt_move;
 DROP TABLE src_rmt_same;
 DROP TABLE dst_rmt_same;
+DROP TABLE src_smt_b;
+DROP TABLE dst_smt_c;
+DROP TABLE src_rmt_ver;
+DROP TABLE dst_rmt_ver_del;
