@@ -7,6 +7,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -25,6 +26,7 @@
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -52,6 +54,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -76,6 +79,7 @@
 #include <algorithm>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -137,12 +141,16 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 using String = std::string;
 
 namespace
 {
+/// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
+constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -151,8 +159,19 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive)
+    bool recursive,
+    size_t depth)
 {
+    if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "Maximum recursion depth ({}) exceeded while listing files for pattern '{}'.",
+            MAX_LIST_FILES_RECURSION_DEPTH, for_match);
+
+    /// On systems with small stacks (e.g., Musl) the depth cap above is not enough on its own,
+    /// because each recursion frame can be large. Probe the remaining stack periodically.
+    if (depth % 16 == 0)
+        checkStackSize();
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -234,12 +253,11 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive);
+                                                total_bytes_to_read, result, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-                /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false);
+                                                total_bytes_to_read, result, false, depth + 1);
         }
     }
 }
@@ -253,7 +271,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0);
 
     return result;
 }
@@ -1469,6 +1487,8 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 
 Chunk StorageFileSource::generate()
 {
+    const bool is_one_format = Poco::toLower(storage->format_name) == "one";
+
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -1495,12 +1515,23 @@ Chunk StorageFileSource::generate()
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
-                        read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
-                        if (!read_buf)
-                            continue;
+                        if (is_one_format)
+                        {
+                            if (!archive_reader->fileExists(*filename_override))
+                                continue;
 
-                        if (auto progress_callback = getContext()->getFileProgressCallback())
-                            progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                            read_buf = std::make_unique<EmptyReadBuffer>();
+                        }
+                        else
+                        {
+                            read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
+                            if (!read_buf)
+                                continue;
+
+                            if (auto progress_callback = getContext()->getFileProgressCallback())
+                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                        }
                     }
                     else
                     {
@@ -1547,9 +1578,17 @@ Chunk StorageFileSource::generate()
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
-                        read_buf = archive_reader->readFile(std::move(file_enumerator));
-                        if (auto progress_callback = getContext()->getFileProgressCallback())
-                            progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                        if (is_one_format)
+                        {
+                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                            read_buf = std::make_unique<EmptyReadBuffer>();
+                        }
+                        else
+                        {
+                            read_buf = archive_reader->readFile(std::move(file_enumerator));
+                            if (auto progress_callback = getContext()->getFileProgressCallback())
+                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                        }
                     }
                 }
                 else
@@ -1598,7 +1637,13 @@ Chunk StorageFileSource::generate()
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
-                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                if (is_one_format)
+                {
+                    /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                    read_buf = std::make_unique<EmptyReadBuffer>();
+                }
+                else
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
             size_t file_num = 0;
@@ -1830,6 +1875,12 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
+
+    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+        prepareEagerKeyConditionSets(
+            filter_actions_dag,
+            storage_snapshot, info.source_header,
+            query_info.prewhere_info, query_info.row_level_filter, getContext());
 
     createIterator(predicate);
 }
@@ -2500,7 +2551,117 @@ void registerStorageFile(StorageFactory & factory)
             /// User's file
             return std::make_shared<StorageFile>(*file_source, storage_args);
         },
-        storage_features);
+        storage_features,
+        Documentation{
+            .description = R"DOCS_MD(
+The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
+
+Usage scenarios:
+
+- Data export from ClickHouse to file.
+- Convert data from one format to another.
+- Updating data in ClickHouse via editing a file on a disk.
+
+:::note
+This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/sql-reference/table-functions/s3.md).
+:::
+
+## Usage in ClickHouse Server {#usage-in-clickhouse-server}
+
+```sql
+File(Format)
+```
+
+The `Format` parameter specifies one of the available file formats. To perform
+`SELECT` queries, the format must be supported for input, and to perform
+`INSERT` queries – for output. The available formats are listed in the
+[Formats](/interfaces/formats#formats-overview) section.
+
+ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
+
+When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it's put into `data.Format` file in that subdirectory.
+
+You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
+
+:::note
+Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+:::
+
+## Example {#example}
+
+**1.** Set up the `file_engine_table` table:
+
+```sql
+CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
+```
+
+By default ClickHouse will create folder `/var/lib/clickhouse/data/default/file_engine_table`.
+
+**2.** Manually create `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` containing:
+
+```bash
+$ cat data.TabSeparated
+one 1
+two 2
+```
+
+**3.** Query the data:
+
+```sql
+SELECT * FROM file_engine_table
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+## Usage in ClickHouse-local {#usage-in-clickhouse-local}
+
+In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
+
+**Example:**
+
+```bash
+$ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
+```
+
+## Details of Implementation {#details-of-implementation}
+
+- Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
+- Supported creating new file by `INSERT` query.
+- If file exists, `INSERT` would append new values in it.
+- Not supported:
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - Indices
+  - Replication
+
+## PARTITION BY {#partition-by}
+
+`PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+
+## Virtual columns {#virtual-columns}
+
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+
+## Settings {#settings}
+
+- [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+- [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [engine_file_allow_create_multiple_files](/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_skip_empty_files](/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+)DOCS_MD",
+            .syntax = "ENGINE = File(format[, path | fd])",
+            .related = {"URL"}});
 }
 
 SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
