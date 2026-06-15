@@ -4651,9 +4651,11 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
 
 TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
 {
-    /// W2: a held connection that cannot serve the next read (here after a backward
-    /// seek) is dropped in `readFromSource`, and the read falls through to a one-shot;
-    /// the drop accounts an incomplete connection (its tail too big to drain).
+    /// A held connection that cannot serve the next read (here after a backward seek) is
+    /// dropped before the fetch, accounting an incomplete connection (its tail too big to
+    /// drain). The new position begins a long forward run, so a fresh long connection is
+    /// opened to serve it - the drop is observable through the incomplete count and the
+    /// still-held slot, not through a one-shot fallback.
     const size_t window = 100;
     const size_t size = 4 * window;
     String content(size, 0);
@@ -4682,13 +4684,13 @@ TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
     ex.seek(window / 2);                           /// backward; seek keeps the connection
     EXPECT_TRUE(ex.hasLongConnForTest());
 
-    auto r1 = ex.readNextWindow();                 /// cannot continue (backward) -> drop + one-shot
+    auto r1 = ex.readNextWindow();                 /// cannot continue (backward) -> drop, then reopen
     EXPECT_EQ(ropeBytes(r1), content.substr(window / 2, window));
-    EXPECT_FALSE(ex.hasLongConnForTest());         /// dropped
-    /// The drop accounts an incomplete connection (tail too big to drain); the one-shot
-    /// fallback adds another here because this local-file mock cannot right-bound a
-    /// read, so assert >= 1 rather than exactly 1 (the precise drop accounting is
-    /// covered in isolation by LongConnectionDropBeforeBoundCountsIncomplete).
+    EXPECT_TRUE(ex.hasLongConnForTest());          /// a fresh connection serves the new forward run
+    EXPECT_EQ(ex.longConnPositionForTest(), window / 2 + window);
+    /// The dropped connection accounts an incomplete connection (tail too big to drain).
+    /// The precise drop accounting in isolation is covered by
+    /// LongConnectionDropBeforeBoundCountsIncomplete.
     EXPECT_GE(ex.incompleteConnectionsForTest(), 1u);
-    EXPECT_EQ(limit->getActiveCount(), 0u);
+    EXPECT_EQ(limit->getActiveCount(), 1u);        /// the reopened connection holds the slot
 }

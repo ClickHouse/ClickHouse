@@ -329,7 +329,7 @@ private:
     /// the open stream (`skipForward`); a read it cannot continue reopens. Move-only
     /// so it can ride the `FetchMachine` payload as a SINGLE owner (foreground member
     /// <-> machine payload, never shared across threads). Offsets are OBJECT-LOCAL (a
-    /// GET streams one object); `read_until` is the predicted-reach bound, set ONCE.
+    /// GET streams one object); `read_until` is the read-extent bound, set ONCE.
     struct LongConnection
     {
         std::unique_ptr<ReadBufferFromFileBase> buffer;
@@ -634,10 +634,24 @@ private:
     /// end when the size is known (an unknown-size object has no end to clamp).
     size_t clampReach(size_t reach, size_t phys_off) const;
 
-    /// Whether to open a long connection at physical `phys_off`: the predicted reach
-    /// exceeds the current read window. NOT wired into the read path yet (returns
-    /// false); the structural rule lands with the read-rule funnel.
+    /// Whether to open a long connection at physical `phys_off`: the estimator's
+    /// predicted contiguous reach exceeds the current read window, a connection slot is
+    /// configured (`reader_executor_use_long_connections`), and pressure is not
+    /// High/Critical (the open is speculative, like prefetch).
     bool shouldOpenLong(size_t phys_off) const;
+
+    /// The long-connection bound (object-local) for an open at physical `phys_offset`:
+    /// the read extent clamped to the object end. See the definition for why the bound
+    /// is the extent, not the predicted reach.
+    size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const;
+
+    /// Foreground open hook: when `shouldOpenLong(phys_offset)` and a slot can be
+    /// acquired, open a long connection over `object` (object-local `object_offset`),
+    /// bounded at `longConnectionBound`, so the following source read - and the windows
+    /// after it - drain it. A no-op when already held / not warranted / at capacity
+    /// (then the read falls back to a one-shot).
+    void openLongIfWarranted(const StoredObject & object, size_t object_offset,
+        size_t phys_offset, size_t want, Stats & out_stats);
 
     /// Open a bounded GET over `object` at object-local `offset`, bounded at
     /// object-local `read_until`, taking the already-acquired `slot`; store it in

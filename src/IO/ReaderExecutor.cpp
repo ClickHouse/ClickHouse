@@ -14,6 +14,7 @@
 #include <base/getThreadId.h>
 #include <Interpreters/ReaderExecutorLog.h>
 #include <chrono>
+#include <limits>
 
 #include "config.h"
 
@@ -1270,6 +1271,10 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             std::sort(splits.begin(), splits.end());
 
             auto blocks = allocateBlocks(pr.size, window_block_size, splits);
+            /// W3: open a long source connection for this gap when the run is long, so
+            /// the read below drains it (and the following windows continue the same GET
+            /// instead of a one-shot per window).
+            openLongIfWarranted(pr.object, pr.object_offset, logical_pos, pr.size, out_stats);
             StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
             Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
                 read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
@@ -1746,11 +1751,60 @@ size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
     return end;
 }
 
-bool ReaderExecutor::shouldOpenLong(size_t /*phys_off*/) const
+bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
 {
-    /// Stage 1: the open path is not wired. The structural rule (a connection whose
-    /// range exceeds the current read window is "long") lands with the read funnel.
-    return false;
+    /// Open a long connection when the estimator's predicted contiguous reach runs past
+    /// the current read window - "a connection whose range exceeds the read window is
+    /// long". Gated by the connection limit (the `reader_executor_use_long_connections`
+    /// setting); suppressed under High/Critical pressure exactly where prefetch is.
+    if (long_conn || !long_connection_limit)
+        return false;
+    const MemoryPressureLevel level
+        = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
+    if (effectivePrefetchWindowSize(level) == 0)
+        return false;
+    return clampReach(continuity_tracker.predictedReach(), phys_off) > phys_off + effectiveWindowSize(level);
+}
+
+size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
+{
+    /// The channel bound, in object-local coordinates. Bound to the read extent - how
+    /// far the reader will consume this pass - clamped to the object end. A full-scan
+    /// extent lets the channel span the whole object, so `serveFromLong` bridges cached
+    /// gaps up to `min_bytes_for_seek` (over-read) and the channel breaks - leaving an
+    /// incomplete connection - only at wider gaps; a bounded read (one reverse chunk)
+    /// keeps the channel from over-running, so it drains cleanly at the chunk end. The
+    /// predicted reach decides only WHETHER to open (`shouldOpenLong`), never how far: it
+    /// reflects only the current look-ahead and would strand the channel mid-run.
+    const size_t object_base = phys_offset - object_offset;
+    size_t phys_bound = std::numeric_limits<size_t>::max();
+    if (!hasUnknownSize())
+        phys_bound = object_base + object.bytes_size;
+    if (read_extent_end)
+        phys_bound = std::min(phys_bound, *read_extent_end + data_start_offset);
+    return phys_bound - object_base;
+}
+
+void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t object_offset,
+    size_t phys_offset, size_t want, Stats & out_stats)
+{
+    /// Drop a held channel that cannot serve THIS fetch - wrong object, or a gap wider
+    /// than `min_bytes_for_seek` - before deciding to open, so a fresh channel covers the
+    /// run from its first byte. `readFromSource` drops it too, but that drop happens AFTER
+    /// this open hook: leaving it held here makes `shouldOpenLong` skip the open (a channel
+    /// is still set), the current window degrades to a one-shot, and the fresh channel
+    /// opens only on the NEXT window - doubling the GET count of every cold run that
+    /// follows a wide cached gap. A channel that CAN continue is left for `serveFromLong`.
+    if (long_conn && !(long_conn->servesObject(object.remote_path)
+            && long_conn->canContinue(phys_offset, want, min_bytes_for_seek)))
+        dropLong(long_conn, out_stats);
+    if (!shouldOpenLong(phys_offset))
+        return;
+    LongConnectionSlot slot = long_connection_limit->tryAcquire(long_connection_limit);
+    if (!slot)
+        return;   /// at capacity - the read falls back to a one-shot
+    openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
+        std::move(slot), out_stats);
 }
 
 void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const StoredObject & object,
