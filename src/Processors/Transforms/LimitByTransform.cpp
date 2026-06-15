@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -266,6 +267,13 @@ void LimitByTransform::transform(Chunk & chunk)
     if (row_count == 0)
         return;
 
+    /// `output_slices` is a member scratch buffer reused across chunks. If anything
+    /// below throws (e.g. MEMORY_LIMIT_EXCEEDED while growing the grouping hash table),
+    /// `ISimpleTransform::work` keeps this transform alive and may call `transform`
+    /// again on the next chunk, so the buffer must be cleared on every exit path, not
+    /// only on success.
+    SCOPE_EXIT({ output_slices.clear(); });
+
     auto chunk_columns = chunk.detachColumns();
 
     /// `filterNonConstKeys` removed all grouping keys, so every row in this chunk
@@ -308,8 +316,8 @@ void LimitByTransform::transform(Chunk & chunk)
     if (output_slices.empty())
         return;
 
+    /// `output_slices` is reset by the SCOPE_EXIT above.
     const UInt64 output_row_count = materializeSlicesIntoChunk(chunk, std::move(chunk_columns), row_count, output_slices);
-    output_slices.clear();
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(output_row_count);
@@ -381,6 +389,12 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     if (row_count == 0)
         return;
 
+    /// `output_slices` is a member scratch buffer reused across chunks. If anything
+    /// below throws, `ISimpleTransform::work` keeps this transform alive and may call
+    /// `transform` again on the next chunk, so the buffer must be cleared on every exit
+    /// path, not only on success.
+    SCOPE_EXIT({ output_slices.clear(); });
+
     auto chunk_columns = chunk.detachColumns();
 
     Columns normalized_grouping_key_columns;
@@ -422,8 +436,8 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     if (output_slices.empty())
         return;
 
+    /// `output_slices` is reset by the SCOPE_EXIT above.
     const UInt64 output_row_count = materializeSlicesIntoChunk(chunk, std::move(chunk_columns), row_count, output_slices);
-    output_slices.clear();
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(output_row_count);
