@@ -43,7 +43,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char thread_group_switcher_attach_failure[];
-    extern const char thread_group_link_thread_failure[];
 }
 
 namespace Setting
@@ -184,10 +183,6 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
-    fiu_do_on(FailPoints::thread_group_link_thread_failure,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in ThreadGroup::linkThread");
-    });
     thread_ids.insert(thread_id);
 
     if (active_thread_count == 0)
