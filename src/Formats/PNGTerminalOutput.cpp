@@ -1,5 +1,7 @@
 #include <Formats/PNGTerminalOutput.h>
 
+#if USE_LIBPNG && USE_BASE64
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -7,6 +9,9 @@
 #include <string>
 #include <vector>
 
+#include <libbase64.h>
+
+#include <IO/Base64WriteBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
@@ -69,40 +74,6 @@ namespace
         return t.starts_with("foot") || t == "mlterm" || t.starts_with("yaft");
     }
 
-    /// Standard base64 (with `=` padding, no line breaks), streamed directly to `out` so the whole encoded
-    /// string is never materialized. The image bytes can be large, and a separate base64 buffer would be ~1.33x
-    /// of that on top of it, untracked by the throwing memory tracker.
-    void writeBase64(WriteBuffer & out, std::string_view data)
-    {
-        static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        const auto * src = reinterpret_cast<const UInt8 *>(data.data());
-        const size_t size = data.size();
-
-        char quad[4];
-        size_t i = 0;
-        for (; i + 3 <= size; i += 3)
-        {
-            const UInt32 triple = (UInt32(src[i]) << 16) | (UInt32(src[i + 1]) << 8) | src[i + 2];
-            quad[0] = alphabet[(triple >> 18) & 0x3F];
-            quad[1] = alphabet[(triple >> 12) & 0x3F];
-            quad[2] = alphabet[(triple >> 6) & 0x3F];
-            quad[3] = alphabet[triple & 0x3F];
-            out.write(quad, 4);
-        }
-
-        /// Encode the trailing 1 or 2 bytes, padding the missing input with `=`.
-        if (i < size)
-        {
-            const bool has_two = size - i == 2;
-            const UInt32 triple = (UInt32(src[i]) << 16) | (has_two ? UInt32(src[i + 1]) << 8 : 0);
-            quad[0] = alphabet[(triple >> 18) & 0x3F];
-            quad[1] = alphabet[(triple >> 12) & 0x3F];
-            quad[2] = has_two ? alphabet[(triple >> 6) & 0x3F] : '=';
-            quad[3] = '=';
-            out.write(quad, 4);
-        }
-    }
-
     void writeSixelRun(WriteBuffer & out, char ch, size_t count)
     {
         if (count == 0)
@@ -161,7 +132,12 @@ void writeImageITerm(WriteBuffer & out, std::string_view png)
     writeCString("\033]1337;File=inline=1;size=", out);
     writeIntText(png.size(), out);
     writeChar(':', out);
-    writeBase64(out, png);
+    {
+        /// Stream the base64 of the whole payload into `out` without materializing it (the image can be large).
+        Base64WriteBuffer base64(out);
+        base64.write(png.data(), png.size());
+        base64.finalize();
+    }
     writeChar('\a', out);
     writeChar('\n', out);
 }
@@ -172,10 +148,13 @@ void writeImageKitty(WriteBuffer & out, std::string_view png)
     /// The first chunk declares the PNG format (f=100) and the transmit-and-display action (a=T);
     /// `m=1` marks that more chunks follow, `m=0` marks the last one.
     ///
-    /// Each chunk carries at most KITTY_CHUNK_SIZE base64 bytes. base64 expands 3 input bytes to 4, so feeding
-    /// the image in blocks of KITTY_CHUNK_SIZE / 4 * 3 bytes produces full, unpadded chunks (every block but the
-    /// last is a multiple of 3 bytes), letting us stream the encoding without materializing the whole base64.
+    /// Each chunk carries at most KITTY_CHUNK_SIZE base64 bytes. base64 expands 3 input bytes to 4, so a block
+    /// of KITTY_CHUNK_SIZE / 4 * 3 input bytes encodes to exactly KITTY_CHUNK_SIZE base64 bytes. Every block but
+    /// the last is a multiple of 3 bytes, so each is encoded independently with no carry between chunks.
     static constexpr size_t INPUT_CHUNK_SIZE = KITTY_CHUNK_SIZE / 4 * 3;
+    /// A full input block encodes to exactly KITTY_CHUNK_SIZE base64 bytes; the extra bytes are slack that
+    /// libbase64 asks callers to leave past the 4/3 output size.
+    char encoded[KITTY_CHUNK_SIZE + 16];
     size_t offset = 0;
     bool first = true;
 
@@ -190,7 +169,11 @@ void writeImageKitty(WriteBuffer & out, std::string_view png)
         writeCString("m=", out);
         writeChar(last ? '0' : '1', out);
         writeChar(';', out);
-        writeBase64(out, png.substr(offset, len));
+
+        size_t encoded_size = 0;
+        base64_encode(png.data() + offset, len, encoded, &encoded_size, 0);
+        out.write(encoded, encoded_size);
+
         writeCString("\033\\", out);
 
         offset += len;
@@ -329,3 +312,5 @@ void writeImageSixel(WriteBuffer & out, const UInt8 * pixels, size_t width, size
 }
 
 }
+
+#endif
