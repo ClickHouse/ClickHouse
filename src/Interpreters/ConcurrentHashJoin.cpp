@@ -1036,13 +1036,13 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
                 payload_rows += columns_info->rows();
     }
 
-    /// Select the row store columns and their indexes based on the first hash join data.
+    /// The `max_row_store_bytes` budget is scaled by the number of hash join slots.
     const auto & block = first_hash_join->savedBlockSample();
     auto access_indexes_opt = HashJoin::computeColumnAccessIndexes(
         block,
         column_replicated_flags,
         payload_rows,
-        table_join->maxBytesForHashJoinRowStore(),
+        table_join->maxBytesForHashJoinRowStore() * slots,
         table_join->minColumnsForHashJoinRowStore());
 
     if (!access_indexes_opt)

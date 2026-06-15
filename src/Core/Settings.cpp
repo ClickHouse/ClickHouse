@@ -7895,8 +7895,8 @@ When the hash join build side has been converted to a FixedHashMap (see `enable_
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, R"(
 Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.
 )", 0) \
-    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 5_GiB, R"(
-Maximum number of bytes to place into the row-major hash join storage. 0 means no limit.
+    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 128_MiB, R"(
+Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled the number of instances. 0 means no limit.
 )", 0) \
     \
     /* ####################################################### */ \

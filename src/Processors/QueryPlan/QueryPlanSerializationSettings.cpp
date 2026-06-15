@@ -115,7 +115,7 @@ namespace DB
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, true, R"(Use the hash join's FixedHashMap as the runtime filter for the probe side, replacing the Set/BloomFilter built upstream by the runtime filter framework)", 0) \
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, "Minimum number of payload columns to trigger transforming hash join payload to row major. 0 disables the row transformation.", 0) \
-    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 5_GiB, "Maximum total bytes of build-side data below which the hash join payload is transformed to row-major format. 0 means no maximum.", 0) \
+    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 128_MiB, "Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled the number of instances. 0 means no limit.", 0) \
 
 
 // clang-format on
