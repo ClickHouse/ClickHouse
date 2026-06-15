@@ -2681,6 +2681,12 @@ If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
 Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
 )", 0) \
+    DECLARE(Bool, enable_s2_index_pruning, false, R"(
+Allow `s2RectContains`, `s2CapContains`, and `s2CellsIntersect` to be used as key conditions for primary key index pruning. When the key column stores S2 cell identifiers, this enables granule-level spatial filtering so that non-matching granules are skipped during reads. At parse time the query region is decomposed into a tight `S2CellUnion` covering; at eval time each granule's `[cell_min, cell_max]` Hilbert-curve interval is tested directly against the covering, bypassing the common-ancestor over-approximation.
+)", 0) \
+    DECLARE(UInt64, s2_max_covering_cells, 8, R"(
+Maximum number of S2 cells used to approximate the query region when `enable_s2_index_pruning` is enabled. Higher values produce tighter coverings (fewer false-positive granules) at the cost of slightly more comparisons per granule. Has no effect for `s2CellsIntersect`, which always uses a single-cell exact covering regardless of this setting.
+)", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
@@ -4187,6 +4193,13 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 )", BETA) \
     DECLARE(Bool, functions_h3_default_if_invalid, false, "If false, h3 functions, e.g. h3CellAreaM2, throw an exception if input is invalid. If true, they return 0 or default value.", 0) \
+    DECLARE(Bool, st_function_use_spherical, true, R"(
+Controls the coordinate system used by `ST_Within`, `ST_Contains`, `ST_CoveredBy`, `ST_Covers`,
+`ST_Equals`, `ST_Intersects`, and `ST_Touches` functions. When true (default), these functions
+operate in spherical coordinates (longitude/latitude in degrees), consistent with BigQuery semantics.
+When false, they operate in Cartesian (flat/planar) coordinates. The explicit `geo*Cartesian` and
+`geo*Spherical` function variants are not affected by this setting.
+)", 0) \
     DECLARE(UInt64, max_wkb_geometry_elements, 1'000'000, R"(
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0) \

@@ -1,0 +1,27 @@
+geoIntersectsCartesian: point inside polygon
+1
+geoIntersectsCartesian: point outside polygon
+0
+geoIntersectsCartesian: point-point same
+1
+geoIntersectsCartesian: point-point different
+0
+geoIntersectsCartesian: point in multipolygon
+1
+geoIntersectsCartesian: polygon-polygon overlapping
+1
+geoIntersectsCartesian: polygon-polygon non-overlapping
+0
+geoIntersectsCartesian: polygon with hole - point in hole
+0
+geoIntersectsCartesian: const polygon, variable points
+1
+0
+geoIntersectsSpherical: point inside polygon
+1
+geoIntersectsSpherical: polygon-polygon overlapping
+1
+geoIntersectsSpherical: polygon-polygon non-overlapping
+0
+ST_Intersects is alias for geoIntersectsCartesian
+1
