@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include <base/defines.h>
@@ -201,6 +202,28 @@ struct TopKAggregationHeap
     }
 
 private:
+    /// `capacity` (= `top_k_keys`) is `limit + offset` and can approach the full
+    /// `size_t` range, so cap the eager reservation; the column grows on demand.
+    static constexpr size_t max_preallocated_rows = 1ULL << 20;  /// 1 Mi rows
+
+    /// Set `capacity` and derive `compaction_threshold` as 1.5x it, without overflow.
+    void setCapacity(size_t cap)
+    {
+        capacity = cap;
+        const size_t half = capacity / 2;
+        compaction_threshold = capacity > std::numeric_limits<size_t>::max() - half
+            ? std::numeric_limits<size_t>::max()
+            : capacity + half;
+        chassert(compaction_threshold >= capacity);
+    }
+
+    size_t reserveHint() const
+    {
+        const size_t hint = compaction_threshold >= max_preallocated_rows ? max_preallocated_rows : compaction_threshold + 1;
+        chassert(hint <= max_preallocated_rows);
+        return hint;
+    }
+
     /// Initialize for a single-column key.
     void init(
         const IColumn & source_column,
@@ -213,14 +236,12 @@ private:
         nulls_directions = {nulls_direction};
         collators = {col};
         is_composite = false;
-        capacity = cap;
-        compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
+        setCapacity(cap);
         heap_column = source_column.cloneEmpty();
-        /// The heap fills up to `compaction_threshold + 1` rows before each
-        /// trim, so reserve once to avoid reallocation during fill.
-        heap_column->reserve(compaction_threshold + 1);
+        const size_t reserve_hint = reserveHint();
+        heap_column->reserve(reserve_hint);
         heap_indices.clear();
-        heap_indices.reserve(compaction_threshold + 1);
+        heap_indices.reserve(reserve_hint);
         initNumericSkipFn();
     }
 
@@ -235,8 +256,7 @@ private:
     {
         const size_t n = source_columns.size();
         is_composite = true;
-        capacity = cap;
-        compaction_threshold = capacity + capacity / 2;
+        setCapacity(cap);
 
         directions.assign(n, 1);
         for (size_t i = 0; i < dirs.size() && i < n; ++i)
@@ -255,10 +275,11 @@ private:
         for (const auto * col : source_columns)
             sub_columns.emplace_back(col->cloneEmpty());
         heap_column = ColumnTuple::create(std::move(sub_columns));
-        heap_column->reserve(compaction_threshold + 1);
+        const size_t reserve_hint = reserveHint();
+        heap_column->reserve(reserve_hint);
 
         heap_indices.clear();
-        heap_indices.reserve(compaction_threshold + 1);
+        heap_indices.reserve(reserve_hint);
         /// Composite keys never use the typed numeric fast paths.
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
