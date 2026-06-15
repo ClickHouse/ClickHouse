@@ -349,8 +349,10 @@ public:
 
     struct UsageStat
     {
-        size_t size;
-        size_t elements;
+        size_t size = 0;
+        size_t elements = 0;
+        /// Client weight for proportional cache sharing (0 if not set).
+        UInt64 weight = 0;
     };
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
