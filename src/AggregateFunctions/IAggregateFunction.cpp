@@ -86,7 +86,6 @@ bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & 
 {
     const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
     const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
-
     return lhs_base.haveSameStateRepresentationImpl(rhs_base);
 }
 
@@ -95,29 +94,11 @@ bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunctio
     return getStateType()->equals(*rhs.getStateType());
 }
 
-bool IAggregateFunction::haveSameDefinition(const IAggregateFunction & rhs) const
-{
-    return assert_cast<const DataTypeAggregateFunction &>(*getStateType()).equalsIgnoringVariant(*rhs.getStateType());
-}
-
 void IAggregateFunction::parallelizeMergePrepare(
     AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
-}
-
-void IAggregateFunction::mergeStateFromDifferentVariant(
-    AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "mergeStateFromDifferentVariant() is not implemented for aggregate function '{}' ({} state variant). "
-        "Cannot merge state produced by '{}' ({} state variant)",
-        getName(),
-        toString(getStateVariant()),
-        rhs.getName(),
-        toString(rhs.getStateVariant()));
 }
 
 void IAggregateFunction::merge(
