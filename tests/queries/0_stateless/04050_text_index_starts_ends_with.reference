@@ -65,7 +65,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (mode: All; tokens: ["Ful", "ull"])
+        Condition: (search_mode: All, direct_read: Hint, tokens: ["Ful", "ull"]); (global_search_mode: All, analyzed_tokens: ["Ful", "ull"], runtime_tokens: [])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1
@@ -80,7 +80,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (mode: All; tokens: ["Ful", "ull"])
+        Condition: (search_mode: All, direct_read: Hint, tokens: ["Ful", "ull"]); (global_search_mode: All, analyzed_tokens: ["Ful", "ull"], runtime_tokens: [])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1
@@ -95,7 +95,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (mode: All; tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"])
+        Condition: (search_mode: All, direct_read: Hint, tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"]); (global_search_mode: All, analyzed_tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"], runtime_tokens: [])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1
@@ -111,7 +111,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (mode: All; tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: []); (global_search_mode: All, analyzed_tokens: [], runtime_tokens: [])
         Parts: 3/3
         Granules: 3/3
       Ranges: 3
@@ -126,7 +126,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (mode: All; tokens: [])
+        Condition: (search_mode: All, direct_read: Hint, tokens: []); (global_search_mode: All, analyzed_tokens: [], runtime_tokens: [])
         Parts: 3/3
         Granules: 3/3
       Ranges: 3
@@ -141,7 +141,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx_name_fts
         Description: text GRANULARITY 100000000
-        Condition: (mode: All; tokens: ["database"])
+        Condition: (search_mode: All, direct_read: Hint, tokens: ["database"]); (global_search_mode: All, analyzed_tokens: ["database"], runtime_tokens: [])
         Parts: 1/3
         Granules: 1/3
       Ranges: 1

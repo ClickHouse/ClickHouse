@@ -4,7 +4,7 @@
 1
 2
 -- the required substring ngrams are folded into every alternative
-Condition: (mode: Any; tokens: [" de", " on", " tw", "a t", "abc", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two", "xyz"])
+Condition: (search_mode: All, direct_read: None, tokens: [" de", " on", " tw", "a t", "abc", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two"]) | (search_mode: All, direct_read: None, tokens: [" de", " on", " tw", "a t", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two", "xyz"]); (global_search_mode: Any, analyzed_tokens: [" de", " on", " tw", "a t", "abc", "del", "e d", "elt", "lta", "ne ", "one", "ta ", "two", "xyz"], runtime_tokens: [])
 -- so the text index prunes to the 2 matching granules (out of 5)
 Granules: 5/5
 Granules: 2/5

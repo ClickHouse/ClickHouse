@@ -226,7 +226,7 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
-std::string MergeTreeIndexConditionMinMax::getDescription() const
+std::string MergeTreeIndexConditionMinMax::getDescription(MergeTreeIndexGranulePtr /*granule*/) const
 {
     return condition.getDescription().condition;
 }

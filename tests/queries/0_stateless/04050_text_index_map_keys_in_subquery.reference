@@ -18,13 +18,13 @@ CreatingSets (Create sets before main query execution)
             Skip
               Name: idx_attrs_keys
               Description: text GRANULARITY 100000000
-              Condition: (mode: All; tokens: ["entity"])
+              Condition: and(and(unknown, (search_mode: All, direct_read: Exact, tokens: ["entity"])), (search_mode: All, direct_read: Hint, tokens: ["entity"])); (global_search_mode: All, analyzed_tokens: ["entity"], runtime_tokens: [])
               Parts: 1/1
               Granules: 5/5
             Skip
               Name: idx_attrs_values
               Description: text GRANULARITY 100000000
-              Condition: (mode: Any; tokens: ["e1", "e2"])
+              Condition: and(and(unknown, unknown), (search_mode: All, direct_read: None, tokens: ["e2"]) | (search_mode: All, direct_read: None, tokens: ["e1"])); (global_search_mode: Any, analyzed_tokens: ["e1", "e2"], runtime_tokens: [])
               Parts: 1/1
               Granules: 3/5
             Ranges: 2

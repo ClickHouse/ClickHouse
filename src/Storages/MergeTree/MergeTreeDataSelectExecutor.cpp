@@ -1228,6 +1228,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 num_threads);
 
             std::string description = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+
+            /// Text indexes keep their per-part granule (carrying the analyzer) in `read_hints` after the
+            /// granule scan. Pass it to `getDescription` so the description can tell which tokens were
+            /// resolved during analysis from those deferred to the runtime direct read in PREWHERE.
+            auto find_index_granule = [&](const RangesInDataPart & part_ranges) -> MergeTreeIndexGranulePtr
+            {
+                auto it = part_ranges.read_hints.index_granules.find(index_name);
+                return it != part_ranges.read_hints.index_granules.end() ? it->second : nullptr;
+            };
+
+            MergeTreeIndexGranulePtr index_granule;
+            if (settings[Setting::per_part_index_stats])
+                index_granule = find_index_granule(parts_with_ranges[part_index]);
+            else
+                for (const auto & part_ranges : parts_with_ranges)
+                    if ((index_granule = find_index_granule(part_ranges)))
+                        break;
+
             if (settings[Setting::per_part_index_stats])
             {
                 description += " PART " + std::to_string(part_index) + "/" + std::to_string(part_stats_granularity);
@@ -1236,7 +1254,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition->getDescription(),
+                    .condition = index_and_condition.condition->getDescription(index_granule),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1246,7 +1264,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .type = ReadFromMergeTree::IndexType::Skip,
                     .name = index_name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition->getDescription(),
+                    .condition = index_and_condition.condition->getDescription(index_granule),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }

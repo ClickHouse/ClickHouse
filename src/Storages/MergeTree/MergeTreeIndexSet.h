@@ -110,7 +110,7 @@ public:
 
     FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
 
-    std::string getDescription() const override;
+    std::string getDescription(MergeTreeIndexGranulePtr granule) const override;
 
     ~MergeTreeIndexConditionSet() override = default;
 

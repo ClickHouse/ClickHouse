@@ -1,109 +1,109 @@
 -- Point lookup by string value
 SELECT count() FROM ghdata WHERE data.actor.login = 'dependabot[bot]'
 33
-Condition: (mode: All; tokens: ["bot", "dependabot"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["bot", "dependabot"]); (global_search_mode: All, analyzed_tokens: ["bot", "dependabot"], runtime_tokens: [])
 Parts: 1/1
 Granules: 25/50
 -- Point lookup by numeric value
 SELECT count() FROM ghdata WHERE data.repo.id = 323586805
 3
-Condition: (mode: All; tokens: ["323586805"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["323586805"]); (global_search_mode: All, analyzed_tokens: ["323586805"], runtime_tokens: [])
 Parts: 1/1
 Granules: 2/50
 -- Equality on event type
 SELECT count() FROM ghdata WHERE data.type = 'WatchEvent'
 282
-Condition: (mode: All; tokens: ["watchevent"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["watchevent"]); (global_search_mode: All, analyzed_tokens: ["watchevent"], runtime_tokens: [])
 Parts: 1/1
 Granules: 50/50
 -- Equality on nested path
 SELECT count() FROM ghdata WHERE data.payload.action = 'opened'
 227
-Condition: (mode: All; tokens: ["opened"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["opened"]); (global_search_mode: All, analyzed_tokens: ["opened"], runtime_tokens: [])
 Parts: 1/1
 Granules: 50/50
 -- LIKE pattern matching (index cannot help, all granules scanned)
 SELECT count() FROM ghdata WHERE data.repo.name LIKE '%python%'
 36
-Condition: (mode: All; tokens: [])
+Condition: (search_mode: All, direct_read: Hint, tokens: []); (global_search_mode: All, analyzed_tokens: [], runtime_tokens: [])
 Parts: 1/1
 Granules: 50/50
 -- hasToken on string field
 SELECT count() FROM ghdata WHERE hasToken(data.actor.login, 'dependabot')
 37
-Condition: (mode: All; tokens: ["dependabot"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["dependabot"]); (global_search_mode: All, analyzed_tokens: ["dependabot"], runtime_tokens: [])
 Parts: 1/1
 Granules: 28/50
 -- hasAllTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAllTokens(data.payload.pull_request.title::String, 'Fix spelling')
 4
-Condition: (mode: All; tokens: ["fix", "spelling"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["fix", "spelling"]); (global_search_mode: All, analyzed_tokens: ["fix", "spelling"], runtime_tokens: [])
 Parts: 1/1
 Granules: 4/50
 -- hasAnyTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAnyTokens(data.payload.pull_request.title::String, ['Fix', 'fix'])
 18
-Condition: (mode: Any; tokens: ["Fix", "fix"])
+Condition: (search_mode: Any, direct_read: Hint, tokens: ["Fix", "fix"]); (global_search_mode: Any, analyzed_tokens: ["Fix", "fix"], runtime_tokens: [])
 Parts: 1/1
 Granules: 50/50
 -- IN operator on string field (rare values, granules should be skipped)
 SELECT count() FROM ghdata WHERE data.type::String IN ('MemberEvent', 'ForkEvent')
 112
-Condition: (mode: Any; tokens: ["forkevent", "memberevent"])
+Condition: (search_mode: All, direct_read: None, tokens: ["memberevent"]) | (search_mode: All, direct_read: None, tokens: ["forkevent"]); (global_search_mode: Any, analyzed_tokens: ["forkevent", "memberevent"], runtime_tokens: [])
 Parts: 1/1
 Granules: 45/50
 -- IN operator on nested path (rare values, granules should be skipped)
 SELECT count() FROM ghdata WHERE data.payload.action::String IN ('reopened', 'published')
 42
-Condition: (mode: Any; tokens: ["published", "reopened"])
+Condition: (search_mode: All, direct_read: None, tokens: ["reopened"]) | (search_mode: All, direct_read: None, tokens: ["published"]); (global_search_mode: Any, analyzed_tokens: ["published", "reopened"], runtime_tokens: [])
 Parts: 1/1
 Granules: 32/50
 -- Combined conditions on different paths
 SELECT count() FROM ghdata WHERE data.type = 'WatchEvent' AND data.repo.name = 'leonardomso/33-js-concepts'
 3
-Condition: (mode: All; tokens: ["33", "concepts", "js", "leonardomso", "watchevent"])
+Condition: and((search_mode: All, direct_read: Hint, tokens: ["watchevent"]), (search_mode: All, direct_read: Hint, tokens: ["33", "concepts", "js", "leonardomso"])); (global_search_mode: All, analyzed_tokens: ["33", "concepts", "js", "leonardomso", "watchevent"], runtime_tokens: [])
 Parts: 1/1
 Granules: 3/50
 -- Schema-agnostic search with JSONAllValues and hasAllTokens
 SELECT count() FROM ghdata WHERE hasAllTokens(JSONAllValues(data), ['football', 'team'])
 3
-Condition: (mode: All; tokens: ["football", "team"])
+Condition: (search_mode: All, direct_read: Exact, tokens: ["football", "team"]); (global_search_mode: All, analyzed_tokens: ["football", "team"], runtime_tokens: [])
 Parts: 1/1
 Granules: 2/50
 -- Schema-agnostic search with JSONAllValues and hasAnyTokens
 SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 'calculator'])
 11
-Condition: (mode: Any; tokens: ["calculator", "football"])
+Condition: (search_mode: Any, direct_read: Exact, tokens: ["calculator", "football"]); (global_search_mode: Any, analyzed_tokens: ["calculator", "football"], runtime_tokens: [])
 Parts: 1/1
 Granules: 7/50
 -- Array: has() on nested array of labels in pull requests
 SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'bug')
 3
-Condition: (mode: All; tokens: ["bug"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["bug"]); (global_search_mode: All, analyzed_tokens: ["bug"], runtime_tokens: [])
 Parts: 1/1
 Granules: 42/50
 -- Array: has() on nested array of labels in issues
 SELECT count() FROM ghdata WHERE has(data.payload.issue.labels[].name::Array(String), 'bug')
 14
-Condition: (mode: All; tokens: ["bug"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["bug"]); (global_search_mode: All, analyzed_tokens: ["bug"], runtime_tokens: [])
 Parts: 1/1
 Granules: 42/50
 -- Array: has() with a less common label
 SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'enhancement')
 2
-Condition: (mode: All; tokens: ["enhancement"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["enhancement"]); (global_search_mode: All, analyzed_tokens: ["enhancement"], runtime_tokens: [])
 Parts: 1/1
 Granules: 25/50
 -- Array: equality on array subcolumn
 SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']
 5
-Condition: (mode: All; tokens: ["dependencies", "submodules"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["dependencies", "submodules"]); (global_search_mode: All, analyzed_tokens: ["dependencies", "submodules"], runtime_tokens: [])
 Parts: 1/1
 Granules: 3/50
 -- SELECT JSONAllValues with filter returning 1 row
 SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id::UInt64 = 14690746673
 310	1997184657549209849	310	15450791830078104110
-Condition: (mode: All; tokens: ["14690746673"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["14690746673"]); (global_search_mode: All, analyzed_tokens: ["14690746673"], runtime_tokens: [])
 Parts: 1/1
 Granules: 1/50
 -- Verify correctness: results match with index disabled

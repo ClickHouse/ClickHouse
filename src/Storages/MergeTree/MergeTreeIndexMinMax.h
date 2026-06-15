@@ -62,7 +62,7 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
-    std::string getDescription() const override;
+    std::string getDescription(MergeTreeIndexGranulePtr granule) const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:

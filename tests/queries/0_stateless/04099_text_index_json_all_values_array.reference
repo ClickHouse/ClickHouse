@@ -2,7 +2,7 @@
 SELECT id FROM tab WHERE data.title::String = '["foo","bar"]' ORDER BY id
 0
 Description: text GRANULARITY 100000000
-Condition: (mode: All; tokens: ["["foo","bar"]"])
+Condition: (search_mode: All, direct_read: Hint, tokens: ["["foo","bar"]"]); (global_search_mode: All, analyzed_tokens: ["["foo","bar"]"], runtime_tokens: [])
 Parts: 1/1
 Granules: 1/4
 -- Equality without index
@@ -13,7 +13,7 @@ SELECT id FROM tab WHERE hasAllTokens(JSONAllValues(data), ['foo', 'bar']) ORDER
 0
 3
 Description: text GRANULARITY 100000000
-Condition: (mode: All; tokens: ["bar", "foo"])
+Condition: (search_mode: All, direct_read: Exact, tokens: ["bar", "foo"]); (global_search_mode: All, analyzed_tokens: ["bar", "foo"], runtime_tokens: [])
 Parts: 1/1
 Granules: 2/4
 -- JSONAllValues hasAllTokens without index
@@ -25,7 +25,7 @@ SELECT id FROM tab WHERE hasAnyTokens(JSONAllValues(data), ['foo', 'bar']) ORDER
 0
 3
 Description: text GRANULARITY 100000000
-Condition: (mode: Any; tokens: ["bar", "foo"])
+Condition: (search_mode: Any, direct_read: Exact, tokens: ["bar", "foo"]); (global_search_mode: Any, analyzed_tokens: ["bar", "foo"], runtime_tokens: [])
 Parts: 1/1
 Granules: 2/4
 -- JSONAllValues hasAnyTokens without index

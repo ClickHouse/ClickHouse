@@ -86,7 +86,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
 
-    std::string getDescription() const override { return ""; }
+    std::string getDescription(MergeTreeIndexGranulePtr /*granule*/) const override { return ""; }
 
 private:
     const Block & header;

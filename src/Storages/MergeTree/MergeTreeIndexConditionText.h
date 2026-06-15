@@ -77,7 +77,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription() const override;
+    std::string getDescription(MergeTreeIndexGranulePtr granule) const override;
 
     bool hasSearchPatterns() const;
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
