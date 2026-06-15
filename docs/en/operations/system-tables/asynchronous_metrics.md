@@ -224,7 +224,7 @@ The number of correctable ECC memory errors. A high number of this value indicat
 
 The number of uncorrectable ECC memory errors. A non-zero number of this value indicates bad RAM which has to be immediately replaced, because it indicates potential data corruption. Source: `/sys/devices/system/edac/mc/`
 
-### ExecutableUserDefinedFunctionMemoryResident {#executableuserdefinedfunctionmemoryresident}
+### ExecutableUserDefinedFunctionMemoryResidentBytes {#executableuserdefinedfunctionmemoryresidentbytes}
 
 Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined functions and their descendant processes, in bytes. Idle executable_pool workers are included. Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique physical memory footprint of the UDF processes.
 

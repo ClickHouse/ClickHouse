@@ -76,7 +76,7 @@ def _async_metric(name):
 
 
 def _memory_resident():
-    return _async_metric("ExecutableUserDefinedFunctionMemoryResident")
+    return _async_metric("ExecutableUserDefinedFunctionMemoryResidentBytes")
 
 
 def _processes():
