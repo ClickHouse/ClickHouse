@@ -962,9 +962,48 @@ static std::unordered_map<String, size_t> getStreamCounts(
     const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
 
     for (const auto & column_name : column_names)
     {
+        /// For columns with a dynamic structure (Dynamic, JSON, ...) enumerateStreams below is called
+        /// without a deserialization state, so SerializationDynamic::enumerateStreams stops after the
+        /// `dynamic_structure` substream and never reports the data-dependent substreams (e.g.
+        /// `variant_discr`). That makes the stream accounting incomplete and such streams can be
+        /// mishandled during mutation (e.g. a `variant_discr` stream that is neither rewritten nor
+        /// hardlinked into the new part, leaving it broken). Use the substreams recorded in
+        /// columns_substreams.txt, which are the ground truth of what exists in the part, for such columns.
+        auto column = data_part->tryGetColumn(column_name);
+        const std::vector<String> * recorded_substreams = nullptr;
+        if (column && column->type->hasDynamicSubcolumns())
+            recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
+
+        if (recorded_substreams)
+        {
+            std::vector<String> resolved;
+            resolved.reserve(recorded_substreams->size());
+            bool resolved_all = !recorded_substreams->empty();
+            for (const auto & substream : *recorded_substreams)
+            {
+                /// The placeholder substreams of not-yet-written columns in a new part won't resolve
+                /// here; fall back to enumeration in that case to preserve the previous behaviour.
+                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                    resolved.push_back(std::move(*stream_name));
+                else
+                {
+                    resolved_all = false;
+                    break;
+                }
+            }
+
+            if (resolved_all)
+            {
+                for (auto & stream_name : resolved)
+                    ++stream_counts[stream_name];
+                continue;
+            }
+        }
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
