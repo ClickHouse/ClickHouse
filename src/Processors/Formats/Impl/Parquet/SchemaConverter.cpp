@@ -156,9 +156,10 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
         /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
         /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
         /// write these into data files, but they are not part of the table schema. Per the Iceberg
-        /// spec, readers must ignore reserved-range field ids they don't recognize rather than
-        /// failing. Such a column is never requested, so returning its physical name lets the
-        /// existing "unrequested column" path skip it.
+        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
+        /// reserved-range field ids they don't recognize rather than failing. Such a column is
+        /// never requested, so returning its physical name lets the existing "unrequested column"
+        /// path skip it.
         static constexpr Int64 iceberg_reserved_field_id_start = 2147483447; /// Integer.MAX_VALUE - 200
         if (element.field_id >= iceberg_reserved_field_id_start)
             return element.name;
