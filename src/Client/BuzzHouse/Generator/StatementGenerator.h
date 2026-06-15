@@ -875,14 +875,14 @@ public:
     const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return v.isAttached(); };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
     const std::function<bool(const SQLTable &)> has_mergeable_tables
-        = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges; };
+        = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges; };
 
     const std::function<bool(const SQLTable &)> attached_tables_to_test_format
-        = [](const SQLTable & t) { return t.isAttached() && t.teng != TableEngineValues::GenerateRandom; };
+        = [](const SQLTable & t) { return t.isAttached() && t.engine.value != TableEngineValues::GenerateRandom; };
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
-        return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
+        return t.isAttached() && !t.isNotTruncableEngine() && t.engine.value != TableEngineValues::CollapsingMergeTree
+            && t.engine.value != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };

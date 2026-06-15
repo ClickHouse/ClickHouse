@@ -1211,7 +1211,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             const String dname = t.getDatabaseName();
             const String tname = t.getBaseName();
 
-            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
             {
                 SQLQuery next2;
                 const String part_name = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname);
@@ -1243,7 +1243,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             const String dname = t.getDatabaseName();
             const String tname = t.getBaseName();
 
-            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
             {
                 const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
 
@@ -1956,7 +1956,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily() && t.can_run_merges)
+        if (t.isMergeTreeFamily(true) && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;

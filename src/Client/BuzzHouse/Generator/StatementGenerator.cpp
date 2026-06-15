@@ -628,7 +628,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
         const bool has_to = (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
-        next.teng = MergeTree;
+        next.engine.value = MergeTree;
         if (!has_to)
         {
             TableEngine * te = cv->mutable_engine();
@@ -636,7 +636,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             if (rg.nextSmallNumber() < 4)
             {
                 getNextTableEngine(rg, false, next);
-                te->set_engine(next.teng);
+                te->set_engine(next.engine.value);
             }
             chassert(this->entries.empty());
             for (uint32_t i = 0; i < view_ncols; i++)
@@ -847,7 +847,7 @@ void StatementGenerator::generateNextTablePartition(
     /// allow_parts = 0 no parts, = 1 allows parts, = 2 only parts allowed
     bool table_has_partitions = false;
 
-    if (t.isMergeTreeFamily())
+    if (t.isMergeTreeFamily(true))
     {
         const String dname = t.getDatabaseName();
         const String tname = t.getBaseName();
@@ -876,7 +876,7 @@ void StatementGenerator::generateNextTablePartition(
 
 void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
-    const bool has_final = t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
+    const bool has_final = t.can_run_merges && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4);
     const bool has_partition = rg.nextBool();
 
@@ -1664,7 +1664,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
         AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
         ati->set_paren(rg.nextSmallNumber() < 9);
 
-        const bool is_mt = t.isMergeTreeFamily();
+        const bool is_mt = t.isMergeTreeFamily(true);
         const bool no_peer = !t.hasDatabasePeer();
         const bool can_merge = t.can_run_merges;
         const String dname_idx = t.getDatabaseName();
@@ -1675,7 +1675,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const bool has_idxs = nidxs > 0;
         const bool has_projs = nprojs > 0;
         const bool has_constrs = nconstrs > 0;
-        const bool has_col_settings = !allColumnSettings.at(t.teng).empty();
+        const bool has_col_settings = !allColumnSettings.at(t.engine.value).empty();
 
         rg.pickWeighted({
             /// Order by
@@ -1961,7 +1961,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
-                 const auto & csettings = allColumnSettings.at(t.teng);
+                 const auto & csettings = allColumnSettings.at(t.engine.value);
                  flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                  columnPathRef(rg.pickRandomly(this->entries), mcp->mutable_col());
                  this->entries.clear();
@@ -1971,7 +1971,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
-                 const auto & csettings = allColumnSettings.at(t.teng);
+                 const auto & csettings = allColumnSettings.at(t.engine.value);
                  flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                  columnPathRef(rg.pickRandomly(this->entries), rcp->mutable_col());
                  this->entries.clear();
@@ -1982,7 +1982,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  SettingValues * svs = ati->mutable_table_modify_setting();
-                 const auto & engineSettings = allTableSettings.at(t.teng);
+                 const auto & engineSettings = allTableSettings.at(t.engine.value);
                  if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
                      generateSettingValues(rg, engineSettings, svs);
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
@@ -1994,7 +1994,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  SettingList * sl = ati->mutable_table_remove_setting();
-                 const auto & engineSettings = allTableSettings.at(t.teng);
+                 const auto & engineSettings = allTableSettings.at(t.engine.value);
                  if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
                      generateSettingList(rg, engineSettings, sl);
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
@@ -2468,13 +2468,13 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
 }
 
-static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
+static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true); };
 
 static const auto has_mergeable_mt_func
-    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges && !t.hasDatabasePeer(); };
+    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges && !t.hasDatabasePeer(); };
 
 static const auto has_non_mergeable_mt_func
-    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && !t.can_run_merges; };
+    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && !t.can_run_merges; };
 
 static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
 
@@ -2973,7 +2973,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
               const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
               const String dname = t.getDatabaseName();
               const String tname = t.getBaseName();
-              const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
+              const bool table_has_partitions = t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname);
 
               t.setName(bro->mutable_object()->mutable_est(), false);
               cluster = backupOrRestoreObject(bro, SQLObject::TABLE, t);

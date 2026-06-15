@@ -870,7 +870,7 @@ bool Client::buzzHouse()
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }},
                               {40 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_TABLE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE; }},
-                              {20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends()),
+                              {20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends(true)),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_renames && test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::RENAME_BACK; }},

@@ -292,7 +292,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
 
             if (!this->allow_not_deterministic || rg.nextLargeNumber() < 971)
             {
-                switch (t.teng)
+                switch (t.engine.value)
                 {
                     case TableEngineValues::S3:
                     case TableEngineValues::S3Queue:
@@ -544,7 +544,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const auto & engineSettings = myfunc
             ? mySQLTFSettings
             : allTableSettings.at(
-                  t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
+                  t.isS3QueueEngine() ? TableEngineValues::S3
+                                      : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.engine.value));
 
         if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
         {
@@ -568,7 +569,7 @@ auto StatementGenerator::getQueryTableLambda()
             /* Don't use tables with Dolor integration when async requests can insert between oracle queries */
             && (tt.integration != IntegrationCall::Dolor || !fc.allow_async_requests || this->allow_not_deterministic)
             /* May require MergeTree table */
-            && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
+            && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily(true))
             /* May by replaced by a table engine */
             && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable());
     };
@@ -1307,9 +1308,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
         }
         break;
     }
-    const bool supports_final = (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
+    const bool supports_final = (t && t->supportsFinal(true) && (this->enforce_final || rg.nextSmallNumber() < 3))
         || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3)) || rg.nextLargeNumber() < 4;
-    const bool supports_sample = t && t->isMergeTreeFamily();
+    const bool supports_sample = t && t->isMergeTreeFamily(true);
     return {supports_final, supports_sample};
 }
 
@@ -2627,7 +2628,7 @@ void StatementGenerator::generateTopSelect(
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get();
             t.setName(est, false);
-            supports_final = t.supportsFinal();
+            supports_final = t.supportsFinal(true);
         }
         else if (has_v && choice-- == 0)
         {
