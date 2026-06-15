@@ -437,7 +437,7 @@ static BoundaryCheckResult checkBoundaryImpl(const Field & value)
     }
 }
 
-/// Try to optimize a comparison against a native integer column.  Two transformations:
+/// Try to optimize a comparison against a native integer column. Two transformations:
 ///
 /// 1. Boundary folding: when the constant is out of range or at the type boundary, fold the
 ///    condition to CONFLICT (always false) / REDUNDANT (always true), or tighten the operator
