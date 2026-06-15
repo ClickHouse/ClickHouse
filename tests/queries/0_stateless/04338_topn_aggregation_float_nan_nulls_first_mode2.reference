@@ -1,0 +1,22 @@
+-- max DESC NULLS FIRST: no TopNAggregating
+0
+-- max DESC NULLS FIRST: correct top-K (optimization on)
+9	999
+8	998
+7	997
+-- max DESC NULLS FIRST: matches reference (optimization off)
+9	999
+8	998
+7	997
+-- max DESC NULLS LAST: has TopNAggregating
+1
+-- max DESC NULLS LAST: correct top-K (optimization on)
+9	999
+8	998
+7	997
+-- min ASC NULLS FIRST: no TopNAggregating
+0
+-- min ASC NULLS FIRST: correct top-K (optimization on)
+0	0
+1	1
+2	2

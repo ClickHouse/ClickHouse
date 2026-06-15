@@ -378,6 +378,11 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     /// places first for `ORDER BY max(val) DESC NULLS FIRST`.
                     if (!arg_col.type->isValueRepresentedByNumber() || isNullableOrLowCardinalityNullable(arg_col.type))
                         continue;
+                    /// Same floating-point `NaN` guard as the single-node Mode 2 gate below: the
+                    /// per-replica K-th boundary can become `NaN`, which would prune the numeric
+                    /// rows that should overwrite an existing group's `NaN` `min`/`max` state.
+                    if (isFloat(*removeLowCardinality(arg_col.type)) && sort_desc[0].nulls_direction != sort_desc[0].direction)
+                        continue;
 
                     /// In-transform threshold pruning only (no __topKFilter prewhere
                     /// in parallel replica mode for now — the inner plan's node list
@@ -500,7 +505,19 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (mt_header.has(order_arg_name))
         {
             const auto & arg_col = mt_header.getByName(order_arg_name);
-            if (arg_col.type->isValueRepresentedByNumber() && !isNullableOrLowCardinalityNullable(arg_col.type))
+
+            /// Reject floating-point Mode 2 when `NaN` is ranked at the "best" end of the ORDER BY
+            /// (`NULLS FIRST`, i.e. `nulls_direction != direction` — see `SortColumnDescription`).
+            /// The `min`/`max` update rule treats `NaN` as the worst value: any numeric value
+            /// replaces a `NaN` accumulator (`SingleValueDataFixed::setIfGreater`/`setIfSmaller`).
+            /// So once the K-th boundary becomes `NaN`, threshold pruning would drop the numeric
+            /// rows that should overwrite an existing group's `NaN` state, wrongly leaving that
+            /// group at `NaN` (and level 2 would publish the same bad boundary to `__topKFilter`).
+            const bool arg_is_float = isFloat(*removeLowCardinality(arg_col.type));
+            const bool nan_ranked_best = arg_is_float && sort_desc[0].nulls_direction != sort_desc[0].direction;
+
+            if (arg_col.type->isValueRepresentedByNumber() && !isNullableOrLowCardinalityNullable(arg_col.type)
+                && !nan_ranked_best)
             {
                 mode2_eligible = true;
                 enable_threshold_pruning = true;
