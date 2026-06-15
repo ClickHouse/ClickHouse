@@ -17,14 +17,12 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/safe_cast.h>
-#include "base/types.h"
 #include <base/defines.h>
 #include <ranges>
-#include <stack>
 #include <unordered_map>
 #include <vector>
-#include "dpTable.h"
-#include "enumChecker.h"
+#include <Processors/QueryPlan/Optimizations/dpTable.h>
+#include <Processors/QueryPlan/Optimizations/enumChecker.h>
 
 
 namespace ProfileEvents

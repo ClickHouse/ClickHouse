@@ -11,7 +11,7 @@ namespace DB
 
 /**
 * DP table for storing query plans and fetching them.
-* Besides storing plans, it also computes `csg` & `ccp` statistics: 
+* Besides storing plans, it also computes `csg` & `ccp` statistics:
 * `csg`: (non-empty) connected subgraph,
 * `ccp`: `csg` and its complement pair.
 */

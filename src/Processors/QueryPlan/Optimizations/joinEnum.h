@@ -4,8 +4,8 @@
 #include <concepts>
 #include <vector>
 #include <Common/logger_useful.h>
-#include "base/types.h"
-#include "joinOrder.h"
+#include <base/types.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 namespace DB
 {
@@ -209,4 +209,4 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & 
     }
 }
 
-} // namespace DB
+}
