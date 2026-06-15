@@ -175,3 +175,45 @@ LIMIT 2
 SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_overwrite_before_consume SYNC;
+
+-- A single step that BOTH overwrites and genuinely reads the column (`UPDATE a =
+-- materialize(a)`): `a` is consumed by `materialize(a)` (a real read, needs the post-`MODIFY`
+-- type) and again as the `if` keep-old fallback (synthetic, must stay skipped). The genuine
+-- read must win, otherwise `materialize` runs on the on-disk type and aborts with
+-- `LOGICAL_ERROR: Unexpected return type from materialize`.
+DROP TABLE IF EXISTS t_self_read_overwrite SYNC;
+
+CREATE TABLE t_self_read_overwrite
+(
+    id UInt64,
+    a Nullable(String),
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_self_read_overwrite
+SELECT number, if(number % 2 = 0, NULL, toString(number)), 0
+FROM numbers(100);
+
+SYSTEM STOP MERGES t_self_read_overwrite;
+
+ALTER TABLE t_self_read_overwrite
+    UPDATE a = materialize(a) WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_self_read_overwrite
+    MODIFY COLUMN a LowCardinality(Nullable(String))
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT any(a), sum(b)
+FROM t_self_read_overwrite
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+SELECT a
+FROM t_self_read_overwrite
+ORDER BY id
+LIMIT 4
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_self_read_overwrite SYNC;

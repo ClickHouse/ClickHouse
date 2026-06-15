@@ -2,7 +2,10 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Common/logger_useful.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -60,26 +63,46 @@ static std::optional<UInt64> getMaxPatchVersionForStep(const MergeTreeRangeReade
     return prewhere_info ? prewhere_info->mutation_version : std::nullopt;
 }
 
+/// Name of the internal `_CAST` function (`CastOverloadResolver`); the outer/inner casts an
+/// on-fly `UPDATE` wraps its assignment in are emitted under this name. `CAST` is the
+/// user-facing alias of the same resolver, accepted here for robustness.
+static bool isCastFunctionNode(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+    const auto & name = node.function_base->getName();
+    return name == "_CAST" || name == "CAST";
+}
+
 /// Storage names of overwritten columns whose on-disk value must STILL be converted to the
-/// post-`MODIFY` metadata type, because an on-fly mutation step consumes it as a function
-/// input before any step overwrites it.
+/// post-`MODIFY` metadata type, because an on-fly mutation step genuinely consumes it as a
+/// function input before any step overwrites it.
 ///
 /// Background: a column the on-fly chain overwrites is normally exempt from
 /// `performRequiredConversions` (its on-disk value is about to be discarded, and pre-casting
 /// could fail on a value the UPDATE replaces, e.g. `CAST('x', UInt64)` before
 /// `UPDATE v = '100'`). But conversion happens once, in the reader that first reads the column
 /// from disk. A step that consumes the column as a function input expects it in the
-/// post-`MODIFY` type its DAG was built against; if that consumption happens before the column
-/// is overwritten, the on-disk value the consumer reads is the real one and must be converted.
+/// post-`MODIFY` type its DAG was built against; if that consumption is reached before the
+/// column is overwritten, the on-disk value the consumer reads is the real one and must be
+/// converted.
+///
+/// `MutationsInterpreter` lowers `UPDATE col = expr WHERE cond` to
+/// `_CAST(if(cond, _CAST(expr, type), col), type)`. The bare `col` argument of that `if` is a
+/// SYNTHETIC keep-old-value fallback: it is the value for unmatched rows, never a genuine read
+/// of the pre-`MODIFY` value, so it must NOT force conversion. Any OTHER reference to the
+/// column (inside `cond`, or inside `expr`, e.g. `UPDATE col = materialize(col)`) is a genuine
+/// read and must. So the per-step scan ignores exactly that one synthetic edge.
 ///
 /// The decision is per column and order-sensitive. Walk the on-fly mutation steps in chain
 /// (== mutation version) order; the FIRST step that references a column decides it:
-///   - the step OVERWRITES it  -> its on-disk value is discarded there, leave it skipped;
-///   - the step only CONSUMES it as a function input -> force its conversion.
-/// A later consumer never matters: it reads the value the overwriting step already produced,
-/// not the on-disk one. `UPDATE v = expr` itself reads the old `v` (the DAG is
-/// `if(cond, _CAST(expr), v)`), so the overwriting step also self-consumes `v`; overwrite
-/// wins within a step, keeping `v` skipped.
+///   - the step GENUINELY CONSUMES it as a function input -> force its conversion (this wins
+///     over a self-overwrite in the same step: `UPDATE col = f(col)` reads the old `col` and
+///     needs it in the post-`MODIFY` type the DAG was built against);
+///   - the step only OVERWRITES it (its sole reference is the synthetic fallback) -> its
+///     on-disk value is discarded there, leave it skipped.
+/// A later step never overrides an earlier decision: it reads the value the earlier step
+/// produced, not the on-disk one.
 ///
 /// Query PREWHERE / row-level-filter steps (`perform_alter_conversions == true`) are not
 /// scanned: they run after the whole mutation chain has produced the final column and convert
@@ -123,18 +146,43 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
         const auto & dag = prewhere_info->actions->getActionsDAG();
 
         /// Columns this step overwrites: an assignment target the step produces (a DAG output
-        /// that is not a plain passthrough INPUT node).
+        /// that is not a plain passthrough INPUT node). For each, locate the `(INPUT col)` edge
+        /// of the synthetic `if(cond, _CAST(expr, type), col)` fallback so the consume scan can
+        /// ignore exactly that one edge while still counting genuine reads of the column.
         NameSet overwritten_here;
+        std::unordered_set<const ActionsDAG::Node *> synthetic_fallback_if_nodes;
         for (const auto * output : dag.getOutputs())
         {
             if (output->type == ActionsDAG::ActionType::INPUT)
                 continue;
             auto key = to_storage_key(output->result_name);
-            if (prewhere_info->columns_overwritten_by_chain.contains(key))
-                overwritten_here.insert(key);
+            if (!prewhere_info->columns_overwritten_by_chain.contains(key))
+                continue;
+            overwritten_here.insert(key);
+
+            /// Descend the assignment output to its `if`: strip the named ALIAS, then any
+            /// outer `_CAST(..., type)` wrappers (their first child is the wrapped value).
+            const auto * node = output;
+            while (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+                node = node->children.front();
+            while (isCastFunctionNode(*node) && !node->children.empty())
+                node = node->children.front();
+
+            /// Recognize the keep-old fallback shape: `if(cond, then, INPUT col)` whose third
+            /// argument is the bare on-disk input of this very column. Only that exact edge is
+            /// synthetic; a user `if` nested elsewhere in the expression is reached differently
+            /// (through the then-branch) and is left to count as a genuine consume.
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+                && node->function_base->getName() == "if" && node->children.size() == 3)
+            {
+                const auto * fallback = node->children[2];
+                if (fallback->type == ActionsDAG::ActionType::INPUT && to_storage_key(fallback->result_name) == key)
+                    synthetic_fallback_if_nodes.insert(node);
+            }
         }
 
-        /// Columns this step consumes as a function input.
+        /// Columns this step genuinely consumes as a function input, ignoring the synthetic
+        /// keep-old fallback edge identified above.
         NameSet consumed_here;
         for (const auto & node : dag.getNodes())
         {
@@ -145,8 +193,15 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
             if (node.type != ActionsDAG::ActionType::FUNCTION)
                 continue;
 
-            for (const auto * arg : node.children)
+            const bool is_synthetic_fallback_if = synthetic_fallback_if_nodes.contains(&node);
+            for (size_t i = 0; i < node.children.size(); ++i)
             {
+                /// Skip the `if`'s third argument: it is the keep-old fallback, not a read.
+                if (is_synthetic_fallback_if && i == 2)
+                    continue;
+
+                const auto * arg = node.children[i];
+
                 /// A mutation step's DAG binds a function argument directly to its source node
                 /// (INPUT, another FUNCTION, or COLUMN); ALIAS nodes only appear as a step's
                 /// named output, never as a function argument.
@@ -157,12 +212,13 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
             }
         }
 
-        /// First reference wins, overwrite before consume within a step.
-        for (const auto & col : overwritten_here)
-            decided.insert(col);
+        /// First reference wins across steps; within a step a genuine consume wins over the
+        /// overwrite, so `UPDATE col = f(col)` forces `col` to its post-`MODIFY` type.
         for (const auto & col : consumed_here)
             if (decided.insert(col).second)
                 must_convert.insert(col);
+        for (const auto & col : overwritten_here)
+            decided.insert(col);
     }
     return must_convert;
 }
@@ -360,12 +416,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// no-op for this step and we leave the columns untouched.
     ///
     /// A column is exempt from conversion ONLY when its on-disk value is about to be
-    /// discarded and replaced before anything reads it. If a mutation step consumes the
-    /// column as a function input before any step overwrites it (e.g. `materialize(a)` from
-    /// `UPDATE b = isNotNull(materialize(a))` running before `UPDATE a = ...`), that action
-    /// expects it in the post-`MODIFY` type, so it must still be converted.
-    /// `columns_consumed_by_chain_actions` holds exactly those columns; keep them out of the
-    /// skip set so the conversion still runs.
+    /// discarded and replaced before anything genuinely reads it. If a mutation step consumes
+    /// the column as a function input first (e.g. `materialize(a)` from
+    /// `UPDATE b = isNotNull(materialize(a))` before `UPDATE a = ...`, or a self-read like
+    /// `UPDATE a = materialize(a)`), that action expects it in the post-`MODIFY` type, so it
+    /// must still be converted. `columns_consumed_by_chain_actions` holds exactly those
+    /// columns; keep them out of the skip set so the conversion still runs.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
         merge_tree_reader->performRequiredConversions(read_columns);
