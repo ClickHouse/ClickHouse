@@ -28,7 +28,7 @@ SELECT sum(k) > 0 FROM t_cc_estimate PREWHERE length(payload) > 0
 SETTINGS use_columns_cache = 1, optimize_functions_to_subcolumns = 0,
     columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 150000;
 
-SELECT count() FROM system.columns_cache;
+SELECT count() FROM system.columns_cache WHERE database = currentDatabase();
 
 -- Sanity check: with no estimate budget the same query populates the cache,
 -- so the empty cache above is the work of the estimate gate.
@@ -37,7 +37,7 @@ SYSTEM DROP COLUMNS CACHE;
 SELECT sum(k) > 0 FROM t_cc_estimate PREWHERE length(payload) > 0
 SETTINGS use_columns_cache = 1, optimize_functions_to_subcolumns = 0;
 
-SELECT count() > 0 FROM system.columns_cache;
+SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase();
 
 -- A query under the same budget that reads only `k` stays within the estimate
 -- and is allowed to write to the cache.
@@ -47,6 +47,6 @@ SELECT sum(k) > 0 FROM t_cc_estimate
 SETTINGS use_columns_cache = 1,
     columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 150000;
 
-SELECT count() > 0 FROM system.columns_cache;
+SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase();
 
 DROP TABLE t_cc_estimate;
