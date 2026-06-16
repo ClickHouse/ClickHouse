@@ -96,6 +96,11 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
+        /// Incremented once per refresh occurrence (not per retry). Used as a stable, clock-independent
+        /// deduplication token for APPEND refreshes so that a retried or handed-off occurrence does not
+        /// append its result more than once.
+        Int64 refresh_seq = 0;
+
         /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
         /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
         /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to compensate, but this is easier.)
@@ -382,7 +387,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, const String & insert_deduplication_token);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 
