@@ -24,3 +24,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1'), 'SeLeCt 1');
 
 -- Original whitespace and comments are preserved where the tokens match.
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 + 2'), 'SELECT 1   +   2 /* c */');
+
+-- The optional `original_query` is bounded by `max_query_size`: an oversized second argument skips the
+-- whitespace-preservation pass (which would tokenize all of it) and falls back to canonical formatting.
+-- Here the JSON fits the limit but the 200000-byte original does not, so the result is the canonical form.
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 + 2'), repeat('x', 200000)) SETTINGS max_query_size = 100000;

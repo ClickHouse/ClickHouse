@@ -4,3 +4,4 @@ select a from t
 select 1
 SeLeCt 1
 SELECT 1   +   2 /* c */
+SELECT 1 + 2

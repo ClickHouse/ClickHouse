@@ -86,3 +86,8 @@ SELECT formatQueryFromJSON('{"type":"TTLElement","mode":"DELETE","destination_ty
 -- ASTRefreshStrategy: `period` is required for `schedule_kind` AFTER / EVERY.
 SELECT formatQueryFromJSON('{"type":"RefreshStrategy","schedule_kind":"AFTER"}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"RefreshStrategy","schedule_kind":"EVERY"}'); -- { serverError BAD_ARGUMENTS }
+
+-- `formatQueryFromJSON` enforces `max_query_size` on the raw JSON before deserializing, mirroring the
+-- `clickhouse_json` client/server entry points (so a huge shallow document is rejected before Poco
+-- materializes it). Here `parseQueryToJSON('SELECT 1')` is well over 10 bytes.
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1')) SETTINGS max_query_size = 10; -- { serverError SYNTAX_ERROR }

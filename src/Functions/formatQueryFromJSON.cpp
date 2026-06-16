@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -296,6 +297,15 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto json = String(json_col->getDataAt(i));
+
+            /// Enforce `max_query_size` on the raw JSON before handing it to `Poco::JSON::Parser`,
+            /// mirroring the `clickhouse_json` client/server entry points: a shallow document with a
+            /// huge `children` array would otherwise be materialized by Poco before `max_ast_elements`
+            /// can reject it.
+            if (max_query_size != 0 && json.size() > max_query_size)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
             auto ast = IAST::createFromJSON(json, max_ast_depth, max_ast_elements);
 
             /// Defense in depth: also walk the constructed AST and verify its
@@ -336,6 +346,11 @@ public:
     /// semantic divergence; on mismatch (or if the merged text fails to reparse) fall back to canonical.
     String formatWithOriginalWhitespaceChecked(const String & canonical, const String & original) const
     {
+        /// Skip the whitespace-preservation pass (which tokenizes the whole `original_query`) when the
+        /// original exceeds `max_query_size`, so a large second argument cannot spend unbounded CPU/memory
+        /// here. The canonical formatting is always a correct result.
+        if (max_query_size != 0 && original.size() > max_query_size)
+            return canonical;
         String merged = formatWithOriginalWhitespace(canonical, original);
         if (merged == canonical)
             return merged;
