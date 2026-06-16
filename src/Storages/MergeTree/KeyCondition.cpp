@@ -774,11 +774,10 @@ static bool isTrivialCast(const ActionsDAG::Node & node)
     if ((name != "CAST" && name != "_CAST") || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
         return false;
 
-    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
-    if (!column_const)
+    if (!node.children[1]->column)
         return false;
 
-    Field field = column_const->getField();
+    Field field = node.children[1]->column->getField();
     if (field.getType() != Field::Types::String)
         return false;
 
@@ -837,7 +836,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
 
     auto is_const = [](const ActionsDAG::Node & n)
     {
-        return n.type == ActionsDAG::ActionType::COLUMN && n.column && isColumnConst(*n.column);
+        return n.type == ActionsDAG::ActionType::COLUMN;
     };
 
     const bool c0 = is_const(*node.children[0]);
@@ -974,19 +973,18 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
-                column_const && column_const->getDataType() != TypeIndex::Function)
+            if (node.column && node.column->getDataType() != TypeIndex::Function)
             {
                 /// Re-generate column name for constant.
                 /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
                 /// DAG from the PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare names, but DAG subtrees instead.
-                name = ASTLiteral(column_const->getField()).getColumnName();
+                name = ASTLiteral(node.column->getField()).getColumnName();
             }
             else
                 name = node.result_name;
 
-            res = &inverted_dag.addColumn({node.column, node.result_type, name});
+            res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -1665,7 +1663,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!can_transform_constant)
         return false;
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -1822,8 +1820,17 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    ColumnPtr input_column = in_column->convertToFullIfNeeded();
-    DataTypePtr input_type = recursiveRemoveLowCardinality(in_type);
+    /// Strip only outer-level wrappers (Const/Replicated/Sparse/LowCardinality), symmetrically with
+    /// `removeLowCardinality` on the type. `convertToFullIfNeeded` must not be used here: it recurses
+    /// into subcolumns and strips inner `LowCardinality`, which `removeLowCardinality` keeps, producing a
+    /// column/type mismatch for inner LC (e.g. `Variant(LowCardinality(String), Int)`) and a `typeid_cast`
+    /// failure in `FunctionCast` wrappers. This mirrors `applyFunctionChainToColumn` above.
+    ColumnPtr input_column = in_column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfReplicated()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
+    DataTypePtr input_type = removeLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
@@ -1831,8 +1838,12 @@ static bool applyDeterministicDagToColumn(
     /// - strip Nullable/LowCardinality wrappers to get the actual column
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        column = column->convertToFullIfNeeded();
-        type = recursiveRemoveLowCardinality(type);
+        column = column
+            ->convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+        type = removeLowCardinality(type);
 
         if (column->isNullable())
         {
@@ -2099,7 +2110,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
     out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -2114,7 +2125,14 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!constant_transformed)
         return false;
 
-    out_value = (*transformed_const_column)[0];
+    Field transformed_value = (*transformed_const_column)[0];
+
+    /// If the key transform produces NaN for the constant, the index cannot answer this predicate;
+    /// fall back so the caller scans the granules.
+    if (transformed_value.isNaN())
+        return false;
+
+    out_value = transformed_value;
     out_type = transformed_const_type;
     return true;
 }
@@ -2874,7 +2892,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     const ActionsDAG::Node * next_node = nullptr;
                     for (const auto * arg : cur_node->children)
                     {
-                        if (arg->column && isColumnConst(*arg->column))
+                        if (arg->column)
                             continue;
 
                         if (next_node)
@@ -2942,7 +2960,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     {
                         const auto * left = func->children[0];
                         const auto * right = func->children[1];
-                        if (left->column && isColumnConst(*left->column))
+                        if (left->column)
                         {
                             const_arg = {left->result_type->createColumnConst(0, (*left->column)[0]), left->result_type, ""};
                             kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;

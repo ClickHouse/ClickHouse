@@ -34,13 +34,18 @@ public:
                 this->result_type->getName(),
                 getName());
 
-        if (isDynamic(this->result_type) || isVariant(this->result_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->result_type->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    this->result_type->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*this->result_type);
+        this->result_type->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
