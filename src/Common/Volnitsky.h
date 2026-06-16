@@ -389,6 +389,22 @@ protected:
 
     FallbackSearcher fallback_searcher;
 
+    /// Whether search() bypasses Volnitsky's n-gram hash and uses the fallback searcher directly.
+    /// Case-sensitive search uses StringZilla `sz_find`, which beats the hash on every SIMD target (x86 SSE+
+    /// and ARM NEON). Case-insensitive uses a cache searcher that only beats the hash with the AVX2/AVX-512
+    /// kernels; on ARM NEON and SSE-only the hash wins for selective needles, so it is kept there.
+#if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    static constexpr bool case_sensitive_can_bypass = true;
+#else
+    static constexpr bool case_sensitive_can_bypass = false;
+#endif
+#if USE_MULTITARGET_CODE && defined(__AVX2__)
+    static constexpr bool case_insensitive_can_bypass = true;
+#else
+    static constexpr bool case_insensitive_can_bypass = false;
+#endif
+    static constexpr bool use_fallback_searcher = CaseSensitive ? case_sensitive_can_bypass : case_insensitive_can_bypass;
+
 public:
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
@@ -400,31 +416,32 @@ public:
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
         , fallback_searcher{needle, needle_size}
     {
-#if !(USE_MULTITARGET_CODE && defined(__AVX2__))
-        if (fallback)
-            return;
-
-        hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
-
-        auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
-        /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
-        /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
-        for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
+        if constexpr (!use_fallback_searcher)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
-
-            /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
-              * are represented by different number of bytes or code points.
-              * So, use fallback if error occurred.
-              */
-            if (!ok)
-            {
-                fallback = true;
-                hash = nullptr;
+            if (fallback)
                 return;
+
+            hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
+
+            auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
+            /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
+            /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
+            for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
+            {
+                bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
+
+                /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
+                  * are represented by different number of bytes or code points.
+                  * So, use fallback if error occurred.
+                  */
+                if (!ok)
+                {
+                    fallback = true;
+                    hash = nullptr;
+                    return;
+                }
             }
         }
-#endif
     }
 
 
@@ -436,34 +453,32 @@ public:
 
         const auto * haystack_end = haystack + haystack_size;
 
-        /// Bypassing Volnitsky's n-gram hash to search directly with the fallback searcher has proven useful
-        /// only when targeting AVX2 or AVX-512, and detrimental on NEON and SSE2, so restrict it to AVX2+.
-#if USE_MULTITARGET_CODE && defined(__AVX2__)
-        return fallback_searcher.search(haystack, haystack_end);
-#else
-
-        if (fallback || haystack_size <= needle_size)
+        if constexpr (use_fallback_searcher)
             return fallback_searcher.search(haystack, haystack_end);
-
-        /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
-        const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
-        for (; pos <= haystack_end - needle_size; pos += step)
+        else
         {
-            /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
-            for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num];
-                 cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+            if (fallback || haystack_size <= needle_size)
+                return fallback_searcher.search(haystack, haystack_end);
+
+            /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
+            const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
+            for (; pos <= haystack_end - needle_size; pos += step)
             {
-                /// When found - compare bytewise, using the offset from the hash table.
-                const auto * res = pos - (hash[cell_num] - 1);
+                /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
+                for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num];
+                     cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+                {
+                    /// When found - compare bytewise, using the offset from the hash table.
+                    const auto * res = pos - (hash[cell_num] - 1);
 
-                /// pointer in the code is always padded array so we can use pagesafe semantics
-                if (fallback_searcher.compare(haystack, haystack_end, res))
-                    return res;
+                    /// pointer in the code is always padded array so we can use pagesafe semantics
+                    if (fallback_searcher.compare(haystack, haystack_end, res))
+                        return res;
+                }
             }
-        }
 
-        return fallback_searcher.search(pos - step + 1, haystack_end);
-#endif
+            return fallback_searcher.search(pos - step + 1, haystack_end);
+        }
     }
 
     const char * search(const char * haystack, size_t haystack_size) const
