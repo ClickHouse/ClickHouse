@@ -1438,6 +1438,38 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
+void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
+{
+    if (!current_query_parsed_as_json_dialect)
+        return;
+
+    /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
+    /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
+    /// the original JSON body starts with `{` (after optional leading whitespace), whereas a client-side
+    /// AST->SQL rewrite (`formatWithSecretsOneLine` for old-server query parameters or
+    /// `allow_merge_tree_settings`) and the `SET` escape produce SQL. Pin the transport dialect so the
+    /// server parses the text the same way the client did.
+    size_t i = 0;
+    while (i < outbound_query.size() && isWhitespaceASCII(outbound_query[i]))
+        ++i;
+    const bool outbound_is_json = i < outbound_query.size() && outbound_query[i] == '{';
+
+    if (outbound_is_json)
+    {
+        /// Keep the JSON body parsed as JSON even if a JSON `SET dialect = ...` or
+        /// `SET allow_experimental_json_ast_dialect = 0` in this very query already changed the session
+        /// settings on the client side. The SET still takes effect for subsequent queries (it is applied
+        /// to the server session and re-applied to the client context after this query completes).
+        client_context->setSetting("dialect", String("clickhouse_json"));
+        client_context->setSetting("allow_experimental_json_ast_dialect", true);
+    }
+    else
+    {
+        /// The client serialized the AST back to SQL; tell the server to parse SQL, not JSON.
+        client_context->setSetting("dialect", String("clickhouse"));
+    }
+}
+
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.
@@ -1591,6 +1623,9 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
+                /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to
+                /// match before sending so the server parses it the same way the client did.
+                pinOutboundDialectForJSONDialect(query);
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query,
@@ -2164,6 +2199,9 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
+    /// before sending so the server parses it the same way the client did.
+    pinOutboundDialectForJSONDialect(query);
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
@@ -2672,6 +2710,10 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
+        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
+        /// in-query `SET` (which may change `dialect`/`allow_experimental_json_ast_dialect`). The outbound
+        /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
+        current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
