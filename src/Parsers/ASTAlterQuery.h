@@ -259,6 +259,9 @@ public:
 
     ASTExpressionList * command_list = nullptr;
 
+    /// Useful if we already have a DDL lock
+    bool no_ddl_lock = false;
+
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;

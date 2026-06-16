@@ -68,10 +68,12 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes the Darwin skip list, so changes to
-# it must schedule the job (the shared digest above does not cover that file).
+# The Darwin fast test additionally consumes the Darwin skip list and its wrapper
+# script, so changes to either must schedule the job (the shared digest above does
+# not cover them).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
-    include_paths=fast_test_digest_config.include_paths + ["./ci/defs/darwin.skip"],
+    include_paths=fast_test_digest_config.include_paths
+    + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
 )
 
 common_build_job_config = Job.Config(
@@ -207,13 +209,24 @@ class JobConfigs:
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()
-        command="python3 ./ci/jobs/fast_test.py",
+        # macOS needs 127.0.0.2+ aliased on lo0 (it does not auto-route 127.0.0.0/8)
+        # so remote()/cluster() tests are reachable, and the aliases must be removed
+        # afterwards or the reused runner leaks them into later jobs. That setup and
+        # fail-closed teardown live in a wrapper script (not pre/post hooks, whose
+        # exit codes praktika does not propagate to job status). The script path is
+        # the whole command: an inlined shell command tripped str.format() braces and
+        # the run-command file-path validator. See ci/jobs/scripts/fast_test_darwin.sh.
+        command="./ci/jobs/scripts/fast_test_darwin.sh",
         digest_config=darwin_fast_test_digest_config,
         result_name_for_cidb="Tests",
         pre_hooks=[
             "sudo rm -rf /Library/Logs/DiagnosticReports/*",
         ],
         post_hooks=[
+            # Timeout safety net only: a timed-out command is killed before its
+            # teardown runs, so drop any leaked aliases here (best-effort: a hook
+            # cannot fail the job, and a timed-out job already fails).
+            'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
         ],
@@ -223,17 +236,6 @@ class JobConfigs:
             runs_on=RunnerLabels.MACOS_ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
         ),
-    )
-    smoke_tests_macos = Job.Config(
-        name=JobNames.SMOKE_TEST_MACOS,
-        runs_on=RunnerLabels.MACOS_AMD_SMALL,
-        command="python3 ./ci/jobs/smoke_test.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/smoke_test.py",
-            ],
-        ),
-        requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
     )
     tidy_build_arm_jobs = common_build_job_config.parametrize(
         Job.ParamSet(

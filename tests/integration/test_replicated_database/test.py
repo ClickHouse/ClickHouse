@@ -1219,13 +1219,14 @@ def test_sync_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
 
-        for i in range(number_of_tables):
-            main_node.query(
-                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
-                    i
-                ),
-                settings=settings,
+        # Single client invocation: one process spawn instead of N.
+        create_queries = "\n".join(
+            "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n;".format(
+                i
             )
+            for i in range(number_of_tables)
+        )
+        main_node.query(create_queries, settings=settings)
 
     # wait for host to reconnect
     dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")

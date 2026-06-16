@@ -1215,7 +1215,8 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
