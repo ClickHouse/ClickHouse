@@ -420,13 +420,19 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     auto stage = selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
 
-    /// Caller asked for at most WithMergeableState but a child reported a higher stage
+    /// Caller asked for WithMergeableState but a child reported a higher stage
     /// (e.g. Distributed with `distributed_group_by_no_merge=1` reports Complete).
     /// Cap to WithMergeableState so we don't emit finalized values where the caller
     /// expects AggregateFunction states - otherwise `convertAndFilterSourceStream`
     /// throws CANNOT_CONVERT_TYPE. The multi-table branch above already caps at
     /// WithMergeableState for the same reason; this extends it to the single-table branch.
-    if (to_stage <= QueryProcessingStage::WithMergeableState && stage > to_stage)
+    ///
+    /// Only when the caller asked for exactly WithMergeableState: for FetchColumns the
+    /// caller wants raw columns, the child's higher stage (Complete from a single-shard
+    /// Distributed) is fine, and raising it to WithMergeableState routes the child onto a
+    /// path that keeps the analyzer-qualified `__table1.name` header (THERE_IS_NO_COLUMN
+    /// under serialize_query_plan).
+    if (to_stage == QueryProcessingStage::WithMergeableState && stage > to_stage)
         stage = QueryProcessingStage::WithMergeableState;
     return stage;
 }
