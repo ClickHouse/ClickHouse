@@ -351,7 +351,7 @@ public:
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
-            /// Merged text is not reparseable as the same query — fall through to the canonical form.
+            /// Ok: the merged text is not reparseable as the same query — fall through to the canonical form.
         }
         return canonical;
     }
