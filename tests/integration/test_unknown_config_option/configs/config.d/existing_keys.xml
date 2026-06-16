@@ -9,7 +9,13 @@
     </proto_caps>
     <enable_http_close_session>true</enable_http_close_session>
     <enable_arrow_close_session>true</enable_arrow_close_session>
-    <ignore_table_dependencies_on_metadata_loading>1</ignore_table_dependencies_on_metadata_loading>
+    <!-- `ignore_table_dependencies_on_metadata_loading` is also read outside `ServerSettings`
+         (by `TablesLoader`) and is kept in the allowlist, but it is intentionally NOT exercised
+         here. It is a vestigial flag whose only remaining effect is to route databases into the
+         unimplemented `DatabaseOrdinary::loadStoredObjects`, which aborts startup with a
+         `LOGICAL_ERROR` ("Not implemented"). That abort is a pre-existing bug independent of this
+         config check (it reproduces on `master`), so setting the flag in a "server must start
+         cleanly" config would make this test fail for an unrelated reason. -->
     <allow_reserved_database_name_tmp_convert>1</allow_reserved_database_name_tmp_convert>
     <keeper_map_keys_limit>0</keeper_map_keys_limit>
     <umask>027</umask>
