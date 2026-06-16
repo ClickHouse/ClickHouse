@@ -1,0 +1,12 @@
+-- page in a subquery SETTINGS is translated to offset (page 2, limit 10 -> rows 10..19)
+10	19	10
+-- page in a subquery SETTINGS without limit is rejected (not silently dropped)
+-- limit/offset in a subquery SETTINGS cap the subquery result
+5
+5
+-- per-UNION-arm limit is applied per arm, not collapsed onto the whole union (1 + 2 = 3)
+3
+-- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)
+3
+-- INSERT ... SETTINGS limit ... SELECT caps the inserted rows
+2
