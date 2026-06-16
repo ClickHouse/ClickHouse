@@ -3,7 +3,7 @@
         <disks>
             <test_disk_04327_sed_local>
                 <type>local</type>
-                <path>/</path>
+                <path from_env="TEST_DISK_04327_SED_LOCAL_PATH"></path>
             </test_disk_04327_sed_local>
             <test_disk_04327_sed_object_storage>
                 <type>object_storage</type>
