@@ -7,7 +7,6 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
@@ -718,14 +717,32 @@ void ColumnVariant::deserializeBinaryIntoVariant(ColumnVariant::Discriminator gl
 void ColumnVariant::insertDefault()
 {
     getLocalDiscriminators().push_back(NULL_DISCRIMINATOR);
-    getOffsets().emplace_back();
+    /// Keep local_discriminators and offsets in sync even if appending to offsets throws
+    /// (e.g. on a memory limit), otherwise popBack would over-pop the shorter one.
+    try
+    {
+        getOffsets().emplace_back();
+    }
+    catch (...)
+    {
+        getLocalDiscriminators().pop_back();
+        throw;
+    }
 }
 
 void ColumnVariant::insertManyDefaults(size_t length)
 {
-    size_t size = local_discriminators->size();
-    getLocalDiscriminators().resize_fill(size + length, NULL_DISCRIMINATOR);
-    getOffsets().resize_fill(size + length);
+    size_t prev_size = local_discriminators->size();
+    getLocalDiscriminators().resize_fill(prev_size + length, NULL_DISCRIMINATOR);
+    try
+    {
+        getOffsets().resize_fill(prev_size + length);
+    }
+    catch (...)
+    {
+        getLocalDiscriminators().resize_assume_reserved(prev_size);
+        throw;
+    }
 }
 
 void ColumnVariant::popBack(size_t n)
@@ -939,38 +956,37 @@ void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     }
 }
 
-WeakHash32 ColumnVariant::getWeakHash32() const
+void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = size();
-
-    /// If we have only NULLs, keep hash unchanged.
-    if (hasOnlyNulls())
-        return WeakHash32(s);
-
-    /// Optimization for case when there is only 1 non-empty variant and no NULLs.
-    /// In this case we can just calculate weak hash for this variant.
-    if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-        return variants[*non_empty_local_discr]->getWeakHash32();
-
-    /// Calculate weak hash for all variants.
-    VectorWithMemoryTracking<WeakHash32> nested_hashes;
-    for (const auto & variant : variants)
-        nested_hashes.emplace_back(variant->getWeakHash32());
-
-    /// For each row hash is a hash of corresponding row from corresponding variant.
-    WeakHash32 hash(s);
-    auto & hash_data = hash.getData();
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
-    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+
+    /// Optimization for case when there is only 1 non-empty variant and no NULLs:
+    /// the per-row hash is just the hash of that variant.
+    if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        Discriminator discr = local_discriminators_data[i];
-        /// Update hash only for non-NULL values
-        if (discr != NULL_DISCRIMINATOR)
-            hash_data[i] = nested_hashes[discr].getData()[offsets_data[i]];
+        variants[*non_empty_local_discr]->computeHashInto(row_begin, row_end, hash_out, initial);
+        return;
     }
 
-    return hash;
+    /// Calculate per-row hash for all variants once, then gather by discriminator.
+    /// NULL rows contribute `WEAK_HASH32_INITIAL_VALUE`, like `ColumnNullable` and the former `getWeakHash32`.
+    VectorWithMemoryTracking<PaddedPODArray<UInt32>> nested_hashes(variants.size());
+    for (size_t v = 0; v < variants.size(); ++v)
+    {
+        const size_t variant_size = variants[v]->size();
+        nested_hashes[v].resize(variant_size);
+        if (variant_size)
+            variants[v]->computeHashInto(0, variant_size, nested_hashes[v].data(), true);
+    }
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        const Discriminator discr = local_discriminators_data[i];
+        const UInt32 value = discr == NULL_DISCRIMINATOR ? WEAK_HASH32_INITIAL_VALUE : nested_hashes[discr][offsets_data[i]];
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
 }
 
 void ColumnVariant::updateHashFast(SipHash & hash) const
@@ -1754,6 +1770,16 @@ void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & n
     applyNullMapImpl<true>(null_map);
 }
 
+ColumnPtr ColumnVariant::createNullMap() const
+{
+    const auto & discriminators = getLocalDiscriminators();
+    auto null_map = ColumnUInt8::create(discriminators.size(), UInt8(0));
+    auto & null_map_data = null_map->getData();
+    for (size_t i = 0; i < discriminators.size(); ++i)
+        null_map_data[i] = (discriminators[i] == NULL_DISCRIMINATOR);
+    return null_map;
+}
+
 template <bool inverted>
 void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map)
 {
@@ -1956,13 +1982,15 @@ bool ColumnVariant::hasStatistics() const
 
 void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    /// Iterate by global discriminator: source columns are addressed by global discriminator,
+    /// so the destination variant must be too (local order may differ from global order).
     for (size_t i = 0; i != variants.size(); ++i)
     {
         VectorWithMemoryTracking<ColumnPtr> variant_source_columns;
         variant_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             variant_source_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        variants[i]->takeOrCalculateStatisticsFrom(variant_source_columns);
+        getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variant_source_columns);
     }
 }
 
