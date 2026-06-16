@@ -94,12 +94,17 @@ void ASTPartition::readJSON(const Poco::JSON::Object & json)
             setPartitionID(id_child);
     }
 
-    /// `formatImpl` unconditionally dereferences `id` when neither `value` nor `all` is set.
-    /// Reject malformed JSON like `{"type":"Partition"}` instead of producing an AST that
-    /// crashes during formatting.
+    /// `ParserPartition` produces exactly one shape: `PARTITION ALL` (`all = true`, no value/id) or
+    /// `PARTITION <expr>` / `PARTITION ID '<id>'` (exactly one of `value`/`id`). `formatImpl`
+    /// unconditionally dereferences `id` when neither `value` nor `all` is set, and emits only `ALL`
+    /// when `all` is set (dropping any value/id). Reject the parser-impossible combinations:
+    /// `{"type":"Partition"}` (no target) and `all` together with a `value`/`id`.
     if (!value && !all && !id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`Partition` AST requires one of 'value', 'id', or 'all' = true during AST JSON deserialization");
+    if (all && (value || id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Partition` AST cannot set 'all' together with 'value' or 'id' during AST JSON deserialization");
 }
 
 void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -26,6 +26,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x UInt1
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t LIMIT 1 BY ALL'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a LIMIT 1 WITH TIES'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v SQL SECURITY DEFINER AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW v REFRESH DEPENDS ON src ENGINE = Memory AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR OFFSET 30 MINUTE ENGINE = Memory AS SELECT 1'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -135,3 +137,17 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a 
 -- plain `CREATE TABLE`, but `InterpreterCreateQuery::createTable` still runs `processSQLSecurityOption`.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8) ENGINE = Memory'), '"attach":false', '"sql_security":{"type":"SQLSecurity","security_type":1,"is_definer_current_user":true},"attach":false')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- REFRESH strategy invariants (`ParserRefreshStrategy`): `OFFSET` is parsed only in the `EVERY`
+-- branch and must be strictly less than the period. (`REFRESH DEPENDS ON` — `AFTER` with dependencies
+-- and no period — is exercised as a valid round-trip above.)
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR OFFSET 30 MINUTE ENGINE = Memory AS SELECT 1'), '"schedule_kind":"EVERY"', '"schedule_kind":"AFTER"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR OFFSET 30 MINUTE ENGINE = Memory AS SELECT 1'), '"offset":{"type":"TimeInterval","seconds":1800', '"offset":{"type":"TimeInterval","seconds":7200')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTPartition`: the parser produces `PARTITION ALL` (`all`, no value/id) or a single `value`/`id`,
+-- never `all` together with a value/id (`formatImpl` would emit `ALL` and silently drop the value).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"Partition","all":true,"value":{"type":"Literal","value":{"field_type":"UInt64","value":5}}}'); -- { serverError BAD_ARGUMENTS }

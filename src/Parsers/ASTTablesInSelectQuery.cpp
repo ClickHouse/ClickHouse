@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -519,19 +520,27 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         children.push_back(subquery);
     }
 
-    child = r.readChild("sample_size");
+    /// `sample_size`/`sample_offset` are parser-owned `ASTSampleRatio` nodes; the analyzer downcasts
+    /// `sample_size->as<ASTSampleRatio &>()`, so reject any other node type here.
+    child = r.readChildOfType<ASTSampleRatio>("sample_size");
     if (child)
     {
         sample_size = child;
         children.push_back(sample_size);
     }
 
-    child = r.readChild("sample_offset");
+    child = r.readChildOfType<ASTSampleRatio>("sample_offset");
     if (child)
     {
         sample_offset = child;
         children.push_back(sample_offset);
     }
+
+    /// `formatImpl` emits `OFFSET` only inside the `SAMPLE` (`sample_size`) branch, so a `sample_offset`
+    /// without a `sample_size` is parser-impossible and would silently drop the offset on formatting.
+    if (sample_offset && !sample_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`sample_offset` requires `sample_size` during AST JSON deserialization");
 
     /// `column_aliases` is parser-produced as an `ASTExpressionList`; alias handling expects that shape.
     child = r.readChildOfType<ASTExpressionList>("column_aliases");

@@ -176,3 +176,12 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t TO Disk(\'d\
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 SETTINGS max_threads = 1'));
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 SETTINGS max_threads = 1'), '"settings":{"type":"SetQuery"', '"settings":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTTableExpression.sample_size`/`sample_offset` are parser-owned `ASTSampleRatio` nodes (the
+-- analyzer downcasts `sample_size->as<ASTSampleRatio &>()`), and the formatter emits `OFFSET` only
+-- inside the `SAMPLE` branch, so `sample_offset` without `sample_size` is parser-impossible.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM t SAMPLE 1/2 OFFSET 1/10'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t SAMPLE 1/2'), '"sample_size":{"type":"SampleRatio"', '"sample_size":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM t SAMPLE 1/2 OFFSET 1/10'), '"sample_size":', '"unused_sample_size":')); -- { serverError BAD_ARGUMENTS }

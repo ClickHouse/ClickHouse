@@ -108,10 +108,6 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
     auto period_child = r.readChildOfType<ASTTimeInterval>("period");
     if (period_child)
         set(period, period_child);
-    else if (schedule_kind == RefreshScheduleKind::AFTER || schedule_kind == RefreshScheduleKind::EVERY)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Required field 'period' is missing in JSON AST for RefreshStrategy with schedule_kind '{}'",
-            magic_enum::enum_name(schedule_kind));
     auto offset_child = r.readChildOfType<ASTTimeInterval>("offset");
     if (offset_child)
         set(offset, offset_child);
@@ -131,6 +127,27 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
         set(dependencies, dependencies_child);
     }
     append = r.getBool("append");
+
+    /// Mirror `ParserRefreshStrategy`'s schedule-shape invariants. `REFRESH EVERY <interval>` always
+    /// carries a period. `REFRESH AFTER <interval>` carries a period, but the `REFRESH DEPENDS ON ...`
+    /// shorthand parses as `AFTER` with `dependencies` and *no* period, so reading the writer's own JSON
+    /// for that shape must not require a period. `OFFSET` is parsed only in the `EVERY` branch and must
+    /// be strictly less than the period (`offset.maxSeconds() < period.minSeconds()`).
+    if (schedule_kind == RefreshScheduleKind::EVERY && !period)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`REFRESH EVERY` requires a 'period' during AST JSON deserialization");
+    if (schedule_kind == RefreshScheduleKind::AFTER && !period && !dependencies)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`REFRESH AFTER` requires a 'period' or DEPENDS ON 'dependencies' during AST JSON deserialization");
+    if (offset)
+    {
+        if (schedule_kind != RefreshScheduleKind::EVERY)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`REFRESH` 'offset' is only valid for `REFRESH EVERY` during AST JSON deserialization");
+        if (period && offset->interval.maxSeconds() >= period->interval.minSeconds())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`REFRESH` 'offset' must be less than the 'period' during AST JSON deserialization");
+    }
 }
 
 }
