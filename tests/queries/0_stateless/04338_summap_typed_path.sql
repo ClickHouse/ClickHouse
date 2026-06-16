@@ -200,6 +200,20 @@ SELECT sumMap([nan, nan], [1, 2]);
 SELECT 'Float64 NaN key multi-row merge';
 SELECT sumMap(k, v) FROM values('k Array(Float64), v Array(Int64)', ([nan], [10]), ([nan], [20]));
 
+-- Float key normalization: +0.0 and -0.0 must merge into one key
+SELECT 'Float64 +0/-0 normalization';
+SELECT sumMap([0., -0.], [1, 2]);
+
+SELECT 'Float32 +0/-0 normalization';
+SELECT sumMap([toFloat32(0.), toFloat32(-0.)], [1, 2]);
+
+SELECT 'BFloat16 +0/-0 normalization';
+SELECT sumMap([toBFloat16(0.), toBFloat16(-0.)], [1, 2]);
+
+-- +0.0 / -0.0 across multiple rows (exercises the merge path)
+SELECT 'Float64 +0/-0 multi-row merge';
+SELECT sumMap(k, v) FROM values('k Array(Float64), v Array(Int64)', ([0.], [1]), ([-0.], [2]));
+
 -- ===================== Nullable values =====================
 
 SELECT 'Nullable values - NULL as no-op';

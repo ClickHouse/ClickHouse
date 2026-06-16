@@ -112,12 +112,25 @@ struct SumMapKeyTraits<K>
     using MapType = HashMap<K, char *>;
     using FilterSet = HashSet<K>;
 
+    /// Canonicalize floats: collapse -0.0 → +0.0 and all NaN payloads → quiet_NaN (HashMap uses bitEquals).
+    static K normalizeKey(K key)
+    {
+        if constexpr (is_floating_point<K>)
+        {
+            if (isNaN(key))
+                return NaNOrZero<K>();
+            if (key == K(0))
+                return K(0);
+        }
+        return key;
+    }
+
     static K extractKey(const IColumn & key_col, size_t offset)
     {
         if constexpr (is_decimal<K>)
-            return assert_cast<const ColumnDecimal<K> &>(key_col).getData()[offset];
+            return normalizeKey(assert_cast<const ColumnDecimal<K> &>(key_col).getData()[offset]);
         else
-            return assert_cast<const ColumnVector<K> &>(key_col).getData()[offset];
+            return normalizeKey(assert_cast<const ColumnVector<K> &>(key_col).getData()[offset]);
     }
 
     static auto emplace(MapType & map, K key, Arena * /* arena */)
@@ -147,13 +160,13 @@ struct SumMapKeyTraits<K>
         {
             typename K::NativeType native;
             readBinaryLittleEndian(native, buf);
-            return K(native);
+            return normalizeKey(K(native));
         }
         else
         {
             K key;
             readBinaryLittleEndian(key, buf);
-            return key;
+            return normalizeKey(key);
         }
     }
 
@@ -1064,7 +1077,7 @@ private:
         }
         else
         {
-            return static_cast<typename KT::MapKey>(field.safeGet<NearestFieldType<typename KT::MapKey>>());
+            return KT::normalizeKey(static_cast<typename KT::MapKey>(field.safeGet<NearestFieldType<typename KT::MapKey>>()));
         }
     }
 
