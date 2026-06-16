@@ -382,6 +382,23 @@ SELECT sumMapFiltered([1, 2])([1, 2, 3, 1], [toNullable(toUInt64(10)), NULL, toN
 SELECT 'sumMapFiltered multiple values';
 SELECT sumMapFiltered([1, 3])([1, 2, 3], [10, 20, 30], [100, 200, 300]);
 
+-- Filtered with cross-signedness filter: signed filter values on unsigned keys
+-- (mirrors 02961_sumMapFiltered_keepKey which uses toInt8(-3) with UInt64 keys)
+SELECT 'sumMapFiltered cross-sign: signed filter on UInt64 keys';
+SELECT sumMapFiltered([1, 2, 3, toInt8(-3)])(a, b) FROM values('a Array(UInt64), b Array(Int64)',
+    ([1, 2, 3], [10, 10, 10]), ([3, 4, 5], [10, 10, 10]),
+    ([4, 5, 6], [10, 10, 10]), ([6, 7, 8], [10, 10, 10]));
+
+-- Unsigned filter values on signed keys
+SELECT 'sumMapFiltered cross-sign: unsigned filter on Int32 keys';
+SELECT sumMapFiltered([toUInt64(1), toUInt64(3)])(a, b) FROM values('a Array(Int32), b Array(Int64)',
+    ([1, 2, 3], [10, 20, 30]), ([3, 4, 5], [40, 50, 60]));
+
+-- Negative filter value that matches no unsigned key should be silently ignored
+SELECT 'sumMapFiltered cross-sign: negative filter ignored for unsigned keys';
+SELECT sumMapFiltered([toInt64(-1), toInt64(2)])(a, b) FROM values('a Array(UInt64), b Array(Int64)',
+    ([1, 2, 3], [10, 20, 30]), ([2, 4, 6], [40, 50, 60]));
+
 -- Filtered getName stability
 SELECT 'getName sumMapFiltered';
 SELECT toTypeName(sumMapFilteredState([1])([toUInt8(1)], [toUInt64(1)]));
