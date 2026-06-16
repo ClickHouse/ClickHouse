@@ -52,12 +52,18 @@ public:
         {
             if (filter_type == "handler")
                 continue;
-            /// URI (path and query string)
+            /// URL path (the query string is ignored)
             if (filter_type == "url")
-                addFilter(urlFilter(config, prefix + ".url"));
-            /// URL (schema, host:port, path and query string)
+                addFilter(urlFilter(config, prefix + ".url", HTTPRequestFilterMatchType::Full));
+            /// URL path matched as a base path
+            else if (filter_type == "url_prefix")
+                addFilter(urlFilter(config, prefix + ".url_prefix", HTTPRequestFilterMatchType::Prefix));
+            /// Complete URL (scheme://host:port/path); the query string is ignored
             else if (filter_type == "full_url")
-                addFilter(fullUrlFilter(config, prefix + ".full_url"));
+                addFilter(fullUrlFilter(config, prefix + ".full_url", HTTPRequestFilterMatchType::Full));
+            /// Complete URL matched as a base path
+            else if (filter_type == "full_url_prefix")
+                addFilter(fullUrlFilter(config, prefix + ".full_url_prefix", HTTPRequestFilterMatchType::Prefix));
             else if (filter_type == "empty_query_string")
                 addFilter(emptyQueryStringFilter());
             else if (filter_type == "headers")

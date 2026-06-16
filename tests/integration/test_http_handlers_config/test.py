@@ -787,7 +787,7 @@ def test_url_prefix_handler():
         def get(path):
             return cluster.instance.http_request(path, method="GET")
 
-        # The rule is <url>prefix:/test_prefix</url>: it must match the base path itself and
+        # The rule is <url_prefix>/test_prefix</url_prefix>: it must match the base path itself and
         # anything below it on a path-segment boundary, regardless of the query string.
         for matching in [
             "test_prefix",  # the base path itself

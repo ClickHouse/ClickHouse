@@ -2,7 +2,7 @@
     <http_handlers>
         <rule>
             <methods>GET</methods>
-            <url>prefix:/test_prefix</url>
+            <url_prefix>/test_prefix</url_prefix>
             <handler>
                 <type>static</type>
                 <status>200</status>

@@ -36,17 +36,17 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 /// A parsed filter expression.
 struct FilterExpression
 {
-    /// Value in the config, including "regex:" or "prefix:" prefixes (if any).
+    /// The value to match against (without marker "regex:" if any).
     String value;
 
     /// Non-null if the value is a regular expression.
     CompiledRegexPtr regex = nullptr;
 
-    /// Whether the value has "prefix:" marker (only used for URL filters).
-    bool is_prefix = false;
+    /// Whether to match `value` as a base path: the path itself or anything below it on a path-segment boundary.
+    bool match_prefix = false;
 
-    /// Whether this is an `url` or `full_url` filter.
-    bool is_url = false;
+    /// Whether to ignore the query string before matching (for `url`/`full_url` filters).
+    bool ignore_query_string = false;
 };
 
 bool checkRegexExpression(std::string_view match_str, const CompiledRegexPtr & compiled_regex)
@@ -60,9 +60,8 @@ bool checkRegexExpression(std::string_view match_str, const CompiledRegexPtr & c
 
 bool checkExpression(std::string_view match_str, const FilterExpression & expression)
 {
-    if (expression.is_url)
+    if (expression.ignore_query_string)
     {
-        /// The query string is not used for matching `url`/`full_url` filters.
         const auto * query_string = find_first_symbols<'?'>(match_str.data(), match_str.data() + match_str.size());
         match_str = match_str.substr(0, query_string - match_str.data());
     }
@@ -70,15 +69,11 @@ bool checkExpression(std::string_view match_str, const FilterExpression & expres
     if (expression.regex)
         return checkRegexExpression(match_str, expression.regex);
 
-    if (expression.is_prefix)
+    if (expression.match_prefix)
     {
-        /// Match the prefix path itself or any path below it, on a path-segment ('/')
-        /// boundary. E.g. prefix "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write", but not
-        /// "/api/v1beta". Normalize by stripping a trailing '/', so "prefix:/api/v1/" and "prefix:/api/v1"
-        /// behave the same.
-        std::string_view prefix = std::string_view{expression.value}.substr(strlen("prefix:"));
-        if (prefix.ends_with('/'))
-            prefix.remove_suffix(1);
+        /// Match the base path itself or any path below it, on a path-segment ('/') boundary. E.g. the
+        /// base "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write", but not "/api/v1beta".
+        const std::string_view prefix = expression.value;
         return match_str.starts_with(prefix)
             && (match_str.size() == prefix.size() || match_str[prefix.size()] == '/');
     }
@@ -86,8 +81,18 @@ bool checkExpression(std::string_view match_str, const FilterExpression & expres
     return match_str == expression.value;
 }
 
-FilterExpression getExpression(const std::string & expression, bool is_url)
+FilterExpression getExpression(const std::string & expression, HTTPRequestFilterMatchType filter_type, bool ignore_query_string)
 {
+    if (filter_type == HTTPRequestFilterMatchType::Prefix)
+    {
+        /// Match the value as a base path on a path-segment boundary (see checkExpression). A trailing '/'
+        /// is stripped here, so "/api/v1/" and "/api/v1" behave the same.
+        std::string_view value = expression;
+        if (value.ends_with('/'))
+            value.remove_suffix(1);
+        return {.value = String{value}, .match_prefix = true, .ignore_query_string = ignore_query_string};
+    }
+
     if (startsWith(expression, "regex:"))
     {
         auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(strlen("regex:")));
@@ -96,16 +101,10 @@ FilterExpression getExpression(const std::string & expression, bool is_url)
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
                             "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                             expression, compiled_regex->error());
-        return {.value = expression, .regex = compiled_regex, .is_url = is_url};
+        return {.value = expression, .regex = compiled_regex, .ignore_query_string = ignore_query_string};
     }
 
-    if (is_url && startsWith(expression, "prefix:"))
-    {
-        /// A "prefix:" value is matched on path-segment boundaries (see checkExpression).
-        return {.value = expression, .is_prefix = true, .is_url = is_url};
-    }
-
-    return {.value = expression, .is_url = is_url};
+    return {.value = expression, .ignore_query_string = ignore_query_string};
 }
 
 }
@@ -121,24 +120,23 @@ HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config
     return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
 }
 
-HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
+HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType filter_type)
 {
-    return [expression = getExpression(config.getString(config_path), /* is_url= */ true)](const HTTPServerRequest & request)
+    return [expression = getExpression(config.getString(config_path), filter_type, /* ignore_query_string= */ true)](const HTTPServerRequest & request)
     {
         return checkExpression(request.getURI(), expression);
     };
 }
 
-HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
+HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType filter_type)
 {
-    return [expression = getExpression(config.getString(config_path), /* is_url= */ true)](const HTTPServerRequest & request)
+    return [expression = getExpression(config.getString(config_path), filter_type, /* ignore_query_string= */ true)](const HTTPServerRequest & request)
     {
         const auto & server_address = request.serverAddress();
-        std::string url(fmt::format("{}://{}{}",
+        std::string url = fmt::format("{}://{}{}",
             request.isSecure() ? "https" : "http",
             server_address.toString(),
-            request.getURI()
-        ));
+            request.getURI());
 
         return checkExpression(url, expression);
     };
@@ -161,7 +159,8 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
 
     for (const auto & header_name : headers_name)
     {
-        const auto & expression = getExpression(config.getString(prefix + "." + header_name), /* is_url= */ false);
+        const auto & expression = getExpression(
+            config.getString(prefix + "." + header_name), HTTPRequestFilterMatchType::Full, /* ignore_query_string= */ false);
         checkExpression("", expression);    /// Check expression syntax is correct
         headers_expression.emplace(std::make_pair(header_name, expression));
     }

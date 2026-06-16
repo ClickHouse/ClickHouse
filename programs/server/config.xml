@@ -1806,11 +1806,14 @@
     <!-- Uncomment to use custom http handlers.
 
         rules are checked from top to bottom, first match runs the handler
-            url - to match request URL path (query string is excluded), you can use 'regex:' prefix to use regex match,
-                  or 'prefix:' prefix to match a base path and everything below it (optional)
+            url - to match request URL path (query string is excluded), you can use 'regex:' prefix to use regex match (optional)
+            url_prefix - to match request URL path against a base path: the path itself or anything below it on a
+                         path-segment boundary, e.g. /api/v1 matches /api/v1, /api/v1/ and /api/v1/write but not
+                         /api/v1beta (query string is excluded) (optional)
             full_url - to match the complete request URL `scheme://host:port/path` (host is an IP address here;
-                       query string is excluded), you can use 'regex:' prefix to use regex match,
-                       or 'prefix:' prefix to match a base path and everything below it (optional)
+                       query string is excluded), you can use 'regex:' prefix to use regex match (optional)
+            full_url_prefix - to match the complete request URL `scheme://host:port/path` against base
+                              (see url_prefix above; query string is excluded) (optional)
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match(optional)
