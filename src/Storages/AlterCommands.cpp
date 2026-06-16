@@ -313,6 +313,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.sample_by = command_ast->sample_by->clone();
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_ENGINE)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_ENGINE;
+        command.engine = command_ast->engine->clone();
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::REMOVE_SAMPLE_BY)
     {
         AlterCommand command;
@@ -1078,6 +1086,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_SQL_SECURITY)
         metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
+    else if (type == MODIFY_ENGINE)
+    {
+        /// Carry the new ENGINE clause so the stored CREATE query is rewritten
+        /// (applyMetadataChangesToCreateQuery). The live MergingParams swap is performed by the
+        /// storage's own alter() under an exclusive lock; nothing else in the in-memory metadata changes.
+        metadata.new_engine = engine;
+    }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 }

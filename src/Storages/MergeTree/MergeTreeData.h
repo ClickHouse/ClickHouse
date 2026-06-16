@@ -489,6 +489,14 @@ public:
                 && allow_tuple_element_aggregation == rhs.allow_tuple_element_aggregation
                 && graphite_params == rhs.graphite_params;
         }
+
+        /// Build MergingParams from a MergeTree-family engine clause given by its name (e.g.
+        /// "ReplacingMergeTree") and the argument list AST (may be null). Only the modern,
+        /// extended-syntax merge parameters are accepted (sign / version / is_deleted / columns
+        /// to sum / graphite config); legacy positional date/granularity/zookeeper arguments are
+        /// not supported here. Used by ALTER TABLE ... MODIFY ENGINE. Throws on an unknown or
+        /// non-MergeTree engine name or malformed arguments.
+        static MergingParams parseFromEngineAST(const String & engine_name, const ASTPtr & arguments, ContextPtr context);
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
@@ -1140,6 +1148,13 @@ public:
     {
         return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
     }
+
+    /// Apply ALTER TABLE ... MODIFY ENGINE to the running storage: build the new MergingParams from
+    /// the engine clause AST and swap them in place under an exclusive table lock (which drains all
+    /// readers). If the new merge semantics differ, existing parts keep their data but their merge
+    /// level is reset to 0 so that FINAL/OPTIMIZE re-merge them under the new semantics (reusing the
+    /// part-level-reset rationale of getLevelForAdoptedPart, issue #106798/#107481).
+    void applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context);
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,

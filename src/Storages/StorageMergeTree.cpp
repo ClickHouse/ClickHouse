@@ -535,6 +535,12 @@ void StorageMergeTree::alter(
                 resetSerializationHints(parts_lock);
             }
 
+            /// ALTER TABLE ... MODIFY ENGINE: swap the live MergingParams. The new CREATE query (with
+            /// the new ENGINE clause) is already persisted by alterTable above, so on the next load the
+            /// table will come up with these MergingParams. Apply the same change to the running storage.
+            if (new_metadata.new_engine)
+                applyEngineModification(new_metadata.new_engine, new_metadata, local_context);
+
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
         }

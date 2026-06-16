@@ -615,6 +615,13 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
             break;
         }
+        case ASTAlterCommand::MODIFY_ENGINE:
+        {
+            /// MODIFY ENGINE changes how parts are merged (the table's merge semantics), like ORDER BY
+            /// it is a structural change to data organization, so reuse the ALTER ORDER BY privilege.
+            required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
+            break;
+        }
         case ASTAlterCommand::REMOVE_SAMPLE_BY:
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         {
