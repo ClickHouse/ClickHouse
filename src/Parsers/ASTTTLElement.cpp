@@ -123,6 +123,19 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     recompression_codec = r.readChild("recompression_codec");
     if (mode == TTLMode::RECOMPRESS && !recompression_codec)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'recompression_codec' is missing for RECOMPRESS mode during AST JSON deserialization");
+
+    /// `GROUP BY` is the only mode that carries `group_by_key`/`group_by_assignments`, and
+    /// `ParserTTLElement` sets it only after parsing at least one grouping key. Reject the
+    /// parser-impossible shapes: a `GROUP_BY` without keys (`formatImpl` would emit `GROUP BY ` with no
+    /// expressions) or these fields on `DELETE`/`MOVE`/`RECOMPRESS` (where `formatImpl` drops them).
+    if (mode == TTLMode::GROUP_BY)
+    {
+        if (group_by_key.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TTL GROUP BY requires a non-empty 'group_by_key' during AST JSON deserialization");
+    }
+    else if (!group_by_key.empty() || !group_by_assignments.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'group_by_key'/'group_by_assignments' are only valid for TTL GROUP BY during AST JSON deserialization");
 }
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

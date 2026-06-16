@@ -16,6 +16,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('KILL MUTATION WHERE 1 TEST'));
 SELECT formatQueryFromJSON(parseQueryToJSON('KILL PART_MOVE_TO_SHARD WHERE 1 TEST'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/foo\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'aux:/clickhouse/foo\''));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -53,3 +55,19 @@ SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{
 -- sets both `base_snapshot_name` and `elements` is parser-impossible.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'), '"base_snapshot_name":', '"elements":[{}],"base_snapshot_name":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- TTL GROUP BY: `group_by_key`/`group_by_assignments` are produced only by `ParserTTLElement` in the
+-- `GROUP BY` branch, after at least one grouping key. A `GROUP_BY` mode with an empty `group_by_key`
+-- would format `GROUP BY ` with no expressions, and these fields on a `DELETE` TTL are silently dropped.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'), '"group_by_key":[{"type":"Identifier","name":"x"}]', '"group_by_key":[]')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d'), '"mode":"DELETE"', '"mode":"DELETE","group_by_key":[{"type":"Identifier","name":"x"}]')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- INTERPOLATE is parser-produced only as an `ASTExpressionList` of `ASTInterpolateElement`s under an
+-- `ORDER BY ... WITH FILL` clause. A non-`ASTInterpolateElement` child, or `interpolate` without a
+-- `WITH FILL` order-by element (which `formatImpl` would silently drop), is parser-impossible.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'), '"type":"InterpolateElement"', '"type":"Asterisk"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'), '"with_fill":true', '"with_fill":false')); -- { serverError BAD_ARGUMENTS }

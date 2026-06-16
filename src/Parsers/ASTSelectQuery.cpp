@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -727,7 +728,6 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExpr("limit_offset", Expression::LIMIT_OFFSET);
     setExpr("limit_length", Expression::LIMIT_LENGTH);
     setExpr("settings", Expression::SETTINGS);
-    setExpr("interpolate", Expression::INTERPOLATE);
 
     /// A SELECT query must always have a SELECT list, and `formatImpl` relies on it
     /// being an `ASTExpressionList` (it is unconditionally cast and formatted).
@@ -743,6 +743,34 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
         for (const auto & order_by_element : order_by_list->children)
             if (!order_by_element || !order_by_element->as<ASTOrderByElement>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY elements must be order-by elements during AST JSON deserialization");
+
+    /// `INTERPOLATE` is parser-produced only as an `ASTExpressionList` of `ASTInterpolateElement`s
+    /// under an `ORDER BY ... WITH FILL` clause. `formatImpl`/analysis do `interpolate()->children`
+    /// then `elem->as<ASTInterpolateElement &>()`, and the clause is formatted only inside the
+    /// `orderBy()` branch. Restore it with a typed read, validate every child, and reject it unless the
+    /// ORDER BY list carries a `WITH FILL` element (the parser cannot produce it otherwise, and
+    /// `formatImpl` would silently drop it). An empty list is the valid `INTERPOLATE`-all form.
+    if (auto interpolate_child = r.readChildOfType<ASTExpressionList>("interpolate"))
+    {
+        for (const auto & elem : interpolate_child->children)
+            if (!elem || !elem->as<ASTInterpolateElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "INTERPOLATE elements must be interpolate elements during AST JSON deserialization");
+        this->setExpression(Expression::INTERPOLATE, std::move(interpolate_child));
+    }
+    if (interpolate())
+    {
+        bool has_with_fill = false;
+        if (auto order_by_list = orderBy())
+            for (const auto & e : order_by_list->children)
+                if (const auto * obe = e->as<ASTOrderByElement>(); obe && obe->with_fill)
+                {
+                    has_with_fill = true;
+                    break;
+                }
+        if (!has_with_fill)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "INTERPOLATE requires an ORDER BY ... WITH FILL element during AST JSON deserialization");
+    }
 
     /// `order_by_all` is only meaningful together with an ORDER BY clause, because
     /// `formatImpl` recovers the sort direction and null ordering from the first
