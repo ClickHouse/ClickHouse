@@ -956,7 +956,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final && !ctx.skip_final_flag)
+    if (final && !ctx.for_cache_key)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;

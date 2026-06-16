@@ -106,11 +106,8 @@ static String runtimeFilterName(UInt64 structural_hash)
 /// per-granule result that a later execution with a different key would read as stale — `__applyFilter`
 /// is non-deterministic too, so `Node::isDeterministic` reports the whole filter expression as such).
 ///
-/// It is additionally marked `is_runtime_filter_id=true`, which makes `Node::updateHash` skip its
-/// VALUE while still hashing its stable NAME. That is what lets the single-replica and
-/// parallel-replicas plan builds produce the same Auto-PR plan hash despite each having its own random
-/// key — without that hash also dropping the value of other non-deterministic constants (a folded
-/// `now()`/`randConstant`), which must stay in the key so different queries don't share statistics.
+/// It is additionally marked `is_runtime_filter_id=true`,
+/// which makes `Node::updateHash` skip its VALUE while still hashing its stable NAME.
 static const ActionsDAG::Node & addRuntimeFilterLabelColumn(ActionsDAG & actions_dag, const RuntimeFilterId & id)
 {
     auto string_type = std::make_shared<DataTypeString>();

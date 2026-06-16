@@ -107,10 +107,6 @@ public:
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
         /// Marks the const column that carries a join runtime-filter id (added by `tryAddJoinRuntimeFilter`).
-        /// Its VALUE is a per-plan-build rendezvous key, so it is never a stable hash component and is
-        /// always skipped in `updateHash`; the filter's identity is its (stable) `result_name`. Set at
-        /// creation and preserved across DAG transforms (nodes are copied whole), so it reaches the
-        /// plan-hash callers intact.
         bool is_runtime_filter_id = false;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
