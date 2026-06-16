@@ -1,4 +1,6 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>

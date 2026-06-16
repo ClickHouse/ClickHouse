@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
+#include <IO/Progress.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -398,6 +399,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
+
+        if (callback)
+            callback(FileProgress(0, size_t(manifest_file_entry->parsed_entry->file_size_in_bytes)));
+
         return object_info;
     }
     {
