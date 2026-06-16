@@ -120,6 +120,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryResultCache;
+class PartAggregationCache;
 class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
@@ -1473,6 +1474,11 @@ public:
     void clearQueryResultCache(const std::optional<String> & tag) const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
+
+    void setPartAggregationCache(size_t max_size_in_bytes);
+    void updatePartAggregationCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<PartAggregationCache> getPartAggregationCache() const;
+    void clearPartAggregationCache() const;
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
