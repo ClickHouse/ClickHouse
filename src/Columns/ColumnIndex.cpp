@@ -169,7 +169,11 @@ size_t ColumnIndex::getIndexAt(size_t row) const
 
 void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset)
 {
-    chassert(offset + mask.size() <= size());
+    if (offset + mask.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Mask of size {} at offset {} does not match ColumnIndex of size {}",
+            mask.size(), offset, size());
     chassert(value <= getMaxIndexForCurrentType());
 
     auto set_value = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
