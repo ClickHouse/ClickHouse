@@ -1,5 +1,3 @@
--- Tags: long
-
 -- Output-byte autopr statistics for queries where a JOIN is the top of the replicas plan.
 -- A plain `SELECT <col> FROM a JOIN b` (no aggregation/expression above the join) leaves the
 -- physical `JoinStep` as the instrumented top-of-replicas node, exercising
@@ -27,23 +25,24 @@ SET use_query_condition_cache=0;
 DROP TABLE IF EXISTS oj_left_tbl;
 DROP TABLE IF EXISTS oj_right_tbl;
 
--- Left (parallelized) side: 10M rows with a varied, poorly-compressible payload, so the join
--- output is large enough to estimate meaningfully and stably.
+-- Left (parallelized) side: 1M rows with a varied, poorly-compressible payload, so the join
+-- output is large enough to estimate meaningfully and stably, while staying light enough for the
+-- sanitizer stateless matrix (which does not pass --no-long).
 CREATE TABLE oj_left_tbl (key UInt64, payload String) ENGINE = MergeTree ORDER BY key
-AS SELECT number, toString(cityHash64(number)) FROM numbers(10000000);
+AS SELECT number, toString(cityHash64(number)) FROM numbers(1000000);
 
--- Right side: a subset of keys, so INNER matches a ~2M-row slice while LEFT/RIGHT keep all 10M.
+-- Right side: a subset of keys, so INNER matches a ~200K-row slice while LEFT/RIGHT keep all 1M.
 CREATE TABLE oj_right_tbl (key UInt64) ENGINE = MergeTree ORDER BY key
-AS SELECT number FROM numbers(2000000);
+AS SELECT number FROM numbers(200000);
 
--- INNER JOIN, join is the top of the replicas plan: ~2M matched payloads.
+-- INNER JOIN, join is the top of the replicas plan: ~200K matched payloads.
 SELECT t1.payload FROM oj_left_tbl AS t1 INNER JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_inner';
 
--- LEFT JOIN, join is the top: all 10M left payloads pass through.
+-- LEFT JOIN, join is the top: all 1M left payloads pass through.
 SELECT t1.payload FROM oj_left_tbl AS t1 LEFT JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_left';
 
 -- RIGHT JOIN, join is the top: the larger table is on the right (the parallelized side), which
--- exercises the RIGHT-join branch; all 10M payloads pass through.
+-- exercises the RIGHT-join branch; all 1M payloads pass through.
 SELECT t2.payload FROM oj_right_tbl AS t1 RIGHT JOIN oj_left_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_right';
 
 DROP TABLE oj_left_tbl;
@@ -54,12 +53,12 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Fail if the collected output-byte estimate is missing (0, i.e. the join was not instrumented) or
--- deviates from the recorded baseline by more than 2.5x. Baselines are stable run-to-run because
+-- deviates from the recorded baseline by more than 2x. Baselines are stable run-to-run because
 -- the data is deterministic.
 WITH map(
-    '04305_join_inner', 39243825,
-    '04305_join_left',  196168224,
-    '04305_join_right', 199826856) AS expected
+    '04305_join_inner', 5282704,
+    '04305_join_left',  26380708,
+    '04305_join_right', 26396533) AS expected
 SELECT format('{} {} {}', log_comment, output_bytes, expected[log_comment])
 FROM (
     SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes
