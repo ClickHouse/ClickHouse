@@ -112,24 +112,28 @@ void SerializationInfo::add(const IColumn & column)
 
 void SerializationInfo::add(const SerializationInfo & other)
 {
-    /// LowCardinality cannot be derived from Data (it needs the cardinality estimate), so it is
-    /// preserved across aggregation (e.g. for per-table serialization hints): the result is
-    /// LowCardinality if either side is. It takes precedence over Sparse in the aggregated hint.
-    bool low_cardinality = ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY)
-        || ISerialization::hasKind(other.kind_stack, ISerialization::Kind::LOW_CARDINALITY);
     data.add(other.data);
+    /// LowCardinality cannot be derived from Data (it needs the cardinality estimate), so it is
+    /// preserved across aggregation (e.g. for per-table serialization hints) by counting the
+    /// contributing infos. The result is LowCardinality while at least one contributor is, and it
+    /// takes precedence over Sparse in the aggregated hint.
+    if (ISerialization::hasKind(other.kind_stack, ISerialization::Kind::LOW_CARDINALITY))
+        ++data.num_low_cardinality_parts;
     if (settings.choose_kind)
-        kind_stack = low_cardinality
+        kind_stack = data.num_low_cardinality_parts > 0
             ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
             : chooseKindStack(data, settings);
 }
 
 void SerializationInfo::remove(const SerializationInfo & other)
 {
-    bool low_cardinality = ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY);
     data.remove(other.data);
+    /// Stop reporting LowCardinality once the last contributing info is removed (see `add`), instead of
+    /// keeping the kind sticky until a full reset.
+    if (ISerialization::hasKind(other.kind_stack, ISerialization::Kind::LOW_CARDINALITY) && data.num_low_cardinality_parts > 0)
+        --data.num_low_cardinality_parts;
     if (settings.choose_kind)
-        kind_stack = low_cardinality
+        kind_stack = data.num_low_cardinality_parts > 0
             ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
             : chooseKindStack(data, settings);
 }
@@ -137,10 +141,11 @@ void SerializationInfo::remove(const SerializationInfo & other)
 
 void SerializationInfo::addDefaults(size_t length)
 {
-    bool low_cardinality = ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY);
     data.addDefaults(length);
+    /// Adding default rows (for a part that is missing this column) does not change the set of
+    /// LowCardinality contributors, so the count is left untouched.
     if (settings.choose_kind)
-        kind_stack = low_cardinality
+        kind_stack = data.num_low_cardinality_parts > 0
             ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
             : chooseKindStack(data, settings);
 }
@@ -184,6 +189,12 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
     {
         if (kind == ISerialization::Kind::SPARSE
             && (!new_settings.canUseSparseSerialization(new_type) || !preserveDefaultsAfterConversion(old_type, new_type)))
+            continue;
+        /// Automatic LowCardinality serialization is chosen only for String/FixedString columns (from their
+        /// `uniq` statistic). Drop the kind when the new type is no longer eligible, so the encoding is not
+        /// blindly carried over to a type whose statistic was never checked - and which may not even be able
+        /// to be inside a LowCardinality column.
+        if (kind == ISerialization::Kind::LOW_CARDINALITY && !isStringOrFixedString(new_type))
             continue;
         new_kind_stack.push_back(kind);
     }

@@ -39,6 +39,10 @@ public:
     {
         size_t num_rows = 0;
         size_t num_defaults = 0;
+        /// Number of aggregated infos (e.g. parts) that contribute a LowCardinality kind. Used by the
+        /// per-table serialization hint to stop reporting LowCardinality once the last such part is gone.
+        /// Maintained only when aggregating infos (`SerializationInfo::add`/`remove`); not serialized.
+        size_t num_low_cardinality_parts = 0;
 
         void add(const IColumn & column);
         void add(const Data & other);
