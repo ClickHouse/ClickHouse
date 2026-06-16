@@ -16,6 +16,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/Arena.h>
+#include <Common/CacheBase.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableTraits.h>
@@ -105,6 +106,19 @@ class HashJoinMethods;
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
+/// Weight (approximate size in bytes) of a decompressed block stored in the decompressed-columns cache.
+struct DecompressedColumnsWeightFunction
+{
+    size_t operator()(const ColumnsInfo & info) const;
+};
+
+/// Cache of decompressed right-side blocks, used during the probe phase when
+/// `enable_join_in_memory_compression` compressed the stored blocks. Keyed by the address of the
+/// stored (compressed) `ColumnsInfo`, which is stable for the lifetime of the join.
+using DecompressedColumnsCache
+    = CacheBase<const ColumnsInfo *, ColumnsInfo, std::hash<const ColumnsInfo *>, DecompressedColumnsWeightFunction>;
+using DecompressedColumnsPtr = std::shared_ptr<const ColumnsInfo>;
+
 class HashJoin : public IJoin
 {
 public:
@@ -501,6 +515,15 @@ public:
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
 
+    /// True if some stored right-side blocks were compressed in memory (by `enable_join_in_memory_compression`
+    /// or by CROSS JOIN block compression), so they must be decompressed before reading at probe time.
+    bool haveCompressed() const { return have_compressed; }
+
+    /// Returns a decompressed view of the given stored (compressed) `ColumnsInfo`, using an internal
+    /// per-join cache so that the same block is not decompressed repeatedly during the probe phase.
+    /// Must only be called when `haveCompressed()` is true.
+    DecompressedColumnsPtr getDecompressedColumns(const ColumnsInfo * compressed) const;
+
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
@@ -537,6 +560,10 @@ private:
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
+
+    /// Cache of decompressed right-side blocks for the probe phase. Thread-safe (CacheBase has its own lock),
+    /// so it can be shared across the threads probing a single (e.g. parallel_hash slot) HashJoin instance.
+    mutable DecompressedColumnsCache decompressed_columns_cache;
 
     std::vector<Sizes> key_sizes;
 

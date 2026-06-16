@@ -108,6 +108,10 @@ struct JoinSettings
     UInt64 join_to_sort_maximum_table_rows;
     bool allow_dynamic_type_in_join_keys;
 
+    /* In-memory compression of right-side blocks */
+    bool enable_join_in_memory_compression;
+    UInt64 join_decompressed_columns_cache_bytes;
+
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;

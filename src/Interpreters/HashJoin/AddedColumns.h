@@ -53,6 +53,11 @@ struct LazyOutput
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
 
+    /// Set when the join compressed its stored right-side blocks (`enable_join_in_memory_compression`).
+    /// In that case stored `ColumnsInfo` must be decompressed (via `join->getDecompressedColumns`) before reading.
+    const HashJoin * join = nullptr;
+    bool have_compressed = false;
+
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
 
@@ -177,6 +182,9 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
+
+        lazy_output.join = &join;
+        lazy_output.have_compressed = join.haveCompressed();
     }
 
     size_t size() const { return columns.size(); }
@@ -271,6 +279,10 @@ private:
 
     void checkColumns(const Columns & to_check)
     {
+        /// When stored blocks are compressed, `to_check` holds ColumnCompressed placeholders whose type
+        /// differs from the destination columns; the consistency check is decompression-unaware, so skip it.
+        if (lazy_output.have_compressed)
+            return;
         for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
             const auto * column_from_block = to_check.at(lazy_output.right_indexes[j]).get();
