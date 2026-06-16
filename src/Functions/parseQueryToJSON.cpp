@@ -116,6 +116,11 @@ to the server using the `clickhouse_json` value of the `dialect` setting (gated 
 This is useful for tools that want to inspect or transform queries programmatically without going through
 the SQL grammar.
 
+Not every SQL query has a faithful JSON representation. Queries that carry data the JSON form cannot
+reproduce (for example inline `INSERT ... VALUES` / `INSERT ... FORMAT` data) and AST node types that do
+not yet implement JSON serialization are rejected with `BAD_ARGUMENTS`, rather than producing JSON that
+`formatQueryFromJSON` could not read back.
+
 Parsing limits (`max_query_size`, `max_parser_depth`, `max_parser_backtracks`) are taken from the current
 session settings.
     )";
