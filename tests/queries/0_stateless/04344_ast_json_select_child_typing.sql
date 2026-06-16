@@ -31,6 +31,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN PLAN actions = 1 SELECT 1')
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax GRANULARITY 3'));
 SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN AST SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CHECK TABLE db.t'));
 
 -- ---------------------------------------------------------------------------
 -- `ASTInsertQuery.select` is an `ASTSelectWithUnionQuery` (insert execution downcasts it).
@@ -132,3 +133,10 @@ SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN AST"}'); -- {
 -- is rejected with a controlled `BAD_ARGUMENTS` instead of an uncaught `Poco::RangeException`.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax GRANULARITY 3'), '"granularity":3', '"granularity":-1')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTCheckTableQuery.table`/`database` are identifiers (`getTable`/`getDatabase` read them as such),
+-- and a structured `Literal` `Field` with an out-of-range value is rejected with `BAD_ARGUMENTS`.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CHECK TABLE db.t'), '"table":{"type":"Identifier"', '"table":{"type":"Literal","value":{"field_type":"String","value":"t"}')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 5'), '{"field_type":"UInt64","value":5}', '{"field_type":"UInt64","value":-1}')); -- { serverError BAD_ARGUMENTS }

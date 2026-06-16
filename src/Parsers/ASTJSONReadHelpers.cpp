@@ -109,13 +109,23 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
     /// `clickhouse_json` deserialize into a different valid literal instead of being
     /// rejected at the boundary. A JSON boolean is reported as `isInteger()`/`isNumeric()`
     /// too (`bool` is integral in Poco), so the numeric branches exclude `isBoolean()`.
+    /// `isInteger()` is also true for signed values, so a payload like `{"field_type":"UInt64","value":-1}`
+    /// (or an out-of-`Int64`-range unsigned number) reaches `getValue` and throws a raw
+    /// `Poco::RangeException`; catch it and surface a controlled `BAD_ARGUMENTS` like the scalar helpers.
     if (field_type == "UInt64")
     {
         const auto value_var = obj.get("value");
         if (!value_var.isInteger() || value_var.isBoolean())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Expected an integer 'value' for UInt64 field during AST JSON deserialization");
-        return Field(static_cast<UInt64>(obj.getValue<Poco::UInt64>("value")));
+        try
+        {
+            return Field(static_cast<UInt64>(obj.getValue<Poco::UInt64>("value")));
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'value' for UInt64 field is out of range during AST JSON deserialization");
+        }
     }
     if (field_type == "Int64")
     {
@@ -123,7 +133,14 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         if (!value_var.isInteger() || value_var.isBoolean())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Expected an integer 'value' for Int64 field during AST JSON deserialization");
-        return Field(static_cast<Int64>(obj.getValue<Poco::Int64>("value")));
+        try
+        {
+            return Field(static_cast<Int64>(obj.getValue<Poco::Int64>("value")));
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'value' for Int64 field is out of range during AST JSON deserialization");
+        }
     }
     if (field_type == "Float64")
     {

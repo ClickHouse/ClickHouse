@@ -1,4 +1,5 @@
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -24,10 +25,13 @@ void ASTCheckTableQuery::writeJSON(WriteBuffer & out) const
 void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    database = r.readChild("database");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` extract a name via
+    /// `tryGetIdentifierNameInto` (returning empty for non-identifiers), so a non-identifier node would
+    /// format one target while execution resolves a different/empty one. Reject it at the boundary.
+    database = r.readChildOfType<ASTIdentifier>("database");
     if (database)
         children.push_back(database);
-    table = r.readChild("table");
+    table = r.readChildOfType<ASTIdentifier>("table");
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in `CheckTableQuery` during AST JSON deserialization");
     children.push_back(table);
