@@ -16,6 +16,8 @@
 #include <IO/copyData.h>
 #include <Common/assert_cast.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -97,6 +99,10 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             /// The loop seeks to each block before reading its metadata, so the body is never needed here.
             /// Do not read or skip it: that would defeat the metadata-only contract and could fail on a
             /// corrupt or truncated body even though the footer already provides the row counts.
+            /// Untrusted lengths: guard the running total against wraparound rather than returning a forged
+            /// (smaller) row count for a malformed file.
+            if (static_cast<size_t>(length) > std::numeric_limits<size_t>::max() - total_rows)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC file total row count overflows");
             total_rows += static_cast<size_t>(length);
         }
         num_rows_in_file = total_rows;
