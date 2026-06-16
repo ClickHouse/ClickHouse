@@ -624,19 +624,19 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
         const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
         found_table = !tables.empty();
-        return found_table;
+        if (found_table)
+            return true;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const
