@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
@@ -251,8 +250,6 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 }
 
 }
-
-void registerAggregateFunctionCount(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {

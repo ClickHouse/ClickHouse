@@ -17,13 +17,13 @@ namespace ErrorCodes
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
-using ConstArenas = VectorWithMemoryTracking<ConstArenaPtr>;
+using ConstArenas = std::vector<ConstArenaPtr>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -141,9 +141,7 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        /// Aggregate function states have no meaningful default representation, so they are never considered default.
-        /// This is consistent with getNumberOfDefaultRows returning 0.
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
     }
 
     std::string_view getDataAt(size_t n) const override;
@@ -218,7 +216,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override
