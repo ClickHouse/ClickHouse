@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -800,8 +801,28 @@ bool RemoteQueryExecutor::setPartUUIDs(const UUIDs & uuids)
 
 void RemoteQueryExecutor::processReadTaskRequest()
 {
-    if (!extension || !extension->task_iterator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
+    /// A ReadTaskRequest arrives only from a worker running a cluster table function or object storage
+    /// source with distributed reads. Serving it needs a task iterator, which only the legitimate
+    /// dispatch paths install; its absence means the source was reached through an outer distribution.
+    if (!extension)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A cluster table function (s3Cluster, urlCluster, fileCluster, ...) cannot be nested inside "
+            "another distributed query");
+
+    if (!extension->task_iterator)
+    {
+        if (extension->parallel_reading_coordinator)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "A cluster table function or object storage cluster source cannot use distributed "
+                "processing inside a query that runs with parallel replicas");
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Received a cluster function read task request, but the query executor has neither a task "
+            "iterator nor a parallel replicas coordinator");
+    }
 
     if (!extension->replica_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica info is not initialized");
