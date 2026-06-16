@@ -33,8 +33,9 @@ namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
+struct S3RequestSettings;
 
-/// Used only for S3Express
+/// Used for `S3Express` and user-requested upload checksums.
 namespace RequestChecksum
 {
 enum class Algorithm
@@ -104,6 +105,8 @@ inline std::string calculateChecksum(Model::UploadPartRequest & req, Algorithm a
     }
     UNREACHABLE();
 }
+
+Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
 
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)

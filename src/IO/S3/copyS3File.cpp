@@ -81,7 +81,8 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const LoggerPtr log_)
+            const LoggerPtr log_,
+            bool use_upload_checksum_algorithm_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -90,6 +91,10 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
+            , upload_checksum_algorithm(
+                use_upload_checksum_algorithm_
+                    ? S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket())
+                    : S3::RequestChecksum::Algorithm::None)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -106,6 +111,7 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
+        const S3::RequestChecksum::Algorithm upload_checksum_algorithm;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -118,10 +124,17 @@ namespace
             size_t part_size;
         };
 
+        struct UploadedPartResult
+        {
+            String tag;
+            String checksum;
+        };
+
         size_t num_parts;
         size_t normal_part_size;
         String multipart_upload_id;
         DequeWithMemoryTracking<String> multipart_tags;
+        DequeWithMemoryTracking<String> multipart_checksums;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -139,6 +152,9 @@ namespace
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+
+            if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::None)
+                request.setUploadChecksumAlgorithm(upload_checksum_algorithm);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -192,7 +208,10 @@ namespace
             for (size_t i = 0; i < multipart_tags.size(); ++i)
             {
                 Aws::S3::Model::CompletedPart part;
-                multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
+                part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
+                if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::None)
+                    S3::RequestChecksum::setPartChecksum(part, upload_checksum_algorithm, multipart_checksums.at(i));
+                multipart_upload.AddParts(part);
             }
 
             request.SetMultipartUpload(multipart_upload);
@@ -275,6 +294,7 @@ namespace
             try
             {
                 multipart_tags.resize(num_parts);
+                multipart_checksums.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -288,11 +308,12 @@ namespace
                     chassert(part_size);
 
                     auto & part_tag = multipart_tags[part_number - 1];
+                    auto & part_checksum = multipart_checksums[part_number - 1];
 
-                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
+                    task_tracker.add([this, part_number, position, part_size, &part_tag, &part_checksum]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task, part_tag);
+                        this->processUploadTask(task, part_tag, part_checksum);
                     });
 
                     position = next_position;
@@ -374,7 +395,23 @@ namespace
             normal_part_size = part_size;
         }
 
-        void processUploadTask(UploadPartTask & task, String & part_tag)
+        String prepareUploadPartRequest(Aws::AmazonWebServiceRequest & request) const
+        {
+            if (upload_checksum_algorithm == S3::RequestChecksum::Algorithm::None)
+                return {};
+
+            auto * upload_part_request = typeid_cast<S3::UploadPartRequest *>(&request);
+            if (!upload_part_request)
+                return {};
+
+            upload_part_request->setUploadChecksumAlgorithm(upload_checksum_algorithm);
+
+            auto checksum = S3::RequestChecksum::calculateChecksum(*upload_part_request, upload_checksum_algorithm);
+            S3::RequestChecksum::setRequestChecksum(*upload_part_request, upload_checksum_algorithm, checksum);
+            return checksum;
+        }
+
+        void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
         {
             if (has_failed)
                 return;
@@ -384,17 +421,24 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                auto tag = processUploadPartRequest(*request);
+                auto checksum = prepareUploadPartRequest(*request);
+                auto result = processUploadPartRequest(*request);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                part_tag = tag;
+                part_tag = std::move(result.tag);
+                if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::None)
+                {
+                    part_checksum = checksum.empty() ? std::move(result.checksum) : std::move(checksum);
+                    if (part_checksum.empty())
+                        throw Exception(ErrorCodes::S3_ERROR, "Missing checksum for part #{} of multipart upload", task.part_number);
+                }
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
-                        task.part_number, dest_bucket, dest_key, multipart_upload_id, tag, finished_count, num_parts);
+                        task.part_number, dest_bucket, dest_key, multipart_upload_id, part_tag, finished_count, num_parts);
             }
             catch (Exception & e)
             {
@@ -408,7 +452,7 @@ namespace
 
         /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
-        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
+        virtual UploadedPartResult processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
     };
 
     /// Helper class to help implementing copyDataToS3File().
@@ -426,7 +470,16 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
+            : UploadHelper(
+                client_ptr_,
+                dest_bucket_,
+                dest_key_,
+                request_settings_,
+                object_metadata_,
+                schedule_,
+                blob_storage_log_,
+                getLogger("copyDataToS3File"),
+                true)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -471,6 +524,9 @@ namespace
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+
+            if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::None)
+                request.setUploadChecksumAlgorithm(upload_checksum_algorithm);
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -568,7 +624,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        UploadedPartResult processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
@@ -592,7 +648,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetETag();
+            return {outcome.GetResult().GetETag(), {}};
         }
     };
 
@@ -622,7 +678,8 @@ namespace
                 object_metadata_,
                 schedule_,
                 blob_storage_log_,
-                getLogger("copyS3File"))
+                getLogger("copyS3File"),
+                false)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -794,7 +851,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        UploadedPartResult processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
@@ -808,7 +865,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetCopyPartResult().GetETag();
+            return {outcome.GetResult().GetCopyPartResult().GetETag(), {}};
         }
     };
 }

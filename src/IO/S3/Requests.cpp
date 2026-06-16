@@ -4,14 +4,34 @@
 
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/S3RequestSettings.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
 #include <string_view>
 #include <fmt/format.h>
 
+namespace DB::S3RequestSetting
+{
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+}
+
 namespace DB::S3
 {
+
+RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
+{
+    if (is_s3express_bucket)
+        return RequestChecksum::Algorithm::CRC32;
+
+    const auto & algorithm = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
+    if (algorithm == "CRC32")
+        return RequestChecksum::Algorithm::CRC32;
+    if (algorithm == "SHA256")
+        return RequestChecksum::Algorithm::SHA256;
+
+    return RequestChecksum::Algorithm::None;
+}
 
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
 {
