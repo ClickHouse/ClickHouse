@@ -581,8 +581,8 @@ def main():
             )
         if cache_policy != "SLRU":
             commands.append(
-                f"sed -i 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>;"
-                f"s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>{cache_policy}</uncompressed_cache_policy>|' "
+                f"sed -i -e 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>|' "
+                f"-e 's|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>{cache_policy}</uncompressed_cache_policy>|' "
                 f"/etc/clickhouse-server/config.d/cache_policy.xml"
             )
 

@@ -92,7 +92,7 @@ if [ "$cache_policy" != "LRU" ]; then
     sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>$cache_policy</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
 if [ "$cache_policy" != "SLRU" ]; then
-    sed -i.tmp "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>;s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
+    sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 start_server || { echo "Failed to start server"; exit 1; }
@@ -279,7 +279,7 @@ if [ "$cache_policy" != "LRU" ]; then
     sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>$cache_policy</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
 if [ "$cache_policy" != "SLRU" ]; then
-    sed -i.tmp "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>;s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
+    sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 # Randomize async_load_databases
