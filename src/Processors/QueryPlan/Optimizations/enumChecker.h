@@ -6,73 +6,71 @@
 namespace DB
 {
 
-/**
-* This a helper class that is used to check the plans before storing them
+/** This a helper class that is used to check the plans before storing them
 * into DP table. No plan costing here.
 */
-template <class TDptable, std::unsigned_integral TUint>
+template <class TDPTable>
 class EnumeratorChecker
 {
-    using DPtable = TDptable;
-    using Consumser = EnumeratorChecker;
+    using DPTable = TDPTable;
+    using TUInt = typename DPTable::Key;
+    using Consumer = EnumeratorChecker;
 public:
-    using acceptor_fn = void (EnumeratorChecker::*)(TUint, TUint, TUint);
-    explicit EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), dptab(nr_relations_) {}
-    void accept(TUint S_, TUint S1_, TUint S2_) { dptab.insert(S_, S1_, S2_); }
-    inline size_t n() const { return nr_relations; }
-    inline DPtable & dptable() { return dptab; }
-    inline const DPtable & dptable() const { return dptab; }
-    inline DPtable * dptablePtr() { return (&dptab); }
+    explicit EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), table(nr_relations_) {}
+    void accept(TUInt S_, TUInt S1_, TUInt S2_) { table.insert(S_, S1_, S2_); }
+    size_t numRelations() const { return nr_relations; }
+    DPTable & getDPTable() { return table; }
+    const DPTable & getDPTable() const { return table; }
+    DPTable * getDPTablePtr() { return (&table); }
 private:
     const size_t nr_relations;
-    DPtable dptab;
+    DPTable table;
 };
 
-/**
-* This a helper class that is used to check the plans before storing them
+/** This a helper class that is used to check the plans before storing them
 * into DP table. Plans are costed here as well.
 */
-template <class TDptable, class TOptimizer, std::unsigned_integral TUint>
+template <class TDPTable, class TOptimizer>
 class EnumeratorCheckerWithCosts
 {
-    using Dptable = TDptable;
-    using Consumser = EnumeratorCheckerWithCosts;
+    using DPTable = TDPTable;
+    using TUInt = typename DPTable::Key;
+    using Consumer = EnumeratorCheckerWithCosts;
     using Optimizer = TOptimizer;
 public:
-    using AcceptorFN = void (EnumeratorCheckerWithCosts::*)(TUint, TUint, TUint);
     EnumeratorCheckerWithCosts(const size_t nr_relations_, Optimizer & optimizer_)
-        : nr_relations(nr_relations_), dptab(nr_relations_), optimizer(optimizer_) {}
-    double computeJoinCost(TUint S1, TUint S2, double selectivity) const;
-    void accept(TUint S, TUint S1, TUint S2);
-    size_t n() const { return nr_relations; }
-    Dptable & dptable() { return dptab; }
-    const Dptable & dptable() const { return dptab; }
-    Dptable * dptablePtr() { return (&dptab); }
+        : num_relations(nr_relations_), table(nr_relations_), optimizer(optimizer_) {}
+    double computeJoinCost(TUInt S1, TUInt S2, double selectivity) const;
+    void accept(TUInt S, TUInt S1, TUInt S2);
+    size_t numRelations() const { return num_relations; }
+    DPTable & getDPTable() { return table; }
+    const DPTable & getDPTable() const { return table; }
+    DPTable * getDPTablePtr() { return (&table); }
 private:
-    const size_t nr_relations;
-    Dptable dptab;
+    const size_t num_relations;
+    DPTable table;
     Optimizer & optimizer;
 };
 
-template <class TDptable, class TOptimizer, std::unsigned_integral TUint>
+template <class TDPTable, class TOptimizer>
 double
-EnumeratorCheckerWithCosts<TDptable, TOptimizer, TUint>::computeJoinCost(const TUint S1,
-                                                                         const TUint S2,
-                                                                         const double selectivity) const
+EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const TUInt S1,
+                                                                  const TUInt S2,
+                                                                  const double selectivity) const
 {
-    return dptab[S1].cost + dptab[S2].cost
-        + selectivity * static_cast<double>(dptab[S1].estimated_rows.value_or(1))
-        * static_cast<double>(dptab[S2].estimated_rows.value_or(1));
+    return table[S1].cost + table[S2].cost
+        + selectivity * static_cast<double>(table[S1].estimated_rows.value_or(1))
+        * static_cast<double>(table[S2].estimated_rows.value_or(1));
 }
 
 
-template <class TDptable, class TOptimizer, std::unsigned_integral TUint>
+template <class TDPTable, class TOptimizer>
 void
-EnumeratorCheckerWithCosts<TDptable, TOptimizer, TUint>::accept(const TUint S, const TUint S1, const TUint S2)
+EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TUInt S1, const TUInt S2)
 {
     auto logger = optimizer.log;
-    auto lhs = BitSet::fromUint(S1);
-    auto rhs = BitSet::fromUint(S2);
+    auto lhs = BitSet::fromUInt(S1);
+    auto rhs = BitSet::fromUInt(S2);
 
     /// A child is usable only if it is a base relation or a subset for which a valid join
     /// was already recorded. The enumerator's `setTableNeighbor` creates a DP entry for
@@ -81,9 +79,9 @@ EnumeratorCheckerWithCosts<TDptable, TOptimizer, TUint>::accept(const TUint S, c
     /// LEFT join requires t1). Such a polluted entry has no recorded join (left == right == 0)
     /// and must not be used as a building block, otherwise `buildPhysicalPlan` mistakes it for
     /// a leaf and emits an incomplete tree.
-    auto is_buildable = [&](TUint s)
+    auto is_buildable = [&](TUInt s)
     {
-        return std::popcount(s) == 1 || (dptab.map().contains(s) && (dptab[s].left != 0 || dptab[s].right != 0));
+        return std::popcount(s) == 1 || (table.map().contains(s) && (table[s].left != 0 || table[s].right != 0));
     };
     if (!is_buildable(S1) || !is_buildable(S2))
         return;
@@ -127,17 +125,17 @@ EnumeratorCheckerWithCosts<TDptable, TOptimizer, TUint>::accept(const TUint S, c
     auto selectivity = optimizer.computeSelectivity(edge, lhs, rhs);
     auto plan_cost = computeJoinCost(S1, S2, selectivity);
 
-    if (!dptab.map().contains(S) || plan_cost < dptab[S].cost)
+    if (!table.map().contains(S) || plan_cost < table[S].cost)
     {
-        dptab.insert(S, S1, S2);
+        table.insert(S, S1, S2);
 
-        auto & entry = dptab[S];
+        auto & entry = table[S];
         entry.left = S1;
         entry.right = S2;
         entry.cost = plan_cost;
         entry.sel = selectivity;
         entry.kind = kind;
-        entry.estimated_rows = optimizer.estimateCardinality(dptab[S1].estimated_rows, dptab[S2].estimated_rows, selectivity, kind);
+        entry.estimated_rows = optimizer.estimateCardinality(table[S1].estimated_rows, table[S2].estimated_rows, selectivity, kind);
         entry.edges = edge;
     }
 }

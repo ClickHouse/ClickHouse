@@ -319,7 +319,7 @@ private:
     std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
-    template <class Tuint, class Tdptable, std::unsigned_integral Tunit>
+    template <class Tuint, class TDPTable>
     friend class EnumeratorCheckerWithCosts;
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
@@ -754,10 +754,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
     const size_t n = query_graph.relation_stats.size();
-    using Bitvector = UInt64; // choose UInt64 or even UInt128 for larger sets
+    using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
     // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
     // This budget cap is obtained from empirical testing using different queries and join graphs.
-    static constexpr UInt64 max_nr_ccps = 60'000;
+    static constexpr UInt32 max_nr_ccps = 60'000;
 
     if (n > std::numeric_limits<Bitvector>::digits)
     {
@@ -766,7 +766,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
             n, std::numeric_limits<Bitvector>::digits);
         return solveGreedy();
     }
-
 
     struct DPEntry
     {
@@ -780,20 +779,19 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         JoinKind kind{JoinKind::Inner};
         std::vector<JoinActionRef*> edges; // required for physical plan generation
     };
-    using Dptable = DpTable<DPEntry, Bitvector>;
-    using Checker = EnumeratorCheckerWithCosts<Dptable, JoinOrderOptimizer, Bitvector>;
-    using Enumerator = EnumCcpSub<Checker, Dptable, QueryGraph, Bitvector>;
+    using DPTable = DPTable<DPEntry, Bitvector>;
+    using Checker = EnumeratorCheckerWithCosts<DPTable, JoinOrderOptimizer>;
+    using Enumerator = EnumCcpSub<Checker, DPTable, QueryGraph>;
 
     Checker checker(n, *this);
     Enumerator enumerator(n, max_nr_ccps, log);
-    enumerator.enumerate(checker, &Checker::accept, query_graph);
+    enumerator.enumerate(checker, query_graph);
 
     const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
-    const auto & dptable = checker.dptable();
+    const auto & dptable = checker.getDPTable();
 
-    /// 1. If the join graph is too complex we break early (we don't do time check limits here)
-    /// thus final plan will be missing.
-    /// 2. The full set is assembled only if the join graph is connected. When it is not — e.g.
+    /// a. If the join graph is too complex we break early
+    /// b. The full set is assembled only if the join graph is connected. When it is not — e.g.
     /// cross products, or predicates that reference a single relation or a constant and thus
     /// create no binary edge (`... LEFT JOIN t ON t.x = 5`) — DPsub cannot stitch the
     /// disconnected components, so the full-set entry is missing (or was never given a join).
@@ -801,13 +799,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
                             && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
     if (!full_built)
     {
-        LOG_TRACE(log, "DPsub: join graph is too complex or disconnected!");
+        LOG_TRACE(log, "DPsub: join graph is either too complex or disconnected!");
         return solveGreedy();
     }
 
     return buildPhysicalPlan(dptable, full_set);
 }
-
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 {

@@ -9,14 +9,13 @@
 namespace DB
 {
 
-/**
-* DP table for storing query plans and fetching them.
+/** DP table for storing query plans and fetching them.
 * Besides storing plans, it also computes `csg` & `ccp` statistics:
 * `csg`: (non-empty) connected subgraph,
 * `ccp`: `csg` and its complement pair.
 */
-template <class TEntry, std::unsigned_integral TUint>
-class DpTable
+template <class TEntry, std::unsigned_integral TUInt>
+class DPTable
 {
 public:
     struct DPEntry : TEntry
@@ -24,50 +23,51 @@ public:
         UInt64 count{0};
     };
 
-    using Map = std::unordered_map<TUint, DPEntry>;
+    using Key = TUInt;
+    using Map = std::unordered_map<Key, DPEntry>;
 
-    explicit DpTable(size_t nrRelations_);
+    explicit DPTable(size_t numRelations_);
 
-    void insert(TUint S, TUint S1, TUint S2);
+    void insert(TUInt S, TUInt S1, TUInt S2);
 
-    const DPEntry & operator[](TUint x) const { return dp_tab.at(x); }
-    DPEntry & operator[](TUint x) { return dp_tab[x]; }
+    const DPEntry & operator[](TUInt x) const { return table.at(x); }
+    DPEntry & operator[](TUInt x) { return table[x]; }
 
-    bool isConnected(TUint S) const { return dp_tab.contains(S); }
-    size_t n() const { return nr_relations; }
+    bool isConnected(TUInt S) const { return table.contains(S); }
+    size_t numRelations() const { return num_relations; }
     UInt64 noCcp() const { return nr_ccp; }
     UInt64 noCsg() const { return map().size(); }
-    const Map & map() const { return dp_tab; }
+    const Map & map() const { return table; }
 
     void printStatistics() const;
 private:
-    const size_t nr_relations;
-    Map dp_tab;
+    const size_t num_relations;
+    Map table;
     UInt64 nr_ccp;
 };
 
-template <class TEntry, std::unsigned_integral TUint>
-DpTable<TEntry, TUint>::DpTable(size_t nrRelations_)
-    : nr_relations(nrRelations_)
+template <class TEntry, std::unsigned_integral TUInt>
+DPTable<TEntry, TUInt>::DPTable(size_t numRelations_)
+    : num_relations(numRelations_)
     , nr_ccp(0)
 {
-    for (TUint i = 0; i < n(); ++i)
-        dp_tab[static_cast<TUint>(1) << i].count = 1;
+    for (TUInt i = 0; i < numRelations(); ++i)
+        table[static_cast<TUInt>(1) << i].count = 1;
 }
 
-template <class TEntry, std::unsigned_integral TUint>
-void DpTable<TEntry, TUint>::insert(TUint S, TUint S1, TUint S2)
+template <class TEntry, std::unsigned_integral TUInt>
+void DPTable<TEntry, TUInt>::insert(TUInt S, TUInt S1, TUInt S2)
 {
     chassert(0 == (S1 & S2));
     chassert(S == (S1 | S2));
 
-    auto & entry = dp_tab[S];
+    auto & entry = table[S];
     if (entry.count == 0)
     {
         /// First time we see this subset: propagate the children's neighbor info,
         /// masking out bits belonging to S, and set the cost to +inf so the first
         /// real plan replaces it.
-        entry.neighbor = (dp_tab[S1].neighbor | dp_tab[S2].neighbor) & (~S);
+        entry.neighbor = (table[S1].neighbor | table[S2].neighbor) & (~S);
         entry.cost = std::numeric_limits<double>::infinity();
     }
 
@@ -75,8 +75,8 @@ void DpTable<TEntry, TUint>::insert(TUint S, TUint S1, TUint S2)
     ++nr_ccp;
 }
 
-template <class TEntry, std::unsigned_integral TUint>
-void DpTable<TEntry, TUint>::printStatistics() const
+template <class TEntry, std::unsigned_integral TUInt>
+void DPTable<TEntry, TUInt>::printStatistics() const
 {
     auto * logger = &Poco::Logger::get("JoinOrderOptimizer");
     LOG_INFO(logger, "DP Table Statistics:");

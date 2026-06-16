@@ -37,7 +37,7 @@ public:
 
     BitSet(size_t num_bits, UInt64 value) : bitset(num_bits, value) {}
 
-    static BitSet fromUint(std::unsigned_integral auto value)
+    static BitSet fromUInt(std::unsigned_integral auto value)
     {
         using T = decltype(value);
         constexpr size_t num_bits = sizeof(T) * 8;

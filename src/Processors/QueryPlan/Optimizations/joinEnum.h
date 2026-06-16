@@ -13,23 +13,23 @@ namespace DB
 /** This an efficient iterator that iterates over all (strict) non-empty subsets of a given
 * input set S (excluding the empty subset).
 */
-template <std::unsigned_integral TUint>
+template <std::unsigned_integral UInt>
 class NonEmptySubmasks
 {
 public:
-    using Bitvector = TUint;
+    using Bitvector = UInt;
     constexpr explicit NonEmptySubmasks(const Bitvector start_) noexcept : start(start_) {}
-    constexpr TUint getFullSet() const noexcept { return start; }
+    constexpr UInt getFullSet() const noexcept { return start; }
     class Iterator
     {
     public:
-        using value_type = TUint;
+        using value_type = UInt;
         using difference_type = std::ptrdiff_t;
 
-        constexpr Iterator(TUint start_, TUint current_) noexcept
+        constexpr Iterator(UInt start_, UInt current_) noexcept
             : start(start_), current(current_) {}
 
-        constexpr TUint operator*() const noexcept { return current; }
+        constexpr UInt operator*() const noexcept { return current; }
 
         constexpr Iterator& operator++() noexcept
         {
@@ -49,8 +49,8 @@ public:
             return current == other.current;
         }
     private:
-        TUint start;
-        TUint current;
+        UInt start;
+        UInt current;
     };
     constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
     constexpr Iterator end() const noexcept   { return Iterator(start, start); }
@@ -58,21 +58,20 @@ private:
     Bitvector start;
 };
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
+template <class TConsumer, class TDPTable, class TQueryGraph>
 class EnumCcpSub
 {
     using Consumer = TConsumer;
-    using AcceptorFn = Consumer::AcceptorFN;
-    using Dptable = TDptable;
+    using Dptable = TDPTable;
     using Graph = TQueryGraph;
-    using Uint = TUint;
+    using UInt = TDPTable::Key;
 public:
     EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_);
     UInt64 n() const { return nr_relations; }
     void initDPTable(Dptable & dp_table, const Graph & query_graph);
-    bool isConnected(const Dptable & dp_table, Uint S1, Uint S2) const;
-    void setTableNeighbor(Dptable & dp_table, Uint S1, Uint S2) const;
-    void enumerate(Consumer & consumer, AcceptorFn acceptor, const Graph & query_graph);
+    bool isConnected(const Dptable & dp_table, UInt S1, UInt S2) const;
+    void setTableNeighbor(Dptable & dp_table, UInt S1, UInt S2) const;
+    void enumerate(Consumer & consumer, const Graph & query_graph);
 private:
     UInt64 nr_relations{0};
     UInt64 budget{0}; // budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
@@ -80,16 +79,16 @@ private:
 };
 
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
-EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_)
+template <class TConsumer, class TDPTable, class TQueryGraph>
+EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_)
     : nr_relations(nr_relations_)
     , budget(budget_)
     , log(log_)
 {
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
-void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::initDPTable(TDptable & dp_table, const TQueryGraph & query_graph)
+template <class TConsumer, class TDPTable, class TQueryGraph>
+void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_table, const TQueryGraph & query_graph)
 {
     for (auto & edge : query_graph.edges)
     {
@@ -103,13 +102,13 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::initDPTable(TDptable &
 
         LOG_TEST(log, "Edge contains relations: {}", toString(edge_sources));
 
-        std::vector<TUint> relations;
+        std::vector<UInt> relations;
         // Fill relations with bit positions set in edge_sources
         for (auto relation : edge_sources)
-            relations.push_back(static_cast<TUint>(relation));
+            relations.push_back(static_cast<UInt>(relation));
 
-        TUint left_mask = (static_cast<TUint>(1) << relations[0]);
-        TUint right_mask = (static_cast<TUint>(1) << relations[1]);
+        UInt left_mask = (static_cast<UInt>(1) << relations[0]);
+        UInt right_mask = (static_cast<UInt>(1) << relations[1]);
 
         LOG_TEST(log, "Initializing DP table with edge between relations {} and {}", toBinaryString(left_mask), toBinaryString(right_mask));
 
@@ -125,26 +124,24 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::initDPTable(TDptable &
     }
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
-bool EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::isConnected(const TDptable & dp_table, const TUint S1, const TUint S2) const
+template <class TConsumer, class TDPTable, class TQueryGraph>
+bool EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::isConnected(const TDPTable & dp_table, const UInt S1, const UInt S2) const
 {
     return (dp_table[S1].neighbor & S2) || (dp_table[S2].neighbor & S1);
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
-void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::setTableNeighbor(TDptable & dp_table, const TUint S1, const TUint S2) const
+template <class TConsumer, class TDPTable, class TQueryGraph>
+void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::setTableNeighbor(TDPTable & dp_table, const UInt S1, const UInt S2) const
 {
     dp_table.insert(S1 | S2, S1, S2);
 }
 
-template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral TUint>
-void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & consumer,
-    typename EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::AcceptorFn acceptor,
-    const TQueryGraph & query_graph)
+template <class TConsumer, class TDPTable, class TQueryGraph>
+void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consumer, const TQueryGraph & query_graph)
 {
-    const TUint full_set_mask = (static_cast<TUint>(1) << n()) - 1;
+    const UInt full_set_mask = (static_cast<UInt>(1) << n()) - 1;
 
-    initDPTable(consumer.dptable(), query_graph);
+    initDPTable(consumer.getDPTable(), query_graph);
 
     /** The integer `s` induces the current subset `S` via its binary representation.
     * Taken as bitvectors, integers in the range [1, 2^n - 1] map exactly to all
@@ -155,48 +152,48 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & 
     * This approach is highly performant because subset generation is driven by
     * a native CPU integer increment operation.
     */
-    for (TUint s = 1; s <= full_set_mask; ++s)
+    for (UInt s = 1; s <= full_set_mask; ++s)
     {
         if (std::popcount(s) <= 1)
             continue;
 
         // If the query is large/complex break out of the optimization early
-        if (consumer.dptable().noCcp() > budget)
+        if (consumer.getDPTable().noCcp() > budget)
             return;
 
-        NonEmptySubmasks<TUint> subsets(s);
+        NonEmptySubmasks<UInt> subsets(s);
         for (auto s_iter : subsets)
         {
-            const TUint lhs = s_iter;
-            const TUint rhs = (s ^ lhs);
+            const UInt lhs = s_iter;
+            const UInt rhs = (s ^ lhs);
             LOG_TEST(log, "Enumerating subset S: {}, lhs: {}, rhs: {}", toBinaryString(s), toBinaryString(lhs), toBinaryString(rhs));
 
             // only generate non-symmetric ccps
             if (lhs > rhs)
                 continue;
 
-            if (!(consumer.dptable().isConnected(lhs)))
+            if (!(consumer.getDPTable().isConnected(lhs)))
             {
                 LOG_TEST(log, "lhs not connected");
                 continue;
             }
 
-            if (!(consumer.dptable().isConnected(rhs)))
+            if (!(consumer.getDPTable().isConnected(rhs)))
             {
                 LOG_TEST(log, "rhs not connected");
                 continue;
             }
 
-            if (isConnected(consumer.dptable(), lhs, rhs))
+            if (isConnected(consumer.getDPTable(), lhs, rhs))
             {
-                setTableNeighbor(consumer.dptable(), lhs, rhs);
-                (consumer.*acceptor)(lhs | rhs, lhs, rhs);
+                setTableNeighbor(consumer.getDPTable(), lhs, rhs);
+                consumer.accept(lhs | rhs, lhs, rhs);
                 LOG_TEST(log, "accepted lhs-rhs connected.");
             }
-            else if (query_graph.areTransitivelyConnected(BitSet::fromUint(lhs), BitSet::fromUint(rhs)))
+            else if (query_graph.areTransitivelyConnected(BitSet::fromUInt(lhs), BitSet::fromUInt(rhs)))
             {
-                setTableNeighbor(consumer.dptable(), lhs, rhs);
-                (consumer.*acceptor)(lhs | rhs, lhs, rhs);
+                setTableNeighbor(consumer.getDPTable(), lhs, rhs);
+                consumer.accept(lhs | rhs, lhs, rhs);
                 LOG_TEST(log, "lhs-rhs transitively connected through equivalences, but not directly connected.");
             }
             else

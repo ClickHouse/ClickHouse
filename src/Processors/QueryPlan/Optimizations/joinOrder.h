@@ -26,7 +26,7 @@ enum class JoinMethod : UInt8
 template <std::unsigned_integral T>
 inline String toBinaryString(T value)
 {
-    return toString(BitSet::fromUint(value));
+    return toString(BitSet::fromUInt(value));
 }
 
 struct DPJoinEntry
