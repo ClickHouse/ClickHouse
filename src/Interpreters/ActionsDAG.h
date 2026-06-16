@@ -138,7 +138,6 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
     const Nodes & getNodes() const { return nodes; }
-    Nodes & getNodesMutable() { return nodes; }
     NodeRawConstPtrs getNodesPointers() const;
     static Nodes detachNodes(ActionsDAG && dag);
     const NodeRawConstPtrs & getInputs() const { return inputs; }

@@ -885,36 +885,30 @@ namespace
 {
 
 /// dummy columns (ColumnSet for IN, ColumnFunction for lambdas) don't have a Field-representable value
-bool hasDummyInside(const ColumnPtr & col)
+bool hasDummyInside(const ColumnConstPtr & col)
 {
-    if (!col)
-        return false;
-    if (const auto * cc = typeid_cast<const ColumnConst *>(col.get()))
-        return cc->getDataColumn().isDummy();
-    return col->isDummy();
+    return col && col->getDataColumn().isDummy();
 }
 
 /// same scalar can show up as different ColumnConst objects after merge
-bool constColumnsEqual(const ColumnPtr & a, const ColumnPtr & b)
+bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
 {
     if (a.get() == b.get())
         return true;
     if (!a || !b)
         return false;
-    if (a->size() != b->size())
-        return false;
     if (hasDummyInside(a) || hasDummyInside(b))
         return false;
-    const IColumn & a_col = *a;
-    const IColumn & b_col = *b;
-    if (typeid(a_col) != typeid(b_col))
+    const IColumn & a_inner = a->getDataColumn();
+    const IColumn & b_inner = b->getDataColumn();
+    if (typeid(a_inner) != typeid(b_inner))
         return false;
-    return a_col.compareAt(0, 0, b_col, /* nan_direction_hint */ 1) == 0;
+    return a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) == 0;
 }
 
 bool isConstant(const ActionsDAG::Node & n)
 {
-    return n.column && isColumnConst(*n.column) && !hasDummyInside(n.column);
+    return n.column && !hasDummyInside(n.column);
 }
 
 class EquivalenceClasses
@@ -988,7 +982,7 @@ struct ConstantKeyHash
     size_t operator()(const ConstantKey & k) const
     {
         SipHash h;
-        h.update(k.sample->result_type->getName());
+        k.sample->result_type->updateHash(h);
         k.sample->column->updateHashWithValue(0, h);
         return h.get64();
     }
@@ -1036,6 +1030,7 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
         /// `rand()` / `randConstant` and similar give different values per call
         if (!node.isDeterministic())
             continue;
+        /// TODO (yariks5s): compare inner DAGs
         /// Lambda-typed values (like results of FunctionCapture) carry inner DAG we don't see
         if (node.result_type && WhichDataType(node.result_type).isFunction())
             continue;
@@ -1070,12 +1065,23 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
 
         auto & candidates = functions_by_creator[factory_handle];
 
+        /// don't rely on traversal order because some classes can be stale
+        auto same_arg_classes = [&](const std::vector<const Node *> & lhs)
+        {
+            if (lhs.size() != arg_classes.size())
+                return false;
+            for (size_t i = 0; i < lhs.size(); ++i)
+                if (ec.find(lhs[i]) != ec.find(arg_classes[i]))
+                    return false;
+            return true;
+        };
+
         bool merged = false;
         for (const auto & cand : candidates)
         {
             if (!cand.representative->result_type->equals(*node.result_type))
                 continue;
-            if (cand.arg_classes != arg_classes)
+            if (!same_arg_classes(cand.arg_classes))
                 continue;
             ec.unite(cand.representative, &node);
             merged = true;
