@@ -8,6 +8,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test_tbl"
 $CLICKHOUSE_CLIENT -q "create table test_tbl (a String, b String, c Nullable(String), d Nullable(String)) engine=MergeTree order by a"
-cat $CURDIR/data_csv/csv_empty_for_string_field.csv | ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_tbl SETTINGS input_format_csv_empty_as_default=true, input_format_csv_empty_string_is_not_null=true FORMAT CSV"
-$CLICKHOUSE_CLIENT -q "select * from test_tbl"
+
+# By default (input_format_csv_empty_string_is_not_null = 0) an empty unquoted value of
+# Nullable(String) is read as NULL when input_format_csv_empty_as_default is enabled.
+printf 'a1,b1,,d1\na2,b2,,d2\n' | $CLICKHOUSE_CLIENT -q "INSERT INTO test_tbl SETTINGS input_format_csv_empty_as_default = 1, input_format_csv_empty_string_is_not_null = 0 FORMAT CSV"
+$CLICKHOUSE_CLIENT -q "select * from test_tbl order by a"
+$CLICKHOUSE_CLIENT -q "truncate table test_tbl"
+
+# With input_format_csv_empty_string_is_not_null = 1, the empty value of Nullable(String)
+# is read as an empty string instead of NULL, regardless of input_format_csv_empty_as_default.
+printf 'a1,b1,,d1\na2,b2,,d2\n' | $CLICKHOUSE_CLIENT -q "INSERT INTO test_tbl SETTINGS input_format_csv_empty_as_default = 1, input_format_csv_empty_string_is_not_null = 1 FORMAT CSV"
+$CLICKHOUSE_CLIENT -q "select * from test_tbl order by a"
+
 $CLICKHOUSE_CLIENT -q "drop table test_tbl"
