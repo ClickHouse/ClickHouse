@@ -2,6 +2,8 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
+#include <stack>
+
 namespace DB
 {
 
@@ -42,16 +44,37 @@ public:
 
 private:
     /// Returns the size of a file, or the total size of all files contained in a directory recursively.
-    static UInt64 computeSize(const DiskWithPath & disk, const String & path)
+    UInt64 computeSize(const DiskWithPath & disk, const String & path) const
     {
-        if (!disk.isDirectory(path))
-            return disk.getDisk()->getFileSize(disk.getRelativeFromRoot(path));
-
         UInt64 total = 0;
-        for (const auto & file_name : disk.listAllFilesByPath(path))
+        std::stack<String> stack;
+        stack.push(path);
+
+        while (!stack.empty())
         {
-            const String child = path.ends_with("/") ? path + file_name : path + "/" + file_name;
-            total += computeSize(disk, child);
+            const String current = std::move(stack.top());
+            stack.pop();
+
+            /// listAllFilesByPath does not throw on a file: it returns an empty list.
+            /// A non-empty list means a directory; an empty list means a file (or an empty directory).
+            const auto children = disk.listAllFilesByPath(current);
+            if (!children.empty())
+            {
+                for (const auto & file_name : children)
+                    stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
+            }
+            else
+            {
+                /// Be tolerant of files that disappear while we traverse: skip them instead of failing the whole command.
+                try
+                {
+                    total += disk.getDisk()->getFileSize(disk.getRelativeFromRoot(current));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Cannot get size of '{}', skipping: {}", current, getCurrentExceptionMessage(false));
+                }
+            }
         }
         return total;
     }
