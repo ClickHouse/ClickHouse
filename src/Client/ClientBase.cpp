@@ -2606,7 +2606,12 @@ void ClientBase::processParsedSingleQuery(
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
         {
-            if (input_function && insert->format.empty())
+            /// The reader format for `input()` can come from the query `FORMAT` clause or from the
+            /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject
+            /// when none of them is set.
+            if (input_function && insert->format.empty()
+                && client_context->getSettingsRef()[Setting::input_format].value.empty()
+                && client_context->getSettingsRef()[Setting::format].value.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
             processInsertQuery(query, parsed_query);
