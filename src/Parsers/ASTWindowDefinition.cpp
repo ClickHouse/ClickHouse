@@ -1,5 +1,7 @@
 #include <Parsers/ASTWindowDefinition.h>
 
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/quoteString.h>
@@ -262,16 +264,22 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
 
     parent_window_name = r.getString("parent_window_name");
 
-    auto child = r.readChild("partition_by");
+    /// `partition_by` and `order_by` are parser-owned `ASTExpressionList`s; the analyzer builds an
+    /// expression list from `partition_by` and a sort list from `order_by` (whose children must be
+    /// `ASTOrderByElement`). Reject other node types from malformed `clickhouse_json` here.
+    auto child = r.readChildOfType<ASTExpressionList>("partition_by");
     if (child)
     {
         partition_by = child;
         children.push_back(partition_by);
     }
 
-    child = r.readChild("order_by");
+    child = r.readChildOfType<ASTExpressionList>("order_by");
     if (child)
     {
+        for (const auto & order_by_element : child->children)
+            if (!order_by_element || !order_by_element->as<ASTOrderByElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window 'order_by' elements must be order-by elements during AST JSON deserialization");
         order_by = child;
         children.push_back(order_by);
     }

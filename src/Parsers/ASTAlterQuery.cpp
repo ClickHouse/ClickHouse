@@ -14,6 +14,9 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/DataDestinationType.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
@@ -246,20 +249,32 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readTypedChild.operator()<ASTStatisticsDeclaration>("statistics_decl", statistics_decl);
     readRawChild("partition", partition);
     readRawChild("predicate", predicate);
-    readRawChild("update_assignments", update_assignments);
+    /// `update_assignments` is an `ASTExpressionList` of `ASTAssignment` (`MutationCommand::parse`
+    /// downcasts each child to `ASTAssignment`).
+    readTypedChild.operator()<ASTExpressionList>("update_assignments", update_assignments);
+    if (update_assignments)
+        for (const auto & assignment : update_assignments->children)
+            if (!assignment || !assignment->as<ASTAssignment>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE 'update_assignments' must contain only assignments during AST JSON deserialization");
     /// `comment` (COMMENT COLUMN / MODIFY COMMENT / MODIFY DATABASE COMMENT) is parsed by
     /// `ParserStringLiteral`; `AlterCommands` reads `comment->as<ASTLiteral &>().value`, so type it.
     readTypedChild.operator()<ASTLiteral>("comment", comment);
     readRawChild("ttl", ttl);
     readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
-    readRawChild("settings_resets", settings_resets);
-    readRawChild("select", select);
+    /// `settings_resets` is an `ASTExpressionList` of `ASTIdentifier` (the reset setting names).
+    readTypedChild.operator()<ASTExpressionList>("settings_resets", settings_resets);
+    if (settings_resets)
+        for (const auto & setting : settings_resets->children)
+            if (!setting || !setting->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER 'settings_resets' must contain only setting identifiers during AST JSON deserialization");
+    /// `select` (MODIFY QUERY) is an `ASTSelectWithUnionQuery`; `refresh` (MODIFY REFRESH) an `ASTRefreshStrategy`.
+    readTypedChild.operator()<ASTSelectWithUnionQuery>("select", select);
     readTypedChild.operator()<ASTSQLSecurity>("sql_security", sql_security);
     readTypedChild.operator()<ASTIdentifier>("rename_to", rename_to);
     readRawChild("snapshot_desc", snapshot_desc);
     readRawChild("execute_args", execute_args);
 
-    readRawChild("refresh", refresh);
+    readTypedChild.operator()<ASTRefreshStrategy>("refresh", refresh);
 
     /// `ADD ENUM VALUES (...)` is parser-produced as an `ASTExpressionList`; `formatImpl` emits it
     /// for `MODIFY_COLUMN`, so it must round-trip through JSON (see `writeJSON`).

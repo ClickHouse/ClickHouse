@@ -1,3 +1,4 @@
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
@@ -53,9 +54,16 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` 'subquery' must be a subquery (an ASTWithAlias node) during AST JSON deserialization");
     children.push_back(subquery);
 
-    aliases = r.readChild("aliases");
+    /// `aliases` is an `ASTExpressionList` of `ASTIdentifier`; `QueryTreeBuilder::buildSelectExpression`
+    /// does `aliases->as<ASTExpressionList &>()` then `column_alias->as<ASTIdentifier &>()`.
+    aliases = r.readChildOfType<ASTExpressionList>("aliases");
     if (aliases)
+    {
+        for (const auto & alias : aliases->children)
+            if (!alias || !alias->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` aliases must be identifiers during AST JSON deserialization");
         children.push_back(aliases);
+    }
 }
 
 void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

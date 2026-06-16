@@ -24,6 +24,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (\'re\') FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * EXCEPT (\'\') FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (COMMENT COLUMN x \'c\')'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP INDEX idx ON t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (PARTITION BY x ORDER BY y)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (UPDATE x = 1 WHERE 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (RESET SETTING a)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN PLAN actions = 1 SELECT 1'));
 
 -- ---------------------------------------------------------------------------
 -- `ASTInsertQuery.select` is an `ASTSelectWithUnionQuery` (insert execution downcasts it).
@@ -103,3 +107,11 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * EXCEPT (a, b) FROM
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (COMMENT COLUMN x \'c\')'), '"comment":{"type":"Literal"', '"comment":{"type":"Identifier","name":"c"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('DROP INDEX idx ON t'), '"index_name":{"type":"Identifier"', '"index_name":{"type":"Literal","value":{"field_type":"String","value":"idx"}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTWindowDefinition.partition_by`, `ASTAlterCommand.update_assignments`, and `ASTExplainQuery.settings`
+-- are parser-owned typed slots (`ASTExpressionList` / `ASTExpressionList` / `ASTSetQuery`).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() OVER (PARTITION BY x ORDER BY y)'), '"partition_by":{"type":"ExpressionList"', '"partition_by":{"type":"Identifier","name":"p"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (UPDATE x = 1 WHERE 1)'), '"update_assignments":{"type":"ExpressionList"', '"update_assignments":{"type":"Identifier","name":"u"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('EXPLAIN PLAN actions = 1 SELECT 1'), '"kind":"EXPLAIN","settings":{"type":"SetQuery"', '"kind":"EXPLAIN","settings":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }

@@ -1,5 +1,6 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -111,7 +112,11 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
             auto child_obj = arr->getObject(i);
             if (!child_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'group_by_assignments' array during AST JSON deserialization", i);
-            group_by_assignments.push_back(IAST::createFromJSON(*child_obj));
+            auto assignment = IAST::createFromJSON(*child_obj);
+            /// `TTLDescription::getTTLFromAST` does `ast->as<const ASTAssignment &>()` for each element.
+            if (!assignment || !assignment->as<ASTAssignment>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in 'group_by_assignments' must be an assignment during AST JSON deserialization", i);
+            group_by_assignments.push_back(std::move(assignment));
         }
     }
 

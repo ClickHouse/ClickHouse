@@ -703,7 +703,16 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
         this->setExpression(Expression::TABLES, std::move(tables_child));
 
-    setExpr("aliases", Expression::ALIASES);
+    /// Column `aliases` (`SELECT ... (a, b)`) is an `ASTExpressionList` of `ASTIdentifier`;
+    /// `QueryTreeBuilder::buildSelectWithUnionExpression` does `aliases->as<ASTExpressionList &>()`
+    /// then `column_alias->as<ASTIdentifier &>()`, so validate both layers here.
+    if (auto aliases_child = r.readChildOfType<ASTExpressionList>("aliases"))
+    {
+        for (const auto & alias : aliases_child->children)
+            if (!alias || !alias->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SELECT column aliases must be identifiers during AST JSON deserialization");
+        this->setExpression(Expression::ALIASES, std::move(aliases_child));
+    }
     setExpr("cte_aliases", Expression::CTE_ALIASES);
     setExpr("prewhere", Expression::PREWHERE);
     setExpr("where", Expression::WHERE);

@@ -1,4 +1,7 @@
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -22,7 +25,9 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
 
     kind = fromString(r.getString("kind"));
 
-    auto settings_child = r.readChild("settings");
+    /// `InterpreterExplainQuery` reads `settings` as an `ASTSetQuery`, the table function as an
+    /// `ASTFunction`, and the override as an `ASTTableOverride`; restore those with typed reads.
+    auto settings_child = r.readChildOfType<ASTSetQuery>("settings");
     if (settings_child)
         setSettings(std::move(settings_child));
 
@@ -30,11 +35,11 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     if (query_child)
         setExplainedQuery(std::move(query_child));
 
-    auto table_function_child = r.readChild("table_function");
+    auto table_function_child = r.readChildOfType<ASTFunction>("table_function");
     if (table_function_child)
         setTableFunction(std::move(table_function_child));
 
-    auto table_override_child = r.readChild("table_override");
+    auto table_override_child = r.readChildOfType<ASTTableOverride>("table_override");
     if (table_override_child)
         setTableOverride(std::move(table_override_child));
 

@@ -1,4 +1,6 @@
 #include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -106,7 +108,7 @@ void ASTDictionaryLayout::readJSON(const Poco::JSON::Object & json)
     layout_type = r.getString("layout_type");
     has_brackets = r.getBool("has_brackets");
 
-    auto child = r.readChild("parameters");
+    auto child = r.readChildOfType<ASTExpressionList>("parameters");
     if (child)
         set(parameters, child);
 }
@@ -241,27 +243,30 @@ void ASTDictionary::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    auto child = r.readChild("primary_key");
+    /// All these slots are concrete typed members; restoring them through the generic child path would
+    /// let a wrong node type reach `IAST::set` as a `LOGICAL_ERROR` cast failure instead of a
+    /// user-facing `BAD_ARGUMENTS`. Restore each with `readChildOfType`.
+    auto child = r.readChildOfType<ASTExpressionList>("primary_key");
     if (child)
         set(primary_key, child);
 
-    child = r.readChild("source");
+    child = r.readChildOfType<ASTFunctionWithKeyValueArguments>("source");
     if (child)
         set(source, child);
 
-    child = r.readChild("lifetime");
+    child = r.readChildOfType<ASTDictionaryLifetime>("lifetime");
     if (child)
         set(lifetime, child);
 
-    child = r.readChild("layout");
+    child = r.readChildOfType<ASTDictionaryLayout>("layout");
     if (child)
         set(layout, child);
 
-    child = r.readChild("range");
+    child = r.readChildOfType<ASTDictionaryRange>("range");
     if (child)
         set(range, child);
 
-    child = r.readChild("dict_settings");
+    child = r.readChildOfType<ASTDictionarySettings>("dict_settings");
     if (child)
         set(dict_settings, child);
 }
