@@ -1280,6 +1280,27 @@ static void wrapNestedLimitOffsetSettings(ASTPtr & ast)
     if (!ast)
         return;
 
+    /// `ASTInsertQuery` stores its source `SELECT` both as the `select` member and in `children`.
+    /// Recurse into the member (rather than the generic `children` loop) and keep the matching
+    /// `children` entry in sync, so a rewrite of the source query is reflected where
+    /// `InterpreterInsertQuery` reads it (`query.select`).
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapNestedLimitOffsetSettings(insert_query->select);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
+        return;
+    }
+
     /// Bottom-up: handle inner-most subqueries before their parents.
     for (auto & child : ast->children)
         wrapNestedLimitOffsetSettings(child);
@@ -1340,6 +1361,26 @@ static void wrapPerArmLimitOffsetSettings(ASTPtr & ast)
 {
     if (!ast)
         return;
+
+    /// `ASTInsertQuery` stores its source `SELECT` both as the `select` member and in `children`;
+    /// recurse into the member and keep the `children` entry in sync (see
+    /// `wrapNestedLimitOffsetSettings`).
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapPerArmLimitOffsetSettings(insert_query->select);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
+        return;
+    }
 
     /// Bottom-up: handle inner-most unions before their parents.
     for (auto & child : ast->children)
