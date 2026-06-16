@@ -1,4 +1,7 @@
 #include "MongoHandlerFactory.h"
+
+#if USE_MONGODB
+
 #include <memory>
 #include <Server/MongoHandler.h>
 
@@ -22,3 +25,5 @@ Poco::Net::TCPServerConnection * MongoHandlerFactory::createConnectionImpl(const
 }
 
 }
+
+#endif

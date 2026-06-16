@@ -3556,8 +3556,10 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
+#if USE_MONGODB
         if (type == "mongo")
             return TCPServerConnectionFactory::Ptr(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes));
+#endif
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
     };
@@ -3910,6 +3912,7 @@ void Server::createServers(
             });
         }
 
+#if USE_MONGODB
         if (server_type.shouldStart(ServerType::Type::MONGO))
         {
             port_name = "mongo_port";
@@ -3925,7 +3928,8 @@ void Server::createServers(
                     "Mongo compatibility protocol: " + address.toString(),
                     std::make_unique<TCPServer>(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes), server_pool, socket, makeServerParams(server_settings)));
             });
-        } 
+        }
+#endif
 
 #if USE_GRPC
         if (server_type.shouldStart(ServerType::Type::GRPC))

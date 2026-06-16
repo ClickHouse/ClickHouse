@@ -1,4 +1,7 @@
 #include "MongoHandler.h"
+
+#if USE_MONGODB
+
 #include <memory>
 #include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -97,3 +100,5 @@ void MongoHandler::run()
 }
 
 }
+
+#endif

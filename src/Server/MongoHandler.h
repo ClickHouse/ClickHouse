@@ -6,6 +6,8 @@
 #include "IServer.h"
 #include "config.h"
 
+#if USE_MONGODB
+
 #include <Core/Mongo/MongoProtocol.h>
 
 namespace DB
@@ -51,3 +53,5 @@ private:
 };
 
 }
+
+#endif

@@ -7,6 +7,8 @@
 #include <Core/PostgreSQLProtocol.h>
 #include "config.h"
 
+#if USE_MONGODB
+
 namespace DB
 {
 
@@ -30,3 +32,5 @@ public:
     Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
 };
 }
+
+#endif
