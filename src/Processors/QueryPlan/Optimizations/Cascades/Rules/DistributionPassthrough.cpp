@@ -157,11 +157,6 @@ protected:
 
             if (can_translate)
             {
-                /// A top-N `sort_limit` may only be delegated below row-preserving steps.
-                /// Pushing it below a filter would sort-and-limit before filtering, dropping
-                /// rows that belong in the post-filter top-N, so the child does a full sort there.
-                const bool preserves_rows = typeid_cast<const ExpressionStep *>(expression->getQueryPlanStep()) != nullptr;
-
                 auto create_sorted_variant = [&](const DistributionDescription & dist)
                 {
                     auto sorted_impl = std::make_shared<GroupExpression>(*expression);
@@ -172,11 +167,9 @@ protected:
 
                     sorted_input_props.distribution = dist;
                     sorted_input_props.sorting = input_sorting;
-                    sorted_input_props.sort_limit = preserves_rows ? required_properties.sort_limit : 0;
 
                     sorted_impl->properties.distribution = dist;
                     sorted_impl->properties.sorting = required_properties.sorting;
-                    sorted_impl->properties.sort_limit = required_properties.sort_limit;
 
                     memo.getGroup(expression->group_id)->addPhysicalExpression(sorted_impl);
                     result.push_back(sorted_impl);

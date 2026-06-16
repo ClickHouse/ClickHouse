@@ -74,17 +74,18 @@ std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::N
     if (subplan_reference)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
 
-    /// Strip SortingStep::Full — sorting is a physical property, not a logical one.
-    /// Return the child's GroupId along with the sorting as required properties, so the caller
-    /// can attach them to the input link of the parent group expression.
+    /// Strip a limit-less SortingStep::Full — pure sorting is a physical property, not a logical
+    /// one.  Return the child's GroupId along with the sorting as required properties, so the
+    /// caller can attach them to the input link of the parent group expression.
+    /// A SortingStep with a limit is a top-N (row-reducing) operator, so it is kept as an
+    /// operator instead; the limit is owned by that operator, never by the sorting property.
     const auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
-    if (sorting_step && sorting_step->getType() == SortingStep::Type::Full)
+    if (sorting_step && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() == 0)
     {
         chassert(node.children.size() == 1);
         auto [child_group_id, _] = addGroup(*node.children.front());
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
-        stripped_props.sort_limit = sorting_step->getLimit();
         return {child_group_id, stripped_props};
     }
 

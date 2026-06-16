@@ -41,26 +41,24 @@ bool SortingEnforcer::checkPattern(GroupExpressionPtr expression, const Expressi
 std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const SortDescription & sort_desc = required_properties.sorting;
-    const UInt64 sort_limit = required_properties.sort_limit;
     SortingStep::Settings sort_settings(65000);
     sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;   /// TODO: construct from settings
     const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
 
-    /// Create a SortingStep expression whose input requires the same distribution
-    /// as the source expression but with sorting relaxed to empty.
+    /// Create a full SortingStep expression whose input requires the same distribution
+    /// as the source expression but with sorting relaxed to empty.  Any row limit is owned
+    /// by a separate Limit/top-N operator, not by the sorting property.
     ExpressionProperties input_required = expression->properties;
     input_required.sorting = {};
-    input_required.sort_limit = 0;
 
     auto sort_expr = std::make_shared<GroupExpression>(
-        std::make_unique<SortingStep>(input_header, sort_desc, sort_limit, sort_settings));
+        std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings));
     sort_expr->group_id = expression->group_id;
     sort_expr->inputs.push_back({
         .group_id = expression->group_id,
         .required_properties = input_required});
     sort_expr->properties = expression->properties;
     sort_expr->properties.sorting = sort_desc;
-    sort_expr->properties.sort_limit = sort_limit;
 
     sort_expr->setApplied(*this, required_properties);
     memo.getGroup(expression->group_id)->addPhysicalExpression(sort_expr);

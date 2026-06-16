@@ -11,10 +11,10 @@ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
 -- Q02
 Expression (Project names)
   Limit (preliminary LIMIT)
-    GatherExchange
-      Expression ((Before ORDER BY + Projection))
-        Filter (WHERE)
-          Sorting
+    Sorting
+      GatherExchange
+        Expression ((Before ORDER BY + Projection))
+          Filter (WHERE)
             JoinLogical (Broadcast HashJoin )
               JoinLogical (Broadcast HashJoin )
                 JoinLogical (Broadcast HashJoin )
@@ -52,8 +52,8 @@ Expression (Project names)
 -- Q03
 Expression (Project names)
   Limit (preliminary LIMIT)
-    GatherExchange
-      Sorting
+    Sorting
+      GatherExchange
         Expression ((Before ORDER BY + Projection))
           Aggregating
             Expression ((Before GROUP BY + ))
@@ -226,9 +226,9 @@ Expression (Project names)
 -- Q10
 Expression (Project names)
   Limit (preliminary LIMIT)
-    GatherExchange
-      Expression ((Before ORDER BY + Projection))
-        Sorting
+    Sorting
+      GatherExchange
+        Expression ((Before ORDER BY + Projection))
           Aggregating
             Expression ((Before GROUP BY + ))
               ShuffleExchange
@@ -367,8 +367,8 @@ Expression ((Project names + Projection))
 -- Q18
 Expression (Project names)
   Limit (preliminary LIMIT)
-    GatherExchange
-      Sorting
+    Sorting
+      GatherExchange
         Expression ((Before ORDER BY + Projection))
           Aggregating
             Expression ((Before GROUP BY + WHERE))
@@ -436,8 +436,8 @@ Expression (Project names)
 -- Q21
 Expression (Project names)
   Limit (preliminary LIMIT)
-    Expression ((Before ORDER BY + Projection))
-      Sorting
+    Sorting
+      Expression ((Before ORDER BY + Projection))
         MergingAggregated
           GatherExchange
             Aggregating

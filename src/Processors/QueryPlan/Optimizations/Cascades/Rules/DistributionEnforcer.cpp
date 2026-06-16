@@ -104,7 +104,6 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 input_required.distribution.node_count = expression->properties.distribution.node_count;
                 input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
                 input_required.sorting = expression->properties.sorting;
-                input_required.sort_limit = expression->properties.sort_limit;
 
                 auto enforcer_expr = std::make_shared<GroupExpression>(
                     std::make_unique<GatherExchangeStep>(

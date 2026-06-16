@@ -41,7 +41,6 @@ struct DistributionDescription
 struct ExpressionProperties
 {
     SortDescription sorting;
-    UInt64 sort_limit = 0;  /// Limit applied together with ORDER BY. Passed to SortingStep; 0 means no limit.
     DistributionDescription distribution;
 
     bool operator==(const ExpressionProperties & other) const = default;
@@ -61,7 +60,6 @@ struct ExpressionPropertiesHash
     {
         size_t h = std::hash<size_t>()(props.distribution.node_count);
         boost::hash_combine(h, props.distribution.is_replicated);
-        boost::hash_combine(h, props.sort_limit);
         for (const auto & col_set : props.distribution.columns)
         {
             /// Equal sets must hash equally regardless of insertion order.
