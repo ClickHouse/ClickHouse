@@ -541,6 +541,34 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsSameAbsolutePath)
     EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
 }
 
+TEST_F(DiskEncryptedTest, ConfigurationRejectsAbsolutePath)
+{
+    /// An absolute `path` would escape the wrapped disk: `DiskLocal` joins paths with `fs::path(root) / path`,
+    /// and `fs::path::operator/` discards the root when the right-hand side is absolute. Two encrypted disks over
+    /// different delegates but the same absolute path would then operate on the same underlying files while the
+    /// duplicate-path check (comparing `root + path` strings) sees them as distinct. Such a path must be rejected.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "/data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSameAbsolutePathOverDifferentDelegates)
+{
+    /// Regression for the data-loss scenario: with an absolute `path` both encrypted disks would resolve to the
+    /// same `/data/encrypted/` directory regardless of their delegates. The absolute path must be rejected, so the
+    /// second disk never reaches a state where it can clobber the first one's parts after a restart.
+    auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "/data/encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "other_local_disk", "/data/encrypted/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"other_local_disk", other_local_disk}};
+    EXPECT_THROW(disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks)), DB::Exception);
+}
+
 TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
 {
     auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");

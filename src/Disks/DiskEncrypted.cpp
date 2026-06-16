@@ -211,6 +211,18 @@ namespace
         if (!out_path.empty() && (out_path.back() != '/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
 
+        /// The path must be relative to the wrapped disk's root. An absolute path would escape the delegate:
+        /// `DiskLocal` joins paths with `fs::path(delegate_root) / out_path`, and `fs::path::operator/` discards
+        /// the left-hand side when the right-hand side is absolute, so the files would land outside the delegate.
+        /// This also makes the duplicate-path check below unreliable, because two encrypted disks over different
+        /// delegates would compare as distinct while operating on the same underlying files (losing parts after
+        /// a restart). Rejecting absolute paths keeps the delegate's root a prefix of the effective path.
+        if (!out_path.empty() && (out_path.front() == '/'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
+                quoteString(out_path));
+
         const String disk_absolute_path = out_disk->getPath() + out_path;
         for (const auto & [name, disk] : map)
         {
