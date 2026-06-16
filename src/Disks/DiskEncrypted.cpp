@@ -223,7 +223,22 @@ namespace
                 "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
                 quoteString(out_path));
 
-        const String disk_absolute_path = out_disk->getPath() + out_path;
+        /// `DiskLocal` resolves the wrapped path on the filesystem, so traversal (`..`), current-directory (`.`)
+        /// and repeated-separator components are collapsed when files are accessed. Two encrypted disks whose
+        /// effective paths only differ by such components (e.g. `a/../b/` and `b/`) therefore address the same
+        /// directory. Normalize the effective path so the duplicate-path check below detects these aliases, and
+        /// reject paths that escape the delegate's root via `..` for the same reason absolute paths are rejected.
+        const fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
+        const fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
+        if (const auto relative_to_root = effective_path.lexically_relative(delegate_root);
+            relative_to_root.empty() || *relative_to_root.begin() == "..")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path '{}' must stay within the wrapped disk's root '{}'.",
+                quoteString(out_path),
+                quoteString(out_disk->getPath()));
+
+        const String disk_absolute_path = effective_path.string();
         for (const auto & [name, disk] : map)
         {
             /// The map contains this disk itself while applying settings on configuration reload.
@@ -231,7 +246,7 @@ namespace
                 continue;
 
             auto * encrypted_disk = typeid_cast<DiskEncrypted *>(disk.get());
-            if (encrypted_disk && encrypted_disk->getPath() == disk_absolute_path)
+            if (encrypted_disk && fs::path(encrypted_disk->getPath()).lexically_normal() == effective_path)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Disk path '{}' is conflicted with other encrypted disk '{}'",

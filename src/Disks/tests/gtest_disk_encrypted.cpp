@@ -569,6 +569,33 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsSameAbsolutePathOverDifferentDeleg
     EXPECT_THROW(disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks)), DB::Exception);
 }
 
+TEST_F(DiskEncryptedTest, ConfigurationRejectsTraversalAliasOfSamePath)
+{
+    /// Regression for the duplicate-path bypass via relative components: `a/../b/` and `b/` over the same delegate
+    /// resolve to the same `<root>/b/` directory once `DiskLocal` accesses the filesystem, even though their raw
+    /// concatenated strings differ. The effective paths are normalized before comparison, so the second disk must
+    /// be rejected to prevent it from clobbering the first one's parts after a restart.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "a/../b/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "b/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsPathEscapingDelegateRoot)
+{
+    /// A relative `path` that escapes the delegate's root via `..` lands outside the wrapped disk, just like an
+    /// absolute path, which both breaks isolation and defeats the duplicate-path check. It must be rejected.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "../escape/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
 TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
 {
     auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
