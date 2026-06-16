@@ -307,8 +307,28 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             require(column, "column");
             break;
         case ASTAlterCommand::MODIFY_COLUMN:
+        {
             require(col_decl, "col_decl");
+            /// `MODIFY COLUMN` has exactly one parser sub-form: `REMOVE <prop>`, `MODIFY SETTING ...`,
+            /// `RESET SETTING ...`, `ADD ENUM VALUES (...)`, or the plain modify (optionally `FIRST`/
+            /// `AFTER`). `formatImpl` prints only the first matching sub-form, but `AlterCommand::parse`
+            /// still copies the hidden fields (`metadata.columns.modify` applies `first`/`after_column`,
+            /// `settings_changes`, `settings_resets`), so a payload could execute a reorder or setting
+            /// reset that the formatted SQL hides. Reject parser-impossible combinations: at most one
+            /// sub-form, and `first`/`column` (AFTER) only for the plain modify form.
+            const int sub_forms = static_cast<int>(!remove_property.empty()) + static_cast<int>(settings_changes != nullptr)
+                + static_cast<int>(settings_resets != nullptr) + static_cast<int>(add_enum_values != nullptr);
+            if (sub_forms > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`MODIFY COLUMN` cannot combine REMOVE / MODIFY SETTING / RESET SETTING / ADD ENUM VALUES during AST JSON deserialization");
+            if (sub_forms == 1 && (first || column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`MODIFY COLUMN` 'first'/'column' (AFTER) are only valid for the plain modify form during AST JSON deserialization");
+            if (first && column)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`MODIFY COLUMN` cannot set both 'first' (FIRST) and 'column' (AFTER) during AST JSON deserialization");
             break;
+        }
         case ASTAlterCommand::MATERIALIZE_COLUMN:
             require(column, "column");
             break;

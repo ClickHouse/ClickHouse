@@ -5,6 +5,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -731,7 +732,10 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExprList("limit_by", Expression::LIMIT_BY);
     setExpr("limit_offset", Expression::LIMIT_OFFSET);
     setExpr("limit_length", Expression::LIMIT_LENGTH);
-    setExpr("settings", Expression::SETTINGS);
+    /// `settings` (`SELECT ... SETTINGS`) is parser-produced as an `ASTSetQuery`; `QueryTreeBuilder`
+    /// does `select_settings->as<ASTSetQuery &>()`, so reject any other node type here.
+    if (auto settings_child = r.readChildOfType<ASTSetQuery>("settings"))
+        this->setExpression(Expression::SETTINGS, std::move(settings_child));
 
     /// A SELECT query must always have a SELECT list, and `formatImpl` relies on it
     /// being an `ASTExpressionList` (it is unconditionally cast and formatted).

@@ -169,3 +169,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8, PR
 -- `ASTBackupQuery.settings` is an `ASTSetQuery` (`BackupSettings::fromAST` downcasts it).
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t TO Disk(\'d\', \'/b/\') SETTINGS async = 1'), '"settings":{"type":"SetQuery"', '"settings":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTSelectQuery.settings` (`SELECT ... SETTINGS`) is an `ASTSetQuery` (`QueryTreeBuilder` does
+-- `select_settings->as<ASTSetQuery &>()`).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 SETTINGS max_threads = 1'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 SETTINGS max_threads = 1'), '"settings":{"type":"SetQuery"', '"settings":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }

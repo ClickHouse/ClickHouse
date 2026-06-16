@@ -47,6 +47,14 @@ void ASTSQLSecurity::readJSON(const Poco::JSON::Object & json)
         if (!definer)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTUserNameWithHost for 'definer', got {}", definer_child->getID());
     }
+
+    /// `ParserSQLSecurity` makes `DEFINER = CURRENT_USER` and an explicit `DEFINER = user` mutually
+    /// exclusive. With both set, `formatImpl` prints the explicit `definer` while
+    /// `processSQLSecurityOption` honours `is_definer_current_user` and substitutes the current user,
+    /// so the displayed definer would disagree with the one access checks use. Reject the combination.
+    if (is_definer_current_user && definer)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SQLSecurity` cannot set both 'is_definer_current_user' and an explicit 'definer' during AST JSON deserialization");
 }
 
 }

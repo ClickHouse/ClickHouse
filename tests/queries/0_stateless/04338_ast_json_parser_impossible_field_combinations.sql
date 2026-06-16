@@ -19,6 +19,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPA
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() FROM t GROUP BY GROUPING SETS ((a), (b))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v DEFINER = u SQL SECURITY DEFINER AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x REMOVE TTL'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x UInt16 FIRST'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -87,3 +91,19 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() FROM t GROUP
 -- without it instead of letting `clickhouse_json` lie about analysis state.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() FROM t GROUP BY a'), '"group_by":', '"group_by_with_constant_keys":true,"group_by":'));
+
+-- ---------------------------------------------------------------------------
+-- SQL SECURITY: `DEFINER = CURRENT_USER` and an explicit `DEFINER = user` are mutually exclusive in
+-- `ParserSQLSecurity`. With both set, `formatImpl` prints the explicit `definer` while
+-- `processSQLSecurityOption` substitutes the current user, so the displayed definer would disagree
+-- with the one access checks apply.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE VIEW v DEFINER = u SQL SECURITY DEFINER AS SELECT 1'), '"definer":{', '"is_definer_current_user":true,"definer":{')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ALTER MODIFY COLUMN has exactly one parser sub-form (`REMOVE` / `MODIFY SETTING` / `RESET SETTING` /
+-- `ADD ENUM VALUES` / plain modify). `formatImpl` prints only the first matching sub-form, but
+-- `AlterCommand::parse` still applies the hidden fields, so a payload could execute a reorder or
+-- setting reset the formatted SQL hides. `first`/`column` (AFTER) are valid only for the plain form.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x REMOVE TTL'), '"remove_property":"TTL"', '"remove_property":"TTL","first":true')); -- { serverError BAD_ARGUMENTS }
