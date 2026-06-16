@@ -45,6 +45,11 @@ SELECT mvtEncodeGeom([[(13.0, 52.0), (14.0, 52.0), (14.0, 53.0), (13.0, 53.0), (
 SELECT '-- mvtEncodeGeom: a line crossing the tile edge is clipped to the buffer boundary';
 SELECT mvtEncodeGeom([(13.5, 52.6), (20.0, 52.6)]::LineString, 10, 550, 335, 4096, 0);
 
+SELECT '-- mvtEncodeGeom: empty geometries yield NULL rather than an empty container';
+SELECT mvtEncodeGeom([]::LineString, 2, 2, 1, 4096, 0, 0) IS NULL;
+SELECT mvtEncodeGeom([]::Polygon, 2, 2, 1, 4096, 0, 0) IS NULL;
+SELECT mvtEncodeGeom([[]]::MultiPolygon, 2, 2, 1, 4096, 0, 0) IS NULL;
+
 SELECT '-- mvtEncode: a geometry coordinate outside the representable MVT range is rejected';
 SELECT mvtEncode('t')((3000000000.0, 0.0)::Point::Geometry); -- { serverError BAD_ARGUMENTS }
 

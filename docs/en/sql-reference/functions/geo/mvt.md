@@ -96,13 +96,15 @@ PostGIS `ST_AsMVT`.
 **Syntax**
 
 ```sql
-mvtEncode(layer_name[, extent])(geometry[, properties])
+mvtEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
 ```
 
 **Parameters**
 
 - `layer_name` — Name of the vector tile layer. [`String`](../../data-types/string.md).
 - `extent` — Tile extent in pixels per side, in the range `[1, 2147483647]`. Defaults to `4096`. [`UInt32`](../../data-types/int-uint.md).
+- `feature_id_name` — Optional name of an integer element of the `properties` tuple to emit as the MVT Feature `id` (a `UInt64`) rather than as a tag. A `NULL` or negative id is omitted for that feature. Parameters are positional, so `extent` must be given to use it. [`String`](../../data-types/string.md).
+- `stringify_unsupported` — Optional flag (`0`/`1`, default `0`); when `1`, property types not directly supported (e.g. big integers, `UUID`, `Decimal`) are encoded as their text `string_value` rather than raising an error. [`UInt8`](../../data-types/int-uint.md).
 
 **Arguments**
 
@@ -127,7 +129,8 @@ Each property element is encoded as the Mapbox Vector Tile `Value` variant match
 | `UInt8` / `UInt16` / `UInt32` / `UInt64` / `Date` / `DateTime` | `uint_value` |
 
 Types may be wrapped in `Nullable` and/or `LowCardinality`. A `NULL` value omits that attribute for the feature, as the
-vector tile format has no null. Any other property type raises an exception.
+vector tile format has no null. Any other property type raises an exception, unless `stringify_unsupported` is set, in
+which case it is encoded as its text `string_value`.
 
 Identical property values are interned into the layer's shared value pool, so a value that appears on many features is
 stored only once.

@@ -292,7 +292,9 @@ public:
                 bg::intersection(lines, box, result);
             else
                 result = std::move(lines);
-            if (result.empty())
+            /// A single empty input is wrapped into a Multi container holding one empty element, so the
+            /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
+            if (bg::num_points(result) == 0)
             {
                 builder.addNull();
                 return;
@@ -310,7 +312,9 @@ public:
                 bg::intersection(polygons, box, result);
             else
                 result = std::move(polygons);
-            if (result.empty())
+            /// A single empty input is wrapped into a Multi container holding one empty element, so the
+            /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
+            if (bg::num_points(result) == 0)
             {
                 builder.addNull();
                 return;

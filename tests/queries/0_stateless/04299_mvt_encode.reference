@@ -28,6 +28,14 @@ Geometry
 0
 -- mvtEncode: BFloat16 properties are encoded as float values (same as Float32)
 1
+-- mvtEncode: a FixedString property trims its trailing NUL padding (matches the String value)
+1
+-- mvtEncode: feature_id_name emits the named integer element as the Feature id and drops it from the tags
+1
+1
+-- mvtEncode: feature_id_name must name an existing integer element
+-- mvtEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their text value
+1
 -- mvtEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)
 0
 -- mvtEncode: adjacent duplicate vertices are pruned, but a line with two distinct vertices still encodes

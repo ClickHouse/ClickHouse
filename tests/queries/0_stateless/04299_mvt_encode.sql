@@ -55,6 +55,25 @@ SELECT '-- mvtEncode: BFloat16 properties are encoded as float values (same as F
 SELECT mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toBFloat16(1.5))::Tuple(c BFloat16))
      = mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toFloat32(1.5))::Tuple(c Float32));
 
+SELECT '-- mvtEncode: a FixedString property trims its trailing NUL padding (matches the String value)';
+SELECT mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toFixedString('ab', 4))::Tuple(c1 FixedString(4)))
+     = mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple('ab')::Tuple(c1 String));
+
+SELECT '-- mvtEncode: feature_id_name emits the named integer element as the Feature id and drops it from the tags';
+SELECT mvtEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(toUInt64(0), 'x')::Tuple(fid UInt64, name String))
+    != mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple('x')::Tuple(name String));
+SELECT mvtEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(CAST(NULL, 'Nullable(UInt64)'), 'x')::Tuple(fid Nullable(UInt64), name String))
+     = mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple('x')::Tuple(name String));
+
+SELECT '-- mvtEncode: feature_id_name must name an existing integer element';
+SELECT mvtEncode('t', 4096, 'missing')((0.0, 0.0)::Point::Geometry, tuple(toUInt64(1))::Tuple(fid UInt64)); -- { serverError BAD_ARGUMENTS }
+SELECT mvtEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple('s')::Tuple(fid String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- mvtEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their text value';
+SELECT mvtEncode('t', 4096, '', 1)((0.0, 0.0)::Point::Geometry, tuple(toInt128('170141183460469231731687303715884105727'))::Tuple(big Int128))
+     = mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple('170141183460469231731687303715884105727')::Tuple(big String));
+SELECT mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toInt128(1))::Tuple(big Int128)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT '-- mvtEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)';
 SELECT length(mvtEncode('shapes')(mvtEncodeGeom([(13.37000, 52.52000), (13.37001, 52.52000)]::LineString, 10, 550, 335)));
 

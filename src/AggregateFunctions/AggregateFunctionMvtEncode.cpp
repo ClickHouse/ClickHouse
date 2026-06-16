@@ -18,8 +18,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -79,17 +82,21 @@ constexpr bool mvt_exterior_area_positive = true;
 enum class MvtValueKind : UInt8
 {
     String, /// string_value (field 1)
+    FixedString, /// string_value (field 1), with FixedString NUL padding trimmed
     Float, /// float_value (field 2)
     Double, /// double_value (field 3)
     Sint, /// sint_value (field 6, zigzag)
     UInt, /// uint_value (field 5)
     Bool, /// bool_value (field 7)
+    StringifiedText, /// string_value (field 1), the value's text form (opt-in fallback for otherwise-unsupported types)
 };
 
 struct MvtProperty
 {
     String key;
     MvtValueKind kind;
+    size_t column_index; /// index of this element in the properties tuple (the feature-id element is excluded)
+    SerializationPtr serialization; /// set only for StringifiedText, to render the value as text
 };
 
 /// Variable-length aggregate state held in the arena: a flat buffer of self-contained feature records.
@@ -133,14 +140,23 @@ private:
     const UInt32 extent;
     const bool has_properties;
     VectorWithMemoryTracking<MvtProperty> properties;
+    /// Optional MVT Feature `id` (PostGIS `feature_id_name`): a property-tuple element emitted as the feature id
+    /// (uint64) instead of as a tag. Set when the third parameter names an integer element of the properties tuple.
+    bool has_feature_id = false;
+    size_t feature_id_column_index = 0;
+    bool feature_id_signed = false;
 
-    static MvtValueKind kindForType(const DataTypePtr & element_type, const String & function_name)
+    /// Returns the MVT value kind for a directly-supported property type, or nullopt for an unsupported type
+    /// (the caller either throws or falls back to StringifiedText).
+    static std::optional<MvtValueKind> kindForType(const DataTypePtr & element_type)
     {
         const DataTypePtr base = removeNullable(recursiveRemoveLowCardinality(element_type));
         WhichDataType which(base);
 
-        if (which.isStringOrFixedString())
+        if (which.isString())
             return MvtValueKind::String;
+        if (which.isFixedString())
+            return MvtValueKind::FixedString;
         if (which.isFloat32() || which.isBFloat16())
             return MvtValueKind::Float;
         if (which.isFloat64())
@@ -152,13 +168,7 @@ private:
         if (which.isNativeUInt() || which.isDate() || which.isDateTime())
             return MvtValueKind::UInt;
 
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Property of type {} is not supported by aggregate function {}. Supported types are String, FixedString, "
-            "Bool, Float32, Float64, BFloat16, (U)Int8/16/32/64, Date, Date32 and DateTime (optionally Nullable and/or "
-            "LowCardinality); cast other types with toString() or a numeric cast",
-            element_type->getName(),
-            function_name);
+        return std::nullopt;
     }
 
     /// Render one property value as the body of an MVT `Value` message into `out`.
@@ -169,6 +179,16 @@ private:
             case MvtValueKind::String:
             {
                 const std::string_view value = column.getDataAt(row);
+                MVT::writeLengthDelimitedField(out, 1, value);
+                return;
+            }
+            case MvtValueKind::FixedString:
+            {
+                /// FixedString right-pads with NUL bytes; the logical value (and the equivalent String) has the
+                /// trailing NULs trimmed, matching ClickHouse's FixedString-to-String conversion.
+                std::string_view value = column.getDataAt(row);
+                const size_t last = value.find_last_not_of('\0');
+                value = last == std::string_view::npos ? std::string_view{} : value.substr(0, last + 1);
                 MVT::writeLengthDelimitedField(out, 1, value);
                 return;
             }
@@ -187,6 +207,14 @@ private:
             case MvtValueKind::Bool:
                 MVT::writeVarintField(out, 7, column.getUInt(row) != 0 ? 1 : 0);
                 return;
+            case MvtValueKind::StringifiedText:
+            {
+                /// Opt-in fallback: render the value's text form (e.g. big integers, UUID, Decimal) as a string_value.
+                WriteBufferFromOwnString buf;
+                property.serialization->serializeText(column, row, buf, FormatSettings{});
+                MVT::writeLengthDelimitedField(out, 1, buf.str());
+                return;
+            }
         }
     }
 
@@ -391,7 +419,9 @@ private:
     }
 
 public:
-    AggregateFunctionMvtEncode(const DataTypes & argument_types_, const Array & parameters_, String layer_name_, UInt32 extent_)
+    AggregateFunctionMvtEncode(
+        const DataTypes & argument_types_, const Array & parameters_, String layer_name_, UInt32 extent_,
+        const String & feature_id_name_, bool stringify_)
         : IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>(
               argument_types_, parameters_, std::make_shared<DataTypeString>())
         , layer_name(std::move(layer_name_))
@@ -423,9 +453,65 @@ public:
 
             const auto & names = properties_type->getElementNames();
             const auto & elements = properties_type->getElements();
-            properties.reserve(elements.size());
+
+            /// Resolve the optional feature-id element (PostGIS `feature_id_name`): it must name an integer element,
+            /// which is emitted as the MVT Feature `id` and excluded from the property tags.
+            std::optional<size_t> id_index;
+            if (!feature_id_name_.empty())
+            {
+                for (size_t i = 0; i < names.size(); ++i)
+                {
+                    if (names[i] == feature_id_name_)
+                    {
+                        id_index = i;
+                        break;
+                    }
+                }
+                if (!id_index)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The feature_id_name '{}' of aggregate function {} is not an element of the properties tuple",
+                        feature_id_name_, getName());
+
+                const DataTypePtr id_base = removeNullable(recursiveRemoveLowCardinality(elements[*id_index]));
+                const WhichDataType id_which(id_base);
+                if (!id_which.isNativeInt() && !id_which.isNativeUInt())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "The feature id element '{}' of aggregate function {} must be an integer type, got {}",
+                        feature_id_name_, getName(), elements[*id_index]->getName());
+
+                has_feature_id = true;
+                feature_id_column_index = *id_index;
+                feature_id_signed = id_which.isNativeInt();
+            }
+
+            properties.reserve(id_index ? elements.size() - 1 : elements.size());
             for (size_t i = 0; i < elements.size(); ++i)
-                properties.push_back({names[i], kindForType(elements[i], getName())});
+            {
+                if (id_index && i == *id_index)
+                    continue; /// emitted as the feature id, not as a property tag
+
+                if (const auto kind = kindForType(elements[i]))
+                    properties.push_back({names[i], *kind, i, nullptr});
+                else if (stringify_)
+                    properties.push_back({names[i], MvtValueKind::StringifiedText, i, elements[i]->getDefaultSerialization()});
+                else
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Property of type {} is not supported by aggregate function {}. Supported types are String, "
+                        "FixedString, Bool, Float32, Float64, BFloat16, (U)Int8/16/32/64, Date, Date32 and DateTime "
+                        "(optionally Nullable and/or LowCardinality); pass the stringify_unsupported parameter to encode "
+                        "other types as their text form, or cast with toString()",
+                        elements[i]->getName(), getName());
+            }
+        }
+        else if (!feature_id_name_.empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The feature_id_name parameter of aggregate function {} requires a properties tuple to name the id element from",
+                getName());
         }
     }
 
@@ -456,9 +542,35 @@ public:
         if (has_properties)
         {
             const auto & properties_column = assert_cast<const ColumnTuple &>(*columns[1]);
-            for (size_t i = 0; i < properties.size(); ++i)
+
+            if (has_feature_id)
             {
-                const IColumn & column = properties_column.getColumn(i);
+                const IColumn & id_column = properties_column.getColumn(feature_id_column_index);
+                bool present = !id_column.isNullAt(row_num);
+                UInt64 id_value = 0;
+                if (present)
+                {
+                    if (feature_id_signed)
+                    {
+                        const Int64 signed_id = id_column.getInt(row_num);
+                        if (signed_id < 0) /// the MVT feature id is uint64; drop negative ids (matching PostGIS)
+                            present = false;
+                        else
+                            id_value = static_cast<UInt64>(signed_id);
+                    }
+                    else
+                    {
+                        id_value = id_column.getUInt(row_num);
+                    }
+                }
+                record.push_back(present ? 1 : 0);
+                if (present)
+                    MVT::writeVarint(record, id_value);
+            }
+
+            for (const auto & property : properties)
+            {
+                const IColumn & column = properties_column.getColumn(property.column_index);
                 if (column.isNullAt(row_num))
                 {
                     record.push_back(0);
@@ -466,7 +578,7 @@ public:
                 }
                 record.push_back(1);
                 String value;
-                renderValue(properties[i], column, row_num, value);
+                renderValue(property, column, row_num, value);
                 MVT::writeVarint(record, value.size());
                 record.append(value);
             }
@@ -522,9 +634,10 @@ public:
         if (size > max_data_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid mvtEncode state: data size {} is too large", size);
 
-        /// A record is at least one geometry-type byte plus a one-byte (zero-length) geometry plus one presence byte
-        /// per property, so reject payloads too small to hold the claimed feature count (overflow-safe).
-        const UInt64 min_record_size = 2 + properties.size();
+        /// A record is at least one geometry-type byte plus a one-byte (zero-length) geometry, plus the feature-id
+        /// presence byte (when configured) and one presence byte per property, so reject payloads too small to hold
+        /// the claimed feature count (overflow-safe).
+        const UInt64 min_record_size = 2 + (has_feature_id ? 1 : 0) + properties.size();
         if (state.num_features != 0 && state.num_features > size / min_record_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid mvtEncode state: payload too small for {} features", state.num_features);
 
@@ -562,6 +675,20 @@ public:
             std::string_view geometry(pos, geometry_length);
             pos += geometry_length;
 
+            UInt64 feature_id = 0;
+            bool has_id = false;
+            if (has_feature_id)
+            {
+                if (pos >= end)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated feature id");
+                const bool present = *pos++ != 0;
+                if (present)
+                {
+                    pos = readVarUInt(feature_id, pos, end - pos);
+                    has_id = true;
+                }
+            }
+
             String tags;
             for (size_t i = 0; i < properties.size(); ++i)
             {
@@ -589,6 +716,8 @@ public:
             }
 
             String feature_message;
+            if (has_id)
+                MVT::writeVarintField(feature_message, 1, feature_id); /// Feature.id (field 1)
             MVT::writeVarintField(feature_message, 3, geometry_type);
             MVT::writeLengthDelimitedField(feature_message, 2, tags);
             MVT::writeLengthDelimitedField(feature_message, 4, geometry);
@@ -628,10 +757,10 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} requires a layer name parameter, e.g. mvtEncode('layer')(geometry, properties)",
             name);
-    if (parameters.size() > 2)
+    if (parameters.size() > 4)
         throw Exception(
             ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-            "Aggregate function {} accepts at most 2 parameters (layer_name[, extent]), got {}",
+            "Aggregate function {} accepts at most 4 parameters (layer_name[, extent[, feature_id_name[, stringify_unsupported]]]), got {}",
             name,
             parameters.size());
 
@@ -640,7 +769,7 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
     const String layer_name = parameters[0].safeGet<String>();
 
     UInt32 extent = 4096;
-    if (parameters.size() == 2)
+    if (parameters.size() >= 2)
     {
         const auto type = parameters[1].getType();
         static constexpr UInt64 max_extent = std::numeric_limits<Int32>::max();
@@ -664,7 +793,35 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
         }
     }
 
-    return std::make_shared<AggregateFunctionMvtEncode>(argument_types, parameters, layer_name, extent);
+    String feature_id_name;
+    if (parameters.size() >= 3)
+    {
+        if (parameters[2].getType() != Field::Types::String)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The third parameter (feature_id_name) of aggregate function {} must be a string naming an integer "
+                "element of the properties tuple",
+                name);
+        feature_id_name = parameters[2].safeGet<String>();
+    }
+
+    bool stringify_unsupported = false;
+    if (parameters.size() == 4)
+    {
+        const auto type = parameters[3].getType();
+        if (type == Field::Types::UInt64)
+            stringify_unsupported = parameters[3].safeGet<UInt64>() != 0;
+        else if (type == Field::Types::Int64)
+            stringify_unsupported = parameters[3].safeGet<Int64>() != 0;
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The fourth parameter (stringify_unsupported) of aggregate function {} must be 0 or 1",
+                name);
+    }
+
+    return std::make_shared<AggregateFunctionMvtEncode>(
+        argument_types, parameters, layer_name, extent, feature_id_name, stringify_unsupported);
 }
 
 }
@@ -687,10 +844,13 @@ The properties tuple must have explicit element names. Column aliases inside `tu
 element names, so name the elements with a cast, for example `tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)`.
 
 Identical property values are interned into the layer's shared value pool, so the emitted tile does not duplicate them.
+If `feature_id_name` is given, the named integer property element is emitted as the MVT Feature `id` (a `uint64`) and
+excluded from the tags; a `NULL` or negative id is omitted for that feature.
 The result is the raw bytes of a single-layer tile, which can be returned directly over the HTTP interface with
 `FORMAT RawBLOB`. This function is the analogue of PostGIS `ST_AsMVT`.
     )";
-    FunctionDocumentation::Syntax syntax = "mvtEncode(layer_name[, extent])(geometry[, properties])";
+    FunctionDocumentation::Syntax syntax
+        = "mvtEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])";
     FunctionDocumentation::Arguments arguments = {
         {"geometry", "Tile-space geometry, e.g. from `mvtEncodeGeom`.", {"Geometry"}},
         {"properties", "Optional named tuple of feature attributes. Element names become attribute keys.", {"Tuple"}},
@@ -698,6 +858,14 @@ The result is the raw bytes of a single-layer tile, which can be returned direct
     FunctionDocumentation::Parameters parameters = {
         {"layer_name", "Name of the vector tile layer.", {"String"}},
         {"extent", "Tile extent in pixels per side. Defaults to `4096`.", {"UInt32"}},
+        {"feature_id_name",
+         "Optional name of an integer element of the properties tuple to emit as the Feature `id` instead of as a tag. "
+         "Parameters are positional, so `extent` must also be given to use it.",
+         {"String"}},
+        {"stringify_unsupported",
+         "Optional flag (`0`/`1`, default `0`); when `1`, property types not directly supported (e.g. big integers, "
+         "`UUID`, `Decimal`) are encoded as their text `string_value` instead of raising an error.",
+         {"UInt8"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns the binary contents of a single-layer Mapbox Vector Tile.", {"String"}};
