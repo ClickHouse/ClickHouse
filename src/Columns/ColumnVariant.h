@@ -224,7 +224,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;
@@ -346,6 +346,9 @@ public:
     /// and filter out rows in variants if needed.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
     void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+
+    /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.
+    ColumnPtr createNullMap() const;
 
     /// Extend current column with new variants. Change global discriminators of current variants to the new
     /// according to the mapping and add new variants with new global discriminators.

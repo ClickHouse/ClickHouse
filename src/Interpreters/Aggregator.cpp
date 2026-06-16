@@ -3644,7 +3644,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                     /// Copy to avoid race.
                     auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
                     size_t chunk_rows = agg_chunk.chunk.getNumRows();
-                    auto chunk_columns = agg_chunk.chunk.getColumns();
+                    auto chunk_columns = agg_chunk.chunk.detachColumns();
                 #define M(NAME) \
                     else if (result.type == AggregatedDataVariants::Type::NAME) \
                         mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled);
@@ -3705,7 +3705,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                 break;
 
             size_t chunk_rows = agg_chunk.chunk.getNumRows();
-            auto chunk_columns = agg_chunk.chunk.getColumns();
+            auto chunk_columns = agg_chunk.chunk.detachColumns();
 
             if (result.type == AggregatedDataVariants::Type::without_key || agg_chunk.is_overflows)
                 mergeBlockWithoutKeyStreamsImpl(chunk_columns, chunk_rows, result, is_cancelled);
@@ -3791,7 +3791,7 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
         if (bucket_num >= 0 && agg_chunk.bucket_num != bucket_num)
             bucket_num = -1;
 
-        auto chunk_columns = agg_chunk.chunk.getColumns();
+        auto chunk_columns = agg_chunk.chunk.detachColumns();
 
         if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
             mergeBlockWithoutKeyStreamsImpl(chunk_columns, chunk_rows, result, is_cancelled);

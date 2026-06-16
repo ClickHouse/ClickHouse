@@ -8,7 +8,6 @@
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -106,26 +105,25 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-WeakHash32 ColumnString::getWeakHash32() const
+void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = offsets.size();
-    WeakHash32 hash(s);
+    /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
+    /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
+    /// plain scalar loop is used. See IColumn::computeHashInto.
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    const UInt8 * pos = chars.data() + prev_offset;
 
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-    Offset prev_offset = 0;
-
-    for (const auto & offset : offsets)
+    for (size_t i = row_begin; i < row_end; ++i)
     {
-        auto str_size = offset - prev_offset;
-        *hash_data = ::updateWeakHash32(pos, str_size, *hash_data);
+        const auto offset = offsets[i];
+        const auto str_size = offset - prev_offset;
+        const UInt32 h = ::updateWeakHash32(pos, str_size, WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? h : combineWeakHash32(h, out);
 
         pos += str_size;
         prev_offset = offset;
-        ++hash_data;
     }
-
-    return hash;
 }
 
 
