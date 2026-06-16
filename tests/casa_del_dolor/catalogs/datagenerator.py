@@ -573,7 +573,9 @@ class LakeDataGenerator:
         # Ignore spark_query_logger at the moment because this is multithreaded
         # with open(self.spark_query_logger, "a") as f:
         #    f.write(query + "\n")
-        session.sql(query)
+        # session.sql takes a single statement; the Iceberg/Delta SQL-extension grammars are
+        # stricter than Spark's base parser and reject a trailing ';' with "expecting <EOF>".
+        session.sql(query.strip().rstrip(";"))
 
     def merge_into_table(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)

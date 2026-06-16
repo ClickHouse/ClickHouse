@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
@@ -1696,6 +1697,11 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
         collectColumnPaths(val.getColumnName(), val.tp.get(), 0, cpc, entries);
+    }
+    /// Sometimes send the columns in a different order to stress schema resolution by name
+    if (entries.size() > 1 && rg.nextSmallNumber() < 4)
+    {
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
     }
     /// Common information
     buf += fmt::format(

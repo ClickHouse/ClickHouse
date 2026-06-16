@@ -1398,6 +1398,11 @@ class PaimonTableGenerator(LakeTableGenerator):
             del properties["bucket-key"]
         elif "bucket" in properties and "bucket-key" not in properties:
             properties["bucket-key"] = random.choice(flat_cols)
+        # full-compaction.delta-commits is only valid for fixed-bucket tables. Paimon rejects it
+        # for unaware bucket (append-only without a 'bucket') and dynamic bucket (primary key
+        # without a fixed 'bucket') alike, so require a fixed bucket here.
+        if "full-compaction.delta-commits" in properties and "bucket" not in properties:
+            del properties["full-compaction.delta-commits"]
         for min_key, max_key in (
             ("snapshot.num-retained.min", "snapshot.num-retained.max"),
             ("compaction.min.file-num", "compaction.max.file-num"),
