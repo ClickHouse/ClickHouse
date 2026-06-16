@@ -163,27 +163,47 @@ SELECT '-- on: SELECT * from sibling with `b.f1` does not over-qualify the exist
 -- short-name binding (which was driving qualifier decisions) keeps headers stable.
 SELECT * FROM (SELECT 1 AS f1) AS a, (SELECT 2 AS `b.f1`) AS q FORMAT TSVWithNames;
 
-SELECT '-- on: alias-qualified short-name lookup is not hijacked by sibling literal column';
+SELECT '-- on/off: explicit dotted alias on a constant projection does NOT expose a short name; alias-qualified lookup against it fails on both sides';
 
--- Bot finding (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3411043139):
--- For `SELECT q.f1 FROM (SELECT 1 AS b.f1) AS q CROSS JOIN (SELECT 2 AS q.f1) AS r`, the
--- user clearly intends the alias-qualified `q.f1` to mean "f1 from the table aliased q",
--- which under the new setting resolves to q's `b.f1` via the short-name fallback (-> 1).
--- An earlier draft of the two-pass logic let pass 1 silently soft-fail on q's
--- alias-prefix miss instead of throwing as master does, which let r's literal `q.f1`
--- column hijack the resolution and return `2`. We fix that by preserving the
--- master-equivalent throw in pass 1 and catching it at the join-tree level so pass 2 can
--- retry — only when retry is actually allowed.
-SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r;
-
-SELECT '-- default-off: same shape errors with master-equivalent UNKNOWN_IDENTIFIER';
-
--- Sanity check: with the setting off, the same alias-qualified lookup must still throw,
--- so that enabling the setting strictly *adds* successful resolutions — never silently
--- changes which column an existing successful query returns.
+-- Both the setting-off baseline and the setting-on path must reject this lookup. The
+-- inner projection is `1 AS `b.f1`` — a constant explicitly aliased with a dotted
+-- string. The user chose that exact alias name, so unlike a real qualified column
+-- reference (`SELECT b.f1 FROM ... b`) there is no underlying single-component column
+-- to expose as `f1`. PostgreSQL behaves the same way: `q.f1` against a column literally
+-- named `b.f1` errors. The implementation skips short-name registration whenever the
+-- projection is not a resolved `ColumnNode` whose `getColumnName` is a strict suffix
+-- of the canonical name preceded by `.`, which keeps the alias-prefix lookup pinned to
+-- the table the user named — so a sibling that happens to expose a literal `q.f1`
+-- column also cannot hijack the resolution.
+SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r; -- { serverError UNKNOWN_IDENTIFIER }
 SET analyzer_enable_short_column_names_from_subquery = 0;
 SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r; -- { serverError UNKNOWN_IDENTIFIER }
 SET analyzer_enable_short_column_names_from_subquery = 1;
+
+SELECT '-- on: literal dotted column name (`f.1`) — short name is the actual column, not a wrong split';
+
+-- Bot finding (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3...):
+-- For a join projecting `b.\`f.1\``, the canonical projection name flattens to `b.f.1`
+-- (analyzer joins identifier parts with `.`). A naive `rfind('.')` would split into
+-- `b.f` / `1` and register `1` as the fallback, exposing nothing for the real column
+-- `f.1`. The fix walks the underlying projection's `ColumnNode::getColumnName` to
+-- recover the actual column name (`f.1`) and verifies it is a strict suffix of the
+-- canonical name preceded by `.` (so canonical is exactly `<qualifier>.<column>`).
+
+-- Canonical (dotted) name still resolves:
+SELECT `b.f.1` FROM (
+    SELECT b.`f.1` FROM (SELECT 1 AS `f.1`) AS a JOIN (SELECT 1 AS `f.1`) AS b ON a.`f.1` = b.`f.1`
+);
+
+-- Real short name (`f.1`) — the actual column name — resolves via the fallback:
+SELECT `f.1` FROM (
+    SELECT b.`f.1` FROM (SELECT 1 AS `f.1`) AS a JOIN (SELECT 1 AS `f.1`) AS b ON a.`f.1` = b.`f.1`
+);
+
+-- A naive `rfind('.')` would have registered `1` as the short name; verify that we do NOT:
+SELECT `1` FROM (
+    SELECT b.`f.1` FROM (SELECT 1 AS `f.1`) AS a JOIN (SELECT 1 AS `f.1`) AS b ON a.`f.1` = b.`f.1`
+); -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '-- on: pass-1 throw inside a JOIN ... USING (...) does not leave a dangling pointer';
 

@@ -25,9 +25,10 @@
 -- on: SELECT * from sibling with `b.f1` does not over-qualify the existing `f1` projection
 f1	b.f1
 1	2
--- on: alias-qualified short-name lookup is not hijacked by sibling literal column
+-- on/off: explicit dotted alias on a constant projection does NOT expose a short name; alias-qualified lookup against it fails on both sides
+-- on: literal dotted column name (`f.1`) — short name is the actual column, not a wrong split
 1
--- default-off: same shape errors with master-equivalent UNKNOWN_IDENTIFIER
+1
 -- on: pass-1 throw inside a JOIN ... USING (...) does not leave a dangling pointer
 1
 -- on: explicit canonical alias shadows the short name
