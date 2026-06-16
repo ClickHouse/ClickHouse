@@ -126,6 +126,88 @@ void stripDatabaseSetting(Settings & settings)
     }
 }
 
+void stripInitiatorOnlySettings(Settings & settings)
+{
+    /// All of the settings below are interpreted only at the initiator: they either shape the
+    /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
+    /// `additional_result_filter`) or shape how the result is serialised to the user
+    /// (`format`, `output_format`, `default_format`, `compression`). Forwarding them to remote
+    /// shards is at best wasted work and at worst breaks distributed queries — `format = 'Null'`,
+    /// for example, sets `null_format = true` on each shard, suppressing TCP `sendData` and
+    /// producing empty blocks; `getStructureOfRemoteTable` then `continue`s without throwing
+    /// `NetException`, leaving `fail_messages` empty and surfacing as
+    /// `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. The query-shaping settings would
+    /// similarly cause the per-shard subquery to be re-shaped a second time. Strip the settings
+    /// here so the inter-server `Settings` packet does not carry them. This is shared by the
+    /// `Distributed` fan-out and the `*Cluster` table functions (`IStorageCluster`), which both
+    /// materialize these settings on the initiator before reaching the remote servers.
+    if (settings[Setting::offset].changed || settings[Setting::offset] != 0)
+    {
+        settings[Setting::offset] = 0;
+        settings[Setting::offset].changed = false;
+    }
+    if (settings[Setting::limit].changed || settings[Setting::limit] != 0)
+    {
+        settings[Setting::limit] = 0;
+        settings[Setting::limit].changed = false;
+    }
+    if (settings[Setting::page].changed || settings[Setting::page] != 0)
+    {
+        settings[Setting::page] = 0;
+        settings[Setting::page].changed = false;
+    }
+    if (settings[Setting::select].changed || !settings[Setting::select].value.empty())
+    {
+        settings[Setting::select] = "";
+        settings[Setting::select].changed = false;
+    }
+    if (settings[Setting::order].changed || !settings[Setting::order].value.empty())
+    {
+        settings[Setting::order] = "";
+        settings[Setting::order].changed = false;
+    }
+    if (settings[Setting::sort].changed || !settings[Setting::sort].value.empty())
+    {
+        settings[Setting::sort] = "";
+        settings[Setting::sort].changed = false;
+    }
+    if (settings[Setting::filter].changed || !settings[Setting::filter].value.empty())
+    {
+        settings[Setting::filter] = "";
+        settings[Setting::filter].changed = false;
+    }
+    if (settings[Setting::additional_result_filter].changed || !settings[Setting::additional_result_filter].value.empty())
+    {
+        settings[Setting::additional_result_filter] = "";
+        settings[Setting::additional_result_filter].changed = false;
+    }
+    if (settings[Setting::format].changed || !settings[Setting::format].value.empty())
+    {
+        settings[Setting::format] = "";
+        settings[Setting::format].changed = false;
+    }
+    if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
+    {
+        settings[Setting::output_format] = "";
+        settings[Setting::output_format].changed = false;
+    }
+    if (settings[Setting::default_format].changed || !settings[Setting::default_format].value.empty())
+    {
+        settings[Setting::default_format] = "";
+        settings[Setting::default_format].changed = false;
+    }
+    if (settings[Setting::compression].changed || !settings[Setting::compression].value.empty())
+    {
+        settings[Setting::compression] = "";
+        settings[Setting::compression].changed = false;
+    }
+
+    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
+    /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
+    /// the shard must resolve it against its own default database.
+    stripDatabaseSetting(settings);
+}
+
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
@@ -208,82 +290,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
-    /// All of the settings below are interpreted only at the initiator: they either shape the
-    /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
-    /// `additional_result_filter`) or shape how the result is serialised to the user
-    /// (`format`, `output_format`, `default_format`, `compression`). Forwarding them to remote
-    /// shards is at best wasted work and at worst breaks distributed queries — `format = 'Null'`,
-    /// for example, sets `null_format = true` on each shard, suppressing TCP `sendData` and
-    /// producing empty blocks; `getStructureOfRemoteTable` then `continue`s without throwing
-    /// `NetException`, leaving `fail_messages` empty and surfacing as
-    /// `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. The query-shaping settings would
-    /// similarly cause the per-shard subquery to be re-shaped a second time. Strip the settings
-    /// here so the inter-server `Settings` packet does not carry them.
-    if (settings[Setting::offset].changed || settings[Setting::offset] != 0)
-    {
-        new_settings[Setting::offset] = 0;
-        new_settings[Setting::offset].changed = false;
-    }
-    if (settings[Setting::limit].changed || settings[Setting::limit] != 0)
-    {
-        new_settings[Setting::limit] = 0;
-        new_settings[Setting::limit].changed = false;
-    }
-    if (settings[Setting::page].changed || settings[Setting::page] != 0)
-    {
-        new_settings[Setting::page] = 0;
-        new_settings[Setting::page].changed = false;
-    }
-    if (settings[Setting::select].changed || !settings[Setting::select].value.empty())
-    {
-        new_settings[Setting::select] = "";
-        new_settings[Setting::select].changed = false;
-    }
-    if (settings[Setting::order].changed || !settings[Setting::order].value.empty())
-    {
-        new_settings[Setting::order] = "";
-        new_settings[Setting::order].changed = false;
-    }
-    if (settings[Setting::sort].changed || !settings[Setting::sort].value.empty())
-    {
-        new_settings[Setting::sort] = "";
-        new_settings[Setting::sort].changed = false;
-    }
-    if (settings[Setting::filter].changed || !settings[Setting::filter].value.empty())
-    {
-        new_settings[Setting::filter] = "";
-        new_settings[Setting::filter].changed = false;
-    }
-    if (settings[Setting::additional_result_filter].changed || !settings[Setting::additional_result_filter].value.empty())
-    {
-        new_settings[Setting::additional_result_filter] = "";
-        new_settings[Setting::additional_result_filter].changed = false;
-    }
-    if (settings[Setting::format].changed || !settings[Setting::format].value.empty())
-    {
-        new_settings[Setting::format] = "";
-        new_settings[Setting::format].changed = false;
-    }
-    if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
-    {
-        new_settings[Setting::output_format] = "";
-        new_settings[Setting::output_format].changed = false;
-    }
-    if (settings[Setting::default_format].changed || !settings[Setting::default_format].value.empty())
-    {
-        new_settings[Setting::default_format] = "";
-        new_settings[Setting::default_format].changed = false;
-    }
-    if (settings[Setting::compression].changed || !settings[Setting::compression].value.empty())
-    {
-        new_settings[Setting::compression] = "";
-        new_settings[Setting::compression].changed = false;
-    }
-
-    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
-    /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
-    /// the shard must resolve it against its own default database.
-    stripDatabaseSetting(new_settings);
+    /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
+    /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
+    stripInitiatorOnlySettings(new_settings);
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.

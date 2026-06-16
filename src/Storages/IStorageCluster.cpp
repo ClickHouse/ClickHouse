@@ -239,9 +239,11 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
 
-    /// `database` is an initiator-only setting (see `stripDatabaseSetting`): the remote servers
-    /// must keep their own default database.
-    ClusterProxy::stripDatabaseSetting(new_settings);
+    /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
+    /// settings, and `database`): they are materialized on the initiator and must not be forwarded
+    /// to the remote servers, where they would re-shape the per-shard subquery a second time or
+    /// break it (e.g. `format = 'Null'`). This mirrors the `Distributed` fan-out.
+    ClusterProxy::stripInitiatorOnlySettings(new_settings);
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

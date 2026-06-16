@@ -64,6 +64,15 @@ class SelectStreamFactory;
 /// sent along with such a query.
 void stripDatabaseSetting(Settings & settings);
 
+/// Reset every "initiator-only" setting — the query-shaping settings (`select`, `order`, `sort`,
+/// `filter`, `limit`, `offset`, `page`, `additional_result_filter`) and the result-serialisation
+/// settings (`format`, `output_format`, `default_format`, `compression`), plus `database` (via
+/// `stripDatabaseSetting`). These are materialized on the initiator and must not be forwarded to
+/// remote servers, where they would re-shape the per-shard subquery a second time or break it (see
+/// the `format = 'Null'` case in the implementation). Shared by the `Distributed` fan-out and the
+/// `*Cluster` table functions (`IStorageCluster`).
+void stripInitiatorOnlySettings(Settings & settings);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
