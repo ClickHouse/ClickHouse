@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
+#include <Common/PortUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -75,11 +76,17 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
         "prometheus.port"s,
     };
 
+    Int32 port_offset = static_cast<Int32>(config.getInt64("port_offset", 0));
     std::unordered_map<UInt64, std::string> ports;
     for (const auto & config_port_name : config_port_names)
     {
         if (config.has(config_port_name))
-            ports[config.getUInt64(config_port_name)] = config_port_name;
+        {
+            UInt64 port = config.getUInt64(config_port_name);
+            if (port_offset != 0)
+                port = applyPortOffset(static_cast<UInt16>(port), port_offset);
+            ports[port] = config_port_name;
+        }
     }
     return ports;
 }
@@ -168,6 +175,9 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
+        Int32 port_offset = static_cast<Int32>(config.getInt64("port_offset", 0));
+        if (port_offset != 0 && (hostname == "localhost" || isLocalhost(hostname)))
+            port = applyPortOffset(static_cast<UInt16>(port), port_offset);
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);

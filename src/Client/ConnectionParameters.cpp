@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include <Common/PortUtils.h>
 #include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>
@@ -189,9 +190,17 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
                                                const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
-    return static_cast<UInt16>(config.getInt(
+    UInt16 port = static_cast<UInt16>(config.getInt(
         "port",
         static_cast<UInt16>(
             config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT))));
+
+    if (config.has("port_offset"))
+    {
+        Int32 offset = static_cast<Int32>(config.getInt64("port_offset"));
+        port = applyPortOffset(port, offset);
+    }
+
+    return port;
 }
 }

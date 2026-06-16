@@ -34,6 +34,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
+#include <Common/PortUtils.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -5702,14 +5703,20 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
+    UInt16 port = static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
+    Int32 offset = static_cast<Int32>(config.getInt64("port_offset", 0));
+    return applyPortOffset(port, offset);
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const
 {
     const auto & config = getConfigRef();
     if (config.has("tcp_port_secure"))
-        return config.getInt("tcp_port_secure");
+    {
+        UInt16 port = static_cast<UInt16>(config.getInt("tcp_port_secure"));
+        Int32 offset = static_cast<Int32>(config.getInt64("port_offset", 0));
+        return applyPortOffset(port, offset);
+    }
     return {};
 }
 
