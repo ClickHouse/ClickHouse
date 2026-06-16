@@ -3,7 +3,6 @@
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
