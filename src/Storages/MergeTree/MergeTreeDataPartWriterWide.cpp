@@ -366,17 +366,25 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     {
         auto & column = block_to_write.getByName(it->name);
 
-        if (!ISerialization::hasKind(getSerialization(it->name)->getKindStack(), ISerialization::Kind::SPARSE))
+        const auto & kind_stack = getSerialization(it->name)->getKindStack();
+        if (!ISerialization::hasKind(kind_stack, ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
+
+        /// A column stored with automatic (non-native) `LowCardinality` serialization must be written from
+        /// the dictionary-encoded `block_to_write` column. The primary key and skip index blocks hold a
+        /// materialized full column (built for index calculation by `getIndexBlockAndPermute`), which
+        /// `SerializationLowCardinality` cannot serialize. So the key/index reuse is skipped for such columns,
+        /// and the data stream is written from the permuted `block_to_write` column instead.
+        const bool reuse_index_column = !ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY);
 
         if (permutation)
         {
-            if (primary_key_block.has(it->name))
+            if (reuse_index_column && primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
                 writeColumn(*it, primary_column, offset_substreams, granules_to_write);
             }
-            else if (skip_indexes_block.has(it->name))
+            else if (reuse_index_column && skip_indexes_block.has(it->name))
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
                 writeColumn(*it, index_column, offset_substreams, granules_to_write);
