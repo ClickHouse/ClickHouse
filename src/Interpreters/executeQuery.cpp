@@ -2053,10 +2053,23 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
     auto logger = getLogger("ASTFuzzer");
 
+    /// The fuzzer runs as a query finish callback, after the outer query's pipeline executor
+    /// has stopped enforcing limits. Without this check the outer query keeps spawning fuzzed
+    /// queries while ignoring its own deadline, a KILL, or server shutdown (which kills all
+    /// queries), so it lingers in the processlist and can trip the stress test hung check.
+    /// checkTimeLimitSoft returns false on any of these without throwing.
+    QueryStatusPtr process_list_element = context->getProcessListElement();
+
     ASTPtr base_ast = ast;
 
     for (size_t i = 0; i < num_runs; ++i)
     {
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed, timed out, or the server is shutting down");
+            break;
+        }
+
         ASTPtr fuzzed_ast;
         NameToNameMap fuzzed_query_params;
         {
