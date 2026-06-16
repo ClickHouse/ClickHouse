@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
 #include <base/sort.h>
@@ -148,7 +149,7 @@ bool ColumnLowCardinality::tryInsert(const Field & x)
 {
     compactIfSharedDictionary();
 
-    size_t index = 0;
+    size_t index;
     if (!dictionary.getColumnUnique().tryUniqueInsert(x, index))
         return false;
 
@@ -326,16 +327,10 @@ void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
     getDictionary().skipSerializedInArena(in);
 }
 
-void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnLowCardinality::getWeakHash32() const
 {
-    const auto & nested = getDictionary().getNestedColumn();
-    const size_t dict_size = nested->size();
-
-    PaddedPODArray<UInt32> dict_hash(dict_size);
-    if (dict_size)
-        nested->computeHashInto(0, dict_size, dict_hash.data(), true);
-
-    idx.computeHashInto(dict_hash, row_begin, row_end, hash_out, initial);
+    WeakHash32 dict_hash = getDictionary().getNestedColumn()->getWeakHash32();
+    return idx.getWeakHash(dict_hash);
 }
 
 void ColumnLowCardinality::updateHashFast(SipHash & hash) const
@@ -410,7 +405,7 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// TODO: optimize with sse.
 
     /// Get indexes per row in column_unique.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
+    std::vector<std::vector<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
@@ -452,7 +447,7 @@ struct LowCardinalityComparator
 
     inline bool operator () (size_t lhs, size_t rhs) const
     {
-        int ret = 0;
+        int ret;
 
         const UInt64 lhs_index = real_indexes.getUInt(lhs);
         const UInt64 rhs_index = real_indexes.getUInt(rhs);
@@ -576,7 +571,7 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());
@@ -635,37 +630,6 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
 
     return {std::move(sub_keys), std::move(sub_indexes)};
-}
-
-PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
-{
-    /// Work and memory are O(limit), not O(dictionary): MergeTreeIndexAggregatorBloomFilter
-    /// calls this once per granule over the same (possibly large) block dictionary. Result
-    /// order is arbitrary.
-    HashSet<UInt64> seen;
-
-    const IColumn & indexes = getIndexes();
-    auto populate = [&](const auto & positions)
-    {
-        for (size_t i = 0; i < limit; ++i)
-            seen.insert(positions[offset + i]);
-    };
-
-    switch (idx.getSizeOfIndexType())
-    {
-        case sizeof(UInt8): populate(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
-        case sizeof(UInt16): populate(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
-        case sizeof(UInt32): populate(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
-        case sizeof(UInt64): populate(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
-        default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
-    }
-
-    PaddedPODArray<UInt64> distinct;
-    distinct.reserve(seen.size());
-    for (const auto & cell : seen)
-        distinct.push_back(cell.getKey());
-
-    return distinct;
 }
 
 ColumnPtr ColumnLowCardinality::countKeys() const
