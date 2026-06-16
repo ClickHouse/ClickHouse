@@ -144,6 +144,11 @@ void Decompressor::decompress(
     if (ret != 0)
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "LZ4 frame was not fully decoded: the compressed Arrow buffer is truncated or malformed");
+    if (src_pos != compressed_size)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "LZ4 frame finished with {} of {} compressed bytes left over (trailing data)",
+            compressed_size - src_pos, compressed_size);
     if (dst_pos != uncompressed_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "LZ4 produced {} bytes, expected {}", dst_pos, uncompressed_size);
 }
