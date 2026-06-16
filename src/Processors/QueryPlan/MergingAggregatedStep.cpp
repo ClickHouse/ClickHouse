@@ -5,7 +5,6 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -40,32 +39,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-}
-
-namespace
-{
-
-/// Marks chunks that lack aggregation chunk info as single-level partial aggregate states.
-/// Eager aggregation routes partial states through a join, which does not carry
-/// `AggregatedChunkInfo`, so they reach the merge untagged; chunks that already carry it
-/// (the usual partial-aggregation input) pass through unchanged.
-class MarkSingleLevelAggregatedTransform : public ISimpleTransform
-{
-public:
-    explicit MarkSingleLevelAggregatedTransform(SharedHeader header_)
-        : ISimpleTransform(header_, header_, false)
-    {
-    }
-
-    String getName() const override { return "MarkSingleLevelAggregatedTransform"; }
-
-    void transform(Chunk & chunk) override
-    {
-        if (!chunk.getChunkInfos().get<AggregatedChunkInfo>())
-            chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
-    }
-};
-
 }
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
@@ -119,10 +92,6 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (input_may_lack_chunk_info)
-        pipeline.addSimpleTransform(
-            [](const SharedHeader & header) { return std::make_shared<MarkSingleLevelAggregatedTransform>(header); });
-
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
@@ -223,7 +192,6 @@ QueryPlanStepPtr MergingAggregatedStep::clone() const
         memory_bound_merging_max_block_bytes,
         memory_bound_merging_of_aggregation_results_enabled);
     cloned->group_by_sort_description = group_by_sort_description;
-    cloned->input_may_lack_chunk_info = input_may_lack_chunk_info;
     return cloned;
 }
 
@@ -266,8 +234,6 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         flags |= 16;
     if (memory_bound_merging_of_aggregation_results_enabled)
         flags |= 32;
-    if (input_may_lack_chunk_info)
-        flags |= 64;
 
     writeIntBinary(flags, ctx.out);
 
@@ -309,7 +275,6 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool has_stats_key = bool(flags & 8);
     const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
-    const bool input_may_lack_chunk_info = bool(flags & 64);
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -382,9 +347,6 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         memory_bound_merging_of_aggregation_results_enabled);
 
     merging_aggregated_step->applyOrder(std::move(group_by_sort_description));
-
-    if (input_may_lack_chunk_info)
-        merging_aggregated_step->setInputMayLackChunkInfo();
 
     return merging_aggregated_step;
 }

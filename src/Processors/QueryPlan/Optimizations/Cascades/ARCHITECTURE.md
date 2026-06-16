@@ -250,8 +250,6 @@ A Pareto frontier is maintained: when a new implementation is added, dominated e
 **Transformation rules** (generate logically equivalent expressions):
 - `JoinCommutativity` — swaps join sides (left ↔ right)
 - `TwoPhaseAggregation` — splits aggregation into partial + merge
-- `EagerAggregation` — pushes partial aggregation below joins when GROUP BY keys
-  include the join key (Yan & Larson, VLDB 1995)
 
 **Implementation rules** (generate physical expressions with properties):
 - `HashJoinImplementation` — creates local, broadcast, and shuffle hash join strategies

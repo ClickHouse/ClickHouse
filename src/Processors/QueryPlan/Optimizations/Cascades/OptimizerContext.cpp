@@ -26,7 +26,6 @@ OptimizationRulePtr createHashJoinImplementation();
 OptimizationRulePtr createMergeJoinImplementation();
 OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createTwoPhaseAggregationTransformation();
-OptimizationRulePtr createEagerAggregation();
 OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation();
@@ -49,7 +48,6 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t clu
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoPhaseAggregationTransformation());
-    addRule(createEagerAggregation());
     addRule(createAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
