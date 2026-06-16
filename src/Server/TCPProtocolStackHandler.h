@@ -28,6 +28,7 @@ public:
 
     void run() override
     {
+        TCPConnectionRegistration registration(tcp_server, socket());
         const auto & conf = server.config();
         TCPProtocolStackData stack_data;
         stack_data.socket = socket();

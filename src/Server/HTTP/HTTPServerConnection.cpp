@@ -36,6 +36,7 @@ HTTPServerConnection::HTTPServerConnection(
 
 void HTTPServerConnection::run()
 {
+    TCPConnectionRegistration registration(tcp_server, socket());
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 

@@ -2,6 +2,8 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
 
+#include <sys/socket.h>
+
 namespace DB
 {
 
@@ -35,6 +37,25 @@ TCPServer::TCPServer(
     , port_number(socket.address().port())
 {
     setConnectionFilter(filter);
+}
+
+void TCPServer::registerConnection(const Poco::Net::StreamSocket & sock)
+{
+    std::lock_guard lock(connections_mutex);
+    registered_fds.insert(sock.impl()->sockfd());
+}
+
+void TCPServer::unregisterConnection(const Poco::Net::StreamSocket & sock)
+{
+    std::lock_guard lock(connections_mutex);
+    registered_fds.erase(sock.impl()->sockfd());
+}
+
+void TCPServer::closeConnections()
+{
+    std::lock_guard lock(connections_mutex);
+    for (int fd : registered_fds)
+        ::shutdown(fd, SHUT_RDWR);
 }
 
 }

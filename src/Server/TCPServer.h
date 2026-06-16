@@ -8,6 +8,8 @@
 #include <Core/ServerSettings.h>
 
 #include <functional>
+#include <mutex>
+#include <set>
 
 
 namespace DB
@@ -67,11 +69,47 @@ public:
 
     const Poco::Net::ServerSocket& getSocket() { return socket; }
 
+    /// Register an active connection socket for potential forced shutdown.
+    void registerConnection(const Poco::Net::StreamSocket & sock);
+
+    /// Unregister a connection socket when the handler exits.
+    void unregisterConnection(const Poco::Net::StreamSocket & sock);
+
+    /// Shutdown all registered connection sockets to force them to close immediately.
+    void closeConnections();
+
 private:
     TCPServerConnectionFactory::Ptr factory;
     Poco::Net::ServerSocket socket;
     std::atomic<bool> is_open;
     UInt16 port_number;
+
+    std::mutex connections_mutex;
+    std::set<int> registered_fds; /// raw file descriptors of active connections
+};
+
+/// RAII guard for connection registration. Registers the socket on construction,
+/// unregisters on destruction.
+class TCPConnectionRegistration
+{
+public:
+    TCPConnectionRegistration(TCPServer & server_, const Poco::Net::StreamSocket & socket_)
+        : server(server_), sock(socket_)
+    {
+        server.registerConnection(sock);
+    }
+
+    ~TCPConnectionRegistration()
+    {
+        server.unregisterConnection(sock);
+    }
+
+    TCPConnectionRegistration(const TCPConnectionRegistration &) = delete;
+    TCPConnectionRegistration & operator=(const TCPConnectionRegistration &) = delete;
+
+private:
+    TCPServer & server;
+    const Poco::Net::StreamSocket & sock;
 };
 
 }

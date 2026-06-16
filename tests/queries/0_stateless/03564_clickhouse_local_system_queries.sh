@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#REMOVEME restart ci
+
 # Test that clickhouse-local properly handles SYSTEM queries that are not supported
 # These queries should throw UNSUPPORTED_METHOD errors instead of LOGICAL_ERROR
 
@@ -15,6 +17,8 @@ $CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN HTTP; -- { serverError UNSUPPORTED
 $CLICKHOUSE_LOCAL --query "SYSTEM START LISTEN HTTP; -- { serverError UNSUPPORTED_METHOD }"
 $CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN TCP; -- { serverError UNSUPPORTED_METHOD }"
 $CLICKHOUSE_LOCAL --query "SYSTEM START LISTEN TCP; -- { serverError UNSUPPORTED_METHOD }"
+$CLICKHOUSE_LOCAL --query "SYSTEM CLOSE CONNECTIONS TCP; -- { serverError UNSUPPORTED_METHOD }"
+$CLICKHOUSE_LOCAL --query "SYSTEM CLOSE CONNECTIONS AND STOP LISTEN TCP; -- { serverError UNSUPPORTED_METHOD }"
 
 
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR DNS CACHE;"

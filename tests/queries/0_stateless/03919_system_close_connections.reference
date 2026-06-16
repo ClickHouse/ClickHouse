@@ -1,0 +1,15 @@
+--- Test 1: close TCP connection ---
+client disconnected
+server still accepts connections
+--- Test 2: close TCP and stop listen ---
+client disconnected
+--- Test 3: multiple concurrent connections ---
+all clients disconnected
+--- Test 4: no active connections ---
+no error
+--- Test 5: close HTTP connection ---
+http client disconnected
+--- Test 6: permission denied ---
+ACCESS_DENIED
+--- Test 7: MySQL connection ---
+mysql client disconnected
