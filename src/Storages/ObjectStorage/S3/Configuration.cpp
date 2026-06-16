@@ -367,10 +367,13 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     path_suffix = parsing_result.path_suffix;
 }
 
+namespace
+{
+
 /// Disambiguates an ambiguous positional slot (partition strategy vs compression method). Matches a
 /// real strategy case-insensitively (`hive`/`HIVE`), but excludes `NONE` so the valid compression
 /// method `none` keeps mapping to `compression_method` rather than the default strategy.
-static bool looksLikeExplicitPartitionStrategy(const String & arg)
+bool looksLikeExplicitPartitionStrategy(const String & arg)
 {
     const auto strategy = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(arg, magic_enum::case_insensitive);
     return strategy.has_value() && *strategy != PartitionStrategyFactory::StrategyType::NONE;
@@ -378,13 +381,15 @@ static bool looksLikeExplicitPartitionStrategy(const String & arg)
 
 /// Whether a positional argument is a bool literal (`partition_columns_in_data_file`) rather than a
 /// `partition_strategy` string. Matches `checkAndGetLiteralArgument<bool>`: a `Bool` or a `UInt64`.
-static bool looksLikeBoolArgument(const ASTPtr & arg)
+bool looksLikeBoolArgument(const ASTPtr & arg)
 {
     const auto * literal = arg ? arg->as<ASTLiteral>() : nullptr;
     if (!literal)
         return false;
     const auto type = literal->value.getType();
     return type == Field::Types::Which::Bool || type == Field::Types::Which::UInt64;
+}
+
 }
 
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
