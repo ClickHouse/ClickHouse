@@ -4,29 +4,27 @@
 # scheduling; under heavy parallel load `wait_for_row_count` can drift past its
 # timeout. Same precedent as `02968_file_log_multiple_read.sh`.
 #
-# Regression test for a FileLog stale-metadata crash when a file is deleted and
-# recreated reusing the SAME inode within one watcher backoff window, so the
-# `DW_ITEM_REMOVED` and `DW_ITEM_ADDED` events are processed together. The
-# REMOVED cleanup is skipped (the recreate flips the status back to OPEN before
-# the removal loop runs) and `onFileAppeared`'s inode-change guard does not fire
-# (the inode is unchanged), so the on-disk meta with the old, larger offset is
-# left behind while the in-memory offset is reset to 0. `serialize()` then read
-# the larger stored offset and aborted the server with a LOGICAL_ERROR:
-#   Last stored last_written_position in meta file a.csv is bigger than current
-#   last_written_pos (N > 0)
+# Regression test for a FileLog stale-metadata crash on delete+recreate that
+# REUSES THE SAME INODE within one watcher backoff window. The same-inode
+# recreate is forced deterministically and does NOT rely on filesystem
+# inode-allocation policy: a hard link outside the watched directory pins the
+# inode across the unlink, the content is rewritten through that held link, then
+# the inode is linked back under the original name. This yields a
+# `DW_ITEM_REMOVED` + `DW_ITEM_ADDED` batch for the same name and the same inode.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
+# Held outside the watched directory but on the same filesystem (hard links
+# cannot cross filesystems) so it generates no watcher events.
+held=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}.held
 
-rm -rf "${logs_dir}"
+rm -rf "${logs_dir}" "${held}"
 mkdir -p "${logs_dir}/"
 
-echo 1 >> "${logs_dir}/a.csv"
-echo 2 >> "${logs_dir}/a.csv"
-echo 3 >> "${logs_dir}/a.csv"
+printf '1\n2\n3\n' > "${logs_dir}/a.csv"
 
 ${CLICKHOUSE_CLIENT} --query="
 DROP TABLE IF EXISTS file_log;
@@ -36,8 +34,8 @@ DROP TABLE IF EXISTS file_log_mv;
 CREATE TABLE file_log (
     id Int64
 ) ENGINE = FileLog('${logs_dir}/', 'CSV')
-SETTINGS poll_directory_watch_events_backoff_init = 1000,
-         poll_directory_watch_events_backoff_max = 1000;
+SETTINGS poll_directory_watch_events_backoff_init = 5000,
+         poll_directory_watch_events_backoff_max = 5000;
 
 CREATE TABLE sink (
     id Int64
@@ -67,31 +65,31 @@ function wait_for_row_count()
     done
 }
 
+# Stream the initial content and let the cycle persist the on-disk meta
+# (last_written_position = 6) that the recreate will contradict.
 wait_for_row_count 3
+sleep 2
 
-# Delete and immediately recreate `a.csv` with no gap so both the REMOVED and the
-# ADDED events queue inside the same backoff window. With the high backoff
-# (1000 ms) above the watcher drains both together. On a typical filesystem
-# (ext4) the immediate recreate reuses the just-freed inode, which is the
-# condition that triggered the crash. Repeat a few rounds because inode reuse
-# is not guaranteed on every filesystem/iteration; one reuse round is enough to
-# crash an unfixed server. After the fix the server must stay up and stream the
-# new content of every round.
-for round in $(seq 1 5); do
-    rm -f "${logs_dir}/a.csv"; printf '100\n200\n' > "${logs_dir}/a.csv"
-    # Let the watcher deliver and process the REMOVED+ADDED batch.
-    sleep 2
-    if ! ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1; then
-        echo "server is not responding after round ${round} (likely crashed)"
-        exit 1
-    fi
-    # Restore the original content for the next round's delete to be meaningful.
-    printf '1\n2\n3\n' > "${logs_dir}/a.csv"
-    sleep 2
-done
+# Pin the inode, delete the watched name, rewrite the content through the held
+# link, then link the same inode back. The watcher sees REMOVED + ADDED for
+# `a.csv` with an UNCHANGED inode in one 5s backoff window. With the bug the
+# in-memory offset is reset to 0 while the on-disk meta keeps 6, so the next
+# serialize() aborts the server with a LOGICAL_ERROR.
+ln "${logs_dir}/a.csv" "${held}"
+rm -f "${logs_dir}/a.csv"
+printf '100\n200\n' > "${held}"
+ln "${held}" "${logs_dir}/a.csv"
 
-# The server survived every delete+recreate round.
-${CLICKHOUSE_CLIENT} --query "SELECT 'ok'"
+# One backoff window plus margin for the watcher to drain and process the batch.
+sleep 8
+if ! ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1; then
+    echo "server is not responding after delete+recreate with reused inode (likely crashed)"
+    exit 1
+fi
+
+# FileLog must avoid the exception AND stream the recreated content (100, 200).
+wait_for_row_count 5
+${CLICKHOUSE_CLIENT} --query "SELECT id FROM sink ORDER BY id"
 
 ${CLICKHOUSE_CLIENT} --query="
 DROP TABLE file_log_mv;
@@ -99,4 +97,4 @@ DROP TABLE file_log;
 DROP TABLE sink;
 "
 
-rm -rf "${logs_dir}"
+rm -rf "${logs_dir}" "${held}"
