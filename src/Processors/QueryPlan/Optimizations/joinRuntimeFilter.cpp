@@ -102,19 +102,22 @@ static String runtimeFilterName(UInt64 structural_hash)
 /// EXPLAIN renders (the pretty printer keys on the name via `getRuntimeFilterId`, never on the value).
 ///
 /// The value is a fresh random key per plan build, so the const is genuinely non-deterministic and is
-/// marked `is_deterministic_constant=false`. Two existing mechanisms keep that volatile value from
-/// leaking into cached/keyed state:
-///   - Query condition cache: `Node::isDeterministic` reports the filter expression as
-///     non-deterministic (the `__applyFilter` function is non-deterministic, and so is this constant),
-///     so the QCC skips it instead of reusing a per-granule result that a later execution with a
-///     different key would read as stale.
-///   - Hash-table-statistics cache key: it is computed during join-order optimization, before
-///     `tryAddJoinRuntimeFilter` adds the filter, so the volatile value is not in the hashed DAG.
+/// marked `is_deterministic_constant=false` (which keeps the query condition cache from caching a
+/// per-granule result that a later execution with a different key would read as stale — `__applyFilter`
+/// is non-deterministic too, so `Node::isDeterministic` reports the whole filter expression as such).
+///
+/// It is additionally marked `is_runtime_filter_id=true`, which makes `Node::updateHash` skip its
+/// VALUE while still hashing its stable NAME. That is what lets the single-replica and
+/// parallel-replicas plan builds produce the same Auto-PR plan hash despite each having its own random
+/// key — without that hash also dropping the value of other non-deterministic constants (a folded
+/// `now()`/`randConstant`), which must stay in the key so different queries don't share statistics.
 static const ActionsDAG::Node & addRuntimeFilterLabelColumn(ActionsDAG & actions_dag, const RuntimeFilterId & id)
 {
     auto string_type = std::make_shared<DataTypeString>();
     auto id_column = string_type->createColumnConst(0, id.key);
-    return actions_dag.addColumn(std::move(id_column), std::move(string_type), id.name, /*is_deterministic_constant=*/false);
+    return actions_dag.addColumn(
+        std::move(id_column), std::move(string_type), id.name,
+        /*is_deterministic_constant=*/false, /*is_runtime_filter_id=*/true);
 }
 
 static const ActionsDAG::Node & createRuntimeFilterCondition(

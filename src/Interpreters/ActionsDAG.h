@@ -106,6 +106,12 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
+        /// Marks the const column that carries a join runtime-filter id (added by `tryAddJoinRuntimeFilter`).
+        /// Its VALUE is a per-plan-build rendezvous key, so it is never a stable hash component and is
+        /// always skipped in `updateHash`; the filter's identity is its (stable) `result_name`. Set at
+        /// creation and preserved across DAG transforms (nodes are copied whole), so it reaches the
+        /// plan-hash callers intact.
+        bool is_runtime_filter_id = false;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -113,11 +119,7 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        /// `skip_volatile_constants`: do not mix in the VALUE of non-deterministic constants
-        /// (`is_deterministic_constant == false`). Such values aren't a stable hash component, so the
-        /// cache-key callers set it; all other callers (e.g. the query condition cache) use the
-        /// default and are unaffected.
-        void updateHash(SipHash & hash_state, bool skip_volatile_constants = false) const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -167,7 +169,7 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true);
+    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true, bool is_runtime_filter_id = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -509,7 +511,7 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    void updateHash(SipHash & hash_state, bool skip_volatile_constants = false) const;
+    void updateHash(SipHash & hash_state) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 

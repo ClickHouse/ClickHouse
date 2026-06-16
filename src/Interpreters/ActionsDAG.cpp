@@ -184,7 +184,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state, bool skip_volatile_constants) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state) const
 {
     hash_state.update(type);
 
@@ -209,20 +209,21 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool skip_volatile_const
 
         /// We must also hash the actual constant value, not just the column type name.
         /// Otherwise, two different constants with the same type and the same expression-based
-        /// result_name (e.g. from CTE constant folding) would produce identical hashes,
-        /// leading to query condition cache collisions and incorrect results.
+        /// result_name (e.g. from CTE constant folding, or a folded `now()` / `randConstant`) would
+        /// produce identical hashes, leading to query-condition-cache collisions and stale Auto-PR
+        /// statistics reuse.
         ///
-        /// Exception: when `skip_volatile_constants` is set (cache-key computation), the VALUE of a
-        /// non-deterministic constant (`is_deterministic_constant == false`) is not a stable hash
-        /// component, so only its stable `result_name` is kept. This lets a per-plan-build
-        /// runtime-filter id, carried as such a const, stay out of the plan-step hash while still
-        /// serializing normally for distributed propagation.
-        if (!(skip_volatile_constants && !is_deterministic_constant))
+        /// The one exception is the join runtime-filter id carrier: its value is a per-plan-build
+        /// rendezvous key (never a stable hash component), while its identity is its `result_name`,
+        /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
+        /// builds matching without dropping any other constant's value (it still serializes normally
+        /// for distributed propagation).
+        if (!is_runtime_filter_id)
             column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state, skip_volatile_constants);
+        child->updateHash(hash_state);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -232,7 +233,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state, bool skip_volatile_constants) const
+void ActionsDAG::updateHash(SipHash & hash_state) const
 {
     struct Frame
     {
@@ -249,7 +250,7 @@ void ActionsDAG::updateHash(SipHash & hash_state, bool skip_volatile_constants) 
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state, skip_volatile_constants);
+            frame.node->updateHash(hash_state);
             stack.pop();
         }
         else
@@ -334,7 +335,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant, bool is_runtime_filter_id)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -350,6 +351,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     node.result_name = std::move(name);
     node.column = std::move(column);
     node.is_deterministic_constant = is_deterministic_constant;
+    node.is_runtime_filter_id = is_runtime_filter_id;
 
     return addNode(std::move(node));
 }
