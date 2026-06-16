@@ -219,12 +219,14 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
+    size_t num_rows_,
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
     const MergeTreeReaderSettings & reader_settings_,
     const MergeTreeWriterSettings & writer_settings_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
+    , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
@@ -413,8 +415,10 @@ bool MergeTextIndexesTask::executeStep()
         /// empty part. Writing one here would leave the marks file with a single mark while
         /// `getMarksCountForSkipIndex` reports zero, so reading the marks back (e.g. when the
         /// mark cache is prewarmed on attach) fails with `Too many marks in file`.
+        /// The part is not finalized yet at this stage, so its `index_granularity` is empty;
+        /// rely on the merged row count instead.
         chassert(new_data_part);
-        if (new_data_part->index_granularity->getMarksCountWithoutFinal() != 0)
+        if (num_rows != 0)
         {
             bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
             writeMarks(output_streams, can_use_adaptive_granularity);
