@@ -18,5 +18,9 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhous
 ${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json --multiquery -q "$JSON ; $JSON"
 
 # 3. Trailing non-delimiter text after the balanced JSON object is rejected as excessive input;
-#    the prefix must NOT be executed (no `42` printed), only the error is reported.
-${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json --multiquery -q "$JSON garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+#    the prefix must NOT be executed (no `42` printed), only the error is reported. Assert BOTH that
+#    the error is present and that the prefix result `42` is absent — a client regression that prints
+#    `42` from the first object and only then reports the trailing error would otherwise still pass.
+OUT=$(${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json --multiquery -q "$JSON garbage" 2>&1)
+echo "$OUT" | grep -qm1 'SYNTAX_ERROR' && echo 'error_reported' || echo 'NO_ERROR'
+echo "$OUT" | grep -qxF '42' && echo 'PREFIX_EXECUTED' || echo 'prefix_skipped'

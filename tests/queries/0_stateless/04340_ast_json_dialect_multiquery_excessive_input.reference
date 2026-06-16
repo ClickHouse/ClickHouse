@@ -1,5 +1,6 @@
 1
 1
 1
-SYNTAX_ERROR
+error_reported
+prefix_skipped
 Max query size
