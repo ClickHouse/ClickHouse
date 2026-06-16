@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
+#include <chrono>
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -23,6 +24,12 @@ namespace ErrorCodes
 
 namespace
 {
+    Int64 currentTimeSeconds()
+    {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+
     std::string getProcessedPathWithBucket(const std::filesystem::path & zk_path, size_t bucket)
     {
         return zk_path / "buckets" / toString(bucket) / "processed";
@@ -209,6 +216,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const std::string & bucket_lock_path_,
     const std::string & processor_info_,
     int64_t lock_czxid_,
+    Int64 lock_acquired_time_,
     LoggerPtr log_,
     const std::string & zookeeper_name_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
@@ -216,7 +224,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
         .bucket_lock_path = bucket_lock_path_,
         .processor_info = processor_info_,
         .zookeeper_name = zookeeper_name_,
-        .lock_czxid = lock_czxid_ }))
+        .lock_czxid = lock_czxid_,
+        .lock_acquired_time = lock_acquired_time_ }))
     , log(log_)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -634,6 +643,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             bucket_lock_path,
             processor_info,
             lock_czxid,
+            currentTimeSeconds(),
             log_,
             zookeeper_name_);
     }
@@ -860,9 +870,10 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
                 throw Exception(
                     ErrorCodes::OBJECT_STORAGE_QUEUE_BUCKET_OWNERSHIP_LOST,
                     "Lost ownership of bucket lock {} while processing file {} (its processed "
-                    "pointer was advanced to {} by another processor). The lock was likely cleaned up "
-                    "by the TTL cleanup; will retry.",
-                    bucket_info->bucket_lock_path, path, *state.last_processed_path);
+                    "pointer was advanced to {} by another processor) after holding it for {}s. "
+                    "The lock was likely cleaned up by the TTL cleanup; will retry.",
+                    bucket_info->bucket_lock_path, path, *state.last_processed_path,
+                    currentTimeSeconds() - bucket_info->lock_acquired_time);
             }
 
             throw Exception(
