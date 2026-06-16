@@ -4,6 +4,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
 namespace DB
@@ -46,7 +47,9 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
 
     name = r.getString("name");
 
-    auto query_child = r.readChild("query");
+    /// `query` is the parser-owned `ASTProjectionSelectQuery`; `ProjectionDescription::getProjectionFromAST`
+    /// does `query->as<ASTProjectionSelectQuery &>()`, so reject any other node type here.
+    auto query_child = r.readChildOfType<ASTProjectionSelectQuery>("query");
     if (query_child)
         set(query, query_child);
 

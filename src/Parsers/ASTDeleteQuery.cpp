@@ -1,4 +1,5 @@
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -90,10 +91,12 @@ void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     cluster = r.getString("cluster");
-    database = r.readChild("database");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto` (empty for non-identifiers), so reject other node types here.
+    database = r.readChildOfType<ASTIdentifier>("database");
     if (database)
         children.push_back(database);
-    table = r.readChild("table");
+    table = r.readChildOfType<ASTIdentifier>("table");
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in DeleteQuery JSON");
     children.push_back(table);

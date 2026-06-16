@@ -1,4 +1,6 @@
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -879,9 +881,17 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     backup_source = r.readChild("backup_source");
     if (backup_source)
         children.push_back(backup_source);
-    scheduled_merge_parts = r.readChild("scheduled_merge_parts");
+    /// `scheduled_merge_parts` is an `ASTExpressionList` of string `ASTLiteral`s; `scheduleMerge`
+    /// iterates its children and does `child->as<ASTLiteral &>().value`, so validate both layers.
+    scheduled_merge_parts = r.readChildOfType<ASTExpressionList>("scheduled_merge_parts");
     if (scheduled_merge_parts)
+    {
+        for (const auto & part : scheduled_merge_parts->children)
+            if (!part || !part->as<ASTLiteral>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`SystemQuery` 'scheduled_merge_parts' must contain only string literals during AST JSON deserialization");
         children.push_back(scheduled_merge_parts);
+    }
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");

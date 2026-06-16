@@ -1,4 +1,5 @@
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/SipHash.h>
@@ -131,13 +132,20 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     nulls_direction = validateOrderByDirection(r.getInt("nulls_direction"), "nulls_direction");
     nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
     with_fill = r.getBool("with_fill");
+    /// `fill_*` are only meaningful (and only formatted) under `WITH FILL`; the parser never attaches
+    /// them otherwise, so reject them when `with_fill` is false instead of silently dropping them.
+    if (!with_fill && (r.has("fill_from") || r.has("fill_to") || r.has("fill_step") || r.has("fill_staleness")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ORDER BY 'fill_*' fields require 'with_fill' to be true during AST JSON deserialization");
 
     auto expression = r.readChild("expression");
     if (!expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'expression' is missing in JSON AST for OrderByElement");
     children.push_back(std::move(expression));
 
-    if (auto child = r.readChild("collation"))
+    /// `collation` is parser-produced as a string `ASTLiteral`; sort-list building does
+    /// `getCollation()->as<ASTLiteral &>().value`, so reject any other node type here.
+    if (auto child = r.readChildOfType<ASTLiteral>("collation"))
         setCollation(child);
 
     if (auto child = r.readChild("fill_from"))

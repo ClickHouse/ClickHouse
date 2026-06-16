@@ -601,7 +601,9 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
                 "'base_snapshot_name' (FROM SNAPSHOT) is only valid for BACKUP, not RESTORE, during AST JSON deserialization");
         set(base_snapshot_name, base_snapshot_name_child);
     }
-    settings = r.readChild("settings");
+    /// `settings` is parser-produced as an `ASTSetQuery`; `BackupSettings`/`RestoreSettings` do
+    /// `query.settings->as<const ASTSetQuery &>().changes`, so reject any other node type here.
+    settings = r.readChildOfType<ASTSetQuery>("settings");
     if (settings)
         children.push_back(settings);
     cluster_host_ids = r.readChild("cluster_host_ids");

@@ -32,6 +32,11 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minm
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax GRANULARITY 3'));
 SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN AST SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CHECK TABLE db.t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('DELETE FROM db.t WHERE 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x FROM t ORDER BY x COLLATE \'en_US\''));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL FROM 1 TO 10'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt8, PROJECTION p (SELECT x)) ENGINE = MergeTree ORDER BY x'));
+SELECT formatQueryFromJSON(parseQueryToJSON('BACKUP TABLE t TO Disk(\'d\', \'/b/\') SETTINGS async = 1'));
 
 -- ---------------------------------------------------------------------------
 -- `ASTInsertQuery.select` is an `ASTSelectWithUnionQuery` (insert execution downcasts it).
@@ -140,3 +145,27 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE INDEX idx ON t (x) T
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CHECK TABLE db.t'), '"table":{"type":"Identifier"', '"table":{"type":"Literal","value":{"field_type":"String","value":"t"}')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 5'), '{"field_type":"UInt64","value":5}', '{"field_type":"UInt64","value":-1}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTDeleteQuery.database`/`table` are `ASTIdentifier`s (`InterpreterDeleteQuery` reads them as such).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('DELETE FROM db.t WHERE 1'), '"table":{"type":"Identifier","name":"t"}', '"table":{"type":"Literal","value":{"field_type":"String","value":"t"}}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTOrderByElement.collation` is parser-produced as a string `ASTLiteral` (sort-list building does
+-- `getCollation()->as<ASTLiteral &>().value`), and the optional `fill_*` slots are only meaningful under
+-- `WITH FILL` (the parser never attaches them otherwise).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT x FROM t ORDER BY x COLLATE \'en_US\''), '"collation":{"type":"Literal"', '"collation":{"type":"Identifier","name":"c"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL FROM 1 TO 10'), '"with_fill":true', '"with_fill":false')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTProjectionDeclaration.query` is the parser-owned `ASTProjectionSelectQuery`
+-- (`ProjectionDescription::getProjectionFromAST` downcasts it).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8, PROJECTION p (SELECT x)) ENGINE = MergeTree ORDER BY x'), '"query":{"type":"ProjectionSelectQuery"', '"query":{"type":"Identifier","name":"q"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTBackupQuery.settings` is an `ASTSetQuery` (`BackupSettings::fromAST` downcasts it).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t TO Disk(\'d\', \'/b/\') SETTINGS async = 1'), '"settings":{"type":"SetQuery"', '"settings":{"type":"Identifier","name":"s"')); -- { serverError BAD_ARGUMENTS }
