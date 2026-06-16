@@ -51,6 +51,10 @@ SELECT hex(mvtEncode('shapes')(mvtEncodeGeom([[(13.4, 52.5), (13.65, 52.5), (13.
 SELECT '-- mvtEncode: a degenerate (collinear, zero-area) polygon ring is dropped, producing an empty tile';
 SELECT length(mvtEncode('shapes')([[(100.0, 100.0), (200.0, 100.0), (300.0, 100.0), (100.0, 100.0)]]::Polygon::Geometry));
 
+SELECT '-- mvtEncode: BFloat16 properties are encoded as float values (same as Float32)';
+SELECT mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toBFloat16(1.5))::Tuple(c BFloat16))
+     = mvtEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toFloat32(1.5))::Tuple(c Float32));
+
 SELECT '-- mvtEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)';
 SELECT length(mvtEncode('shapes')(mvtEncodeGeom([(13.37000, 52.52000), (13.37001, 52.52000)]::LineString, 10, 550, 335)));
 

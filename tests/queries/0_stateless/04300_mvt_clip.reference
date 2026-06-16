@@ -2,8 +2,6 @@
 (-180,-85.05112877980659,180,85.05112877980659)
 -- mvtTileBBoxMercator: bounding box of a tile in Web Mercator space
 (0,0,2147483648,2147483648)
--- ST_TileEnvelope is an alias for mvtTileBBoxMercator
-1
 -- mvtTileBBox: a positive margin expands the box on every side
 1	1	1	1
 -- mvtTileBBox: a negative or non-finite margin is rejected (it would invert the bounds)

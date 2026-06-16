@@ -1,14 +1,11 @@
 -- Tests for mvtEncodeGeom geometry clipping (the buffer and clip arguments) and the tile bounding-box
--- helpers mvtTileBBox / mvtTileBBoxMercator (and the ST_TileEnvelope alias).
+-- helpers mvtTileBBox / mvtTileBBoxMercator.
 
 SELECT '-- mvtTileBBox: bounding box of the whole world at zoom 0';
 SELECT mvtTileBBox(0, 0, 0);
 
 SELECT '-- mvtTileBBoxMercator: bounding box of a tile in Web Mercator space';
 SELECT mvtTileBBoxMercator(1, 0, 0);
-
-SELECT '-- ST_TileEnvelope is an alias for mvtTileBBoxMercator';
-SELECT ST_TileEnvelope(1, 0, 0) = mvtTileBBoxMercator(1, 0, 0);
 
 SELECT '-- mvtTileBBox: a positive margin expands the box on every side';
 WITH mvtTileBBox(10, 550, 335) AS bb, mvtTileBBox(10, 550, 335, 0.1) AS bm

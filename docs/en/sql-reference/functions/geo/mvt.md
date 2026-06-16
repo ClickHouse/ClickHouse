@@ -27,7 +27,7 @@ Point, line and polygon geometry are supported, including the `Geometry` type an
 The resulting bytes are a complete tile that can be returned directly over the HTTP interface with `FORMAT RawBLOB`.
 
 These functions mirror the PostGIS workflow and are also available under their PostGIS names as aliases: `ST_AsMVTGeom`
-for `mvtEncodeGeom`, `ST_AsMVT` for `mvtEncode`, and `ST_TileEnvelope` for `mvtTileBBoxMercator`.
+for `mvtEncodeGeom` and `ST_AsMVT` for `mvtEncode`.
 
 ## mvtEncodeGeom {#mvtencodegeom}
 
@@ -120,7 +120,7 @@ Each property element is encoded as the Mapbox Vector Tile `Value` variant match
 | ClickHouse type                          | Vector tile value type |
 |------------------------------------------|------------------------|
 | `String` / `FixedString`                 | `string_value`         |
-| `Float32`                                | `float_value`          |
+| `Float32` / `BFloat16`                   | `float_value`          |
 | `Float64`                                | `double_value`         |
 | `Bool`                                   | `bool_value`           |
 | `Int8` / `Int16` / `Int32` / `Int64` / `Date32` | `sint_value`    |
@@ -203,7 +203,7 @@ SELECT mvtTileBBox(0, 0, 0) AS bbox
 
 ## mvtTileBBoxMercator {#mvttilebboxmercator}
 
-The Web Mercator counterpart of `mvtTileBBox`, also available under its PostGIS name `ST_TileEnvelope`. Returns the
+The Web Mercator counterpart of `mvtTileBBox`. Returns the
 bounding box of the tile in the full-`UInt32` Web Mercator coordinate space used internally by `mvtEncodeGeom`, as a tuple
 `(min_x, min_y, max_x, max_y)`. The y axis grows downward (north at the top). Intended for tables that materialize
 Mercator coordinate columns and index those instead of `longitude`/`latitude`.

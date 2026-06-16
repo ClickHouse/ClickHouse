@@ -71,11 +71,11 @@ struct Projection
 
 /// Snap every coordinate of a (tile-space) geometry to the integer pixel grid, matching the MVT geometry model and
 /// letting `GROUP BY` collapse sub-pixel duplicates into a single cluster.
-/// Rounds to the nearest integer and normalises negative zero to positive zero so coordinates clipped to an axis
-/// do not surface as "-0".
+/// Rounds to the nearest integer (ties to even, via rint, matching PostGIS) and normalises negative zero to positive
+/// zero so coordinates clipped to an axis do not surface as "-0".
 inline Float64 roundCoordinate(Float64 value)
 {
-    const Float64 rounded = std::round(value);
+    const Float64 rounded = std::rint(value);
     return rounded == 0.0 ? 0.0 : rounded;
 }
 

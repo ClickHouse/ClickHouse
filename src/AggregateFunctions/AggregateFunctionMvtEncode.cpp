@@ -141,7 +141,7 @@ private:
 
         if (which.isStringOrFixedString())
             return MvtValueKind::String;
-        if (which.isFloat32())
+        if (which.isFloat32() || which.isBFloat16())
             return MvtValueKind::Float;
         if (which.isFloat64())
             return MvtValueKind::Double;
@@ -155,7 +155,7 @@ private:
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Property of type {} is not supported by aggregate function {}. Supported types are String, FixedString, "
-            "Bool, Float32, Float64, (U)Int8/16/32/64, Date, Date32 and DateTime (optionally Nullable and/or "
+            "Bool, Float32, Float64, BFloat16, (U)Int8/16/32/64, Date, Date32 and DateTime (optionally Nullable and/or "
             "LowCardinality); cast other types with toString() or a numeric cast",
             element_type->getName(),
             function_name);
@@ -197,7 +197,8 @@ private:
     {
         if (!std::isfinite(value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} received a non-finite geometry coordinate", function_name);
-        const Int64 rounded = std::llround(value);
+        /// llrint rounds ties to even (matching PostGIS), unlike llround which rounds ties away from zero.
+        const Int64 rounded = std::llrint(value);
         if (rounded < std::numeric_limits<Int32>::min() || rounded > std::numeric_limits<Int32>::max())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
