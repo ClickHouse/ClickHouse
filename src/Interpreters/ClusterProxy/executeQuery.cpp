@@ -651,13 +651,14 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
 
-    /// `database` is an initiator-only setting (see `stripDatabaseSetting`): the replicas must keep
-    /// their own default database, and the secondary queries must not be attributed to the
-    /// initiator's database in `system.query_log`.
-    if (settings[Setting::database].changed || !settings[Setting::database].value.empty())
+    /// Strip the initiator-only settings (the query-shaping and result-serialisation settings, and
+    /// `database`) before sending the query to the secondary replicas: they are materialized on the
+    /// initiator and must not be re-applied per replica (which would re-shape the already-shaped
+    /// per-replica query or break it, e.g. `format = 'Null'`). This mirrors the `Distributed`
+    /// fan-out and the `*Cluster` table functions; see `stripInitiatorOnlySettings`.
     {
         Settings new_settings = context_mutable->getSettingsCopy();
-        stripDatabaseSetting(new_settings);
+        stripInitiatorOnlySettings(new_settings);
         context_mutable->setSettings(new_settings);
     }
 
