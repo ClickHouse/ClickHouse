@@ -1191,6 +1191,14 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
+                #image
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    max-width: 100%;
+                    background-color: var(--element-background-color);
+                }
+
                 td
                 {
                     background-color: var(--element-background-color);
@@ -1453,6 +1461,7 @@ class QueryResultElement extends HTMLElement
                 <table class="monospace shadow" id="data-table"></table>
                 <pre class="monospace shadow" id="data-unparsed"></pre>
             </div>
+            <img id="image" class="shadow" alt="Query result image">
             <div id="chart"></div>
             <div id="graph"></div>
             <p id="error" class="monospace shadow"></p>
@@ -1461,6 +1470,7 @@ class QueryResultElement extends HTMLElement
         this._dataDiv = this.shadowRoot.getElementById('data_div');
         this._dataTable = this.shadowRoot.getElementById('data-table');
         this._dataUnparsed = this.shadowRoot.getElementById('data-unparsed');
+        this._image = this.shadowRoot.getElementById('image');
         this._chart = this.shadowRoot.getElementById('chart');
         this._graph = this.shadowRoot.getElementById('graph');
         this._error = this.shadowRoot.getElementById('error');
@@ -1477,6 +1487,8 @@ class QueryResultElement extends HTMLElement
         this._current_selected_cell = null;
         this._uplot = null;
         this._queryText = '';
+        /// Object URL backing the displayed image, kept so it can be revoked when the result is cleared.
+        this._imageObjectURL = null;
 
         this._max_rows = 1_000;
         this._max_cells = 100_000;
@@ -1522,6 +1534,7 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._chart);
         this._clearElement(this._dataUnparsed);
         this._clearElement(this._error);
+        this._clearImage();
 
         this._dataTable.classList.remove('fixed');
         this._dataDiv.classList.remove('fixed');
@@ -1964,6 +1977,27 @@ class QueryResultElement extends HTMLElement
         const fragment = document.createTextNode(data);
         this._dataUnparsed.appendChild(fragment);
         this._dataUnparsed.style.display = 'block';
+    }
+
+    /// Display a binary image result (e.g. `FORMAT PNG`) instead of a table.
+    /// `blob` is the raw response body; we wrap it in an object URL for the `<img>` element.
+    renderImage(blob)
+    {
+        this._clearImage();
+        this._imageObjectURL = URL.createObjectURL(blob);
+        this._image.src = this._imageObjectURL;
+        this._image.style.display = 'block';
+    }
+
+    _clearImage()
+    {
+        if (this._imageObjectURL)
+        {
+            URL.revokeObjectURL(this._imageObjectURL);
+            this._imageObjectURL = null;
+        }
+        this._image.removeAttribute('src');
+        this._image.style.display = 'none';
     }
 
     update(json, fragment)
@@ -2814,7 +2848,7 @@ const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
 /// Execute a single query, rendering results into the given targetResultEl.
-/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_error }.
+/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `abortController` is an AbortController that can be used to cancel this query.
 async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
@@ -2846,6 +2880,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     let is_table = false;
     let is_raw = false;
     let is_chart = false;
+    let is_image = false;
     let is_error = false;
 
     let response, reply, format;
@@ -2855,6 +2890,9 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             headers: { 'Authorization': 'never' } });
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
+        /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
+        /// parsing the query, so any format that emits an image is rendered inline as a picture.
+        const content_type = response.headers.get('Content-Type') ?? '';
 
         if (!response.ok) {
             is_error = true;
@@ -2873,7 +2911,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 targetResultEl.renderError(reply);
             }
 
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_error };
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
+        } else if (content_type.startsWith('image/')) {
+            is_image = true;
+            const blob = await response.blob();
+            if (posted_request_num != request_num) { return { cancelled: true }; }
+            targetResultEl.renderImage(blob);
         } else if (format == default_format) {
             is_table = true;
             const reader = response.body.getReader();
@@ -2942,7 +2985,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             reply = e.toString();
         }
         targetResultEl.renderError(reply);
-        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_error: true };
+        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
     }
 
     if (targetResultEl.isExplainGraph) {
@@ -2953,7 +2996,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         if (is_table) targetResultEl.transposeIfNeeded();
     }
 
-    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_error };
+    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
 }
 
 /// Execute a single query (legacy path, used for single-query mode).
@@ -2993,7 +3036,7 @@ async function postSingle(posted_request_num, query, history_query_text)
     last_query_for_download = query;
     last_params_for_download = paramValuesSnapshot;
 
-    if (result.is_raw) {
+    if (result.is_raw || result.is_image) {
         resultEl.elapsedNs = 1e6 * (performance.now() - last_query_start);
         elapsed_ns = resultEl.elapsedNs;
     } else {
