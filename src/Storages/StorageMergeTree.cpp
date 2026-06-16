@@ -549,6 +549,16 @@ void StorageMergeTree::alter(
                 /// The CREATE-AST pre-validation above does not cover these checks. See #80648.
                 checkMetadataProperties(new_metadata, old_metadata, local_context);
 
+                /// ALTER TABLE ... MODIFY ENGINE: validate the new merge semantics before the durable
+                /// metadata commit. applyEngineModification re-checks the candidate MergingParams and can
+                /// throw; running it before alterTable() guarantees a rejection never leaves an invalid
+                /// engine clause on disk (the catch below reverts settings). It runs after changeSettings
+                /// so getSettings() reflects a MODIFY SETTING in the same statement. The change takes
+                /// effect when the storage is next loaded (the live merging_params swap is deferred; see
+                /// applyEngineModification).
+                if (new_metadata.new_engine)
+                    applyEngineModification(new_metadata.new_engine, new_metadata, local_context);
+
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
 
@@ -737,12 +747,6 @@ void StorageMergeTree::alter(
                 }
                 throw;
             }
-
-            /// ALTER TABLE ... MODIFY ENGINE: swap the live MergingParams. The new CREATE query (with
-            /// the new ENGINE clause) is already persisted by alterTable above, so on the next load the
-            /// table will come up with these MergingParams. Apply the same change to the running storage.
-            if (new_metadata.new_engine)
-                applyEngineModification(new_metadata.new_engine, new_metadata, local_context);
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
