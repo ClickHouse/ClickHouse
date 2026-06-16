@@ -57,14 +57,18 @@ private:
             stack.pop();
 
             /// listAllFilesByPath does not throw on a file: it returns an empty list.
-            /// A non-empty list means a directory; an empty list means a file (or an empty directory).
+            /// A non-empty list means a directory; an empty list means a file or an empty directory.
             const auto children = disk.listAllFilesByPath(current);
             if (!children.empty())
             {
                 for (const auto & file_name : children)
                     stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
             }
-            else
+            /// An empty list is either a file or an empty directory. Only files have a size; an
+            /// empty directory contributes 0. Check this explicitly so the result does not depend
+            /// on whether the disk's getFileSize raises an exception or reports FILE_DOESNT_EXIST
+            /// for directories.
+            else if (!disk.isDirectory(current))
             {
                 try
                 {
