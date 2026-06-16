@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-flaky-check, no-replicated-database
+# Tags: race, zookeeper, no-flaky-check, no-replicated-database, no-random-settings, no-random-merge-tree-settings
 # no-flaky-check: This test stresses concurrent ALTER and INSERT to guard against a
 # column-resolution regression. It is expected to pass on master; it should fail only
 # if that regression returns (a genuine bug surfaces as `NOT_FOUND_COLUMN_IN_BLOCK`,
 # `DUPLICATE_COLUMN`, etc.). Re-running it many times under sanitizers and the thread
 # fuzzer exceeds the per-test budget, which is why the flaky check is disabled.
+#
+# no-random-settings, no-random-merge-tree-settings: this is a timing-sensitive concurrency
+# test, not a coverage test for query or merge-tree settings. Its contract (each side of the
+# race must make progress within the time budget, otherwise the test exercised nothing) is
+# orthogonal to those settings, while randomized merge-tree settings (huge merge/granularity
+# thresholds) only slow down the data-rewriting `MODIFY COLUMN` mutation enough to blow the
+# budget. CI's randomized-settings diagnosis confirmed this: the test passes 3/3 without
+# randomization and fails 3/3 with the randomized settings on a slow (msan) build. Pinning the
+# settings removes that timing variance without weakening what the test actually checks.
 #
 # The ALTERs deliberately do NOT use `IF [NOT] EXISTS`: those clauses would suppress
 # exactly the `NOT_FOUND_COLUMN_IN_BLOCK` / `DUPLICATE_COLUMN` errors this test exists
@@ -15,12 +24,15 @@
 # MODIFY/DROP fail with NOT_FOUND_COLUMN_IN_BLOCK - a test artifact, not a server bug.
 # So any error that survives retry is a real regression and fails the test.
 #
-# To make sure the test cannot pass without ever exercising a concurrent ALTER, each
-# `thread_alter` worker records how many full ADD -> MODIFY -> DROP cycles it completed,
-# and the script fails if neither worker completed a single cycle (e.g. if every attempt
-# only ever hit a retryable error until the time budget ran out). The one exception is a
-# run disrupted by a benign table/replica shutdown (a concurrent restart): that is not the
-# test's fault, so it records a "disrupted" marker and the progress requirement is waived.
+# To make sure the test cannot pass without ever exercising the concurrent ALTER/INSERT it
+# promises, each worker records its progress: every `thread_alter` worker records how many
+# full ADD -> MODIFY -> DROP cycles it completed, and every `thread_insert` worker records how
+# many INSERTs landed. The script fails if no worker completed a single ALTER cycle, or if no
+# INSERT landed at all (e.g. if every attempt only ever hit a retryable error until the time
+# budget ran out) - either way the promised race was never actually exercised. The one
+# exception is a run disrupted by a benign table/replica shutdown (a concurrent restart): that
+# is not the test's fault, so it records a "disrupted" marker and the progress requirement is
+# waived.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,9 +40,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-# Per-worker progress files (one per `thread_alter` column). See the cycle accounting at
-# the end of the script. The prefix is unique per test invocation so parallel runs of the
-# stateless suite do not collide.
+# Per-worker progress files: `.cycles.<col>` for each `thread_alter` worker and
+# `.inserts.<id>` for each `thread_insert` worker. See the progress accounting at the end of
+# the script. The prefix is unique per test invocation so parallel runs of the stateless
+# suite do not collide.
 PROGRESS_PREFIX="${CLICKHOUSE_TMP}/03518_progress_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -f "${PROGRESS_PREFIX}".*
 
@@ -139,11 +152,13 @@ function thread_alter()
         cycles=$((cycles + 1))
     done
     # Record completed cycles so the parent can fail the test if no worker made progress.
-    echo "$cycles" > "${PROGRESS_PREFIX}.${col}"
+    echo "$cycles" > "${PROGRESS_PREFIX}.cycles.${col}"
 }
 
 function thread_insert()
 {
+    local id="$1"
+    local inserts=0
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
@@ -153,16 +168,20 @@ function thread_insert()
         # shutdown/restart race. A genuine INSERT error is printed by `run_with_retry` (which
         # then returns 0), so it still fails the empty-reference test.
         run_with_retry "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)" || break
+        inserts=$((inserts + 1))
     done
+    # Record landed INSERTs so the parent can fail the test if no INSERT ever ran concurrently
+    # with the ALTERs (otherwise the test would prove only the ALTER side of the race).
+    echo "$inserts" > "${PROGRESS_PREFIX}.inserts.${id}"
 }
 
 TIMEOUT=10
 
 pids=()
 thread_alter h & pids+=("$!")
-thread_insert  & pids+=("$!")
+thread_insert 1 & pids+=("$!")
 thread_alter i & pids+=("$!")
-thread_insert  & pids+=("$!")
+thread_insert 2 & pids+=("$!")
 
 rc=0
 for pid in "${pids[@]}"
@@ -171,21 +190,37 @@ do
 done
 
 # A run that only ever hit retryable errors until its budget ran out completes zero full
-# ALTER cycles, in which case the empty-reference test would otherwise pass without having
-# exercised a single concurrent ALTER. Require at least one completed cycle across the
-# workers, and fail explicitly otherwise - unless the run was disrupted by a benign
-# table/replica shutdown, which is not the test's fault.
+# ALTER cycles or lands zero INSERTs, in which case the empty-reference test would otherwise
+# pass without having exercised the concurrent ALTER/INSERT it promises. Require at least one
+# completed ALTER cycle and at least one landed INSERT across the workers, and fail explicitly
+# otherwise - unless the run was disrupted by a benign table/replica shutdown, which is not
+# the test's fault.
 total_cycles=0
-for f in "${PROGRESS_PREFIX}".*
+for f in "${PROGRESS_PREFIX}".cycles.*
 do
     [ -e "$f" ] || continue
     total_cycles=$((total_cycles + $(cat "$f")))
 done
 
-if [[ "$total_cycles" -eq 0 && ! -e "${PROGRESS_PREFIX}_disrupted" ]]
+total_inserts=0
+for f in "${PROGRESS_PREFIX}".inserts.*
+do
+    [ -e "$f" ] || continue
+    total_inserts=$((total_inserts + $(cat "$f")))
+done
+
+if [[ ! -e "${PROGRESS_PREFIX}_disrupted" ]]
 then
-    echo "NO PROGRESS: completed zero full ALTER ADD/MODIFY/DROP cycles - the test did not exercise concurrent ALTERs"
-    rc=1
+    if [[ "$total_cycles" -eq 0 ]]
+    then
+        echo "NO ALTER PROGRESS: completed zero full ALTER ADD/MODIFY/DROP cycles - the test did not exercise concurrent ALTERs"
+        rc=1
+    fi
+    if [[ "$total_inserts" -eq 0 ]]
+    then
+        echo "NO INSERT PROGRESS: zero INSERTs landed - the test did not exercise concurrent INSERTs against the ALTERing table"
+        rc=1
+    fi
 fi
 
 exit "$rc"
