@@ -18,6 +18,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPA
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'aux:/clickhouse/foo\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() FROM t GROUP BY GROUPING SETS ((a), (b))'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -71,3 +72,18 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d'
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'), '"type":"InterpolateElement"', '"type":"Asterisk"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT x FROM t ORDER BY x WITH FILL INTERPOLATE (x AS x + 1)'), '"with_fill":true', '"with_fill":false')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- GROUP BY GROUPING SETS: `group_by_with_grouping_sets` is produced only by
+-- `GROUP BY GROUPING SETS (...)`, where every grouping set is a nested `ASTExpressionList`. The
+-- analyzer does `group_asts[i]->as<const ASTExpressionList>()->children`, so setting the flag over an
+-- ordinary `GROUP BY` (e.g. an `Identifier` child) is parser-impossible and must be rejected.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() FROM t GROUP BY a'), '"group_by":', '"group_by_with_grouping_sets":true,"group_by":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `group_by_with_constant_keys` is analysis-derived, not SQL syntax (a parsed AST never carries it),
+-- so it is not deserialized from JSON: injecting it is silently ignored, and the query round-trips
+-- without it instead of letting `clickhouse_json` lie about analysis state.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() FROM t GROUP BY a'), '"group_by":', '"group_by_with_constant_keys":true,"group_by":'));

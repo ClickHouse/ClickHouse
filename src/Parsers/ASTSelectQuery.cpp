@@ -630,8 +630,10 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("group_by_with_rollup", true);
     if (group_by_with_cube)
         w.writeBool("group_by_with_cube", true);
-    if (group_by_with_constant_keys)
-        w.writeBool("group_by_with_constant_keys", true);
+    /// `group_by_with_constant_keys` is not SQL syntax: `ExpressionAnalyzer` derives it after
+    /// inspecting/optimizing constant `GROUP BY` keys, so a parsed AST never legitimately carries it.
+    /// It is intentionally not serialized (and not read back) so `clickhouse_json` cannot lie about
+    /// analysis state.
     if (group_by_with_grouping_sets)
         w.writeBool("group_by_with_grouping_sets", true);
     if (order_by_all)
@@ -672,7 +674,9 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     group_by_with_totals = r.getBool("group_by_with_totals");
     group_by_with_rollup = r.getBool("group_by_with_rollup");
     group_by_with_cube = r.getBool("group_by_with_cube");
-    group_by_with_constant_keys = r.getBool("group_by_with_constant_keys");
+    /// `group_by_with_constant_keys` is analysis-derived, not parser-produced, so it is intentionally
+    /// not read from JSON (see `writeJSON`): accepting it would let `clickhouse_json` lie about analysis
+    /// state (e.g. drive the constant-key empty-result path with no constant `GROUP BY` in the SQL).
     group_by_with_grouping_sets = r.getBool("group_by_with_grouping_sets");
     order_by_all = r.getBool("order_by_all");
     limit_with_ties = r.getBool("limit_with_ties");
@@ -788,6 +792,22 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// emits `GROUP BY ALL` and drops the list, so the SQL parser can never produce both.
     if (group_by_all && groupBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "group_by_all cannot be set together with a GROUP BY list during AST JSON deserialization");
+
+    /// `group_by_with_grouping_sets` is produced only by `GROUP BY GROUPING SETS (...)`, where
+    /// `ParserGroupingSetsExpressionListElements` wraps every grouping set as a nested `ASTExpressionList`.
+    /// The analyzer relies on that shape (`group_asts[i]->as<const ASTExpressionList>()->children`), so
+    /// require a non-empty `GROUP BY` whose every child is an `ASTExpressionList` when the flag is set.
+    if (group_by_with_grouping_sets)
+    {
+        auto group_by_list = groupBy();
+        if (!group_by_list || group_by_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "group_by_with_grouping_sets requires a non-empty GROUP BY clause during AST JSON deserialization");
+        for (const auto & grouping_set : group_by_list->children)
+            if (!grouping_set || !grouping_set->as<ASTExpressionList>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "GROUP BY GROUPING SETS elements must be expression lists during AST JSON deserialization");
+    }
 
     /// `LIMIT BY ALL` and an explicit `LIMIT BY` list are mutually exclusive for the same reason.
     if (limit_by_all && limitBy())
