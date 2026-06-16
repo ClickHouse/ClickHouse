@@ -174,3 +174,79 @@ SELECT
 SELECT
     (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
   = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Object/JSON as the join key. JSON paths are dynamically typed and can be NULL without a Nullable
+-- wrapper, like Variant/Dynamic, but canContainNull() omits Object, so a JSON-containing key was
+-- treated as null-free and routed to the single-element "equals" runtime-filter path. equals over a
+-- JSON value can return Nullable(UInt8), so the matching row was silently dropped (wrong results).
+-- hasTypeThatCanContainNulls() now reports Object too, forcing the null-safe Set path. See #107646.
+SET allow_experimental_json_type = 1;
+
+-- Top-level JSON key, exactly 1 distinct value on the right (the "equals" path). The matching row
+-- must survive the runtime filter; before the fix this returned no rows.
+SELECT *
+FROM
+    (SELECT v AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1
+    JOIN
+    (SELECT v AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2
+    USING (k)
+ORDER BY toString(k);
+
+-- Tuple(JSON, ...) nested key, the "equals" path.
+SELECT *
+FROM
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1
+    JOIN
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2
+    USING (k)
+ORDER BY toString(k);
+
+-- Tuple(JSON, ...) nested key, several distinct values on the right (the set-lookup path).
+SELECT *
+FROM
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}\n{"a":3}')) AS t1
+    JOIN
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":3}')) AS t2
+    USING (k)
+ORDER BY toString(k);
+
+-- Array(JSON) as the join key.
+SELECT *
+FROM
+    (SELECT [v] AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1
+    JOIN
+    (SELECT [v] AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2
+    USING (k)
+ORDER BY toString(k);
+
+-- Map(String, JSON) as the join key (JSON in the value position).
+SELECT *
+FROM
+    (SELECT map('a', v) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1
+    JOIN
+    (SELECT map('a', v) AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2
+    USING (k)
+ORDER BY toString(k);
+
+-- Map(JSON, String) as the join key (JSON in the key position). hasTypeThatCanContainNulls()
+-- recurses into both the Map key and value, so the key-side branch must be covered too.
+SELECT *
+FROM
+    (SELECT map(v, 'x') AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1
+    JOIN
+    (SELECT map(v, 'x') AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2
+    USING (k)
+ORDER BY toString(k);
+
+-- LEFT ANTI JOIN on JSON keys: the runtime filter must not drop rows the join keeps. Each case
+-- asserts the rows with runtime filters off equal the rows with them on. 1 = consistent.
+
+-- Top-level JSON key, "equals" path (1 distinct value on the right).
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT v AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1 LEFT ANTI JOIN (SELECT v AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT v AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}')) AS t1 LEFT ANTI JOIN (SELECT v AS k FROM format(TSV, 'v JSON', '{"a":1}')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Tuple(JSON) nested key, set path with negative lookup.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}\n{"a":3}')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":3}')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":2}\n{"a":3}')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v JSON', '{"a":1}\n{"a":3}')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);

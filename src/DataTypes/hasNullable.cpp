@@ -33,7 +33,8 @@ bool hasNullable(const DataTypePtr & type)
 
 bool hasTypeThatCanContainNulls(const DataTypePtr & type)
 {
-    if (canContainNull(*type))
+    // canContainNull omits Object/JSON, but its dynamically typed paths can be NULL like Variant/Dynamic.
+    if (canContainNull(*type) || isObject(*type))
         return true;
 
     if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
