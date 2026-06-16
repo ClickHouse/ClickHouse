@@ -243,6 +243,8 @@ size_t IntersectOrExceptTransform::filterWithCounts(
 template <typename Method>
 void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs & columns, size_t rows, SetVariants & variants) const
 {
+    chassert(!isAllOperator(), "addToSet must only be used for DISTINCT operators");
+
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
@@ -254,10 +256,13 @@ template <typename Method>
 size_t IntersectOrExceptTransform::buildFilter(
     Method & method, const ColumnRawPtrs & columns, IColumn::Filter & filter, size_t rows, SetVariants & variants) const
 {
+    /// ALL operators use the counting path, so only DISTINCT operators reach here; the branch
+    /// below therefore only needs to distinguish EXCEPT_DISTINCT from INTERSECT_DISTINCT.
+    chassert(!isAllOperator(), "buildFilter must only be used for DISTINCT operators");
+
     typename Method::State state(columns, key_sizes, nullptr);
     size_t new_rows_num = 0;
 
-    /// Only DISTINCT operators reach here; ALL operators use the counting path.
     for (size_t i = 0; i < rows; ++i)
     {
         auto find_result = state.findKey(method.data, i, variants.string_pool);
