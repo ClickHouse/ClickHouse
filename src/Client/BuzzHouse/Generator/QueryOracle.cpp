@@ -935,6 +935,7 @@ void QueryOracle::dumpTableContent(
             eca->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     if (test_content)
     {
@@ -978,6 +979,7 @@ void QueryOracle::dumpTableContent(
             eca2->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
 }
 
@@ -1312,6 +1314,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
             intermediate_queries.emplace_back(next);
         }
+        break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     gen.setAllowNotDetermistic(true);
 }

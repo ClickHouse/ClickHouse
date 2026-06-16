@@ -859,9 +859,9 @@ bool Client::buzzHouse()
                              && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
                          const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                              test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
-
-                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REINSERT_TABLE;
                          const bool is_mt = tbl.get().isMergeTreeFamily();
+                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DO_NOTHING;
+
                          rg.pickWeighted(
                              {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
@@ -881,42 +881,46 @@ bool Client::buzzHouse()
                               {10 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
                               {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
-                              {2
+                              {3
                                    * static_cast<uint32_t>(
                                        test_content && !tbl.get().isAnyS3Engine(true) && !tbl.get().isAnyAzureEngine(true)),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::TRUNCATE_COUNT; }},
                               {70 * static_cast<uint32_t>(!tbl.get().isNotTruncableEngine()),
-                               [&]() { /* REINSERT_TABLE is the default */ }}});
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::REINSERT_TABLE; }},
+                              {1, [&]() { /* Defensive line */ }}});
 
-                         if (test_content)
+                         if (strategy != BuzzHouse::DumpOracleStrategy::DO_NOTHING)
                          {
-                             /// Dump table content and read it later to look for correctness
-                             full_query.resize(0);
-                             qo.dumpTableContent(rg, gen, strategy, test_content, tbl, sq1, sq2);
-                             BuzzHouse::SQLQueryToString(full_query, sq1);
-                             fuzz_config->outf << full_query << std::endl;
-                             server_up &= processBuzzHouseQuery(full_query);
-                             qo.processFirstOracleQueryResult(error_code, *external_integrations);
-                         }
+                             if (test_content)
+                             {
+                                 /// Dump table content and read it later to look for correctness
+                                 full_query.resize(0);
+                                 qo.dumpTableContent(rg, gen, strategy, test_content, tbl, sq1, sq2);
+                                 BuzzHouse::SQLQueryToString(full_query, sq1);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                                 qo.processFirstOracleQueryResult(error_code, *external_integrations);
+                             }
 
-                         qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
-                         for (const auto & entry : intermediate_queries)
-                         {
-                             /// Run each from the chosen strategy
-                             full_query.resize(0);
-                             BuzzHouse::SQLQueryToString(full_query, entry);
-                             fuzz_config->outf << full_query << std::endl;
-                             server_up &= processBuzzHouseQuery(full_query);
-                             qo.setIntermediateStepSuccess(!have_error);
-                         }
+                             qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
+                             for (const auto & entry : intermediate_queries)
+                             {
+                                 /// Run each from the chosen strategy
+                                 full_query.resize(0);
+                                 BuzzHouse::SQLQueryToString(full_query, entry);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                                 qo.setIntermediateStepSuccess(!have_error);
+                             }
 
-                         if (test_content)
-                         {
-                             full_query.resize(0);
-                             BuzzHouse::SQLQueryToString(full_query, sq2);
-                             fuzz_config->outf << full_query << std::endl;
-                             server_up &= processBuzzHouseQuery(full_query);
-                             qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
+                             if (test_content)
+                             {
+                                 full_query.resize(0);
+                                 BuzzHouse::SQLQueryToString(full_query, sq2);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                                 qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
+                             }
                          }
                      }},
                     {5
