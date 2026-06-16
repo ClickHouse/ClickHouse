@@ -30,7 +30,10 @@ RocksDBSettings::RocksDBSettings(const RocksDBSettings & settings) : impl(std::m
 {
 }
 
-RocksDBSettings::RocksDBSettings(RocksDBSettings && settings) noexcept = default;
+RocksDBSettings::RocksDBSettings(RocksDBSettings && settings) noexcept
+    : impl(std::make_unique<RocksDBSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 RocksDBSettings::~RocksDBSettings() = default;
 
