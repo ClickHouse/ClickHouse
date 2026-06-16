@@ -8,7 +8,10 @@ SELECT formatReadableTimeDelta(INTERVAL 1 NANOSECOND, 'nanoseconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 MICROSECOND, 'nanoseconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 MILLISECOND, 'nanoseconds');
 
--- MONTH, QUARTER & YEAR don't work as they don't represent constant intervals
+-- MONTH, QUARTER and YEAR are not supported as they don't represent a fixed-sized interval in seconds.
+SELECT formatReadableTimeDelta(INTERVAL 1 MONTH); -- { serverError BAD_ARGUMENTS }
+SELECT formatReadableTimeDelta(INTERVAL 1 QUARTER); -- { serverError BAD_ARGUMENTS }
+SELECT formatReadableTimeDelta(INTERVAL 1 YEAR); -- { serverError BAD_ARGUMENTS }
 
 SELECT formatReadableTimeDelta(INTERVAL 60 SECOND);
 SELECT formatReadableTimeDelta(INTERVAL 3601 SECOND);
