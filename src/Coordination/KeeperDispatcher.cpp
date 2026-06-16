@@ -283,13 +283,6 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
                     rem.path = path;
                     rem.version = version;
                     rem.try_remove = true;
-                    /// The garbage collector reuses a single internal session and does not assign
-                    /// unique xids, so every remove would otherwise share the same (session_id, xid)
-                    /// key in the parsed-request cache (see KeeperStateMachine::parseRequest) and the
-                    /// cache would return the first parsed remove for all of them. CLOSE_XID is in the
-                    /// non-cacheable xids list, which keeps each remove parsed independently with its
-                    /// own path.
-                    rem.xid = Coordination::CLOSE_XID;
 
                     try
                     {

@@ -4,6 +4,7 @@
 #include <exception>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -438,7 +439,8 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     };
 
     const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1
+        && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
         && std::all_of(
               non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
 
