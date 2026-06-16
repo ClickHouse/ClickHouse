@@ -599,7 +599,11 @@ void addDefaultHandlersFactory(
                 auto sep = scheme.find(' ');
                 if (sep != std::string_view::npos)
                     scheme = scheme.substr(0, sep);
-                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate"))
+                /// `Authorization: never` is a supported sentinel that makes `authenticateUserByHTTP`
+                /// ignore credentials (see `03362_basic_auth_interactive_not_with_authorization_never`);
+                /// let it through so a path-style request is handled the same way the query-string
+                /// route is, instead of falling through to `NotFoundHandler`.
+                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && !boost::iequals(auth_header, "never"))
                     return false;
             }
 
