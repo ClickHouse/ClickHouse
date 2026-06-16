@@ -209,6 +209,11 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
+    /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
+    /// during execution. The `input()` initializer below reparses `state->query`, and must use the
+    /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
+    state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+    state->allow_experimental_json_ast_dialect = query_context->getSettingsRef()[Setting::allow_experimental_json_ast_dialect];
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -252,9 +257,9 @@ void LocalConnection::sendQuery(
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
         {
-            if (!settings[Setting::allow_experimental_json_ast_dialect])
+            if (!state->allow_experimental_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for clickhouse_json dialect is disabled "
                     "(turn on setting 'allow_experimental_json_ast_dialect')");

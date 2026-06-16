@@ -27,6 +27,13 @@ struct LocalQueryState
 
     /// Query text.
     String query;
+    /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
+    /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
+    /// must use the dialect/gate the query was originally accepted with — a JSON
+    /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... allow_experimental_json_ast_dialect = 0`)
+    /// would otherwise be reparsed with the changed settings and fail.
+    bool parsed_as_json_dialect = false;
+    bool allow_experimental_json_ast_dialect = false;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.
