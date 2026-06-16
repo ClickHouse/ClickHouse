@@ -742,15 +742,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 }
 
  /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
- *
  * This algorithm constructs optimal join trees by iterating over subsets of the relations in an ascending order
  * based on an integer bitmask (from 1 to 2^n - 2). This ordering ensures that for any relation subset S,
  * the best plans for all its proper sub-plans (subsets S1 ⊂ S) have already been computed, thereby adhering to
  * Bellman's optimality principle.
- *
  * This methodical evaluation of all connected subsets results in the creation of the best plan for each.
  * The final answer is the optimal plan for the complete set of relations.
- *
  * For more detailed information, see "Building Query Compilers":
  * (https://pi3.informatik.uni-mannheim.de/~moer/querycompiler.pdf)
  */

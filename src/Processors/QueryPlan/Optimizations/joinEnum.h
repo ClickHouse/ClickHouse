@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** This an efficient iterator that iterates over all (strict) non-empty subsets of a given 
+/** This an efficient iterator that iterates over all (strict) non-empty subsets of a given
 * input set S (excluding the empty subset).
 */
 template <std::unsigned_integral TUint>
@@ -18,11 +18,8 @@ class NonEmptySubmasks
 {
 public:
     using Bitvector = TUint;
-    
     constexpr explicit NonEmptySubmasks(const Bitvector start_) noexcept : start(start_) {}
-    
     constexpr TUint getFullSet() const noexcept { return start; }
-
     class Iterator
     {
     public:
@@ -51,12 +48,10 @@ public:
         {
             return current == other.current;
         }
-        
     private:
         TUint start;
         TUint current;
     };
-
     constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
     constexpr Iterator end() const noexcept   { return Iterator(start, start); }
 private:
@@ -152,7 +147,7 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & 
     initDPTable(consumer.dptable(), query_graph);
 
     /** The integer `s` induces the current subset `S` via its binary representation. 
-    * Taken as bitvectors, integers in the range [1, 2^n - 1] map exactly to all 
+    * Taken as bitvectors, integers in the range [1, 2^n - 1] map exactly to all
     * non-empty subsets of {R_0, ..., R_{n-1}}.
     * Iterating in strictly ascending order guarantees a valid sequence for dynamic
     * programming: for any given subset, all of its proper subsets are guaranteed to
