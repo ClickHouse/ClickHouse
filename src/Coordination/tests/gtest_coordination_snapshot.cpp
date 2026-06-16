@@ -2060,12 +2060,20 @@ TEST(KeeperSnapshotManagerCleanupTest, ReceiveDuplicateSnapshotRepublishIsIdempo
     DB::KeeperMemoryStorage storage(500, "", ctx);
 
     DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
-    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    /// Only one `KeeperStorageSnapshot` may be alive per storage at a time (it holds snapshot
+    /// mode on), so scope each one before creating the next.
+    nuraft::ptr<nuraft::buffer> buf;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
+        buf = manager.serializeSnapshotToBuffer(snapshot);
+    }
 
     addNode(storage, "/after_duplicate", "must not be written");
-    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> changed_snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
-    auto changed_buf = manager.serializeSnapshotToBuffer(changed_snapshot);
+    nuraft::ptr<nuraft::buffer> changed_buf;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> changed_snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
+        changed_buf = manager.serializeSnapshotToBuffer(changed_snapshot);
+    }
 
     auto first_info = manager.serializeSnapshotBufferToDisk(*buf, 100);
     auto second_info = manager.serializeSnapshotBufferToDisk(*changed_buf, 100);
