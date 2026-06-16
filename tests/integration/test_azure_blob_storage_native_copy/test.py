@@ -177,7 +177,6 @@ def azure_query(
             continue
 
 
-
 def test_backup_restore_on_merge_tree_same_container(cluster):
     node1 = cluster.instances["node1"]
     azure_query(node1, f"DROP TABLE IF EXISTS test_simple_merge_tree SYNC")

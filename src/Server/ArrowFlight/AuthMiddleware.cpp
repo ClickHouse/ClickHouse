@@ -1,4 +1,9 @@
 #include <Server/ArrowFlight/AuthMiddleware.h>
+#include <Core/UUID.h>
+
+#if USE_ARROWFLIGHT
+
+#include <Server/ArrowFlight/CallsData.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -31,9 +36,22 @@ void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
     if (!session_id.empty())
     {
         if (session_close)
+        {
+            calls_data.closeSessionPreparedStatements(session_id, username);
             session->closeSession(session_id);
+        }
         else
+        {
+            if (calls_data.usesSessionTimeoutForPsLifetime() && session_timeout.count() > 0)
+                calls_data.refreshSessionPreparedStatements(session_id, username, std::chrono::duration_cast<ArrowFlight::Duration>(session_timeout));
+            else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
+                calls_data.refreshSessionPreparedStatements(session_id, username, *ps_lifetime);
             session->releaseSessionID();
+        }
+    }
+    else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
+    {
+        calls_data.refreshSessionPreparedStatements("", username, *ps_lifetime);
     }
 }
 
@@ -66,10 +84,10 @@ namespace
         if (it == headers.end())
             return std::nullopt;
 
-        const std::string basic_prefix = "Basic ";
+        const std::string basic_prefix = "basic ";
         const auto & auth_str = it->second;
 
-        if (!auth_str.starts_with(basic_prefix))
+        if (!Poco::toLower(std::string(auth_str)).starts_with(basic_prefix))
             return std::nullopt;
 
         auto credentials = base64Decode(std::string(auth_str.substr(basic_prefix.size())));
@@ -87,10 +105,10 @@ namespace
         if (it == headers.end())
             return std::nullopt;
 
-        const std::string bearer_prefix = "Bearer ";
+        const std::string bearer_prefix = "bearer ";
         const auto & auth_str = it->second;
 
-        if (!auth_str.starts_with(bearer_prefix))
+        if (!Poco::toLower(std::string(auth_str)).starts_with(bearer_prefix))
             return std::nullopt;
 
         return std::string(auth_str.substr(bearer_prefix.size()));
@@ -128,12 +146,13 @@ String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::
 {
     std::lock_guard<std::mutex> lock(token_mutex);
 
-    unsafeCleanupExpiredTokens();
+    cleanupExpiredTokens();
 
     auto token = toString(UUIDHelpers::generateV4());
-    token_to_credentials[token] = {username, password};
     auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
-    token_expiration_list_index[token] = token_expiration_list.insert({expiration_time, token});
+    auto exp_iter = token_expiration_list.insert({expiration_time, token});
+    token_expiration_list_index[token] = exp_iter;
+    token_to_credentials[token] = {username, password};
 
     return token;
 }
@@ -142,20 +161,21 @@ std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenS
 {
     std::lock_guard<std::mutex> lock(token_mutex);
 
-    unsafeCleanupExpiredTokens();
+    cleanupExpiredTokens();
 
     auto it = token_to_credentials.find(token);
     if (it != token_to_credentials.end())
     {
         auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
+        auto new_iter = token_expiration_list.insert({expiration_time, token});
         token_expiration_list.erase(token_expiration_list_index[token]);
-        token_expiration_list_index[token] = token_expiration_list.insert({expiration_time, token});
+        token_expiration_list_index[token] = new_iter;
         return it->second;
     }
     return std::nullopt;
 }
 
-void AuthMiddlewareFactory::TokenStorage::unsafeCleanupExpiredTokens()
+void AuthMiddlewareFactory::TokenStorage::cleanupExpiredTokens()
 {
     auto now = std::chrono::steady_clock::now();
     for (auto it = token_expiration_list.begin(); it != token_expiration_list.end() && it->first <= now;)
@@ -180,23 +200,22 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 
     bool auth = false;
 
-    if (auto credentials = getCredentialsFromBasicHeader(headers); credentials)
-    {
-        auth = true;
-        std::tie(username, password) = *credentials;
-    }
-    else if (auto token_opt = getTokenFromBearerHeader(headers); token_opt && *token_opt != "None")
-    {
-        token = *token_opt;
-        credentials = token_storage.getCredentials(token);
-        if (!credentials)
-            return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
-
-        std::tie(username, password) = *credentials;
-    }
-
     try
     {
+        if (auto credentials = getCredentialsFromBasicHeader(headers))
+        {
+            auth = true;
+            std::tie(username, password) = *credentials;
+        }
+        else if (auto token_opt = getTokenFromBearerHeader(headers); token_opt && *token_opt != "None")
+        {
+            token = *token_opt;
+            credentials = token_storage.getCredentials(token);
+            if (!credentials)
+                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
+
+            std::tie(username, password) = *credentials;
+        }
         session->authenticate(username, password, getClientAddress(context));
     }
     catch (DB::Exception & e)
@@ -242,7 +261,11 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         if (auth)
             token = token_storage.getToken(username, password);
 
-        *middleware = std::make_unique<AuthMiddleware>(session, token, username, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true));
+        auto parsed_session_timeout = session_id.empty()
+            ? std::chrono::steady_clock::duration{0}
+            : parseSessionTimeout(server.context()->getConfigRef(), session_timeout);
+
+        *middleware = std::make_unique<AuthMiddleware>(session, token, username, calls_data, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true), parsed_session_timeout);
     }
     catch (DB::Exception & e)
     {
@@ -253,3 +276,5 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 }
 
 }
+
+#endif

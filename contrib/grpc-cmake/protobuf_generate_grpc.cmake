@@ -63,7 +63,7 @@ function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
   endif()
 
   set(_outvar)
-  protobuf_generate_grpc(${_append_arg} ${_descriptors} LANGUAGE cpp EXPORT_MACRO ${protobuf_generate_cpp_EXPORT_MACRO} OUT_VAR _outvar ${_import_arg} ${_protoc_out_dir_arg} PROTOS ${_proto_files})
+  protobuf_generate_grpc(${_append_arg} ${_descriptors} LANGUAGE cpp EXPORT_MACRO ${protobuf_generate_grpc_cpp_EXPORT_MACRO} OUT_VAR _outvar ${_import_arg} ${_protoc_out_dir_arg} PROTOS ${_proto_files})
 
   set(${SRCS})
   set(${HDRS})

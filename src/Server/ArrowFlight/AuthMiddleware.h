@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_ARROWFLIGHT
+
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
 
@@ -7,6 +11,11 @@
 
 #include <arrow/flight/server_middleware.h>
 #include <arrow/flight/server.h>
+
+namespace DB::ArrowFlight
+{
+class CallsData;
+}
 
 namespace DB
 {
@@ -18,12 +27,16 @@ class AuthMiddleware : public arrow::flight::ServerMiddleware
 {
 public:
     explicit AuthMiddleware(std::shared_ptr<Session> session_, const std::string & token_, const std::string & username_,
-                            const std::string & session_id_ = "", bool session_close_ = false)
+                            ArrowFlight::CallsData & calls_data_,
+                            const std::string & session_id_ = "", bool session_close_ = false,
+                            std::chrono::steady_clock::duration session_timeout_ = std::chrono::steady_clock::duration{0})
         : session(session_)
         , token(token_)
         , username(username_)
+        , calls_data(calls_data_)
         , session_id(session_id_)
         , session_close(session_close_)
+        , session_timeout(session_timeout_)
     {
     }
 
@@ -34,6 +47,8 @@ public:
 
     const std::string & getUsername() const { return username; }
     const std::shared_ptr<Session> & getSession() const { return session; }
+    const std::string & getSessionId() const { return session_id; }
+    std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
@@ -44,8 +59,10 @@ private:
     std::shared_ptr<Session> session;
     std::string token;
     std::string username;
+    ArrowFlight::CallsData & calls_data;
     const std::string session_id;
     const bool session_close;
+    const std::chrono::steady_clock::duration session_timeout;
 };
 
 class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
@@ -55,7 +72,7 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     class TokenStorage
     {
     public:
-        explicit TokenStorage(Poco::Util::AbstractConfiguration & config_) : config(config_) {}
+        explicit TokenStorage(const Poco::Util::AbstractConfiguration & config_) : config(config_) {}
 
         /// Generates unique token for given credentials and saves it in storage.
         String getToken(std::string username, std::string password);
@@ -65,22 +82,23 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
         std::optional<std::pair<std::string, std::string>> getCredentials(std::string token);
 
     private:
-        void unsafeCleanupExpiredTokens();
+        void cleanupExpiredTokens() TSA_REQUIRES(token_mutex);
 
-        using token_expiration_list_t = std::multimap<std::chrono::steady_clock::time_point, std::string>;
+        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, std::string>;
 
         std::mutex token_mutex;
-        token_expiration_list_t token_expiration_list;
-        std::unordered_map<std::string, token_expiration_list_t::iterator> token_expiration_list_index;
-        std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials;
+        TokenExpirationList token_expiration_list TSA_GUARDED_BY(token_mutex);
+        std::unordered_map<std::string, TokenExpirationList::iterator> token_expiration_list_index TSA_GUARDED_BY(token_mutex);
+        std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials TSA_GUARDED_BY(token_mutex);
 
-        Poco::Util::AbstractConfiguration & config;
+        const Poco::Util::AbstractConfiguration & config;
     };
 
 public:
-    explicit AuthMiddlewareFactory(IServer & server_)
+    explicit AuthMiddlewareFactory(IServer & server_, ArrowFlight::CallsData & calls_data_)
         : server(server_)
         , token_storage(server_.config())
+        , calls_data(calls_data_)
     {}
 
     arrow::Status StartCall(
@@ -91,6 +109,9 @@ public:
     private:
         IServer & server;
         TokenStorage token_storage;
+        ArrowFlight::CallsData & calls_data;
 };
 
 }
+
+#endif

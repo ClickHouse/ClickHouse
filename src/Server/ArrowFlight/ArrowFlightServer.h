@@ -5,12 +5,15 @@
 #if USE_ARROWFLIGHT
 
 #include <Common/ThreadPool.h>
+#include <Server/ArrowFlight/commandSelector.h>
 #include <Server/GRPCServer.h>
 #include <arrow/flight/server.h>
 
 
 namespace DB
 {
+
+namespace ArrowFlight { class CallsData; }
 
 class ArrowFlightServer : public IGRPCServer, public arrow::flight::FlightServerBase
 {
@@ -60,6 +63,13 @@ public:
         std::unique_ptr<arrow::flight::ResultStream> * result) override;
 
 private:
+    using DecodeResult = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, std::shared_ptr<arrow::Table>>;
+
+    [[nodiscard]] arrow::Result<DecodeResult> decodeDescriptor(
+        const arrow::flight::FlightDescriptor & descriptor,
+        bool for_put_operation,
+        const std::string & username) const;
+
     arrow::Status tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const;
     arrow::Status evaluatePollDescriptor(const String & poll_descriptor);
 
@@ -75,9 +85,10 @@ private:
     const bool cancel_ticket_after_do_get;
     const UInt64 poll_descriptors_lifetime_seconds;
     const bool cancel_poll_descriptor_after_poll_flight_info;
+    const UInt64 max_prepared_statements_per_user;
+    const Int64 prepared_statements_lifetime_seconds;
 
-    class CallsData;
-    std::unique_ptr<CallsData> calls_data;
+    std::unique_ptr<ArrowFlight::CallsData> calls_data;
 };
 
 }

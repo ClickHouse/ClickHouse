@@ -124,7 +124,7 @@ struct StringConverter
 ///  2. after reading page header, the Encoding becomes known, and we create a PageDecoder.
 struct PageDecoderInfo
 {
-    parq::Type::type physical_type;
+    parq::Type::type physical_type{};
 
     /// Postprocessing of decoded values. Exactly one of these is set, depending on physical_type.
     std::shared_ptr<FixedSizeConverter> fixed_size_converter;
@@ -215,6 +215,14 @@ struct FixedStringConverter : public FixedSizeConverter
     bool isTrivial() const override { return true; }
 
     void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+};
+
+struct UUIDConverter : public FixedSizeConverter
+{
+    UUIDConverter() { input_size = 16; }
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+    void convertField(std::span<const char> data, bool is_max, Field & out) const override;
 };
 
 struct TrivialStringConverter : public StringConverter

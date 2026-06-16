@@ -149,9 +149,9 @@ void ColumnQBit::forEachSubcolumnRecursively(RecursiveColumnCallback callback) c
     tuple->forEachSubcolumnRecursively(callback);
 }
 
-void ColumnQBit::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
-    Columns source_tuple_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
     source_tuple_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         source_tuple_columns.push_back(assert_cast<const ColumnQBit &>(*source_column).getTuple());

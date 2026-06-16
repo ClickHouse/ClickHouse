@@ -1,7 +1,9 @@
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET prefer_localhost_replica = 1; -- Make sure plan is reliable
 SET optimize_functions_to_subcolumns = 0;
+SET allow_reorder_prewhere_conditions = 1; -- CI may inject False; prewhere conditions not reordered by statistics → equals(k,3) stays before notEmpty(v) instead of being reordered
 
 DROP TABLE IF EXISTS t_02156_mt1;
 DROP TABLE IF EXISTS t_02156_mt2;
@@ -25,8 +27,8 @@ INSERT INTO t_02156_mt1 SELECT number, toString(number) FROM numbers(10000);
 INSERT INTO t_02156_mt2 SELECT number, toString(number) FROM numbers(10000);
 INSERT INTO t_02156_log SELECT number, toString(number) FROM numbers(10000);
 
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' settings enable_analyzer=1;
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' settings enable_analyzer=0;
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' settings enable_analyzer=1, allow_reorder_prewhere_conditions=1; -- CI may inject False; prewhere conditions not reordered → order changes
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' settings enable_analyzer=0, allow_reorder_prewhere_conditions=1; -- CI may inject False; prewhere conditions not reordered → order changes
 SELECT count() FROM t_02156_merge1 WHERE k = 3 AND notEmpty(v);
 
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_02156_merge2 WHERE k = 3 AND notEmpty(v)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';

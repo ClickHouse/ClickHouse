@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas - optimization not supported yet
 
+SET query_plan_max_limit_for_top_k_optimization = 1000; -- pin to default so LIMIT 5 always qualifies
+
 DROP TABLE IF EXISTS tab1;
 
 CREATE TABLE tab1

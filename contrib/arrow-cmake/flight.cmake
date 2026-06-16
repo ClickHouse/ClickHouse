@@ -8,6 +8,7 @@ endif()
 
 if(NOT ENABLE_GRPC)
     message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use ArrowFlight without gRPC")
+    return()
 endif()
 
 set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include)

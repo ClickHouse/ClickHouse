@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
 
 #include <IO/ReadHelpers.h>
@@ -67,6 +68,16 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
     if constexpr (std::endian::native == std::endian::big)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
+}
+
+template <typename T>
+UInt128 SerializationDecimalBase<T>::getHash(UInt32 precision_, UInt32 scale_)
+{
+    SipHash hash;
+    hash.update(TypeName<T>);
+    hash.update(precision_);
+    hash.update(scale_);
+    return hash.get128();
 }
 
 template class SerializationDecimalBase<Decimal32>;

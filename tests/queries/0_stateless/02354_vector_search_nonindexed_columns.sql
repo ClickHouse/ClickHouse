@@ -7,6 +7,7 @@
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tab;
 

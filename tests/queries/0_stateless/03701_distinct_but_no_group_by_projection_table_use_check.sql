@@ -2,6 +2,8 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+SET optimize_use_projections = 1;
+
 SELECT 'Simple:';
 
 DROP TABLE IF EXISTS tab;

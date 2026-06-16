@@ -1,8 +1,10 @@
+-- Tags: no-llvm-coverage
+
 SYSTEM FLUSH LOGS /* all tables */;
 SELECT 'Column ' || name || ' from table ' || concat(database, '.', table) || ' should have a comment'
 FROM system.columns
 WHERE (database = 'system') AND
       (comment = '') AND
       (table NOT ILIKE '%log%') AND
-      (table NOT IN ('numbers', 'numbers_mt', 'primes', 'one', 'generate_series', 'generateSeries', 'coverage_log', 'filesystem_read_prefetches_log', 'custom_metrics', 'custom_metrics_refresher', 'prometheus_metrics', 'unicode')) AND
+      (table NOT IN ('numbers', 'numbers_mt', 'primes', 'one', 'generate_series', 'generateSeries', 'coverage_log', 'coverage_indirect_calls', 'filesystem_read_prefetches_log', 'custom_metrics', 'custom_metrics_refresher', 'prometheus_metrics', 'unicode')) AND
       (default_kind != 'ALIAS');

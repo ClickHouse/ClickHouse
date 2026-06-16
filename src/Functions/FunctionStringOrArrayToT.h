@@ -1,5 +1,4 @@
 #pragma once
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -23,7 +22,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
-class FunctionStringOrArrayToT : public IFunction
+class FunctionStringOrArrayToT final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -100,7 +99,8 @@ public:
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
+                if (input_rows_count)
+                    Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
 
                 return result_type->createColumnConst(col_fixed->size(), toField(res));
             }

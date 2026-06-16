@@ -1,0 +1,45 @@
+CREATE TABLE default.uk_t
+(
+    `id` UInt64,
+    `user_id` UInt32,
+    `v` String
+)
+ENGINE = MergeTree
+ORDER BY (id, user_id)
+UNIQUE KEY (id)
+SETTINGS index_granularity = 8192
+(id)
+CREATE TABLE default.uk_t_rt
+(
+    `id` UInt64,
+    `user_id` UInt32,
+    `v` String
+)
+ENGINE = MergeTree
+ORDER BY (id, user_id)
+UNIQUE KEY (id)
+SETTINGS index_granularity = 8192
+(id)
+
+2
+CREATE TABLE default.uk_t_composite
+(
+    `id` UInt64,
+    `sub` UInt32,
+    `v` String
+)
+ENGINE = MergeTree
+ORDER BY (id, sub)
+UNIQUE KEY (id, sub)
+SETTINGS index_granularity = 8192
+CREATE TABLE default.uk_inline_pk
+(
+    `id` UInt64,
+    `v` String
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple(id)
+ORDER BY tuple(id)
+UNIQUE KEY (id)
+SETTINGS index_granularity = 8192
+(id)

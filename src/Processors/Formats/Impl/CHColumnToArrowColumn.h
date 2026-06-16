@@ -37,9 +37,6 @@ public:
         bool output_unsupported_types_as_binary = false;
     };
 
-    CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
-    CHColumnToArrowColumn(const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_);
-
     static std::shared_ptr<arrow::Schema> calculateArrowSchema(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
@@ -51,7 +48,7 @@ public:
 
     /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
     /// `cached_dictionary_values` should be provided to maintain this limitation.
-    static std::shared_ptr<arrow::Table> chunkToArrowTable(
+    static std::shared_ptr<arrow::Table> calculateArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
         const std::vector<Chunk> & chunks,
@@ -60,7 +57,11 @@ public:
         std::shared_ptr<arrow::Schema> schema,
         std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
 
-    /// Makes a copy of this converter.
+
+    CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
+    CHColumnToArrowColumn(const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_);
+
+        /// Makes a copy of this converter.
     /// This can be useful to prepare for conversion in multiple threads.
     std::unique_ptr<CHColumnToArrowColumn> clone(bool copy_arrow_schema = false) const;
 

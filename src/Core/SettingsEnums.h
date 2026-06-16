@@ -224,6 +224,14 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+enum class TextIndexPostingListApplyMode : uint8_t
+{
+    MATERIALIZE,
+    LAZY,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
 DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
@@ -299,6 +307,7 @@ enum class Dialect : uint8_t
     kusto,
     prql,
     promql,
+    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -405,6 +414,7 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
+DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
@@ -468,6 +478,9 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
+
 
 enum class SearchOrphanedPartsDisks : uint8_t
 {
@@ -477,6 +490,18 @@ enum class SearchOrphanedPartsDisks : uint8_t
 };
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+/// NOTE: Part level min-max index depends on strict columns order.
+///       That means if you want to add new columns segment to index - it will not be materialized until
+///       previous segment will be materialized in all data parts via mutation or merge.
+///       This is an upgrade semantics of this index.
+enum class MergeTreePartMinMaxIndexColumns : uint64_t
+{
+    PARTITION_KEY_ONLY = 0,
+    WITH_BLOCK_NUMBER_OFFSET = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 
 enum class DecorrelationJoinKind : uint8_t
 {
@@ -495,7 +520,6 @@ enum class IcebergMetadataLogLevel : uint8_t
     ManifestFileMetadata = 4,
     ManifestFileEntry = 5,
 };
-
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 
 enum class ObjectStorageGranularityLevel : uint8_t
@@ -549,4 +573,21 @@ enum class JemallocProfileFormat : uint8_t
 };
 
 DECLARE_SETTING_ENUM(JemallocProfileFormat)
+
+enum class S3UriStyle : uint8_t
+{
+    AUTO,
+    PATH,
+    VIRTUAL_HOSTED,
+};
+
+DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
+{
+    WILDCARD,
+    HIVE,
+};
+DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
+
 }

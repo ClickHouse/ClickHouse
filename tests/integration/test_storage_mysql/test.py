@@ -759,6 +759,171 @@ def test_settings(started_cluster):
     conn.close()
 
 
+def test_enable_compression(started_cluster):
+    table_name = "test_enable_compression"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_compression_creds")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO `clickhouse`.`{table_name}` (id, name, age, money) VALUES (1, 'name_1', 10, 20)"
+        )
+    conn.commit()
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        SETTINGS enable_compression=1
+        """
+    )
+
+    assert node1.query(f"SELECT * FROM {table_name} FORMAT TSV").strip() == "1\tname_1\t10\t20"
+
+    # Wire-level assertion for the MySQL table engine path (SETTINGS clause).
+    # Create a second engine table pointing at performance_schema.session_status to
+    # confirm that ClickHouse actually negotiates CLIENT_COMPRESS for that connection.
+    node1.query("DROP TABLE IF EXISTS compression_status_engine")
+    node1.query(
+        f"""
+        CREATE TABLE compression_status_engine
+        (
+            VARIABLE_NAME String,
+            VARIABLE_VALUE String
+        )
+        ENGINE = MySQL('mysql80:3306', 'performance_schema', 'session_status', 'root', '{mysql_pass}')
+        SETTINGS enable_compression = 1
+        """
+    )
+    engine_compression_status = ""
+    for _ in range(10):
+        engine_compression_status = node1.query(
+            "SELECT VARIABLE_VALUE FROM compression_status_engine WHERE VARIABLE_NAME = 'Compression' FORMAT TSV"
+        ).strip()
+        if engine_compression_status == "ON":
+            break
+        time.sleep(0.5)
+    node1.query("DROP TABLE IF EXISTS compression_status_engine")
+    assert engine_compression_status == "ON", (
+        f"Expected Compression=ON via MySQL engine SETTINGS path, got: {engine_compression_status!r}"
+    )
+
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    assert (
+        node1.query(
+            f"""
+            SELECT id, name, age, money
+            FROM mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}',
+                SETTINGS enable_compression = 1)
+            FORMAT TSV
+            """
+        ).strip()
+        == "1\tname_1\t10\t20"
+    )
+
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_compression_creds AS
+            host = 'mysql80',
+            port = 3306,
+            database = 'clickhouse',
+            user = 'root',
+            password = '{mysql_pass}',
+            enable_compression = 1
+        """
+    )
+    try:
+        assert (
+            node1.query(
+                f"SELECT id, name, age, money FROM mysql(mysql_compression_creds, table='{table_name}') FORMAT TSV"
+            ).strip()
+            == "1\tname_1\t10\t20"
+        )
+
+        # Verify wire-level compression is actually negotiated via the named-collection path.
+        # Named collections use a different settings carrier than the literal SETTINGS clause,
+        # so this is a distinct code path. Override database+table to query performance_schema
+        # so MySQL reports the compression state of the ClickHouse-opened connection.
+        nc_compression_status = ""
+        for _ in range(10):
+            nc_compression_status = node1.query(
+                """
+                SELECT VARIABLE_VALUE
+                FROM mysql(mysql_compression_creds, database='performance_schema', table='session_status')
+                WHERE VARIABLE_NAME = 'Compression'
+                FORMAT TSV
+                """
+            ).strip()
+            if nc_compression_status == "ON":
+                break
+            time.sleep(0.5)
+
+        assert nc_compression_status == "ON", (
+            f"Expected Compression=ON via named collection, got: {nc_compression_status!r}"
+        )
+    finally:
+        node1.query("DROP NAMED COLLECTION IF EXISTS mysql_compression_creds")
+
+    # Separately verify wire-level compression via the literal table-function path (SETTINGS clause).
+    # This is a distinct code path from the named-collection path above.
+    compression_status = ""
+    for _ in range(10):
+        compression_status = node1.query(
+            f"""
+            SELECT VARIABLE_VALUE
+            FROM mysql('mysql80:3306', 'performance_schema', 'session_status', 'root', '{mysql_pass}',
+                SETTINGS enable_compression = 1)
+            WHERE VARIABLE_NAME = 'Compression'
+            FORMAT TSV
+            """
+        ).strip()
+        if compression_status == "ON":
+            break
+        time.sleep(0.5)
+
+    assert compression_status == "ON", (
+        f"Expected MySQL compression to be ON, got: {compression_status!r}"
+    )
+
+    # Wire-level assertion for the MySQL database engine path.
+    # Create a DATABASE pointing at performance_schema, then read session_status through
+    # it to confirm CLIENT_COMPRESS is negotiated on the database-engine connection.
+    node1.query("DROP DATABASE IF EXISTS compression_test_db")
+    node1.query(
+        f"""
+        CREATE DATABASE compression_test_db
+        ENGINE = MySQL('mysql80:3306', 'performance_schema', 'root', '{mysql_pass}')
+        SETTINGS enable_compression = 1
+        """
+    )
+    db_compression_status = ""
+    for _ in range(10):
+        db_compression_status = node1.query(
+            "SELECT VARIABLE_VALUE FROM compression_test_db.session_status WHERE VARIABLE_NAME = 'Compression' FORMAT TSV"
+        ).strip()
+        if db_compression_status == "ON":
+            break
+        time.sleep(0.5)
+    node1.query("DROP DATABASE IF EXISTS compression_test_db")
+    assert db_compression_status == "ON", (
+        f"Expected Compression=ON via MySQL database engine path, got: {db_compression_status!r}"
+    )
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_mysql_point(started_cluster):
     table_name = "test_mysql_point"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

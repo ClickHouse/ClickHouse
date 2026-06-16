@@ -7,8 +7,6 @@ title: 'arrowFlight'
 doc_type: 'reference'
 ---
 
-# arrowFlight Table Function
-
 Allows reading from and writing to data exposed via an [Apache Arrow Flight](/interfaces/arrowflight) server.
 
 **Syntax**
@@ -40,11 +38,11 @@ A table object representing the remote dataset. The schema is inferred from the 
 
 Reading from a remote Arrow Flight server:
 
-```sql
+```sql title="Query"
 SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;
 ```
 
-```text
+```text title="Response"
 ┌─id─┬─name────┬─value─┐
 │  1 │ foo     │ 42.1  │
 │  2 │ bar     │ 13.3  │
