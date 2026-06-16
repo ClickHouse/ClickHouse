@@ -742,35 +742,45 @@ void HTTPHandler::processQuery(
         for (const auto & f : url_filters_from_unrecognized)
             added_filters.push_back(f);
 
-        /// Only re-apply the `filter` setting when the request actually adds filters. Otherwise the
-        /// existing `filter` setting (e.g. a profile default) is left untouched and applied as-is by
-        /// `applyQueryConstructionSettings`. Re-applying it unconditionally would re-submit the
-        /// already-applied value (wrapped in parentheses) through `checkSettingsConstraints`, which
-        /// rejects a `filter` constrained as `const` even when the request changes nothing.
+        /// Only act when the request actually adds filters. Otherwise the existing `filter` setting
+        /// (e.g. a profile default) is left untouched and applied as-is by
+        /// `applyQueryConstructionSettings`. (Re-submitting the already-applied value through
+        /// `checkSettingsConstraints` would reject a `filter` constrained as `const` even when the
+        /// request changes nothing.)
         if (!added_filters.empty())
         {
+            String added_combined;
+            for (const auto & f : added_filters)
+            {
+                if (!added_combined.empty())
+                    added_combined += " AND ";
+                added_combined += f;
+            }
+
+            /// Enforce the `filter` constraint on the added sources: build the full value (the
+            /// existing `filter` setting AND the added filters) and run `checkSettingsConstraints`,
+            /// so a profile that constrains `filter` (e.g. marks it `const`) blocks adding filters
+            /// via `?filter=` / the URL path. The check throws on violation; the value is not applied.
             std::vector<String> all_filters;
             if (!settings[Setting::filter].value.empty())
                 all_filters.push_back("(" + settings[Setting::filter].value + ")");
             for (const auto & f : added_filters)
                 all_filters.push_back(f);
-
-            String combined_filter;
+            String full_filter;
             for (const auto & f : all_filters)
             {
-                if (!combined_filter.empty())
-                    combined_filter += " AND ";
-                combined_filter += f;
+                if (!full_filter.empty())
+                    full_filter += " AND ";
+                full_filter += f;
             }
-
-            /// Setting the combined value as the `filter` setting also routes the URL-path / repeated
-            /// `?filter=` / unrecognized-parameter filters through `checkSettingsConstraints`, so a
-            /// profile that constrains `filter` (e.g. marks it `const`) is enforced for every source
-            /// instead of being bypassed by `?filter=`.
             SettingsChanges filter_change;
-            filter_change.setSetting("filter", combined_filter);
+            filter_change.setSetting("filter", full_filter);
             context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
-            context->applySettingsChanges(filter_change);
+
+            /// Stash the added filters in an overwrite-immune context channel (NOT the `filter`
+            /// setting) so they still apply — combined with `AND` — when the query carries its own
+            /// `SETTINGS filter = ...` clause, which would otherwise overwrite the `filter` setting.
+            context->setHTTPCombinedFilter(added_combined);
         }
     }
 

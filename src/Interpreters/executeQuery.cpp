@@ -1502,9 +1502,16 @@ static void applyQueryConstructionSettings(
     }
 
     const String & select_expr = settings[Setting::select];
-    const String & filter_expr = settings[Setting::filter];
     String order_expr = settings[Setting::order];
     const String & sort_expr = settings[Setting::sort];
+
+    /// The effective filter is the `filter` setting composed (with `AND`) with the HTTP-supplied
+    /// filters kept in the context channel. Keeping them separate lets an in-query
+    /// `SETTINGS filter = ...` override the `filter` setting without dropping the URL-path / `?filter=`
+    /// filters supplied out-of-band by the HTTP interface (which would otherwise be lost).
+    String filter_expr = settings[Setting::filter];
+    if (const String & http_filter = context->getHTTPCombinedFilter(); !http_filter.empty())
+        filter_expr = filter_expr.empty() ? http_filter : "(" + filter_expr + ") AND (" + http_filter + ")";
 
     /// `limit` / `offset` are `Double` settings (they may be negative for tail selection or
     /// fractional for a share of the result). They are applied like every other query-modification

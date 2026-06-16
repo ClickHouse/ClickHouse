@@ -1259,6 +1259,7 @@ ContextData::ContextData(const ContextData &o) :
     is_distributed(o.is_distributed),
     default_format(o.default_format),
     insert_format(o.insert_format),
+    http_combined_filter(o.http_combined_filter),
     external_tables_mapping(o.external_tables_mapping),
     scalars(o.scalars),
     special_scalars(o.special_scalars),
@@ -3451,6 +3452,16 @@ String Context::getInsertFormat() const
 void Context::setInsertFormat(const String & name)
 {
     insert_format = name;
+}
+
+const String & Context::getHTTPCombinedFilter() const
+{
+    return http_combined_filter;
+}
+
+void Context::setHTTPCombinedFilter(const String & filter)
+{
+    http_combined_filter = filter;
 }
 
 MultiVersion<Macros>::Version Context::getMacros() const
