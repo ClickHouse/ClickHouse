@@ -16,6 +16,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` Tuple(UInt8, St
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = Memory COMMENT \'c\''));
+-- `MATERIALIZED VIEW ... TO <target>`: the `ViewTargets` `table_id` is serialized by its parts, so a
+-- database-less target round-trips (it previously threw in `getFullTableName`), as does a `db.table` one.
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW mv TO dst AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW mv TO db2.dst AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY d (`k` UInt64, `v` String) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(0)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2'));

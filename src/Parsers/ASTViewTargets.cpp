@@ -353,14 +353,15 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         if (!kind_opt)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
         target.kind = *kind_opt;
-        if (target_obj->has("table_id"))
+        if (target_obj->has("table_name"))
         {
-            String full_name = target_obj->getValue<String>("table_id");
-            auto dot_pos = full_name.find('.');
-            if (dot_pos != String::npos)
-                target.table_id = StorageID(full_name.substr(0, dot_pos), full_name.substr(dot_pos + 1));
-            else
-                target.table_id = StorageID("", full_name);
+            /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty
+            /// (`TO dst`) and names may contain dots, so do not reconstruct by splitting a full name.
+            const String database = target_obj->has("table_database") ? target_obj->getValue<String>("table_database") : "";
+            UUID table_uuid = UUIDHelpers::Nil;
+            if (target_obj->has("table_uuid"))
+                table_uuid = parseFromString<UUID>(target_obj->getValue<String>("table_uuid"));
+            target.table_id = StorageID(database, target_obj->getValue<String>("table_name"), table_uuid);
         }
         if (target_obj->has("inner_uuid"))
         {
@@ -418,8 +419,19 @@ void ASTViewTargets::writeJSON(WriteBuffer & out) const
             writeJSONString(toString(target.kind), out, w.getFormatSettings());
             if (!target.table_id.empty())
             {
-                out << ",\"table_id\":";
-                writeJSONString(target.table_id.getFullTableName(), out, w.getFormatSettings());
+                /// Serialize the `StorageID` parts separately instead of `getFullTableName()`: the
+                /// latter throws for a database-less target (`TO dst`) and a `db.table` join is
+                /// ambiguous for identifiers that themselves contain dots.
+                out << ",\"table_database\":";
+                writeJSONString(target.table_id.database_name, out, w.getFormatSettings());
+                out << ",\"table_name\":";
+                writeJSONString(target.table_id.table_name, out, w.getFormatSettings());
+                if (target.table_id.uuid != UUIDHelpers::Nil)
+                {
+                    out << R"(,"table_uuid":")";
+                    writeUUIDText(target.table_id.uuid, out);
+                    out << '"';
+                }
             }
             if (target.inner_uuid != UUIDHelpers::Nil)
             {
