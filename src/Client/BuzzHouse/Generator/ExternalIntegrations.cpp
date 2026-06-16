@@ -312,7 +312,8 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName())));
+    return !performQuery(
+        fmt::format("{} {}{};", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName()), truncateSuffix()));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -407,6 +408,12 @@ String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, 
 String MySQLIntegration::truncateStatement()
 {
     return fmt::format("TRUNCATE{}", is_clickhouse ? " TABLE" : "");
+}
+
+String MySQLIntegration::truncateSuffix()
+{
+    /// SYNC is ClickHouse-only; plain MySQL does not accept it.
+    return is_clickhouse ? " SYNC" : "";
 }
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
