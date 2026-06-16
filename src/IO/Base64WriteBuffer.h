@@ -28,7 +28,7 @@ private:
     void finalizeImpl() override;
 
     WriteBuffer & out;
-    base64_state state;
+    base64_state state{};
 };
 
 }
