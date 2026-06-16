@@ -158,6 +158,34 @@ Tests should be
 - make sure the other tests don't test the same stuff (i.e. grep first).
 :::
 
+### Templated tests with Jinja {#templated-tests-with-jinja}
+
+A `.sql` or `.sh` test can be written as a [Jinja2](https://jinja.palletsprojects.com/) template by adding a `.j2` suffix to the file name, so `foo.sql` becomes `foo.sql.j2`. Before running the test, `clickhouse-test` renders the template into an ordinary `.sql` or `.sh` script and executes the result.
+
+This is useful when a test repeats the same query with small variations: a loop generates the queries from a compact template instead of writing each one out by hand. The most commonly used constructs are:
+
+- `{% for ... %} ... {% endfor %}` to repeat a block,
+- `{{ expression }}` to substitute a value into the output,
+- `-%}` and `{%-` to trim adjacent whitespace so the generated script stays clean.
+
+For example, this template:
+
+```sql
+{% for type in ['UInt8', 'UInt16', 'UInt32'] -%}
+SELECT toTypeName(0::{{ type }});
+{% endfor -%}
+```
+
+renders to:
+
+```sql
+SELECT toTypeName(0::UInt8);
+SELECT toTypeName(0::UInt16);
+SELECT toTypeName(0::UInt32);
+```
+
+The `.reference` file must match the output of the fully rendered test (the results of all generated queries), not the template itself. For more examples, see the existing `*.sql.j2` and `*.sh.j2` files in `tests/queries/0_stateless/`.
+
 ### Restricting test runs {#restricting-test-runs}
 
 A test can have zero or more _tags_ specifying restrictions in which contexts the test runs in CI.
