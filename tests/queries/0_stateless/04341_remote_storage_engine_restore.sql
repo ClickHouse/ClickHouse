@@ -19,7 +19,7 @@ CREATE TABLE remote_restore_t (x UInt64)
 
 SELECT x FROM remote_restore_t ORDER BY x;
 
-BACKUP TABLE remote_restore_t TO Memory('04338_remote_storage_engine_restore') FORMAT Null;
+BACKUP TABLE remote_restore_t TO Memory('04341_remote_storage_engine_restore') FORMAT Null;
 
 -- Drop the `Remote` table and the source its target reads from, so the source is absent at restore.
 DROP TABLE remote_restore_t SYNC;
@@ -27,7 +27,7 @@ DROP TABLE remote_restore_src SYNC;
 
 -- The restore must succeed even though `remote_restore_src` no longer exists: the table carries its
 -- own explicit columns and must not re-analyze the table-function target just to be restored.
-RESTORE TABLE remote_restore_t FROM Memory('04338_remote_storage_engine_restore') FORMAT Null;
+RESTORE TABLE remote_restore_t FROM Memory('04341_remote_storage_engine_restore') FORMAT Null;
 
 -- The restored table is present and is a `Remote` engine.
 SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 'remote_restore_t';
