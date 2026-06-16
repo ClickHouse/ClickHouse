@@ -275,7 +275,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
         /// `limit` / `offset` settings are applied earlier in `executeQuery`
-        /// (`applyQueryConstructionSettings` / `wrapNestedLimitOffsetSettings`) by wrapping the
+        /// (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`) by wrapping the
         /// query — including subqueries that carry the setting in their own `SETTINGS` clause — as a
         /// derived table with an outer `LIMIT` / `OFFSET`. Drop them here so they are not re-applied
         /// to this (sub)query's context; the query tree's `LIMIT` / `OFFSET` come from the SQL
@@ -467,7 +467,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     /// `LIMIT` / `OFFSET` come straight from the SQL clauses. The `limit` / `offset` settings are no
     /// longer folded in here — they are materialized as an outer query's `LIMIT` / `OFFSET` by the
     /// subquery-wrapping in `executeQuery` (`applyQueryConstructionSettings` for the top-level query,
-    /// `wrapNestedLimitOffsetSettings` for subqueries that carry the setting in their `SETTINGS`
+    /// `wrapNestedConstructionSettings` for subqueries that carry the setting in their `SETTINGS`
     /// clause), so combining with the setting is left to the optimizer's limit push-down.
     if (auto select_limit = select_query_typed.limitLength())
         current_query_tree->getLimit() = buildExpression(select_limit, current_context);

@@ -1205,47 +1205,175 @@ static void translatePageToLimitOffset(Float64 page, Float64 & limit, Float64 & 
     }
 }
 
-/// Read and remove the `limit` / `offset` / `page` settings from a query's own `SETTINGS` clauses.
-/// A single `SELECT … SETTINGS limit = …` keeps the clause on the inner `ASTSelectQuery`
-/// (`settings()`); a `UNION … SETTINGS …` keeps it on the union node (`settings_ast`). `page` is
-/// translated into `limit` / `offset` (`offset = limit * (page - 1)`) rather than discarded, so a
-/// subquery's `SETTINGS page = N, limit = M` paginates it the same way the top-level query is
-/// paginated. Returns whether any of `limit` / `offset` / `page` was present.
-static bool takeLimitOffsetFromQuerySettings(ASTSelectWithUnionQuery & select_union, Float64 & limit_out, Float64 & offset_out)
+/// Build `SELECT [select_expr] FROM (inner) [WHERE filter_expr] [ORDER BY order_expr]
+/// [LIMIT limit] [OFFSET offset]` and return it as an `ASTSelectWithUnionQuery`, with `inner` as the
+/// derived-table subquery. An empty `select_expr` means `SELECT *`; a zero `limit` / `offset` is
+/// omitted (and the SQL `LIMIT` grammar handles negative/fractional values natively). This is the
+/// shared core that materializes the construction settings, used both for the top-level query (from
+/// the context, in `applyQueryConstructionSettings`) and for each (sub)query / `UNION` arm that
+/// carries them in its own `SETTINGS` clause.
+static ASTPtr wrapAsConstructedSelect(
+    ASTPtr inner,
+    const String & select_expr,
+    const String & filter_expr,
+    const String & order_expr,
+    Float64 limit,
+    Float64 offset,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    bool found = false;
+    auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
+    {
+        return parseQuery(parser, text.data(), text.data() + text.size(),
+            fmt::format("query construction ({})", what), max_query_size, max_parser_depth, max_parser_backtracks);
+    };
+
+    auto outer_select = make_intrusive<ASTSelectQuery>();
+
+    ASTPtr select_list;
+    if (select_expr.empty())
+    {
+        select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+    }
+    else
+    {
+        ParserNotEmptyExpressionList select_parser(/* allow_alias_without_as_keyword= */ true);
+        select_list = parse_component(select_parser, select_expr, "`select` setting");
+    }
+    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+    /// The derived-table subquery must hold an `ASTSelectWithUnionQuery`. A bare `ASTSelectQuery`
+    /// (e.g. a single `UNION` arm passed by the per-arm wrapper) is wrapped in a one-element union.
+    if (!inner->as<ASTSelectWithUnionQuery>())
+    {
+        auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
+        inner_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        inner_union->list_of_selects->children.push_back(std::move(inner));
+        inner_union->children.push_back(inner_union->list_of_selects);
+        inner = std::move(inner_union);
+    }
+    auto subquery = make_intrusive<ASTSubquery>(std::move(inner));
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = subquery;
+    table_expression->children.push_back(subquery);
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = table_expression;
+    tables_element->children.push_back(table_expression);
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    if (!filter_expr.empty())
+    {
+        ParserExpression filter_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::WHERE, parse_component(filter_parser, filter_expr, "`filter` setting"));
+    }
+    if (!order_expr.empty())
+    {
+        ParserOrderByExpressionList order_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
+    }
+    if (limit != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit)));
+    if (offset != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset)));
+
+    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
+    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
+    outer_union->list_of_selects->children.push_back(std::move(outer_select));
+    outer_union->children.push_back(outer_union->list_of_selects);
+    return outer_union;
+}
+
+/// The construction settings (`select` / `filter` / `order` / `sort` and `limit` / `offset` / `page`)
+/// read from a single `SETTINGS` clause. `page` is translated to `limit` / `offset`, `sort` is
+/// converted to `order` (and conflicts with an explicit `order`).
+struct ConstructionSettings
+{
+    String select_expr;
+    String filter_expr;
+    String order_expr;
+    Float64 limit = 0;
+    Float64 offset = 0;
+    bool present = false;
+
+    bool empty() const
+    {
+        return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
+    }
+};
+
+/// Read and remove the construction settings from a single `SETTINGS` clause into `out` (accumulating
+/// across clauses; the last non-empty value of each wins). Throws on `sort` + `order` together.
+static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, ConstructionSettings & out)
+{
+    auto take_string = [&](const char * name, String & dst)
+    {
+        if (const Field * f = set_query.changes.tryGet(name))
+        {
+            dst = f->safeGet<String>();
+            set_query.changes.removeSetting(name);
+            out.present = true;
+        }
+    };
+
+    take_string("select", out.select_expr);
+    take_string("filter", out.filter_expr);
+
+    String order_expr;
+    String sort_expr;
+    take_string("order", order_expr);
+    take_string("sort", sort_expr);
+    if (!sort_expr.empty() && !order_expr.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
+    if (order_expr.empty() && !sort_expr.empty())
+        order_expr = convertSortToOrderBy(sort_expr);
+    if (!order_expr.empty())
+        out.order_expr = order_expr;
+
+    Float64 limit = 0;
+    Float64 offset = 0;
+    bool has_limit_offset = false;
+    if (const Field * f = set_query.changes.tryGet("limit"))
+    {
+        limit = fieldToLimitOffsetFloat(*f);
+        has_limit_offset = true;
+        set_query.changes.removeSetting("limit");
+    }
+    if (const Field * f = set_query.changes.tryGet("offset"))
+    {
+        offset = fieldToLimitOffsetFloat(*f);
+        has_limit_offset = true;
+        set_query.changes.removeSetting("offset");
+    }
+    if (const Field * f = set_query.changes.tryGet("page"))
+    {
+        translatePageToLimitOffset(fieldToLimitOffsetFloat(*f), limit, offset);
+        has_limit_offset = true;
+        set_query.changes.removeSetting("page");
+    }
+    if (has_limit_offset)
+    {
+        out.limit = limit;
+        out.offset = offset;
+        out.present = true;
+    }
+}
+
+/// Read and remove the construction settings from a (sub)query's own query-level `SETTINGS` clauses
+/// into `out`. A single `SELECT … SETTINGS …` keeps the clause on the inner `ASTSelectQuery`
+/// (`settings()`); a `UNION … SETTINGS …` keeps it on the union node (`settings_ast`). Both are
+/// consumed so the subquery's own interpreter does not re-apply them on top of the wrapping.
+static void takeNestedConstructionSettings(ASTSelectWithUnionQuery & select_union, ConstructionSettings & out)
+{
     auto take = [&](ASTPtr & settings_ptr, ASTSelectQuery * owner_select)
     {
         auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
         if (!set_query)
             return;
-        Float64 limit = 0;
-        Float64 offset = 0;
-        bool present = false;
-        if (const Field * f = set_query->changes.tryGet("limit"))
-        {
-            limit = fieldToLimitOffsetFloat(*f);
-            present = true;
-            set_query->changes.removeSetting("limit");
-        }
-        if (const Field * f = set_query->changes.tryGet("offset"))
-        {
-            offset = fieldToLimitOffsetFloat(*f);
-            present = true;
-            set_query->changes.removeSetting("offset");
-        }
-        if (const Field * f = set_query->changes.tryGet("page"))
-        {
-            translatePageToLimitOffset(fieldToLimitOffsetFloat(*f), limit, offset);
-            present = true;
-            set_query->changes.removeSetting("page");
-        }
-        if (present)
-        {
-            limit_out = limit;
-            offset_out = offset;
-            found = true;
-        }
+        takeConstructionSettingsFromSetQuery(*set_query, out);
         if (set_query->changes.empty())
         {
             settings_ptr.reset();
@@ -1266,16 +1394,17 @@ static bool takeLimitOffsetFromQuerySettings(ASTSelectWithUnionQuery & select_un
             }
         }
     }
-    return found;
 }
 
-/// Recursively wrap any nested `SELECT` / `UNION` that carries `limit` / `offset` in its own
-/// `SETTINGS` clause as a derived table with an outer `LIMIT` / `OFFSET`, the same way the top-level
-/// query is handled by `applyQueryConstructionSettings`. This applies the cap to the subquery's
-/// final result (correct for `UNION`), supports negative / fractional values via the SQL `LIMIT`
-/// grammar, and leaves combining with an explicit `LIMIT` in the subquery to the optimizer — so the
-/// analyzer no longer needs to fold these settings into the query tree.
-static void wrapNestedLimitOffsetSettings(ASTPtr & ast)
+/// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
+/// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
+/// wrapping that subquery as a derived table — the same way the top-level query is handled by
+/// `applyQueryConstructionSettings`. A `SETTINGS` clause therefore applies to its own scope: it caps
+/// / filters / orders that subquery's result, but does not affect deeper subqueries or the outer
+/// query. The session/user settings are NOT read here — they apply only to the outermost query (from
+/// the context, in `applyQueryConstructionSettings`).
+static void wrapNestedConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     if (!ast)
         return;
@@ -1289,7 +1418,7 @@ static void wrapNestedLimitOffsetSettings(ASTPtr & ast)
         if (insert_query->select)
         {
             ASTPtr old_select = insert_query->select;
-            wrapNestedLimitOffsetSettings(insert_query->select);
+            wrapNestedConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
             if (insert_query->select != old_select)
                 for (auto & child : insert_query->children)
                     if (child == old_select)
@@ -1303,74 +1432,50 @@ static void wrapNestedLimitOffsetSettings(ASTPtr & ast)
 
     /// Bottom-up: handle inner-most subqueries before their parents.
     for (auto & child : ast->children)
-        wrapNestedLimitOffsetSettings(child);
+        wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
 
     auto * select_union = ast->as<ASTSelectWithUnionQuery>();
     if (!select_union || select_union->out_file)
         return;
 
-    Float64 limit = 0;
-    Float64 offset = 0;
-    if (!takeLimitOffsetFromQuerySettings(*select_union, limit, offset) || (limit == 0 && offset == 0))
+    ConstructionSettings cs;
+    takeNestedConstructionSettings(*select_union, cs);
+    if (!cs.present || cs.empty())
         return;
 
-    auto outer_select = make_intrusive<ASTSelectQuery>();
-
-    auto select_list = make_intrusive<ASTExpressionList>();
-    select_list->children.push_back(make_intrusive<ASTAsterisk>());
-    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
-
-    auto subquery = make_intrusive<ASTSubquery>(ast);
-    auto table_expression = make_intrusive<ASTTableExpression>();
-    table_expression->subquery = subquery;
-    table_expression->children.push_back(subquery);
-    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
-    tables_element->table_expression = table_expression;
-    tables_element->children.push_back(table_expression);
-    auto tables = make_intrusive<ASTTablesInSelectQuery>();
-    tables->children.push_back(std::move(tables_element));
-    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
-
-    if (limit != 0)
-        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit)));
-    if (offset != 0)
-        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset)));
-
-    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
-    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
-    outer_union->list_of_selects->children.push_back(std::move(outer_select));
-    outer_union->children.push_back(outer_union->list_of_selects);
-
-    ast = std::move(outer_union);
+    ast = wrapAsConstructedSelect(
+        ast, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+        max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
-/// Independently cap each `UNION` arm that carries its own `limit` / `offset` / `page` in a
-/// `SETTINGS` clause. The parser attaches a query-level *trailing* `SETTINGS` clause only to the
-/// last arm, so a `limit` / `offset` / `page` on a NON-last arm is unambiguously per-arm — e.g.
-/// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS limit = 2)`. When that is the case,
-/// every arm that carries such a setting is wrapped as a derived table with its own outer
-/// `LIMIT` / `OFFSET`, so the caps apply per arm instead of collapsing into a single cap on the
-/// whole union (which would silently drop all but the last arm's value). This runs before the
-/// query's own `SETTINGS` clause is applied to the context, so the per-arm values are removed from
-/// the AST and never leak into the context as a (spurious) query-level `limit` / `offset`.
+/// Independently apply the construction settings that a `UNION` arm carries in its own `SETTINGS`
+/// clause. The parser attaches a query-level *trailing* `SETTINGS` clause only to the last arm, so a
+/// construction setting on a NON-last arm is unambiguously per-arm — e.g.
+/// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS filter = 'x')`. When that is the case,
+/// every arm that carries one is wrapped as a derived table with its own
+/// `SELECT` / `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET`, so each arm is shaped independently instead
+/// of the caps collapsing into a single one on the whole union. This runs before the query's own
+/// `SETTINGS` clause is applied to the context, so the per-arm values are removed from the AST and
+/// never leak into the context as (spurious) query-level settings.
 ///
 /// When only the last arm carries the setting, it is indistinguishable from a query-level trailing
 /// `SETTINGS` clause (the grammar produces the same AST), so it is intentionally left to the
-/// query-level handling (`applyQueryConstructionSettings` / `wrapNestedLimitOffsetSettings`).
-static void wrapPerArmLimitOffsetSettings(ASTPtr & ast)
+/// query-level handling (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`).
+static void wrapPerArmConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     if (!ast)
         return;
 
     /// `ASTInsertQuery` stores its source `SELECT` both as the `select` member and in `children`;
     /// recurse into the member and keep the `children` entry in sync (see
-    /// `wrapNestedLimitOffsetSettings`).
+    /// `wrapNestedConstructionSettings`).
     if (auto * insert_query = ast->as<ASTInsertQuery>())
     {
         if (insert_query->select)
         {
             ASTPtr old_select = insert_query->select;
-            wrapPerArmLimitOffsetSettings(insert_query->select);
+            wrapPerArmConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
             if (insert_query->select != old_select)
                 for (auto & child : insert_query->children)
                     if (child == old_select)
@@ -1384,7 +1489,7 @@ static void wrapPerArmLimitOffsetSettings(ASTPtr & ast)
 
     /// Bottom-up: handle inner-most unions before their parents.
     for (auto & child : ast->children)
-        wrapPerArmLimitOffsetSettings(child);
+        wrapPerArmConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
 
     auto * select_union = ast->as<ASTSelectWithUnionQuery>();
     if (!select_union || !select_union->list_of_selects)
@@ -1393,13 +1498,17 @@ static void wrapPerArmLimitOffsetSettings(ASTPtr & ast)
     if (arms.size() < 2)
         return;
 
-    auto arm_limit_offset_settings = [](ASTSelectQuery * select) -> ASTSetQuery *
+    auto arm_construction_settings = [](ASTSelectQuery * select) -> ASTSetQuery *
     {
         if (!select)
             return nullptr;
         ASTPtr settings_ptr = select->settings();
         auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
-        if (set_query && (set_query->changes.tryGet("limit") || set_query->changes.tryGet("offset") || set_query->changes.tryGet("page")))
+        if (set_query
+            && (set_query->changes.tryGet("select") || set_query->changes.tryGet("filter")
+                || set_query->changes.tryGet("order") || set_query->changes.tryGet("sort")
+                || set_query->changes.tryGet("limit") || set_query->changes.tryGet("offset")
+                || set_query->changes.tryGet("page")))
             return set_query;
         return nullptr;
     };
@@ -1407,7 +1516,7 @@ static void wrapPerArmLimitOffsetSettings(ASTPtr & ast)
     /// Per-arm mode is triggered only by a non-last arm carrying one of these settings.
     bool per_arm = false;
     for (size_t i = 0; i + 1 < arms.size(); ++i)
-        if (arm_limit_offset_settings(arms[i]->as<ASTSelectQuery>()))
+        if (arm_construction_settings(arms[i]->as<ASTSelectQuery>()))
             per_arm = true;
     if (!per_arm)
         return;
@@ -1415,61 +1524,20 @@ static void wrapPerArmLimitOffsetSettings(ASTPtr & ast)
     for (auto & arm : arms)
     {
         auto * select = arm->as<ASTSelectQuery>();
-        auto * set_query = arm_limit_offset_settings(select);
+        auto * set_query = arm_construction_settings(select);
         if (!set_query)
             continue;
 
-        Float64 limit = 0;
-        Float64 offset = 0;
-        if (const Field * f = set_query->changes.tryGet("limit"))
-        {
-            limit = fieldToLimitOffsetFloat(*f);
-            set_query->changes.removeSetting("limit");
-        }
-        if (const Field * f = set_query->changes.tryGet("offset"))
-        {
-            offset = fieldToLimitOffsetFloat(*f);
-            set_query->changes.removeSetting("offset");
-        }
-        if (const Field * f = set_query->changes.tryGet("page"))
-        {
-            translatePageToLimitOffset(fieldToLimitOffsetFloat(*f), limit, offset);
-            set_query->changes.removeSetting("page");
-        }
+        ConstructionSettings cs;
+        takeConstructionSettingsFromSetQuery(*set_query, cs);
         if (set_query->changes.empty())
             select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
-        if (limit == 0 && offset == 0)
+        if (cs.empty())
             continue;
 
-        /// Wrap this arm as `SELECT * FROM (<arm>) LIMIT <limit> OFFSET <offset>`.
-        auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
-        inner_union->list_of_selects = make_intrusive<ASTExpressionList>();
-        inner_union->list_of_selects->children.push_back(arm);
-        inner_union->children.push_back(inner_union->list_of_selects);
-
-        auto outer_select = make_intrusive<ASTSelectQuery>();
-
-        auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(make_intrusive<ASTAsterisk>());
-        outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
-
-        auto subquery = make_intrusive<ASTSubquery>(std::move(inner_union));
-        auto table_expression = make_intrusive<ASTTableExpression>();
-        table_expression->subquery = subquery;
-        table_expression->children.push_back(subquery);
-        auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
-        tables_element->table_expression = table_expression;
-        tables_element->children.push_back(table_expression);
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(std::move(tables_element));
-        outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
-
-        if (limit != 0)
-            outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit)));
-        if (offset != 0)
-            outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset)));
-
-        arm = std::move(outer_select);
+        arm = wrapAsConstructedSelect(
+            arm, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+            max_query_size, max_parser_depth, max_parser_backtracks);
     }
 }
 
@@ -1509,6 +1577,22 @@ static void applyQueryConstructionSettings(
                         child = insert_query->select;
                         break;
                     }
+        }
+        return;
+    }
+
+    /// `EXPLAIN <query> SETTINGS …` carries the construction settings on the `ASTExplainQuery`; the
+    /// explained query is what actually runs. Apply the construction settings to it so the explained
+    /// plan matches what `EXPLAIN`-less execution of the same query would do (otherwise e.g.
+    /// `EXPLAIN SELECT * FROM t SETTINGS filter = 'a > 0'` would plan the unfiltered query).
+    if (auto * explain_query = ast->as<ASTExplainQuery>())
+    {
+        if (const ASTPtr & explained = explain_query->getExplainedQuery())
+        {
+            ASTPtr wrapped = explained;
+            applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (wrapped != explained)
+                explain_query->replaceExplainedQuery(wrapped);
         }
         return;
     }
@@ -1579,12 +1663,6 @@ static void applyQueryConstructionSettings(
     auto * base_select = ast->as<ASTSelectWithUnionQuery>();
     if (!base_select)
         return;
-
-    auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
-    {
-        return parseQuery(parser, text.data(), text.data() + text.size(),
-            fmt::format("query construction ({})", what), max_query_size, max_parser_depth, max_parser_backtracks);
-    };
 
     /// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and the `INTO OUTFILE` compression options are
     /// top-level-only output options; detach them from the base and re-attach them to the outer
@@ -1669,69 +1747,31 @@ static void applyQueryConstructionSettings(
         }
     }
 
-    auto outer_select = make_intrusive<ASTSelectQuery>();
+    /// Build `SELECT [select] FROM (base) [WHERE filter] [ORDER BY order] [LIMIT][OFFSET]` from the
+    /// effective (session + top-level `SETTINGS`) construction settings — the outermost scope.
+    ASTPtr outer_union_ast = wrapAsConstructedSelect(
+        ast, select_expr, filter_expr, order_expr, limit_setting, offset_setting,
+        max_query_size, max_parser_depth, max_parser_backtracks);
 
-    ASTPtr select_list;
-    if (select_expr.empty())
-    {
-        select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(make_intrusive<ASTAsterisk>());
-    }
-    else
-    {
-        ParserNotEmptyExpressionList select_parser(/* allow_alias_without_as_keyword= */ true);
-        select_list = parse_component(select_parser, select_expr, "`select` setting");
-    }
-    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
-
-    auto subquery = make_intrusive<ASTSubquery>(ast);
-    auto table_expression = make_intrusive<ASTTableExpression>();
-    table_expression->subquery = subquery;
-    table_expression->children.push_back(subquery);
-    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
-    tables_element->table_expression = table_expression;
-    tables_element->children.push_back(table_expression);
-    auto tables = make_intrusive<ASTTablesInSelectQuery>();
-    tables->children.push_back(std::move(tables_element));
-    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
-
-    if (!filter_expr.empty())
-    {
-        ParserExpression filter_parser;
-        outer_select->setExpression(ASTSelectQuery::Expression::WHERE, parse_component(filter_parser, filter_expr, "`filter` setting"));
-    }
-    if (!order_expr.empty())
-    {
-        ParserOrderByExpressionList order_parser;
-        outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
-    }
-
-    /// Apply `limit` / `offset` on the outer query. The literal keeps the `Float64` value, so SQL
-    /// `LIMIT`/`OFFSET` handles negative (tail) and fractional (share) values natively.
-    if (limit_setting != 0)
-        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit_setting)));
-    if (offset_setting != 0)
-        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset_setting)));
-
-    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
-    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
-    outer_union->list_of_selects->children.push_back(std::move(outer_select));
-    outer_union->children.push_back(outer_union->list_of_selects);
+    /// Re-attach the top-level-only output options (`INTO OUTFILE`, `FORMAT`, the query-level
+    /// `SETTINGS`, and the `INTO OUTFILE` compression) to the outer (wrapped) query so they shape the
+    /// final result.
+    auto & outer_union = outer_union_ast->as<ASTSelectWithUnionQuery &>();
     if (base_out_file)
-        outer_union->set(outer_union->out_file, base_out_file);
+        outer_union.set(outer_union.out_file, base_out_file);
     if (base_format)
-        outer_union->set(outer_union->format_ast, base_format);
+        outer_union.set(outer_union.format_ast, base_format);
     if (base_settings)
-        outer_union->set(outer_union->settings_ast, base_settings);
+        outer_union.set(outer_union.settings_ast, base_settings);
     if (base_compression)
-        outer_union->set(outer_union->compression, base_compression);
+        outer_union.set(outer_union.compression, base_compression);
     if (base_compression_level)
-        outer_union->set(outer_union->compression_level, base_compression_level);
-    outer_union->setIsIntoOutfileWithStdout(base_outfile_with_stdout);
-    outer_union->setIsOutfileAppend(base_outfile_append);
-    outer_union->setIsOutfileTruncate(base_outfile_truncate);
+        outer_union.set(outer_union.compression_level, base_compression_level);
+    outer_union.setIsIntoOutfileWithStdout(base_outfile_with_stdout);
+    outer_union.setIsOutfileAppend(base_outfile_append);
+    outer_union.setIsOutfileTruncate(base_outfile_truncate);
 
-    ast = std::move(outer_union);
+    ast = std::move(outer_union_ast);
 
     /// The `limit` / `offset` settings are now materialized as the outer query's `LIMIT`/`OFFSET`.
     /// Clear them so the downstream interpreter / analyzer does not apply them a second time (which
@@ -2094,11 +2134,12 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
-            /// A `limit` / `offset` / `page` in a non-last `UNION` arm's own `SETTINGS` clause is
-            /// per-arm; wrap each such arm with its own outer `LIMIT` / `OFFSET` and remove the
-            /// settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
-            /// values are not read into the context as a (spurious) query-level `limit` / `offset`.
-            wrapPerArmLimitOffsetSettings(out_ast);
+            /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
+            /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
+            /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
+            /// values are not read into the context as (spurious) query-level settings.
+            wrapPerArmConstructionSettings(out_ast,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
@@ -2126,11 +2167,14 @@ static BlockIO executeQueryImpl(
             applyQueryConstructionSettings(out_ast, context,
                 max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-            /// Subquery-level `limit` / `offset` settings (e.g. `… FROM (SELECT … SETTINGS limit = 5)`
-            /// or `view(SELECT … SETTINGS limit = 5)`) are not reachable via the top-level wrapping
-            /// above, so apply them by the same subquery-wrapping here. This is what lets the analyzer
-            /// (`QueryTreeBuilder`) stop folding these settings into the query tree.
-            wrapNestedLimitOffsetSettings(out_ast);
+            /// A subquery's OWN `SETTINGS` clause (e.g. `… FROM (SELECT … SETTINGS filter = 'a > 0',
+            /// limit = 5)` or `view(SELECT … SETTINGS limit = 5)`) shapes that subquery's scope. It is
+            /// not reachable via the top-level wrapping above (which only handles the outermost,
+            /// session-derived settings), so materialize each subquery's own construction settings
+            /// here. A `SETTINGS` clause therefore applies to its own scope only — not to deeper
+            /// subqueries, and not to the outer query.
+            wrapNestedConstructionSettings(out_ast,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 

@@ -1,6 +1,6 @@
 -- The `limit` / `offset` settings are applied by wrapping the query as a derived table with an outer
 -- `LIMIT`/`OFFSET` (see `applyQueryConstructionSettings` for the top-level query and
--- `wrapNestedLimitOffsetSettings` for subqueries that carry the setting in their own `SETTINGS`
+-- `wrapNestedConstructionSettings` for subqueries that carry the setting in their own `SETTINGS`
 -- clause). This makes the cap apply to the final result — in particular to the combined result of a
 -- `UNION`, not to each arm separately — and lets the SQL `LIMIT` grammar handle negative (tail) and
 -- fractional (share) values natively.

@@ -10,3 +10,21 @@
 3
 -- INSERT ... SETTINGS limit ... SELECT caps the inserted rows
 2
+-- filter in a subquery SETTINGS filters that subquery (numbers 6..9 -> 4)
+4
+-- select in a subquery SETTINGS projects that subquery
+0
+1
+2
+-- order in a subquery SETTINGS orders that subquery
+[2,1,0]
+-- a setting on the outermost query applies only to its scope, not to the subquery (count = 10, not 3)
+10
+-- EXPLAIN wraps the explained query so its plan matches execution
+SELECT *
+FROM
+(
+    SELECT number
+    FROM numbers(10)
+)
+WHERE greater(number, 5)
