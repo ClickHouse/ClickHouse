@@ -3338,7 +3338,13 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                result_node = &result_dag.addColumn(node->column, node->result_type, node->result_name, node->is_deterministic_constant);
+                /// Propagate `is_runtime_filter_id` too: this rebuilds COLUMN nodes from scratch (unlike
+                /// the whole-node copies in clone/split/merge), and filter pushdown/merge is re-run after
+                /// `tryAddJoinRuntimeFilter`, so without this a rebuilt runtime-filter carrier would lose
+                /// its mark and hash its volatile value again.
+                result_node = &result_dag.addColumn(
+                    node->column, node->result_type, node->result_name,
+                    node->is_deterministic_constant, node->is_runtime_filter_id);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
