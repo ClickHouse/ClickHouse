@@ -110,6 +110,30 @@ ATTACH TABLE t_pending;
 SELECT 'pending drop guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
 DROP TABLE t_pending;
 
+-- The pending-engine validation must build the candidate settings the way reload does (defaults plus
+-- the final settings_changes), not as a delta on the current settings. A RESET SETTING removes the
+-- setting from settings_changes, so a delta-on-current would keep the old value and miss the conflict,
+-- while reload reverts it to the default -- leaving an unloadable CREATE.
+
+-- (k) a later RESET SETTING that reverts the flag to its default invalidates the pending Summing engine.
+CREATE TABLE t_pending (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY (k, v)
+    SETTINGS allow_summing_columns_in_partition_or_order_key = 1;
+ALTER TABLE t_pending MODIFY ENGINE = SummingMergeTree(v);
+ALTER TABLE t_pending RESET SETTING allow_summing_columns_in_partition_or_order_key; -- { serverError BAD_ARGUMENTS }
+DETACH TABLE t_pending;
+ATTACH TABLE t_pending;
+SELECT 'pending reset guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
+DROP TABLE t_pending;
+
+-- (l) MODIFY ENGINE and RESET SETTING in the same statement: validated against the reset (default) value.
+CREATE TABLE t_pending (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY (k, v)
+    SETTINGS allow_summing_columns_in_partition_or_order_key = 1;
+ALTER TABLE t_pending MODIFY ENGINE = SummingMergeTree(v), RESET SETTING allow_summing_columns_in_partition_or_order_key; -- { serverError BAD_ARGUMENTS }
+DETACH TABLE t_pending;
+ATTACH TABLE t_pending;
+SELECT 'reset same stmt guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
+DROP TABLE t_pending;
+
 -- (f) an unrelated later ALTER on a table with a pending engine still works.
 CREATE TABLE t_pending (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE t_pending MODIFY ENGINE = SummingMergeTree(v);

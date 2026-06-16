@@ -7,6 +7,8 @@ collapsing	CollapsingMergeTree
 tuple-key replacing	ReplacingMergeTree
 pending setting guard	SummingMergeTree
 pending drop guard	SummingMergeTree
+pending reset guard	SummingMergeTree
+reset same stmt guard	MergeTree
 pending unrelated alter	SummingMergeTree
 projection guard	MergeTree
 pending projection guard	ReplacingMergeTree
