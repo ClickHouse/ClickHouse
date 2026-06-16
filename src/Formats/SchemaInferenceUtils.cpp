@@ -1171,8 +1171,9 @@ namespace
     bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
     {
         /// max_parser_depth is the primary bound but user-tunable; keep a checkStackSize backstop.
+        /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
         checkStackSize();
-        if (depth > settings.max_parser_depth)
+        if (settings.max_parser_depth != 0 && depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
@@ -1344,8 +1345,9 @@ namespace
     {
         /// The max_parser_depth limit below is the primary bound, but it is user-tunable; keep a
         /// checkStackSize backstop so a raised limit cannot turn deep nesting into a stack overflow.
+        /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
         checkStackSize();
-        if (depth > settings.max_parser_depth)
+        if (settings.max_parser_depth != 0 && depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 

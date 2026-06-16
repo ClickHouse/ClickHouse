@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
+# Tag no-msan: the delta-kernel-rs library is not built with MSan, so the deltaLakeLocal table
+# function is not registered there and the delta case below would fail with UNKNOWN_FUNCTION.
 # Regression test: DeltaLake/Iceberg parse table-metadata schema JSON with Poco::JSON::Parser, which
 # defaulted to unlimited depth (setDepth was a no-op), so a deeply nested schema overflowed the
 # native stack inside Poco's recursive parser. The parsers now set a depth limit, so deep nesting is

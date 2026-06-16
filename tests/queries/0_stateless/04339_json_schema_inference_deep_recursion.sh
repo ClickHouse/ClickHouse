@@ -26,6 +26,18 @@ expect_contains() {
     fi
 }
 
+# Same, but asserts the marker is ABSENT (used for the "accepted" cases).
+expect_absent() {
+    local label="$1" marker="$2" out
+    out=$(cat)
+    if printf '%s\n' "$out" | grep -qF "$marker"; then
+        echo "$label: unexpectedly found '$marker':"
+        printf '%s\n' "$out" | head -3
+    else
+        echo "$label: accepted"
+    fi
+}
+
 # One JSON row whose field x is an array nested 200000 deep. max_parser_depth is raised far above
 # the nesting so the explicit limit does not short-circuit; the depth is large enough to exhaust the
 # native stack in any build, so the checkStackSize backstop must reject it (build-independent).
@@ -36,3 +48,9 @@ open('${TMP_DIR}/deep.jsonl', 'wb').write(b'{\"x\":' + b'[' * N + b'1' + b']' * 
 
 $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep.jsonl', JSONEachRow) SETTINGS max_parser_depth=100000000 FORMAT Null" 2>&1 \
     | expect_contains json_inference_backstop TOO_DEEP_RECURSION
+
+# max_parser_depth=0 means unlimited (matching the SQL parser), so a shallow value must still be
+# inferred normally rather than rejected by the explicit limit.
+echo '{"x":1}' > "${TMP_DIR}/shallow.jsonl"
+$CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/shallow.jsonl', JSONEachRow) SETTINGS max_parser_depth=0 FORMAT Null" 2>&1 \
+    | expect_absent unlimited_depth TOO_DEEP_RECURSION
