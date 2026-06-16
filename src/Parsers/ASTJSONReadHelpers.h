@@ -250,6 +250,9 @@ public:
                 "Expected JSON array for key '{}' during AST JSON deserialization", key);
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
+            /// Count each string element against the same element budget as AST nodes, so a non-AST
+            /// array (e.g. `name_parts`, enum names, `src_replicas`) cannot allocate past `max_ast_elements`.
+            countJSONDeserializationElement();
             auto var = arr->get(i);
             if (!var.isString())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

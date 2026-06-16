@@ -1,12 +1,15 @@
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -104,9 +107,12 @@ void ASTEnumDataType::readJSON(const Poco::JSON::Object & json)
 
     if (auto arr = r.getArray("values"))
     {
-        values.reserve(arr->size());
+        /// Cap the reserve by the remaining element budget and count each value, so an enum with a
+        /// huge non-AST `values` array cannot allocate/copy past `max_ast_elements`.
+        values.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
+            countJSONDeserializationElement();
             auto elem = arr->getObject(i);
             if (!elem)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

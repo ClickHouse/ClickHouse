@@ -2,6 +2,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
@@ -9,6 +10,8 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -428,6 +431,9 @@ namespace
 
     Element readElementJSON(const Poco::JSON::Object & elem_obj, size_t element_index)
     {
+        /// Each backup/restore element is a non-AST struct; count it against the same element budget
+        /// as AST nodes so a tiny-AST payload cannot carry millions of elements past `max_ast_elements`.
+        countJSONDeserializationElement();
         Element e;
         Int64 type_value = elem_obj.getValue<Poco::Int64>("type");
         auto type_opt = magic_enum::enum_cast<ElementType>(static_cast<std::underlying_type_t<ElementType>>(type_value));
@@ -446,7 +452,9 @@ namespace
             if (!arr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'partitions' is not a JSON array at element index {} during AST JSON deserialization", element_index);
             ASTs partitions;
-            partitions.reserve(arr->size());
+            /// Cap the reserve by the remaining element budget; each partition AST is counted by
+            /// `createFromJSON` below, but the reserve runs off the untrusted array length first.
+            partitions.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
             for (unsigned int i = 0; i < arr->size(); ++i)
             {
                 auto p_obj = arr->getObject(i);
@@ -463,6 +471,8 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_tables' is not a JSON array at element index {} during AST JSON deserialization", element_index);
             for (unsigned int i = 0; i < arr->size(); ++i)
             {
+                /// Count each non-AST entry against the element budget (memory guard).
+                countJSONDeserializationElement();
                 auto t_obj = arr->getObject(i);
                 if (!t_obj)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_tables' array at element index {} during AST JSON deserialization", i, element_index);
@@ -478,6 +488,8 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_databases' is not a JSON array at element index {} during AST JSON deserialization", element_index);
             for (unsigned int i = 0; i < arr->size(); ++i)
             {
+                /// Count each non-AST entry against the element budget (memory guard).
+                countJSONDeserializationElement();
                 auto var = arr->get(i);
                 if (!var.isString())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} of 'except_databases' at element index {} is not a string during AST JSON deserialization", i, element_index);
@@ -632,7 +644,9 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     }
     if (arr)
     {
-        elements.reserve(arr->size());
+        /// Cap the reserve by the remaining element budget; `readElementJSON` counts each element,
+        /// but the reserve would otherwise run off the untrusted array length first.
+        elements.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto elem_obj = arr->getObject(i);

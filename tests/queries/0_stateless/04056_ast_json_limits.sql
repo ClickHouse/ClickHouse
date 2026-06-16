@@ -28,6 +28,20 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b, c, d, e, f, g, h, i, j
 -- Reset to default.
 SET max_ast_elements = 50000;
 
+-- `max_ast_elements` must also bound non-AST arrays that live outside the AST-node tree
+-- (enum `values`, BACKUP/RESTORE elements and their `EXCEPT` sets, string arrays), otherwise a
+-- tiny-AST payload could carry millions of such entries and allocate them before any limit fires.
+-- The baseline query (small fixed structure) fits the limit; adding many non-AST entries exceeds it.
+SET max_ast_elements = 12;
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (e Enum8(\'a\' = 1)) ENGINE = Memory')) FORMAT Null;
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (e Enum8(\'a\'=1, \'b\'=2, \'c\'=3, \'d\'=4, \'e\'=5, \'f\'=6, \'g\'=7, \'h\'=8, \'i\'=9, \'j\'=10)) ENGINE = Memory')); -- { serverError TOO_BIG_AST }
+SELECT formatQueryFromJSON(parseQueryToJSON('RESTORE ALL FROM Disk(\'disk\', \'/b/\')')) FORMAT Null;
+SELECT formatQueryFromJSON(parseQueryToJSON('RESTORE ALL EXCEPT DATABASES d1, d2, d3, d4, d5, d6, d7, d8, d9, d10 FROM Disk(\'disk\', \'/b/\')')); -- { serverError TOO_BIG_AST }
+SELECT formatQueryFromJSON(parseQueryToJSON('RESTORE DATABASE db EXCEPT TABLES db.t1, db.t2, db.t3, db.t4, db.t5, db.t6, db.t7, db.t8, db.t9, db.t10 FROM Disk(\'disk\', \'/b/\')')); -- { serverError TOO_BIG_AST }
+
+-- Reset to default.
+SET max_ast_elements = 50000;
+
 -- Malformed JSON should produce a clear error.
 SELECT formatQueryFromJSON('not json'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{}'); -- { serverError BAD_ARGUMENTS }
