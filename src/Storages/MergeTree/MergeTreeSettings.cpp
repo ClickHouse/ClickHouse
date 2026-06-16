@@ -2204,6 +2204,19 @@ namespace ErrorCodes
     leader believing they hold the lease (up to one `leader_election_heartbeat_interval`)
     until the old leader's next heartbeat fails the ETag check.
     )", EXPERIMENTAL) \
+    DECLARE(Bool, materialize_projections_on_insert, true, R"(
+    When enabled, INSERTs create new parts with projections.
+    Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+    or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+    )", 0) \
+    DECLARE(Bool, materialize_projections_on_merge, false, R"(
+    When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
+    inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+
+    Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
+    use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+    are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
