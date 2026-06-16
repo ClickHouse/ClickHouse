@@ -1,7 +1,11 @@
-#include <list>
-
 #include <IO/PigzDeflatingWriteBuffer.h>
+#include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
+#include <Common/setThreadName.h>
+
+#include <exception>
+#include <future>
+#include <vector>
 
 
 namespace DB
@@ -12,94 +16,56 @@ namespace ErrorCodes
     extern const int ZLIB_DEFLATE_FAILED;
 }
 
-const size_t BUFFER_SIZE = 1024 * 1024 * 1024;
-const size_t MAXP2 = UINT_MAX - (UINT_MAX >> 1);
-
-PigzDeflatingWriteBuffer::PigzDeflatingWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_,
-    int compression_level_,
-    std::string filename_)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), BUFFER_SIZE)
-    , compression_level(compression_level_)
-    , filename(filename_)
-    , pool()
-{
-    writeHeader();
-}
-
 void PigzDeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
         return;
 
-    auto *in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    size_t in_len = offset();
-    compressAndWrite(in_buf, in_len, false);
+    auto * in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
+    compressAndWrite(in_buf, offset(), false);
 }
 
-void PigzDeflatingWriteBuffer::finalizeBefore()
+void PigzDeflatingWriteBuffer::finalFlushBefore()
 {
     next();
 
-    auto *in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    size_t in_len = offset();
-    compressAndWrite(in_buf, in_len, true);
+    auto * in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
+    compressAndWrite(in_buf, offset(), true);
     writeTrailer();
-}
-
-void PigzDeflatingWriteBuffer::finalizeAfter()
-{
 }
 
 void PigzDeflatingWriteBuffer::writeHeader()
 {
-    out->write(31);
-    out->write(139);
-    out->write(8);
+    /// gzip member header, RFC 1952 section 2.3.
+    out->write(static_cast<char>(0x1f));   /// ID1
+    out->write(static_cast<char>(0x8b));   /// ID2
+    out->write(static_cast<char>(0x08));   /// CM = deflate
 
-    char with_name_byte = 0;
-    if (!filename.empty())
-        with_name_byte = 8;
-    out->write(with_name_byte);
+    out->write(static_cast<char>(filename.empty() ? 0x00 : 0x08));   /// FLG: FNAME bit when a file name is present
 
-    out->write(0);
-    out->write(0);
-    out->write(0);
-    out->write(0);
+    /// MTIME = 0 (no timestamp).
+    for (size_t i = 0; i < 4; ++i)
+        out->write(static_cast<char>(0x00));
 
-    out->write(compression_level >= 9 ? 2 : compression_level == 1 ? 4 : 0);
+    /// XFL: 2 = maximum compression, 4 = fastest.
+    out->write(static_cast<char>(compression_level >= 9 ? 0x02 : (compression_level == 1 ? 0x04 : 0x00)));
 
-    out->write(3);
+    out->write(static_cast<char>(0x03));   /// OS = Unix
 
     if (!filename.empty())
     {
-        out->write(&filename.front(), filename.size());
-        out->write(0);
-    }
-}
-
-PigzDeflatingWriteBuffer::~PigzDeflatingWriteBuffer()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        out->write(filename.data(), filename.size());
+        out->write(static_cast<char>(0x00));   /// terminating zero of the FNAME field
     }
 }
 
 void PigzDeflatingWriteBuffer::writeTrailer()
 {
+    /// gzip trailer: CRC-32 and ISIZE (input size modulo 2^32), both little-endian.
     for (size_t i = 0; i < 4; ++i)
-    {
-        out->write((check >> sizeof(check) * i) & 0xff);
-    }
+        out->write(static_cast<char>((check >> (8 * i)) & 0xff));
     for (size_t i = 0; i < 4; ++i)
-    {
-        out->write((ulen >> sizeof(ulen) * i) & 0xff);
-    }
+        out->write(static_cast<char>((ulen >> (8 * i)) & 0xff));
 }
 
 void PigzDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush)
@@ -108,7 +74,7 @@ void PigzDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_
     {
         out_buf.nextIfAtEnd();
         strm.next_out = reinterpret_cast<unsigned char *>(out_buf.position());
-        strm.avail_out = out_buf.buffer().end() - out_buf.position();
+        strm.avail_out = static_cast<unsigned>(out_buf.buffer().end() - out_buf.position());
         deflate(&strm, flush);
         out_buf.position() = out_buf.buffer().end() - strm.avail_out;
     } while (strm.avail_in > 0 || strm.avail_out == 0);
@@ -116,26 +82,24 @@ void PigzDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_
 
 PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag)
 {
-    auto mem = std::make_shared<Memory<>>(10);
+    auto mem = std::make_shared<Memory<>>(in_len + 64);
     BufferWithOutsideMemory<WriteBuffer> out_buf(*mem);
 
-    auto strategy = Z_DEFAULT_STRATEGY;
-
     z_stream strm;
-    strm.zfree = Z_NULL;
     strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
 
+    /// Raw deflate (windowBits = -15): no zlib/gzip wrapper, the wrapper is written by this class.
     int rc = deflateInit2(&strm, compression_level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
     if (rc != Z_OK)
-        throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
-
-    deflateReset(&strm);
-    deflateParams(&strm, compression_level, strategy);
+        throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
 
     strm.next_in = in_buf;
-    strm.avail_in = in_len;
+    strm.avail_in = static_cast<unsigned>(in_len);
 
+    /// Non-final blocks end with a full flush so that they form independent, concatenable raw-deflate
+    /// segments that the parallel inflater can split on. The final block closes the stream.
     if (!last_block_flag)
     {
         deflateEngine(strm, out_buf, Z_BLOCK);
@@ -152,74 +116,88 @@ PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(
     return {mem, out_buf.count()};
 }
 
-void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag) {
+size_t PigzDeflatingWriteBuffer::calcCheck(const unsigned char * buf, size_t len)
+{
+    return crc32_z(0L, buf, len);
+}
+
+void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
+{
     ulen += in_len;
 
-    size_t def_block = BLOCK_SIZE;
+    const size_t def_block = BLOCK_SIZE;
+    const size_t cnt_blocks = in_len / def_block + static_cast<size_t>(in_len % def_block != 0);
 
-    size_t cnt_blocks = in_len / def_block + bool(in_len % def_block);
+    if (cnt_blocks == 0)
+    {
+        /// Only reached on the final, empty flush: emit the closing (empty) deflate block.
+        if (final_compression_flag)
+        {
+            CompressedBuf result = compressBlock(in_buf, in_len, true);
+            out->write(result.mem->data(), result.len);
+        }
+        return;
+    }
+
+    if (!runner)
+    {
+        getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        runner = threadPoolCallbackRunnerUnsafe<CompressedBuf>(getIOThreadPool().get(), ThreadName::UNKNOWN);
+    }
+
+    /// Schedule deflation of every block on the shared IO thread pool.
+    std::vector<std::future<CompressedBuf>> futures(cnt_blocks);
+    size_t scheduled = 0;
+    std::exception_ptr exception;
     try
     {
-        if (final_compression_flag && cnt_blocks == 0) {
-            auto result = compressBlock(in_buf, in_len, true);
-            out->write(result.mem->data(), result.len);
-            check = crc32_combine(check, calcCheck(in_buf, in_len), in_len);
-            return;
-        }
-
-        std::vector<CompressedBuf> results(cnt_blocks);
-        std::vector<size_t> checks(cnt_blocks);
-        std::vector<size_t> blocks(cnt_blocks);
-        for (size_t i = 0; i < cnt_blocks; ++i)
+        for (; scheduled < cnt_blocks; ++scheduled)
         {
-            size_t in_remaining_len = in_len - i * def_block;
-            size_t block = std::min(def_block, in_remaining_len);
-            blocks[i] = block;
+            const size_t block_offset = scheduled * def_block;
+            const size_t block_len = std::min(def_block, in_len - block_offset);
+            unsigned char * block_buf = in_buf + block_offset;
+            const bool last_block = final_compression_flag && (block_offset + block_len == in_len);
 
-            unsigned char *block_buf = in_buf + (in_len - in_remaining_len);
-
-            pool.scheduleOrThrowOnError(
-                [&, i = i, final_compression_flag= final_compression_flag, in_remaining_len = in_remaining_len, block = block, block_buf = block_buf]
-                {
-                    results[i] = compressBlock(block_buf, block, final_compression_flag && (block == in_remaining_len));
-                });
-
-            pool.scheduleOrThrowOnError(
-                [&, i = i, block = block, block_buf = block_buf]
-                {
-                    checks[i] = calcCheck(block_buf, block);
-                });
-
+            futures[scheduled] = runner(
+                [this, block_buf, block_len, last_block] { return compressBlock(block_buf, block_len, last_block); },
+                Priority{});
         }
-        pool.wait();
-
-        for (size_t i = 0; i < cnt_blocks; ++i)
-            check = crc32_combine(check, checks[i], blocks[i]);
-
-        for (const auto & result : results)
-            out->write(result.mem->data(), result.len);
     }
     catch (...)
     {
+        exception = std::current_exception();
+    }
+
+    /// Update the running CRC-32 over the whole input on the calling thread,
+    /// concurrently with the block deflations scheduled above.
+    if (!exception)
+        check = crc32_combine(check, calcCheck(in_buf, in_len), static_cast<z_off_t>(in_len));
+
+    /// Collect results in order. Every scheduled task must be awaited before leaving this function,
+    /// even on error, because the tasks reference memory owned by this buffer.
+    std::vector<CompressedBuf> results(scheduled);
+    for (size_t i = 0; i < scheduled; ++i)
+    {
+        try
+        {
+            results[i] = futures[i].get();
+        }
+        catch (...)
+        {
+            if (!exception)
+                exception = std::current_exception();
+        }
+    }
+
+    if (exception)
+    {
         /// Do not try to write next time after exception.
         out->position() = out->buffer().begin();
-        throw;
+        std::rethrow_exception(exception);
     }
-}
 
-size_t PigzDeflatingWriteBuffer::calcCheck(unsigned char * buf_, size_t len_)
-{
-    unsigned char * check_buff = buf_;
-    size_t len = len_;
-
-    size_t curr_check = crc32_z(0L, Z_NULL, 0);
-    while (len > MAXP2)
-    {
-        curr_check = crc32_z(curr_check, check_buff, MAXP2);
-        len -= MAXP2;
-        check_buff += MAXP2;
-    }
-    return crc32_z(curr_check, check_buff, len);
+    for (const auto & result : results)
+        out->write(result.mem->data(), result.len);
 }
 
 }
