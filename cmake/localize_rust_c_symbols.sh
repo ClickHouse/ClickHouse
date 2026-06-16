@@ -1,18 +1,34 @@
 #!/usr/bin/env bash
 #
-# Localize known C library symbols in a Rust static library (.a).
+# Localize the C library symbols a Rust static library (.a) defines that
+# ClickHouse also provides its own definitions for.
 #
 # Rust static libraries bundle compiler_builtins and libm, which export
-# standard C symbols (cbrt, fma, sin, memcpy, __muloti4, etc.) as globals.
-# When linked before our own C implementations (libllvmlibc, glibc-compat),
-# these silently win — bypassing our -falign-functions=64, -march, and other
-# optimization flags.
+# standard C symbols (compiler-rt builtins like __multi3/__divti3, libm
+# functions like cbrt/sqrt, etc.) as globals.  When linked before our own
+# implementations, these silently win, bypassing our -falign-functions=64,
+# -march and other optimization flags.
 #
-# This script localizes those known C library symbols so the linker picks
-# our own implementations instead.  All other symbols (Rust-mangled, crate
-# FFI, etc.) are left untouched.
+# Rather than a hand-maintained allowlist, we localize exactly the set of
+# symbols that BOTH the Rust archive defines as globals AND the reference
+# libraries (libllvmlibc, compiler-rt builtins, the platform libm) define.
+# This is self-maintaining and fail-safe:
+#   - A symbol is localized only when another definition exists in a library
+#     that the final binary links, so the link always resolves it to that copy.
+#   - Symbols Rust defines that nothing else provides (crate FFI entry points
+#     such as prql_to_sql, Rust runtime helpers, and even libm functions absent
+#     from these references) are never in the intersection and are left untouched.
 #
-# Usage: localize_rust_c_symbols.sh <library.a> <ar> <objcopy> <nm>
+# Functions like memcpy/memset appear only as undefined references in the Rust
+# archives, so they resolve from our implementations at link time anyway and
+# need no localization here.
+#
+# Usage: localize_rust_c_symbols.sh <library.a> <ar> <objcopy> <nm> <ref>...
+#
+# <ref>... are the reference libraries whose defined symbols determine what to
+# localize: libllvmlibc and clang_rt_builtins (ClickHouse-built static archives)
+# and the platform libm (a sysroot/toolchain static archive or shared object).
+# At least one is required; CMake passes the ones that exist for the target.
 #
 # The ar/objcopy/nm tools must come from a compatible LLVM toolchain
 # (e.g. llvm-ar, llvm-objcopy, llvm-nm).  CMake resolves them via
@@ -27,9 +43,16 @@ OBJCOPY="${3:-}"
 NM="${4:-}"
 
 if [ -z "$LIB_PATH" ] || [ -z "$AR" ] || [ -z "$OBJCOPY" ] || [ -z "$NM" ]; then
-    echo "Usage: $0 <library.a> <ar> <objcopy> <nm>" >&2
+    echo "Usage: $0 <library.a> <ar> <objcopy> <nm> <ref>..." >&2
     exit 1
 fi
+shift 4
+
+if [ "$#" -eq 0 ]; then
+    echo "Error: no reference libraries given; cannot decide which symbols to localize" >&2
+    exit 1
+fi
+REF_LIBS=("$@")
 
 if [ ! -f "$LIB_PATH" ]; then
     echo "Error: Rust library not found: $LIB_PATH" >&2
@@ -38,88 +61,69 @@ if [ ! -f "$LIB_PATH" ]; then
     exit 1
 fi
 
-# Known C library symbols that Rust's compiler_builtins / libm may export.
-# This list covers:
-#   - C math functions (libm)
-#   - Compiler-rt builtins (__muloti4, __divti3, etc.)
-#   - C string/memory functions that may be provided by Rust
-KNOWN_C_SYMBOLS=(
-    # Math functions (float64)
-    cbrt cos sin tan acos asin atan atan2
-    exp exp2 exp10 log log2 log10 log1p expm1
-    pow sqrt hypot
-    fma fmod remainder
-    ceil floor round trunc nearbyint rint
-    copysign fabs fdim fmax fmin
-    erf erfc tgamma lgamma
-    frexp ldexp modf scalbn ilogb logb
-    nextafter nexttoward
-    # Math functions (float32)
-    cbrtf cosf sinf tanf acosf asinf atanf atan2f
-    expf exp2f exp10f logf log2f log10f log1pf expm1f
-    powf sqrtf hypotf
-    fmaf fmodf remainderf
-    ceilf floorf roundf truncf nearbyintf rintf
-    copysignf fabsf fdimf fmaxf fminf
-    erff erfcf tgammaf lgammaf
-    frexpf ldexpf modff scalbnf ilogbf logbf
-    nextafterf nexttowardf
-    # Math functions (long double)
-    ceill floorl roundl truncl
-    sqrtl frexpl ldexpl scalbnl
-    # Compiler-rt integer builtins
-    __absvdi2 __absvsi2 __absvti2
-    __addvdi3 __addvsi3 __addvti3
-    __cmpdi2 __cmpti2
-    __divdc3 __divsc3
-    __muldc3 __mulsc3
-    __mulvdi3 __mulvsi3 __mulvti3
-    __negdf2 __negsf2 __negdi2 __negti2
-    __negvdi2 __negvsi2 __negvti2
-    __paritydi2 __paritysi2 __parityti2
-    __popcountdi2 __popcountsi2 __popcountti2
-    __muloti4
-)
-
-# Collect which of these actually exist as global symbols in the library
 TMPFILE=$(mktemp)
+REF_SYMS=$(mktemp)
+LOCALIZE_FILE=$(mktemp)
 WORK_DIR=""
-cleanup() { rm -f "$TMPFILE"; [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"; true; }
+cleanup() { rm -f "$TMPFILE" "$REF_SYMS" "$LOCALIZE_FILE"; [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"; true; }
 trap cleanup EXIT
 
-# Get all global defined symbols from the library. nm may print per-member errors for non-ELF archive
-# members (e.g. debug metadata objects) - those are non-fatal as long as at least one ELF member is read.
-# A truly broken/missing archive produces empty output and is caught below.
-"$NM" "$LIB_PATH" 2>/dev/null \
-    | grep -E '^[0-9a-f]+ [TDBCWV] ' \
-    | awk '{print $3}' \
-    | sort -u \
-    > "$TMPFILE" || true
+# Print the names of all globally-defined symbols in a library.  Handles both
+# static archives (plain nm) and shared objects (nm -D reads the dynamic symbol
+# table of an otherwise-stripped .so); the union covers either kind.  Glibc
+# version suffixes such as @@GLIBC_2.27 are stripped so names compare against the
+# Rust archive.  nm may print per-member errors for non-ELF members (debug
+# metadata, linker scripts); those are non-fatal as long as one member is read.
+# T/D/B/C/W/V are the defined globals and i is an IFUNC (glibc resolves ceil,
+# rint, trunc, ... this way); undefined (U) and local (lowercase) are excluded.
+defined_globals() {
+    { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
+        | grep -E '^[0-9a-f]+ [TDBCWVi] ' \
+        | awk '{print $3}' \
+        | sed 's/@.*//'
+}
+
+# Defined globals from our own reference libraries: the set we are allowed to
+# localize in the Rust archive.
+for ref in "${REF_LIBS[@]}"; do
+    if [ ! -f "$ref" ]; then
+        echo "Error: reference library not found: $ref" >&2
+        exit 1
+    fi
+done
+
+for ref in "${REF_LIBS[@]}"; do
+    defined_globals "$ref"
+done | sort -u > "$REF_SYMS"
+
+if [ ! -s "$REF_SYMS" ]; then
+    echo "Error: reference libraries produced no symbols; cannot localize Rust C symbols" >&2
+    exit 1
+fi
+
+# Defined globals from the Rust archive.  A truly broken/missing archive
+# produces empty output and is caught below.
+defined_globals "$LIB_PATH" | sort -u > "$TMPFILE" || true
 
 if [ ! -s "$TMPFILE" ]; then
     echo "Error: $NM produced no symbols for $LIB_PATH; cannot localize Rust C symbols" >&2
     exit 1
 fi
 
-# Build objcopy flags for symbols that exist in both lists
-LOCALIZE_FLAGS=""
-for sym in "${KNOWN_C_SYMBOLS[@]}"; do
-    if grep -qxF "$sym" "$TMPFILE"; then
-        LOCALIZE_FLAGS="$LOCALIZE_FLAGS --localize-symbol=$sym"
-    fi
-done
+# Localize the intersection: symbols the Rust archive defines that we also define.
+comm -12 "$TMPFILE" "$REF_SYMS" > "$LOCALIZE_FILE"
 
-if [ -n "$LOCALIZE_FLAGS" ]; then
+if [ -s "$LOCALIZE_FILE" ]; then
     # Try direct objcopy on the archive first (fast path).
     # Some Rust archives contain non-ELF members (e.g. debug metadata objects)
     # that cause llvm-objcopy to fail.  In that case, fall back to extracting
     # individual members, processing only valid ELF objects, and repacking.
-    if ! $OBJCOPY $LOCALIZE_FLAGS "$LIB_PATH" 2>/dev/null; then
+    if ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$LIB_PATH" 2>/dev/null; then
         WORK_DIR=$(mktemp -d)
 
         (cd "$WORK_DIR" && "$AR" x "$LIB_PATH")
         for obj in "$WORK_DIR"/*.o; do
-            $OBJCOPY $LOCALIZE_FLAGS "$obj" 2>/dev/null || true
+            "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$obj" 2>/dev/null || true
         done
         "$AR" rcs "$LIB_PATH" "$WORK_DIR"/*.o
     fi
