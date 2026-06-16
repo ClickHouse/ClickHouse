@@ -203,6 +203,26 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
+    /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
+    /// Case: ISODate("2024-05-29T23:16:12.256")
+    else if (checkString("new ISODate(", istr) || checkString("ISODate(", istr))
+    {
+        String inner;
+        readJSONString(inner, istr, settings.json);
+        assertChar(')', istr);
+
+        ReadBufferFromString buf(inner);
+        readText(x, scale, buf, settings, time_zone, utc_time_zone);
+
+        /// Consume optional timezone 'Z' suffix that readText may leave behind
+        /// Case: ISODate("2024-05-29T23:16:12.256Z")
+        if (!buf.eof() && *buf.position() == 'Z')
+            ++buf.position();
+
+        if (!buf.eof())
+            throw Exception(ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                "Unexpected data after parsed DateTime64 value inside ISODate wrapper");
+    }
     else
     {
         readIntText(x, istr);

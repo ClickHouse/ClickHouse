@@ -895,7 +895,10 @@ bool SerializationNullable::tryDeserializeNullJSON(DB::ReadBuffer & istr)
 template<typename ReturnType>
 ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
 {
-    auto check_for_null = [](ReadBuffer & buf){ return checkStringByFirstCharacterAndAssertTheRest("null", buf); };
+    auto check_for_null = [](ReadBuffer & buf)
+    {
+        return peekString("null", buf); /// null or new ISODate
+    };
     auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf)
     {
         if constexpr (std::is_same_v<ReturnType, bool>)
