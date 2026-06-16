@@ -70,14 +70,18 @@ void ParallelGzipDeflatingWriteBuffer::writeTrailer()
 
 void ParallelGzipDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush)
 {
+    int rc = Z_OK;
     do
     {
         out_buf.nextIfAtEnd();
         strm.next_out = reinterpret_cast<unsigned char *>(out_buf.position());
         strm.avail_out = static_cast<unsigned>(out_buf.buffer().end() - out_buf.position());
-        deflate(&strm, flush);
+        rc = deflate(&strm, flush);
         out_buf.position() = out_buf.buffer().end() - strm.avail_out;
-    } while (strm.avail_in > 0 || strm.avail_out == 0);
+
+        if (rc != Z_OK && rc != Z_STREAM_END)
+            throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflate failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
+    } while (strm.avail_in > 0 || strm.avail_out == 0 || (flush == Z_FINISH && rc != Z_STREAM_END));
 }
 
 ParallelGzipDeflatingWriteBuffer::CompressedBuf ParallelGzipDeflatingWriteBuffer::compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag)
@@ -151,7 +155,11 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
 
     /// Schedule deflation of every block of this pass on the shared IO thread pool. The number of
     /// blocks per pass is bounded by the staging buffer size (~num_threads blocks).
+    /// Both vectors are allocated up front, before any task is scheduled: these allocations are
+    /// memory-tracked and may throw, and once a task is in flight it references this buffer's memory,
+    /// so every scheduled task must be awaited before returning.
     VectorWithMemoryTracking<std::future<CompressedBuf>> futures(cnt_blocks);
+    VectorWithMemoryTracking<CompressedBuf> results(cnt_blocks);
     size_t scheduled = 0;
     std::exception_ptr exception;
     try
@@ -180,7 +188,6 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
 
     /// Collect results in order. Every scheduled task must be awaited before leaving this function,
     /// even on error, because the tasks reference memory owned by this buffer.
-    VectorWithMemoryTracking<CompressedBuf> results(scheduled);
     for (size_t i = 0; i < scheduled; ++i)
     {
         try
@@ -201,8 +208,8 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
         std::rethrow_exception(exception);
     }
 
-    for (const auto & result : results)
-        out->write(result.mem->data(), result.len);
+    for (size_t i = 0; i < scheduled; ++i)
+        out->write(results[i].mem->data(), results[i].len);
 }
 
 }

@@ -176,7 +176,10 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
         /// Gzip output can be produced in parallel; the result is an ordinary gzip stream.
-        if (method == CompressionMethod::Gzip && compression_threads > 1)
+        /// The parallel deflater always emits a gzip wrapper, so restrict it to the compress_empty case
+        /// (the default for file exports); callers that suppress output for empty input, such as the HTTP
+        /// response path with compress_empty=false, keep the serial buffer.
+        if (method == CompressionMethod::Gzip && compression_threads > 1 && compress_empty)
             return std::make_unique<ParallelGzipDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, compression_threads);
         return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
     }

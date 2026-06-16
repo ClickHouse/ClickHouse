@@ -17,6 +17,9 @@ ${CLICKHOUSE_CLIENT} --max_generic_compression_threads 1 --query "SELECT number 
 
 gzip -t "$PAR" && echo "parallel output is valid gzip"
 diff <(gzip -dc "$PAR") <(gzip -dc "$SEQ") > /dev/null && echo "parallel and serial gzip decompress identically"
+# The parallel path flushes independent blocks, so its framing differs from the single-stream serial output:
+# this confirms the parallel deflater actually ran rather than silently falling back to serial.
+cmp -s "$PAR" "$SEQ" && echo "UNEXPECTED: parallel and serial output are byte-identical" || echo "parallel and serial gzip framing differ"
 
 # The parallel output round-trips through the regular gzip reader.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_04341"

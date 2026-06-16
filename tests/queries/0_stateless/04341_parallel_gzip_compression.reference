@@ -1,3 +1,4 @@
 parallel output is valid gzip
 parallel and serial gzip decompress identically
+parallel and serial gzip framing differ
 2000000	2000000

@@ -286,9 +286,9 @@ Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in par
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_generic_compression_threads, 1, R"(
-The maximum number of threads used to compress data with the generic stream-compression methods (currently `gzip` and `xz`) when writing to output formats, files or storage.
+The maximum number of threads used to compress generic stream-compressed output (currently `gzip`) when writing to output formats, files or storage.
 
-The output stays in the standard `gzip`/`xz` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool.
+The output stays in the standard `gzip` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool. The setting is named generically so that other stream-compression methods can adopt it in the future.
 
 Possible values:
 
