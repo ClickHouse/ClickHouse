@@ -46,6 +46,15 @@ _PLACEHOLDER = r"__sqlstorm_protected_\d+__"
 
 _RESTORE_RE = re.compile(r"__sqlstorm_protected_(\d+)__")
 
+# Words that can syntactically follow a table expression but are clause
+# keywords, not a table alias. Used to disambiguate an omitted-`AS` alias from a
+# trailing clause when parsing `UNNEST(...)` / subquery joins.
+_NOT_AN_ALIAS = {
+    'ON', 'WHERE', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'UNION',
+    'INTERSECT', 'EXCEPT', 'WINDOW', 'QUALIFY', 'SETTINGS', 'FORMAT', 'USING',
+    'JOIN', 'LEFT', 'RIGHT', 'CROSS', 'INNER', 'FULL',
+}
+
 
 def mask_protected_spans(sql):
     """Replace string literals, quoted identifiers and comments with opaque
@@ -305,13 +314,6 @@ def rewrite_unnest_lateral(sql):
     # stop at the first `)` and leave behind a correlated subquery that
     # ClickHouse cannot execute.
     join_pat = re.compile(r'\b(LEFT\s+(?:OUTER\s+)?|CROSS\s+|INNER\s+)?JOIN\s*\(', re.IGNORECASE)
-    # Words that can follow the subquery's closing parenthesis but are clause
-    # keywords, not a table alias.
-    not_an_alias = {
-        'ON', 'WHERE', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'UNION',
-        'INTERSECT', 'EXCEPT', 'WINDOW', 'QUALIFY', 'SETTINGS', 'FORMAT',
-        'JOIN', 'LEFT', 'RIGHT', 'CROSS', 'INNER', 'FULL',
-    }
     result = []
     i = 0
     while i < len(sql):
@@ -352,7 +354,7 @@ def rewrite_unnest_lateral(sql):
         after = sql[paren_end + 1:]
         pos = 0
         alias_m = re.match(r'\s*(?:AS\s+)?(\w+)(?:\s*\(\s*(\w+)\s*\))?', after, re.IGNORECASE)
-        if alias_m and alias_m.group(1).upper() not in not_an_alias:
+        if alias_m and alias_m.group(1).upper() not in _NOT_AN_ALIAS:
             pos = alias_m.end()
             if alias_m.group(2):
                 col = alias_m.group(2)
@@ -396,10 +398,20 @@ def rewrite_pg_cast(sql):
     sql = re.sub(r'::\s*jsonb?\b', '', sql, flags=re.IGNORECASE)
     # ::regclass -> remove
     sql = re.sub(r'::\s*regclass\b', '', sql, flags=re.IGNORECASE)
-    # PostgreSQL JSON operators: ->> 'key' -> JSONExtractString(expr, 'key')
-    # This is complex to handle in general; just remove the operator and its
-    # (masked) key literal for now.
-    sql = re.sub(r"\s*->>\s*" + _PLACEHOLDER, r"", sql)
+    # PostgreSQL JSON text-extraction operator: `expr ->> 'key'`.
+    # Translate it to the ClickHouse equivalent `JSONExtractString(expr, 'key')`
+    # when the left operand is a simple or qualified (optionally quoted)
+    # identifier. A more complex operand (function call, arithmetic, cast, ...)
+    # is left unchanged rather than guessed at: silently deleting the operator
+    # and key (the previous behaviour) turned `data ->> 'name'` into `data`,
+    # which changes the query and can count false successes for the wrong
+    # expression. The key literal is masked at this point, so it is matched as a
+    # placeholder and restored to the original quoted string at the end.
+    sql = re.sub(
+        r'("?\w+"?(?:\s*\.\s*"?\w+"?)*)\s*->>\s*(' + _PLACEHOLDER + r')',
+        r'JSONExtractString(\1, \2)',
+        sql,
+    )
     return sql
 
 
@@ -457,20 +469,33 @@ def rewrite_arrayjoin_to_array_join(sql):
         expr = sql[paren_start + 1:paren_end]
         after = sql[paren_end + 1:]
 
-        # Parse: AS alias(col) or AS alias, optionally followed by ON ...
-        # Allow optional whitespace before the column alias list, since the
-        # corpus also contains `AS tag (TagName) ON TRUE`. Without it `col`
-        # stays `None` and the ` (TagName) ON TRUE` tail leaks into the result.
-        alias_match = re.match(r'\s+AS\s+(\w+)(?:\s*\(\s*(\w+)\s*\))?(.*)', after, re.IGNORECASE | re.DOTALL)
+        # Parse: [AS] alias(col) or [AS] alias, optionally followed by ON ...
+        # `AS` is optional because PostgreSQL table-function aliases commonly
+        # omit it (`UNNEST(arr) u(x)`). Allow optional whitespace before the
+        # column alias list, since the corpus also contains `AS tag (TagName) ON
+        # TRUE`. Without it `col` stays `None` and the ` (TagName) ON TRUE` tail
+        # leaks into the result.
+        alias_match = re.match(r'\s+(AS\s+)?(\w+)(?:\s*\(\s*(\w+)\s*\))?(.*)', after, re.IGNORECASE | re.DOTALL)
         if not alias_match:
             result.append(sql[i:paren_end + 1])
             i = paren_end + 1
             continue
 
-        alias = alias_match.group(1)
-        col = alias_match.group(2)  # may be None
-        rest = alias_match.group(3)
+        as_kw = alias_match.group(1)  # the literal `AS `, or None when omitted
+        alias = alias_match.group(2)
+        col = alias_match.group(3)  # may be None
+        rest = alias_match.group(4)
         col_name = col if col else alias
+
+        # When `AS` is omitted, the token after the unnest is ambiguous: it can
+        # be a real alias or a trailing clause keyword (`UNNEST(arr) ON TRUE`,
+        # `UNNEST(arr) WHERE ...`). Only treat it as an alias when it is not a
+        # clause keyword; otherwise leave the construct unchanged. With an
+        # explicit `AS` the token is unambiguously an alias.
+        if as_kw is None and alias.upper() in _NOT_AN_ALIAS:
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
 
         # Determine the join type from the preceding keyword. `ARRAY JOIN`
         # carries no `ON` clause and has no RIGHT/FULL variant, so any shape
@@ -522,6 +547,19 @@ def rewrite_arrayjoin_to_array_join(sql):
         if on_true_match:
             rest = rest[on_true_match.end():]
         elif re.match(r'\s+ON\b', rest, re.IGNORECASE):
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
+
+        # A leading comma in the remainder means another `FROM` item (a comma
+        # join) trails the unnest, e.g. `FROM t, UNNEST(arr) AS u(x), v`.
+        # Appending it after the new `ARRAY JOIN` would fold that table into the
+        # array-join expression list (`ARRAY JOIN arr AS x, v`), so `v` is no
+        # longer a separate table source. A leftover `(` means the alias tail was
+        # not fully parsed (e.g. a multi-column list `u(a, b)`). Mirror the
+        # conservative guard in `rewrite_unnest_lateral` and leave the construct
+        # unchanged in both cases.
+        if re.match(r'\s*[,(]', rest):
             result.append(sql[i:paren_end + 1])
             i = paren_end + 1
             continue

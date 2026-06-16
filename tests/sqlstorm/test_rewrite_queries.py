@@ -308,6 +308,72 @@ class TestUnnestJoinRewrite(unittest.TestCase):
         self.assertEqual(rewrite_query(sql), sql)
 
 
+class TestJsonExtractRewrite(unittest.TestCase):
+    def test_arrow_text_operator_simple_identifier(self):
+        # `expr ->> 'key'` must be translated to `JSONExtractString(expr, 'key')`,
+        # not silently reduced to `expr` (which would benchmark a different
+        # expression and could count a false success).
+        self.assertEqual(
+            rewrite_query("SELECT data ->> 'name' FROM t"),
+            "SELECT JSONExtractString(data, 'name') FROM t",
+        )
+
+    def test_arrow_text_operator_in_predicate(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t WHERE data ->> 'name' = 'Alex'"),
+            "SELECT * FROM t WHERE JSONExtractString(data, 'name') = 'Alex'",
+        )
+
+    def test_arrow_text_operator_qualified_identifier(self):
+        self.assertEqual(
+            rewrite_query("SELECT t.data ->> 'name' FROM t"),
+            "SELECT JSONExtractString(t.data, 'name') FROM t",
+        )
+
+    def test_arrow_text_operator_complex_operand_left_unchanged(self):
+        # The left operand is a function call, not a bare identifier, so the
+        # conservative path leaves it unchanged instead of guessing a wrong
+        # rewrite.
+        sql = "SELECT json_extract(data) ->> 'name' FROM t"
+        self.assertEqual(rewrite_query(sql), sql)
+
+
+class TestUnnestAliasWithoutAs(unittest.TestCase):
+    def test_unnest_from_position_alias_without_as(self):
+        # PostgreSQL allows omitting `AS` before a table-function alias.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM UNNEST(arr) u(x)"),
+            "SELECT * FROM (SELECT arrayJoin(arr) AS x) AS _aj",
+        )
+
+    def test_cross_join_unnest_alias_without_as(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN UNNEST(arr) u(x)"),
+            "SELECT * FROM t \nARRAY JOIN arr AS x",
+        )
+
+    def test_unnest_without_alias_keyword_not_mistaken(self):
+        # With `AS` omitted and no real alias, the trailing clause keyword `ON`
+        # must not be captured as the alias; leave the construct unchanged.
+        sql = "SELECT * FROM t LEFT JOIN UNNEST(arr) ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+
+class TestArrayJoinTrailingCommaSource(unittest.TestCase):
+    def test_comma_joined_table_after_unnest_left_unchanged(self):
+        # `v` is a separate comma-joined table source. Folding it into the new
+        # `ARRAY JOIN` expression list (`ARRAY JOIN arr AS x, v`) would change
+        # the query shape, so the construct is left unchanged.
+        sql = "SELECT * FROM t, UNNEST(arr) AS u(x), v WHERE id = 1"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_comma_joined_table_after_unnest_on_true_left_unchanged(self):
+        # Same hazard when a no-op `ON TRUE` is stripped first: the comma and the
+        # following `v` must not be appended after the `ARRAY JOIN`.
+        sql = "SELECT * FROM t LEFT JOIN UNNEST(arr) AS u(x) ON TRUE, v WHERE id = 1"
+        self.assertEqual(rewrite_query(sql), sql)
+
+
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner
     (which has heavy side imports). If runner's sort key changes, update here."""
