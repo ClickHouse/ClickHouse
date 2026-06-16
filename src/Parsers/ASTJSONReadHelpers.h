@@ -128,7 +128,10 @@ public:
         auto arr = obj.getArray("children");
         if (!arr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
-        result.reserve(arr->size());
+        /// Cap the preallocation: `arr->size()` is untrusted and the per-element budget
+        /// (`countJSONDeserializationElement`, via `createFromJSON`) only rejects inside the loop, so a
+        /// huge array would otherwise force a large up-front allocation proportional to the JSON length.
+        result.reserve(arr->size() < 1024 ? arr->size() : 1024);
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto child_obj = arr->getObject(i);

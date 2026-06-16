@@ -553,12 +553,17 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                         /// input like `<json ast> garbage;` would deserialize and send the JSON prefix
                         /// and only fail on `garbage` in the next iteration, whereas the SQL path
                         /// rejects the same shape as excessive input before executing the prefix.
-                        Tokens after_json_tokens(json_end, end);
+                        Tokens after_json_tokens(json_end, end, settings[Setting::max_query_size]);
                         IParser::Pos after_json_iterator(
                             after_json_tokens,
                             static_cast<uint32_t>(settings[Setting::max_parser_depth]),
                             static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
-                        if (after_json_iterator.isValid() && after_json_iterator->type != TokenType::Semicolon)
+                        /// Require the next significant token to be `;` or end of input. Compare the
+                        /// token type directly rather than via `isValid()`, which is false for both
+                        /// `EndOfStream` and lexer-error tokens — so a trailing invalid token (e.g.
+                        /// `<json ast> #`) would otherwise slip through and execute the prefix.
+                        if (after_json_iterator->type != TokenType::Semicolon
+                            && after_json_iterator->type != TokenType::EndOfStream)
                             throw Exception(ErrorCodes::SYNTAX_ERROR,
                                 "Excessive input after the JSON AST object: expected end of query or ';' "
                                 "during clickhouse_json deserialization");
