@@ -33,10 +33,10 @@ namespace Mongo
 
 bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
 {
-    auto delete_query = std::make_shared<ASTDeleteQuery>();
+    auto delete_query = make_intrusive<ASTDeleteQuery>();
     node = delete_query;
 
-    auto table_expression_ast = std::make_shared<ASTIdentifier>(metadata->getCollectionName());
+    auto table_expression_ast = make_intrusive<ASTIdentifier>(metadata->getCollectionName());
     delete_query->table = table_expression_ast;
 
     /// Traverse data tree for WHERE operator

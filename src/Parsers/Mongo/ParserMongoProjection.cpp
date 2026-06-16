@@ -23,7 +23,7 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
         return false;
     }
 
-    auto result = std::make_shared<ASTExpressionList>();
+    auto result = make_intrusive<ASTExpressionList>();
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
         if (it->value.IsInt())
@@ -31,7 +31,7 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
             auto include_field = it->value.GetInt();
             if (include_field)
             {
-                result->children.push_back(std::make_shared<ASTIdentifier>(it->name.GetString()));
+                result->children.push_back(make_intrusive<ASTIdentifier>(it->name.GetString()));
             }
             continue;
         }

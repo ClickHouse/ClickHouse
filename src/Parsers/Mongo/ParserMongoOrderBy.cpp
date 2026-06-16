@@ -25,12 +25,12 @@ bool ParserMongoOrderBy::parseImpl(ASTPtr & node)
         return false;
     }
 
-    auto result = std::make_shared<ASTExpressionList>();
+    auto result = make_intrusive<ASTExpressionList>();
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
-        std::shared_ptr<ASTOrderByElement> element = std::make_shared<ASTOrderByElement>();
+        auto element = make_intrusive<ASTOrderByElement>();
         element->direction = it->value.GetInt();
-        element->children.push_back(std::make_shared<ASTIdentifier>(it->name.GetString()));
+        element->children.push_back(make_intrusive<ASTIdentifier>(it->name.GetString()));
         result->children.push_back(element);
     }
     node = result;

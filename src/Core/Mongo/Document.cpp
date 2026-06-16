@@ -27,7 +27,7 @@ std::string bsonToJson(const std::string & bsonData)
         throw std::runtime_error("Failed to initialize BSON data");
     }
 
-    char * json_str = bson_as_json(&b, nullptr);
+    char * json_str = bson_as_legacy_extended_json(&b, nullptr);
     if (!json_str)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect bson");

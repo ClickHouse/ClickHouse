@@ -44,14 +44,14 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
         rapidjson::Document new_projection;
         new_projection.CopyFrom(json_representation["projection"], new_projection.GetAllocator());
 
-        new_filter.AddMember("$projection", new_projection.GetObject(), new_filter.GetAllocator());
-        filter = new_filter.GetObject();
+        new_filter.AddMember("$projection", rapidjson::Value(new_projection.GetObject()), new_filter.GetAllocator());
+        filter = rapidjson::Value(new_filter.GetObject());
     }
     else
     {
         rapidjson::Document new_filter;
         new_filter.CopyFrom(json_representation["filter"], new_filter.GetAllocator());
-        filter = new_filter.GetObject();
+        filter = rapidjson::Value(new_filter.GetObject());
     }
 
     String serialized_filter;

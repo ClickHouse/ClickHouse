@@ -3916,14 +3916,14 @@ void Server::createServers(
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
                     "Mongo compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes), server_pool, socket, makeServerParams(server_settings)));
             });
         } 
 

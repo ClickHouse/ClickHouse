@@ -23,16 +23,16 @@ bool MongoIdentityFunction::parseImpl(ASTPtr & node)
 {
     if (data.IsInt())
     {
-        auto identifier = std::make_shared<ASTIdentifier>(edge_name);
-        auto literal = std::make_shared<ASTLiteral>(Field(data.GetInt()));
+        auto identifier = make_intrusive<ASTIdentifier>(edge_name);
+        auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt()));
         auto where_condition = makeASTFunction("equals", identifier, literal);
         node = where_condition;
         return true;
     }
     if (data.IsString())
     {
-        auto identifier = std::make_shared<ASTIdentifier>(edge_name);
-        auto literal = std::make_shared<ASTLiteral>(Field(data.GetString()));
+        auto identifier = make_intrusive<ASTIdentifier>(edge_name);
+        auto literal = make_intrusive<ASTLiteral>(Field(data.GetString()));
         auto where_condition = makeASTFunction("equals", identifier, literal);
         node = where_condition;
         return true;
@@ -53,7 +53,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
 {
     if (data.IsString())
     {
-        auto literal = std::make_shared<ASTIdentifier>(data.GetString());
+        auto literal = make_intrusive<ASTIdentifier>(data.GetString());
         node = literal;
         return true;
     }
@@ -161,13 +161,13 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
 {
     if (data.IsInt())
     {
-        auto literal = std::make_shared<ASTLiteral>(Field(data.GetInt()));
+        auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt()));
         node = literal;
         return true;
     }
     if (data.IsString())
     {
-        auto identifier = std::make_shared<ASTIdentifier>(data.GetString());
+        auto identifier = make_intrusive<ASTIdentifier>(data.GetString());
         node = identifier;
         return true;
     }
@@ -188,12 +188,12 @@ bool MongoSetFunction::parseImpl(ASTPtr & node)
     if (!data.IsObject())
         return false;
 
-    auto expression_list = std::make_shared<ASTExpressionList>();
+    auto expression_list = make_intrusive<ASTExpressionList>();
     node = expression_list;
 
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
-        auto assignment_ast = std::make_shared<ASTAssignment>();
+        auto assignment_ast = make_intrusive<ASTAssignment>();
         assignment_ast->column_name = it->name.GetString();
         ASTPtr assigment_expr;
         auto parser = createParser(copyValue(it->value), metadata, "$arithmetic_function_element");
@@ -211,20 +211,20 @@ bool MongoIncrementFunction::parseImpl(ASTPtr & node)
     if (!data.IsObject())
         return false;
 
-    auto expression_list = std::make_shared<ASTExpressionList>();
+    auto expression_list = make_intrusive<ASTExpressionList>();
     node = expression_list;
 
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
-        auto assignment_ast = std::make_shared<ASTAssignment>();
+        auto assignment_ast = make_intrusive<ASTAssignment>();
         assignment_ast->column_name = it->name.GetString();
 
         ASTPtr column_identifier;
-        if (!MongoArithmeticFunctionElement(it->name.GetObject(), metadata, "").parseImpl(column_identifier))
+        if (!MongoArithmeticFunctionElement(rapidjson::Value(it->name.GetObject()), metadata, "").parseImpl(column_identifier))
             return false;
 
         ASTPtr value_literal;
-        if (!MongoArithmeticFunctionElement(it->value.GetObject(), metadata, "").parseImpl(value_literal))
+        if (!MongoArithmeticFunctionElement(rapidjson::Value(it->value.GetObject()), metadata, "").parseImpl(value_literal))
             return false;
         auto increment = makeASTFunction("plus", column_identifier, value_literal);
 

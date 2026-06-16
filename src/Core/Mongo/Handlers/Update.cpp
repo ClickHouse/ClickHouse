@@ -55,7 +55,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
 
     String sql_query;
     WriteBufferFromString sql_buffer(sql_query);
-    auto settings = IAST::FormatSettings(true, false, IdentifierQuotingRule::WhenNecessary, IdentifierQuotingStyle::BackticksMySQL);
+    auto settings = IAST::FormatSettings(true, IdentifierQuotingRule::WhenNecessary, IdentifierQuotingStyle::BackticksMySQL);
     ast->format(sql_buffer, settings);
     while (sql_query.back() == 0)
         sql_query.pop_back();

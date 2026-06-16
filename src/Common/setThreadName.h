@@ -102,6 +102,7 @@ namespace DB
     M(METRIC_LOG, "MetricLog") \
     M(METRICS_TRANSMITTER, "MetricsTransmtr") \
     M(MSG_BROKER_SCHEDULE_POOL, "BgMBSchPool") \
+    M(MONGO_HANDLER, "MongoHandler") \
     M(MYSQL_DATABASE_CLEANUP, "MySQLDBCleaner") \
     M(MYSQL_HANDLER, "MySQLHandler") \
     M(OBJECT_STORAGE_SHUTDOWN, "ObjStorShutdwn") \

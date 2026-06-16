@@ -69,7 +69,7 @@ void MongoHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void MongoHandler::run()
 {
-    setThreadName("PostgresHandler");
+    setThreadName(ThreadName::MONGO_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MONGO);
     SCOPE_EXIT({ session.reset(); });

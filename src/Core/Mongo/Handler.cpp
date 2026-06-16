@@ -34,7 +34,7 @@ std::vector<std::string> splitByNewline(const std::string & s)
     return result;
 }
 
-void AddPrefixToKeys(
+static void AddPrefixToKeys(
     rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator, const String & current_path = "", bool in_projection = false)
 {
     if (value.IsObject())

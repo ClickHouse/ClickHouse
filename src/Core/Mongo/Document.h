@@ -50,17 +50,17 @@ public:
 
     rapidjson::Value getRapidJsonRepresentation() const
     {
-        char * json_str = bson_as_json(bson_doc, nullptr);
+        char * json_str = bson_as_legacy_extended_json(bson_doc, nullptr);
         rapidjson::Document json_doc;
         json_doc.Parse(json_str);
 
         rapidjson::Value & root = json_doc;
-        return root.GetObject();
+        return rapidjson::Value(root.GetObject());
     }
 
     bson_t * getBson() const { return bson_doc; }
 
-    String getJson() const { return bson_as_json(bson_doc, nullptr); }
+    String getJson() const { return bson_as_legacy_extended_json(bson_doc, nullptr); }
 
     ~Document() override;
 

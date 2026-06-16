@@ -35,15 +35,15 @@ namespace Mongo
 
 bool ParserMongoUpdateQuery::parseImpl(ASTPtr & node)
 {
-    auto update_query = std::make_shared<ASTAlterCommand>();
+    auto update_query = make_intrusive<ASTAlterCommand>();
     node = update_query;
 
     update_query->type = ASTAlterCommand::UPDATE;
 
     auto * iter = data.GetArray().Begin();
-    rapidjson::Value filter_json = iter->GetObject();
+    rapidjson::Value filter_json(iter->GetObject());
     ++iter;
-    rapidjson::Value update_json = iter->GetObject();
+    rapidjson::Value update_json(iter->GetObject());
 
 
     ASTPtr where_condition;

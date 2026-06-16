@@ -28,14 +28,14 @@ namespace Mongo
 
 bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
 {
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
 
     auto projection = findField(data, "$projection");
     /// Equals to SELECT * ...
     if (!projection)
     {
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-        select_query->select()->children.push_back(std::make_shared<ASTAsterisk>());
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+        select_query->select()->children.push_back(make_intrusive<ASTAsterisk>());
     }
     else
     {
@@ -53,13 +53,13 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
 
     /// Attach collection to AST.
     node = select_query;
-    ASTPtr tables = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables = make_intrusive<ASTTablesInSelectQuery>();
 
-    auto table_expression_ast = std::make_shared<ASTTableExpression>();
-    table_expression_ast->children.push_back(std::make_shared<ASTTableIdentifier>(metadata->getCollectionName()));
+    auto table_expression_ast = make_intrusive<ASTTableExpression>();
+    table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(metadata->getCollectionName()));
     table_expression_ast->database_and_table_name = table_expression_ast->children.back();
 
-    auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
     tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
     tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
@@ -70,7 +70,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     if (metadata->getLimit())
     {
         size_t limit_value = *metadata->getLimit();
-        auto literal = std::make_shared<ASTLiteral>(Field(limit_value));
+        auto literal = make_intrusive<ASTLiteral>(Field(limit_value));
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(literal));
     }
 

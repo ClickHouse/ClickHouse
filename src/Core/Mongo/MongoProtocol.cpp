@@ -2,8 +2,10 @@
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/MongoProtocol.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Common/QueryScope.h>
 #include "Common/randomSeed.h"
 
 namespace DB::MongoProtocol
@@ -62,11 +64,11 @@ String QueryExecutor::execute(const String & query)
 
     query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
 
-    CurrentThread::QueryScope query_scope{query_context};
+    auto query_scope = QueryScope::create(query_context);
     ReadBufferFromString read_buf(query);
 
     WriteBufferFromOwnString out;
-    executeQuery(read_buf, out, false, query_context, {});
+    executeQuery(read_buf, out, query_context, {});
 
     return out.str();
 }
