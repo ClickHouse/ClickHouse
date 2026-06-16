@@ -39,3 +39,8 @@ SETTINGS
     use_skip_indexes_on_data_read = 0;
 
 DROP TABLE t_99495;
+
+-- A second, independent source of the same crash: WITH FILL emits a zero-row chunk that
+-- reaches LimitTransform at the WITH TIES boundary. No table / read-in-order pipeline here,
+-- so only the LimitTransform `rows > 0` guard protects it. Found by the AST fuzzer.
+SELECT DISTINCT a AS b, '[a-z]', 100 AS a ORDER BY 1 DESC NULLS FIRST WITH FILL STALENESS -1 LIMIT 1 WITH TIES;
