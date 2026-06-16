@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/UUID.h>
 
 #include <algorithm>
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 }
 
@@ -258,8 +260,32 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             const Slice values = nextBuffer();
             if (type.unit == flatbuf::DateUnit_DAY)
             {
-                /// date32: days since the epoch, maps to Date32 (Int32).
-                fillFixed<ColumnInt32>(*column, rows, values, 4);
+                /// date32: days since the epoch, maps to Date32 (Int32). Enforce the same range/overflow
+                /// contract as the Apache Arrow library reader (`readColumnWithDate32Data`): a day number
+                /// outside ClickHouse's allowed Date32 range is saturated or rejected according to
+                /// `date_time_overflow_behavior` (its default `Ignore`, like `Throw`, rejects — preserving
+                /// the pre-`date_time_overflow_behavior` behavior) instead of leaving an invalid Date32 in
+                /// the result.
+                checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
+                auto & data = assert_cast<ColumnInt32 &>(*column).getData();
+                data.resize(rows);
+                const auto * src = reinterpret_cast<const Int32 *>(values.ptr);
+                const bool saturate = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    Int32 days = src[i];
+                    if (days > DATE_LUT_MAX_EXTEND_DAY_NUM || days < -DAYNUM_OFFSET_EPOCH)
+                    {
+                        if (saturate)
+                            days = days < -DAYNUM_OFFSET_EPOCH ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Arrow IPC date32 value {} is out of the allowed Date32 range [{}, {}]",
+                                days, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM);
+                    }
+                    data[i] = days;
+                }
             }
             else
             {
