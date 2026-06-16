@@ -13,12 +13,9 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -31,7 +28,6 @@ namespace Setting
 
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
-    const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const Names & columns_to_read,
@@ -46,7 +42,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
-    , storage_id(storage_id_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
@@ -68,22 +63,14 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    if (!filter_actions_dag)
-        return;
-
-    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC"))
-        prepareEagerKeyConditionSets(
-            filter_actions_dag,
-            storage_snapshot, info.source_header,
-            query_info.prewhere_info, query_info.row_level_filter, getContext());
-
     // It is important to build the inplace sets for the filter here, before reading data from object storage.
     // If we delay building these sets until later in the pipeline, the filter can be applied after the data
     // has already been read, potentially in parallel across many streams. This can significantly reduce the
     // effectiveness of an Iceberg partition pruning, as unnecessary data may be read. Additionally, building ordered sets
     // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
-    /// Idempotent — sets already built above are skipped via !future_set->get() check.
-    VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
+    if (!filter_actions_dag)
+        return;
+    VirtualColumnUtils::buildOrderedSetsForDAG(*filter_actions_dag, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -123,7 +110,6 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
-            storage_id,
             getName(),
             object_storage,
             configuration,

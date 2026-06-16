@@ -7,7 +7,6 @@ namespace DB
 
 template <typename T1, typename T2> using AggregateFunctionCorr = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, CorrMoments>>;
 
-void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
