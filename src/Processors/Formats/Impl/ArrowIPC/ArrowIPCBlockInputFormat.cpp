@@ -260,26 +260,33 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
     for (const auto & block : footer.record_batch_blocks)
         record_batch_blocks.push_back({block.offset, block.body_length});
 
-    /// Decode all dictionary batches up front (the registry must be populated before any record batch).
-    collectDictionaryFields(arrow_schema->fields);
-    auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
-    for (const auto & block : footer.dictionary_blocks)
+    /// For count-only reads, the row count comes from the record-batch metadata (`batch->length()`), so
+    /// no record batch is ever decoded and the dictionaries are never needed. Skip decoding the
+    /// dictionary batches up front: it is wasted work, materializes potentially large dictionaries, and
+    /// would needlessly fail on a corrupt dictionary body when the counts are already in the footer.
+    if (!need_only_count)
     {
-        seekable->seek(block.offset, SEEK_SET);
-        ArrowIPC::MessageReader::Message msg;
-        if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a dictionary batch in the Arrow file");
+        /// Decode all dictionary batches up front (the registry must be populated before any record batch).
+        collectDictionaryFields(arrow_schema->fields);
+        auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+        for (const auto & block : footer.dictionary_blocks)
+        {
+            seekable->seek(block.offset, SEEK_SET);
+            ArrowIPC::MessageReader::Message msg;
+            if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a dictionary batch in the Arrow file");
 
-        const auto * dict_batch = msg.header->header_as_DictionaryBatch();
-        const int64_t id = dict_batch->id();
-        auto field_it = dictionary_value_fields.find(id);
-        if (field_it == dictionary_value_fields.end())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
+            const auto * dict_batch = msg.header->header_as_DictionaryBatch();
+            const int64_t id = dict_batch->id();
+            auto field_it = dictionary_value_fields.find(id);
+            if (field_it == dictionary_value_fields.end())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
 
-        message_reader->readBody(msg.body_length, body_buffer);
-        auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
-        checkDictionaryUnique(decoded.at(0).column);
-        dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
+            message_reader->readBody(msg.body_length, body_buffer);
+            auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+            checkDictionaryUnique(decoded.at(0).column);
+            dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
+        }
     }
 }
 
@@ -602,6 +609,13 @@ Chunk ArrowIPCBlockInputFormat::readStream()
             }
             case ArrowIPC::flatbuf::MessageHeader_DictionaryBatch:
             {
+                /// Count-only never decodes a record batch, so the dictionaries are not needed; skip the
+                /// body instead of decoding (and possibly failing on) it.
+                if (need_only_count)
+                {
+                    message_reader->skipBody(msg.body_length);
+                    continue;
+                }
                 const auto * dict_batch = msg.header->header_as_DictionaryBatch();
                 const int64_t id = dict_batch->id();
                 auto field_it = dictionary_value_fields.find(id);
