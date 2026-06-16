@@ -99,6 +99,17 @@ std::vector<ArrowField> parseChildren(const flatbuffers::Vector<flatbuffers::Off
     return result;
 }
 
+/// Reject an out-of-range Arrow enum value from the (FlatBuffers-verified-shape-only) schema metadata.
+/// Without this, an unknown enum would be silently coerced into a fabricated type by the fallbacks in
+/// `fieldToCHType`/the decoder (e.g. an unknown `Precision` decoding as half-float) instead of failing.
+template <typename Enum>
+Enum validatedEnum(Enum value, Enum min_value, Enum max_value, const char * what)
+{
+    if (value < min_value || value > max_value)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC schema has an invalid {} enum value {}", what, static_cast<int>(value));
+    return value;
+}
+
 ArrowType parseType(const flatbuf::Field & field)
 {
     ArrowType type;
@@ -118,7 +129,8 @@ ArrowType parseType(const flatbuf::Field & field)
         case flatbuf::Type_FloatingPoint:
         {
             type.kind = TypeKind::FloatingPoint;
-            type.float_precision = field.type_as_FloatingPoint()->precision();
+            type.float_precision = validatedEnum(
+                field.type_as_FloatingPoint()->precision(), flatbuf::Precision_MIN, flatbuf::Precision_MAX, "Precision");
             break;
         }
         case flatbuf::Type_Bool:
@@ -135,13 +147,13 @@ ArrowType parseType(const flatbuf::Field & field)
         }
         case flatbuf::Type_Date:
             type.kind = TypeKind::Date;
-            type.unit = field.type_as_Date()->unit();
+            type.unit = validatedEnum(field.type_as_Date()->unit(), flatbuf::DateUnit_MIN, flatbuf::DateUnit_MAX, "DateUnit");
             break;
         case flatbuf::Type_Time:
         {
             const auto * t = field.type_as_Time();
             type.kind = TypeKind::Time;
-            type.unit = t->unit();
+            type.unit = validatedEnum(t->unit(), flatbuf::TimeUnit_MIN, flatbuf::TimeUnit_MAX, "TimeUnit");
             type.time_bit_width = t->bitWidth();
             break;
         }
@@ -149,18 +161,19 @@ ArrowType parseType(const flatbuf::Field & field)
         {
             const auto * t = field.type_as_Timestamp();
             type.kind = TypeKind::Timestamp;
-            type.unit = t->unit();
+            type.unit = validatedEnum(t->unit(), flatbuf::TimeUnit_MIN, flatbuf::TimeUnit_MAX, "TimeUnit");
             if (t->timezone())
                 type.timezone = t->timezone()->str();
             break;
         }
         case flatbuf::Type_Duration:
             type.kind = TypeKind::Duration;
-            type.unit = field.type_as_Duration()->unit();
+            type.unit = validatedEnum(field.type_as_Duration()->unit(), flatbuf::TimeUnit_MIN, flatbuf::TimeUnit_MAX, "TimeUnit");
             break;
         case flatbuf::Type_Interval:
             type.kind = TypeKind::Interval;
-            type.unit = field.type_as_Interval()->unit();
+            type.unit = validatedEnum(
+                field.type_as_Interval()->unit(), flatbuf::IntervalUnit_MIN, flatbuf::IntervalUnit_MAX, "IntervalUnit");
             break;
         case flatbuf::Type_Utf8:
             type.kind = TypeKind::Utf8;
@@ -217,12 +230,17 @@ ArrowType parseType(const flatbuf::Field & field)
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC Map entries must be a struct of (key, value), got {} children",
                     type.children[0].type.children.size());
+            /// Arrow requires Map keys to be non-null, and the ClickHouse `Map` type forces a non-nullable
+            /// key too. A nullable key would otherwise build a `ColumnMap` whose key column (wrapped in
+            /// `Nullable` by the decoder) does not match its declared non-nullable key type.
+            if (type.children[0].type.children[0].nullable)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC Map key must not be nullable");
             break;
         case flatbuf::Type_Union:
         {
             const auto * t = field.type_as_Union();
             type.kind = TypeKind::Union;
-            type.union_mode = t->mode();
+            type.union_mode = validatedEnum(t->mode(), flatbuf::UnionMode_MIN, flatbuf::UnionMode_MAX, "UnionMode");
             type.children = parseChildren(field.children());
             /// `typeIds` is semantic schema metadata that must stay one-to-one with the children: each
             /// entry maps a child to the type id carried in the union's Int8 type-ids buffer. FlatBuffers
