@@ -1,0 +1,5 @@
+-- a source column named _score is rejected
+-- a source column named _part is rejected
+-- a source column named __global_row_index is rejected
+-- a source column named _part_index is rejected
+-- a source column named _part_offset is rejected

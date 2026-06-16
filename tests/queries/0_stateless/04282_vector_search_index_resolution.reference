@@ -1,0 +1,13 @@
+-- 5-arg explicit index works
+0
+1
+-- 4-arg auto-resolve when exactly one vector_similarity index
+0
+1
+-- 4-arg with mixed index types (only one is vector_similarity) auto-resolves
+0
+1
+-- 5-arg with non-existent index name → BAD_ARGUMENTS
+-- 5-arg with a non-vector index → BAD_ARGUMENTS
+-- 4-arg with zero vector_similarity indexes → BAD_ARGUMENTS
+-- 4-arg with two vector_similarity indexes → BAD_ARGUMENTS

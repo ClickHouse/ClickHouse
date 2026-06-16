@@ -1,0 +1,5 @@
+-- K above max_limit_for_vector_search_queries is rejected
+-- K at the cap works
+0
+1
+-- hnsw_candidate_list_size_for_search = 0 is rejected

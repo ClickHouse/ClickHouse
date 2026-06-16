@@ -1,0 +1,10 @@
+-- ids returned: only payload = 1
+0
+2
+4
+-- brute force reference for payload = 1
+0
+4
+2
+-- ScoredSearchPrefilterBitmapRows > 0
+1

@@ -1,0 +1,11 @@
+-- 1. Source columns join to the correct row
+0	zero
+1	one
+2	two
+3	three
+-- 2. _part is emitted by the lazy reader (one entry per part)
+all_1_1_0	2
+all_2_2_0	2
+-- 3. Empty main input → no output rows
+0
+-- 4. Combined header drops __global_row_index

@@ -1,0 +1,8 @@
+-- NOT hasAllTokens: exclude docs containing "quick"
+1
+3
+-- NOT hasAnyTokens: exclude docs containing either "quick" or "lazy"
+3
+-- Mixed AND: contains "the" but NOT "quick"
+1
+3

@@ -1,0 +1,27 @@
+-- 1. Basic hybrid search: top 3 nearest to [1.0, 0.0, 0.0] with text "quick", mode all
+0	0
+4	0.75
+2	5
+-- 2. Hybrid search with mode "any": "quick" OR "dog"
+0	0
+1	0.010314941
+4	0.75
+2	5
+-- 3. Hybrid search with mode "all": "quick" AND "brown"
+0	0
+2	5
+-- 4. Text filter matching no rows: returns empty
+-- 5. All columns are returned
+0	[1,0,0]	the quick brown fox	0	all_1_1_0
+4	[0.5,0.5,0.5]	the quick rabbit	0.75	all_1_1_0
+-- 6. Multi-part test
+0	0
+1	0.010314941
+2	2
+-- 7. Part name filtering with vectorSearch + WHERE text
+0	0	all_1_1_0
+1	0.010314941	all_1_1_0
+-- 8. Error: wrong vector index type
+-- 9. Mixed AND with non-text filter
+0	0
+2	5

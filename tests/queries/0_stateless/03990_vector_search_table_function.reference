@@ -1,0 +1,57 @@
+-- 1. Basic KNN search: top 3 nearest to [1.0, 0.0, 0.0]
+0	0
+1	0.010314941
+4	0.75
+-- 1v. Verification via ORDER BY L2Distance LIMIT
+0	0
+1	0.10000002384185791
+4	0.8660254037844386
+-- 2. All columns are returned
+0	[1,0,0]	0	all_1_1_0
+1	[1.1,0,0]	0.010314941	all_1_1_0
+-- 3. K=1: return single nearest
+2	0
+-- 3v. Verification via ORDER BY L2Distance LIMIT
+2	0
+-- 4. Multi-part test: results merged across parts
+0	0
+1	0.010314941
+2	2
+-- 4v. Verification via ORDER BY L2Distance LIMIT
+0	0
+1	0.10000002384185791
+2	1.4142135623730951
+-- 5. Part name filtering
+0	0	all_1_1_0
+1	0.010314941	all_1_1_0
+-- 5b. Partition pruning
+0	0
+1	0.010314941
+2	2
+0	0
+1	0.010314941
+-- 6. Larger dataset with cosineDistance
+-- 6a. Table function results
+84	0.000025570393
+766	0.00029814243
+662	0.00065112114
+515	0.00086802244
+875	0.0009640455
+177	0.0010659695
+674	0.0018719435
+286	0.0019977093
+424	0.0020671487
+908	0.0020725727
+-- 6v. Verification via ORDER BY cosineDistance LIMIT
+84	0.00003415362248004872
+766	0.00028562814903287936
+662	0.000620333532006967
+515	0.0008766790653881307
+875	0.0009979206210047886
+177	0.001036412161790179
+674	0.0018434145536604385
+286	0.0019803213399558484
+908	0.00207007788265956
+967	0.0021154035600070564
+-- 7. Error: non-existent index
+-- 8. Error: wrong index type

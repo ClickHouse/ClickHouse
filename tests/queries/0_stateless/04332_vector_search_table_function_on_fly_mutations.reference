@@ -1,0 +1,4 @@
+-- a pending update of a non-indexed column is fine
+0
+1
+-- a pending update of the indexed column rejects the search

@@ -1,0 +1,13 @@
+-- the row policy is applied without a WHERE clause
+0
+2
+4
+-- the row policy combines with the WHERE prefilter
+2
+4
+-- without the policy all rows are candidates again
+0
+1
+2
+3
+4
