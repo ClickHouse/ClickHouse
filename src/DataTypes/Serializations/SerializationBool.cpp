@@ -243,6 +243,11 @@ SerializationBool::SerializationBool(const SerializationPtr &nested_)
 {
 }
 
+void SerializationBool::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeCustom(column, row_num, ostr, settings);
+}
+
 void SerializationBool::serializeText(const IColumn & column, size_t row_num, WriteBuffer &ostr, const FormatSettings & settings) const
 {
     serializeCustom(column, row_num, ostr, settings);

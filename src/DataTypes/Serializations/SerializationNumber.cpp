@@ -17,6 +17,12 @@ namespace DB
 {
 
 template <typename T>
+void SerializationNumber<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+}
+
+template <typename T>
 void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];

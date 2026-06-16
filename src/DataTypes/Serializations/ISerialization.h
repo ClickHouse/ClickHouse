@@ -608,6 +608,13 @@ public:
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
+    /** Text serialization for the Hive text format. Used only for output.
+      * Without escaping or quoting. Complex types use a delimiter derived from the fields
+      * delimiter by their nesting level (see HiveTextRowOutputFormat). The default
+      * implementation throws, so only the data types supported in Hive override it.
+      */
+    virtual void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */

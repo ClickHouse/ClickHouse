@@ -183,6 +183,19 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     });
 }
 
+void SerializationTuple::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (i != 0)
+            writeChar(settings.hive_text.fields_delimiter + 1, ostr);
+
+        auto child_settings = settings;
+        child_settings.hive_text.fields_delimiter = settings.hive_text.fields_delimiter + 1;
+        elems[i]->serializeTextHive(extractElementColumn(column, i), row_num, ostr, child_settings);
+    }
+}
+
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.pretty_format && settings.pretty.named_tuples_as_json && has_explicit_names)

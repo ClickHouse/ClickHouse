@@ -37,6 +37,11 @@ UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & ti
     return hash.get128();
 }
 
+void SerializationDateTime64::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeText(column, row_num, ostr, settings);
+}
+
 void SerializationDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];

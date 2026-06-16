@@ -3,7 +3,7 @@ alias: []
 description: 'Documentation for the HiveText format'
 input_format: true
 keywords: ['HiveText']
-output_format: false
+output_format: true
 slug: /interfaces/formats/HiveText
 title: 'HiveText'
 doc_type: 'reference'
@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     | ✗      |       |
+| ✔     | ✔      |       |
 
 ## Description {#description}
 
@@ -21,7 +21,8 @@ format, similar to [`CSV`](/interfaces/formats/CSV), in which fields are
 separated by the Hive default `\x01` (Ctrl-A) delimiter. The field delimiter is
 configurable via [`input_format_hive_text_fields_delimiter`](#format-settings).
 
-`HiveText` is an input-only format. The data has no header row: values are
+`HiveText` can be used both as an input and an output format. When used as an
+input format, the data has no header row: values are
 mapped positionally onto the columns of the destination table, so the column
 names and types are taken from the table (or from an explicitly provided
 structure) rather than inferred from the data. While reading, ClickHouse parses
@@ -116,6 +117,24 @@ Setting `input_format_hive_text_allow_variable_number_of_columns = 0` instead
 enforces a strict field count, and a row with fewer fields than the table raises
 a parsing exception.
 
+## Output {#output}
+
+When used as an output format, `HiveText` writes each row without any quoting:
+top-level fields are separated by the fields delimiter (`\x01` by default) and
+rows are separated by the rows delimiter (`\n` by default, configurable via
+[`format_hive_text_rows_delimiter`](#format-settings)). Values of nested types
+([`Array`](/sql-reference/data-types/array), [`Map`](/sql-reference/data-types/map)
+and [`Tuple`](/sql-reference/data-types/tuple)) are written without brackets and
+are separated by a delimiter derived from the fields delimiter by their nesting
+level, the same way Hive's `LazySimpleSerDe` does it (`\x02` for the second
+level, `\x03`/`\x04` for the third, and so on). Data types that have no natural
+Hive text representation (for example `AggregateFunction`, `Dynamic` or
+`LowCardinality`) are not supported for output.
+
+```sql title="Query"
+SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
+```
+
 ## Format settings {#format-settings}
 
 | Setting                                                | Description                                                                                                                           | Default |
@@ -124,3 +143,4 @@ a parsing exception.
 | `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File. Accepted but currently not used during parsing.                   | `\x02`  |
 | `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File. Accepted but currently not used during parsing.                          | `\x03`  |
 | `input_format_hive_text_allow_variable_number_of_columns` | Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields as default values        | `1`     |
+| `format_hive_text_rows_delimiter`                      | Delimiter at the end of each row in Hive Text output                                                                                   | `\n`    |
