@@ -8,9 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/PigzDeflatingWriteBuffer.h>
-#include <IO/PigzInflatingReadBuffer.h>
-#include <IO/PixzDeflatingWriteBuffer.h>
+#include <IO/ParallelGzipDeflatingWriteBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Lz4DeflatingWriteBuffer.h>
@@ -52,10 +50,6 @@ std::string toContentEncodingName(CompressionMethod method)
             return "bz2";
         case CompressionMethod::Snappy:
             return "snappy";
-        case CompressionMethod::PIGzip:
-            return "pigz";
-        case CompressionMethod::PIXz:
-            return "pixz";
         case CompressionMethod::None:
             return "";
     }
@@ -119,10 +113,6 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Bzip2;
     if (method_str == "snappy")
         return CompressionMethod::Snappy;
-    if (method_str == "pigz")
-        return CompressionMethod::PIGzip;
-    if (method_str == "pixz")
-        return CompressionMethod::PIXz;
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
@@ -162,8 +152,6 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2ReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
-    if (method == CompressionMethod::PIGzip)
-        return std::make_unique<PigzInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
@@ -183,10 +171,15 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty, size_t compression_threads)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+    {
+        /// Gzip output can be produced in parallel; the result is an ordinary gzip stream.
+        if (method == CompressionMethod::Gzip && compression_threads > 1)
+            return std::make_unique<ParallelGzipDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, compression_threads);
         return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
+    }
 
 #if USE_BROTLI
     if (method == DB::CompressionMethod::Brotli)
@@ -209,12 +202,6 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
     if (method == CompressionMethod::Snappy)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 #endif
-    if (method == CompressionMethod::PIGzip)
-        return std::make_unique<PigzDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level);
-
-    if (method == CompressionMethod::PIXz)
-        return std::make_unique<PixzDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
@@ -227,11 +214,12 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    bool compress_empty)
+    bool compress_empty,
+    size_t compression_threads)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty, compression_threads);
 }
 
 
@@ -243,10 +231,11 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    bool compress_empty)
+    bool compress_empty,
+    size_t compression_threads)
 {
     chassert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty, compression_threads);
 }
 
 }

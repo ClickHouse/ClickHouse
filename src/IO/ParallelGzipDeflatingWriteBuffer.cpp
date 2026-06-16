@@ -1,4 +1,4 @@
-#include <IO/PigzDeflatingWriteBuffer.h>
+#include <IO/ParallelGzipDeflatingWriteBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ZLIB_DEFLATE_FAILED;
 }
 
-void PigzDeflatingWriteBuffer::nextImpl()
+void ParallelGzipDeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
         return;
@@ -25,7 +25,7 @@ void PigzDeflatingWriteBuffer::nextImpl()
     compressAndWrite(in_buf, offset(), false);
 }
 
-void PigzDeflatingWriteBuffer::finalFlushBefore()
+void ParallelGzipDeflatingWriteBuffer::finalFlushBefore()
 {
     next();
 
@@ -34,7 +34,7 @@ void PigzDeflatingWriteBuffer::finalFlushBefore()
     writeTrailer();
 }
 
-void PigzDeflatingWriteBuffer::writeHeader()
+void ParallelGzipDeflatingWriteBuffer::writeHeader()
 {
     /// gzip member header, RFC 1952 section 2.3.
     out->write(static_cast<char>(0x1f));   /// ID1
@@ -59,7 +59,7 @@ void PigzDeflatingWriteBuffer::writeHeader()
     }
 }
 
-void PigzDeflatingWriteBuffer::writeTrailer()
+void ParallelGzipDeflatingWriteBuffer::writeTrailer()
 {
     /// gzip trailer: CRC-32 and ISIZE (input size modulo 2^32), both little-endian.
     for (size_t i = 0; i < 4; ++i)
@@ -68,7 +68,7 @@ void PigzDeflatingWriteBuffer::writeTrailer()
         out->write(static_cast<char>((ulen >> (8 * i)) & 0xff));
 }
 
-void PigzDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush)
+void ParallelGzipDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush)
 {
     do
     {
@@ -80,7 +80,7 @@ void PigzDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_
     } while (strm.avail_in > 0 || strm.avail_out == 0);
 }
 
-PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag)
+ParallelGzipDeflatingWriteBuffer::CompressedBuf ParallelGzipDeflatingWriteBuffer::compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag)
 {
     auto mem = std::make_shared<Memory<>>(in_len + 64);
     BufferWithOutsideMemory<WriteBuffer> out_buf(*mem);
@@ -99,7 +99,7 @@ PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(
     strm.avail_in = static_cast<unsigned>(in_len);
 
     /// Non-final blocks end with a full flush so that they form independent, concatenable raw-deflate
-    /// segments that the parallel inflater can split on. The final block closes the stream.
+    /// segments. The final block closes the stream.
     if (!last_block_flag)
     {
         deflateEngine(strm, out_buf, Z_BLOCK);
@@ -120,12 +120,12 @@ PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(
     return {mem, out_buf.count()};
 }
 
-size_t PigzDeflatingWriteBuffer::calcCheck(const unsigned char * buf, size_t len)
+size_t ParallelGzipDeflatingWriteBuffer::calcCheck(const unsigned char * buf, size_t len)
 {
     return crc32_z(0L, buf, len);
 }
 
-void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
+void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
 {
     ulen += in_len;
 
@@ -149,7 +149,8 @@ void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t i
         runner = threadPoolCallbackRunnerUnsafe<CompressedBuf>(getIOThreadPool().get(), ThreadName::UNKNOWN);
     }
 
-    /// Schedule deflation of every block on the shared IO thread pool.
+    /// Schedule deflation of every block of this pass on the shared IO thread pool. The number of
+    /// blocks per pass is bounded by the staging buffer size (~num_threads blocks).
     VectorWithMemoryTracking<std::future<CompressedBuf>> futures(cnt_blocks);
     size_t scheduled = 0;
     std::exception_ptr exception;

@@ -285,6 +285,18 @@ Cloud default value:
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
 Higher values will lead to higher memory usage.
 )", 0) \
+    DECLARE(UInt64, max_generic_compression_threads, 1, R"(
+The maximum number of threads used to compress data with the generic stream-compression methods (currently `gzip` and `xz`) when writing to output formats, files or storage.
+
+The output stays in the standard `gzip`/`xz` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool.
+
+Possible values:
+
+- 0 or 1 — single-threaded compression (default).
+- Positive integer greater than 1 — compress on up to this many threads.
+
+Higher values will lead to higher memory usage.
+)", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 

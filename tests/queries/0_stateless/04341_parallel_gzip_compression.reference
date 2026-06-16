@@ -1,0 +1,3 @@
+parallel output is valid gzip
+parallel and serial gzip decompress identically
+2000000	2000000

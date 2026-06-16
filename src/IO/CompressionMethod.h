@@ -34,8 +34,6 @@ enum class CompressionMethod : uint8_t
     Lz4,
     Bzip2,
     Snappy,
-    PIGzip,
-    PIXz,
 };
 
 /// How the compression method is named in HTTP.
@@ -71,7 +69,8 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,
-    bool compress_empty = true);
+    bool compress_empty = true,
+    size_t compression_threads = 1);
 
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     WriteBuffer * nested,
@@ -81,6 +80,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,
-    bool compress_empty = true);
+    bool compress_empty = true,
+    size_t compression_threads = 1);
 
 }
