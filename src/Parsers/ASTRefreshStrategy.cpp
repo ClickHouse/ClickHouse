@@ -1,4 +1,5 @@
 #include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -100,25 +101,35 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
     if (!kind_opt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown RefreshScheduleKind: '{}'", schedule_kind_str);
     schedule_kind = *kind_opt;
-    auto period_child = r.readChild("period");
+    /// `period`/`offset`/`spread` are `ASTTimeInterval`, `settings` an `ASTSetQuery`, and `dependencies`
+    /// an `ASTExpressionList` of `ASTTableIdentifier` — `RefreshSchedule`/`StorageMaterializedView`/
+    /// `RefreshTask` dereference/downcast those exact shapes, so restore them with typed reads (a wrong
+    /// type would otherwise reach `set` as a `LOGICAL_ERROR` or a later internal cast).
+    auto period_child = r.readChildOfType<ASTTimeInterval>("period");
     if (period_child)
         set(period, period_child);
     else if (schedule_kind == RefreshScheduleKind::AFTER || schedule_kind == RefreshScheduleKind::EVERY)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Required field 'period' is missing in JSON AST for RefreshStrategy with schedule_kind '{}'",
             magic_enum::enum_name(schedule_kind));
-    auto offset_child = r.readChild("offset");
+    auto offset_child = r.readChildOfType<ASTTimeInterval>("offset");
     if (offset_child)
         set(offset, offset_child);
-    auto spread_child = r.readChild("spread");
+    auto spread_child = r.readChildOfType<ASTTimeInterval>("spread");
     if (spread_child)
         set(spread, spread_child);
-    auto settings_child = r.readChild("settings");
+    auto settings_child = r.readChildOfType<ASTSetQuery>("settings");
     if (settings_child)
         set(settings, settings_child);
-    auto dependencies_child = r.readChild("dependencies");
+    auto dependencies_child = r.readChildOfType<ASTExpressionList>("dependencies");
     if (dependencies_child)
+    {
+        for (const auto & dependency : dependencies_child->children)
+            if (!dependency || !dependency->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`RefreshStrategy` 'dependencies' must contain only table identifiers during AST JSON deserialization");
         set(dependencies, dependencies_child);
+    }
     append = r.getBool("append");
 }
 
