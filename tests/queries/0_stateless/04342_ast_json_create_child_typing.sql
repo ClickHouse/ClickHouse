@@ -25,6 +25,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW mv REFRESH
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY d (`k` UInt64, `v` String) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(0)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (d Date, x UInt8) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY'));
 
 -- ---------------------------------------------------------------------------
 -- `ASTColumns`: the `columns` list children are `ASTColumnDeclaration`s; `getColumnsDescription`
@@ -89,3 +90,14 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE DICTIONARY d (`k` UI
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 SECOND DEPENDS ON a ENGINE = Memory AS SELECT 1'), '"period":{"type":"TimeInterval"', '"period":{"type":"Identifier","name":"p"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 SECOND DEPENDS ON a ENGINE = Memory AS SELECT 1'), '"dependencies":{"type":"ExpressionList","children":[{"type":"TableIdentifier"', '"dependencies":{"type":"ExpressionList","children":[{"type":"Identifier","name":"d"')); -- { serverError BAD_ARGUMENTS }
+-- `REFRESH EVERY` is parsed with `allow_zero = false`; a zero period is parser-impossible and would
+-- reach `CalendarTimeInterval::floor` ("Interval must be positive") during scheduling.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 HOUR ENGINE = Memory AS SELECT 1'), '"period":{"type":"TimeInterval","seconds":3600,"months":0}', '"period":{"type":"TimeInterval","seconds":0,"months":0}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTCreateQuery.ttl_table` is the `ASTExpressionList` produced by `ParserTTLExpressionList`
+-- (`TTLTableDescription::getTTLForTableFromAST` iterates its `ASTTTLElement` children). A non-list
+-- node (e.g. an `Identifier`, which has no children) would format as `TTL ...` while applying no TTL.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (d Date, x UInt8) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY'), '"ttl_table":{"type":"ExpressionList"', '"ttl_table":{"type":"Identifier","name":"ts"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (d Date, x UInt8) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY'), '"type":"TTLElement"', '"type":"Identifier","name":"z"')); -- { serverError BAD_ARGUMENTS }

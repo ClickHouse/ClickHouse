@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -174,9 +175,19 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(sample_by, child);
 
-    child = r.readChild("ttl_table");
+    /// `ttl_table` is the `ASTExpressionList` produced by `ParserTTLExpressionList`;
+    /// `TTLTableDescription::getTTLForTableFromAST` iterates `definition_ast->children`, each an
+    /// `ASTTTLElement`. Reject any other node type (or non-TTL children) so malformed `clickhouse_json`
+    /// cannot format as `TTL ...` while execution applies no table TTL (an `Identifier` has no children).
+    child = r.readChildOfType<ASTExpressionList>("ttl_table");
     if (child)
+    {
+        for (const auto & ttl_element : child->children)
+            if (!ttl_element || !ttl_element->as<ASTTTLElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`ttl_table` must be a list of TTL elements during AST JSON deserialization");
         set(ttl_table, child);
+    }
 
     child = r.readChildOfType<ASTSetQuery>("settings");
     if (child)

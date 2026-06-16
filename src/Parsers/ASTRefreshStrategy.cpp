@@ -133,9 +133,18 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
     /// shorthand parses as `AFTER` with `dependencies` and *no* period, so reading the writer's own JSON
     /// for that shape must not require a period. `OFFSET` is parsed only in the `EVERY` branch and must
     /// be strictly less than the period (`offset.maxSeconds() < period.minSeconds()`).
-    if (schedule_kind == RefreshScheduleKind::EVERY && !period)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`REFRESH EVERY` requires a 'period' during AST JSON deserialization");
+    if (schedule_kind == RefreshScheduleKind::EVERY)
+    {
+        if (!period)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`REFRESH EVERY` requires a 'period' during AST JSON deserialization");
+        /// `ParserTimeInterval` parses the `EVERY` period with `allow_zero = false`, and refresh
+        /// scheduling (`CalendarTimeInterval::floor`) throws "Interval must be positive" on a zero
+        /// period. Reject a zero interval here so it cannot reach that path.
+        if (period->interval.seconds == 0 && period->interval.months == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`REFRESH EVERY` 'period' must be a positive interval during AST JSON deserialization");
+    }
     if (schedule_kind == RefreshScheduleKind::AFTER && !period && !dependencies)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`REFRESH AFTER` requires a 'period' or DEPENDS ON 'dependencies' during AST JSON deserialization");
