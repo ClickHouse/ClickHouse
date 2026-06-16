@@ -21,10 +21,14 @@
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
 
+#include <array>
+
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
+#include <IO/S3/copyS3File.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/Client.h>
@@ -218,6 +222,21 @@ struct InjectionModel
 #undef DeclareInjectCall
 };
 
+static String readRequestBody(std::istream & body)
+{
+    std::stringstream data;
+    std::array<char, 4096> buffer;
+    for (;;)
+    {
+        body.read(buffer.data(), buffer.size());
+        const auto bytes_read = body.gcount();
+        if (!bytes_read)
+            break;
+        data.write(buffer.data(), bytes_read);
+    }
+    return data.str();
+}
+
 struct Client : DB::S3::Client
 {
     explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, bool disable_checksum = false)
@@ -366,12 +385,11 @@ struct Client : DB::S3::Client
             }
         }
 
-        std::stringstream data;
-        data << request.GetBody()->rdbuf();
-        counters.writtenSize += data.str().length();
+        const auto data = readRequestBody(*request.GetBody());
+        counters.writtenSize += data.length();
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
-        auto etag = bStore.UploadPart(request.GetUploadId(), data.str());
+        auto etag = bStore.UploadPart(request.GetUploadId(), data);
 
         Aws::S3::Model::UploadPartResult result;
         result.SetETag(etag);
@@ -897,6 +915,44 @@ TEST_P(SyncAsync, UploadChecksumAlgorithmCRC32Singlepart)
     buffer->finalize();
 
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->put_object_algorithm);
+}
+
+TEST_F(WBS3Test, CopyDataUploadChecksumAlgorithmCRC32Multipart)
+{
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    const String data(10, 'a');
+    CreateReadBuffer create_read_buffer = [data]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromString>(data);
+    };
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
+
+    copyDataToS3File(
+        create_read_buffer,
+        0,
+        data.size(),
+        client,
+        bucket,
+        "copy_checksum_crc32_multipart",
+        request_settings,
+        nullptr,
+        getAsyncPolicy().getScheduler(),
+        std::nullopt);
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->create_multipart_upload_algorithm);
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::CRC32));
+    ASSERT_EQ(injection->upload_part_crc32_checksums, injection->complete_part_crc32_checksums);
+    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::Not(testing::IsEmpty())));
+    ASSERT_EQ(data, client->store->GetBucketStore(bucket).objects["copy_checksum_crc32_multipart"]);
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
