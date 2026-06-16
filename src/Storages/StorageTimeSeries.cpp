@@ -482,6 +482,12 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 }
 
 
+void StorageTimeSeries::checkTableCanBeRenamed(const StorageID & /* new_name */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+}
+
+
 void StorageTimeSeries::renameInMemory(const StorageID & /* new_table_id */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
