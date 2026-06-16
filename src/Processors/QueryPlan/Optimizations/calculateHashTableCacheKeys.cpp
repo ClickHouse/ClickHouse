@@ -254,6 +254,15 @@ void calculateHashTableCacheKeys(
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
                 mixed->getActionsDAG().updateHash(frame.hash);
+            /// Mix in the join's output column types. The join produces its `required_output` columns
+            /// directly, so two joins over the same inputs/keys that project different columns have
+            /// different output headers and therefore different `output_bytes` when the join result
+            /// reaches the matched node - they must not share a statistics cache entry. Types only
+            /// (not names): the type determines the byte width and is stable across the single-replica
+            /// and parallel-replicas plan builds, whereas analyzer-generated names are not. This is
+            /// orientation-invariant, so it stays outside the RIGHT->LEFT remap above.
+            for (const auto & column : *join_step->getOutputHeader())
+                frame.hash.update(column.type->getName());
             frame.hash.update(a);
             frame.hash.update(b);
         }
