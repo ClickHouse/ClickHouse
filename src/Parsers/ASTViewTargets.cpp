@@ -223,6 +223,11 @@ ASTPtr ASTViewTargets::clone() const
             res->set(target.inner_engine, target.inner_engine->clone());
         if (target.inner_columns)
             res->set(target.inner_columns, target.inner_columns->clone());
+        /// `table_ast` (a parameterized `TO {dst:Identifier}` target produced by JSON deserialization)
+        /// is also a registered child, so it must be cloned too; otherwise the clone's `table_ast`
+        /// dangles into the original's children.
+        if (target.table_ast)
+            res->set(target.table_ast, target.table_ast->clone());
     }
     return res;
 }
