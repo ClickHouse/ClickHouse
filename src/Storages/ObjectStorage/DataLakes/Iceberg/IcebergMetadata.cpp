@@ -1373,7 +1373,6 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     ReadBuffer & in)
 {
     auto log = getLogger("IcebergMetadata");
-    auto schema_processor = standard_persistent_components.schema_processor;
     Int32 format_version = 0;
     String table_location;
     readVarInt(format_version, in);
@@ -1392,6 +1391,7 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
     auto standard_persistent_components
         = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
+    auto schema_processor = standard_persistent_components.schema_processor;
     auto deserialized_persistent_components = Iceberg::PersistentTableComponents{
         .schema_processor = schema_processor,
         .metadata_cache = standard_persistent_components.metadata_cache,
