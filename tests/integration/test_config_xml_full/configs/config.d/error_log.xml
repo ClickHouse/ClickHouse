@@ -1,0 +1,8 @@
+<clickhouse>
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </error_log>
+</clickhouse>

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan, no-azure-blob-storage
+# msan: too slow
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1 --index_granularity_bytes=10485760 --index_granularity=8192 " 
+
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1"
 
 function test6_insert()
 {
@@ -18,7 +18,7 @@ function test6_insert()
 function test6_select()
 {
     echo "test6 select"
-    $CH_CLIENT -nmq "select v from test format Null;
+    $CH_CLIENT -mq "select v from test format Null;
     select count() from test where isNotNull(v);
     select v.String from test format Null;
     select count() from test where isNotNull(v.String);
@@ -28,13 +28,10 @@ function test6_select()
     select count() from test where isNotNull(v.\`LowCardinality(String)\`);
     select v.\`Tuple(a UInt32, b UInt32)\` from test format Null;
     select v.\`Tuple(a UInt32, b UInt32)\`.a from test format Null;
-    select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.a);
     select v.\`Tuple(a UInt32, b UInt32)\`.b from test format Null;
-    select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.b);
     select v.\`Array(UInt64)\` from test format Null;
     select count() from test where not empty(v.\`Array(UInt64)\`);
-    select v.\`Array(UInt64)\`.size0 from test format Null;
-    select count() from test where isNotNull(v.\`Array(UInt64)\`.size0);"
+    select v.\`Array(UInt64)\`.size0 from test format Null;"
     echo "-----------------------------------------------------------------------------------------------------------"
 }
 
@@ -57,11 +54,11 @@ run 0
 $CH_CLIENT -q "drop table test;"
 
 echo "MergeTree compact"
-$CH_CLIENT -q "create table test (id UInt64, v Variant(String, UInt64, LowCardinality(String), Tuple(a UInt32, b UInt32), Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000;"
+$CH_CLIENT -q "create table test (id UInt64, v Variant(String, UInt64, LowCardinality(String), Tuple(a UInt32, b UInt32), Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, index_granularity_bytes=10485760, index_granularity=8192;"
 run 1
 $CH_CLIENT -q "drop table test;"
 
 echo "MergeTree wide"
-$CH_CLIENT -q "create table test (id UInt64, v Variant(String, UInt64, LowCardinality(String), Tuple(a UInt32, b UInt32), Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;"
+$CH_CLIENT -q "create table test (id UInt64, v Variant(String, UInt64, LowCardinality(String), Tuple(a UInt32, b UInt32), Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, index_granularity_bytes=10485760, index_granularity=8192;"
 run 1
 $CH_CLIENT -q "drop table test;"

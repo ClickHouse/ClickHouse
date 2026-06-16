@@ -1,0 +1,49 @@
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <tcp_port>9000</tcp_port>
+
+    <!-- Default http_handlers: the standard set used by port 8123 -->
+    <http_handlers>
+        <rule>
+            <url>/ping</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT 'default_pong'</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+
+    <!-- Alternative http_handlers for the custom protocol endpoint -->
+    <http_handlers_alt>
+        <rule>
+            <url>/ping</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT 'alt_pong'</query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/custom</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT 'custom_handler_works'</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers_alt>
+
+    <protocols>
+        <http>
+            <type>http</type>
+            <port>8123</port>
+            <description>default http</description>
+        </http>
+        <alt_http>
+            <type>http</type>
+            <port>8124</port>
+            <description>alternative http with custom handlers</description>
+            <handlers>http_handlers_alt</handlers>
+        </alt_http>
+    </protocols>
+</clickhouse>

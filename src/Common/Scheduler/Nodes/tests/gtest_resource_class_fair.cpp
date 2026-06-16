@@ -12,8 +12,9 @@ TEST(SchedulerFairPolicy, Factory)
 {
     ResourceTest t;
 
-    Poco::AutoPtr cfg = new Poco::Util::XMLConfiguration();
-    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", /* event_queue = */ nullptr, *cfg, "");
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> cfg = new Poco::Util::XMLConfiguration();
+    EventQueue event_queue;
+    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", &event_queue, *cfg, "");
     EXPECT_TRUE(dynamic_cast<FairPolicy *>(fair.get()) != nullptr);
 }
 

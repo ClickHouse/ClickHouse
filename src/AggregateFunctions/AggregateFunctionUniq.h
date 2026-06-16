@@ -8,15 +8,10 @@
 
 #include <base/bit_cast.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
-#include <Interpreters/AggregationCommon.h>
-
-#include <Common/CombinedCardinalityEstimator.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
@@ -28,10 +23,14 @@
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
+namespace DB
+{
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
 }
 
 namespace DB
@@ -147,7 +146,8 @@ struct AggregateFunctionUniqExactData
     using Key = T;
 
     /// When creating, the hash table must be small.
-    using SingleLevelSet = HashSet<Key, HashCRC32<Key>, HashTableGrower<4>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>>;
+    static constexpr size_t initial_size_degree = 4;
+    using SingleLevelSet = HashSetWithStackMemory<Key, HashCRC32<Key>, initial_size_degree>;
     using TwoLevelSet = TwoLevelHashSet<Key, HashCRC32<Key>>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -167,7 +167,8 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+    static constexpr size_t initial_size_degree = 3;
+    using SingleLevelSet = HashSetWithStackMemory<Key, UInt128TrivialHash, initial_size_degree>;
     using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -187,7 +188,8 @@ struct AggregateFunctionUniqExactData<IPv6, is_able_to_parallelize_merge_>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+    static constexpr size_t initial_size_degree = 3;
+    using SingleLevelSet = HashSetWithStackMemory<Key, UInt128TrivialHash, initial_size_degree>;
     using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -257,7 +259,7 @@ template <typename T> struct AggregateFunctionUniqTraits
 {
     static UInt64 hash(T x)
     {
-        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        if constexpr (is_floating_point<T>)
         {
             return bit_cast<UInt64>(x);
         }
@@ -279,13 +281,13 @@ struct Adder
 {
     /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
     /// add runtime branches in whatever_hash_set::insert - it will immediately pop up in the perf top.
-    template <bool use_single_level_hash_table = true>
+    template <SetLevelHint hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel>
     static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
     {
         if constexpr (Data::is_variadic)
         {
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
-                data.set.template insert<T, use_single_level_hash_table>(
+                data.set.template insert<T, hint>(
                     UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
             else
                 data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
@@ -298,8 +300,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                StringRef value = column.getDataAt(row_num);
-                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+                auto value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
             }
             else
             {
@@ -313,18 +315,17 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                StringRef value = column.getDataAt(row_num);
+                auto value = column.getDataAt(row_num);
 
                 SipHash hash;
-                hash.update(value.data, value.size);
+                hash.update(value);
                 const auto key = hash.get128();
 
-                data.set.template insert<const UInt128 &, use_single_level_hash_table>(key);
+                data.set.template insert<const UInt128 &, hint>(key);
             }
             else
             {
-                data.set.template insert<const T &, use_single_level_hash_table>(
-                    assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+                data.set.template insert<const T &, hint>(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
             }
         }
 #if USE_DATASKETCHES
@@ -344,9 +345,9 @@ struct Adder
             use_single_level_hash_table = data.set.isSingleLevel();
 
         if (use_single_level_hash_table)
-            addImpl<true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addImpl<SetLevelHint::singleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
         else
-            addImpl<false>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addImpl<SetLevelHint::twoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
@@ -356,22 +357,39 @@ struct Adder
     }
 
 private:
-    template <bool use_single_level_hash_table>
-    static void ALWAYS_INLINE
-    addImpl(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    template <SetLevelHint hint>
+    static void ALWAYS_INLINE addImpl(
+        Data & data,
+        const IColumn ** columns,
+        size_t num_args,
+        size_t row_begin,
+        size_t row_end,
+        const char8_t * flags,
+        const UInt8 * null_map)
     {
         if (!flags)
         {
             if (!null_map)
             {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    add<use_single_level_hash_table>(data, columns, num_args, row);
+                if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData> &&
+                        !std::is_same_v<T, String> &&
+                        !std::is_same_v<T, IPv6>)
+                {
+                    const auto & column = *columns[0];
+                    data.set.template insertMany<T, AggregateFunctionUniqTraits<T>::hash>(
+                        assert_cast<const ColumnVector<T> &>(column).getData().data() + row_begin, row_end - row_begin);
+                }
+                else
+                {
+                    for (size_t row = row_begin; row < row_end; ++row)
+                        add<hint>(data, columns, num_args, row);
+                }
             }
             else
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (!null_map[row])
-                        add<use_single_level_hash_table>(data, columns, num_args, row);
+                        add<hint>(data, columns, num_args, row);
             }
         }
         else
@@ -380,13 +398,13 @@ private:
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (flags[row])
-                        add<use_single_level_hash_table>(data, columns, num_args, row);
+                        add<hint>(data, columns, num_args, row);
             }
             else
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (!null_map[row] && flags[row])
-                        add<use_single_level_hash_table>(data, columns, num_args, row);
+                        add<hint>(data, columns, num_args, row);
             }
         }
     }
@@ -459,17 +477,13 @@ public:
 
     bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
+    constexpr static bool parallelizeMergeWithKey() { return true; }
+
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
-            std::vector<DataSet *> data_vec;
-            data_vec.resize(places.size());
-
-            for (size_t i = 0; i < data_vec.size(); ++i)
-                data_vec[i] = &this->data(places[i]).set;
-
-            DataSet::parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
         }
         else
         {
@@ -491,6 +505,18 @@ public:
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+        {
+            DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -544,7 +570,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
-    void addBatchSinglePlace(
+    ALWAYS_INLINE void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
     {
@@ -585,6 +611,19 @@ public:
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+        {
+            using DataSet = typename Data::Set;
+            DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

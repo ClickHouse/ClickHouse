@@ -1,11 +1,12 @@
+#include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Common/setThreadName.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB::BackupUtils
@@ -25,10 +26,10 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
                 const String & database_name = element.database_name;
                 const String & new_table_name = element.new_table_name;
                 const String & new_database_name = element.new_database_name;
-                assert(!table_name.empty());
-                assert(!new_table_name.empty());
-                assert(!database_name.empty());
-                assert(!new_database_name.empty());
+                chassert(!table_name.empty());
+                chassert(!new_table_name.empty());
+                chassert(!database_name.empty());
+                chassert(!new_database_name.empty());
                 map.setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
                 break;
             }
@@ -37,8 +38,8 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
             {
                 const String & table_name = element.table_name;
                 const String & new_table_name = element.new_table_name;
-                assert(!table_name.empty());
-                assert(!new_table_name.empty());
+                chassert(!table_name.empty());
+                chassert(!new_table_name.empty());
                 map.setNewTableName({DatabaseCatalog::TEMPORARY_DATABASE, table_name}, {DatabaseCatalog::TEMPORARY_DATABASE, new_table_name});
                 break;
             }
@@ -47,8 +48,8 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
             {
                 const String & database_name = element.database_name;
                 const String & new_database_name = element.new_database_name;
-                assert(!database_name.empty());
-                assert(!new_database_name.empty());
+                chassert(!database_name.empty());
+                chassert(!new_database_name.empty());
                 map.setNewDatabaseName(database_name, new_database_name);
                 break;
             }
@@ -100,19 +101,36 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
 
 bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
 {
-    auto adjust_before_comparison = [&](const IAST & query) -> ASTPtr
+    auto adjust_before_comparison = [&](const IAST & query) -> boost::intrusive_ptr<ASTCreateQuery>
     {
-        auto new_query = query.clone();
+        auto new_query = boost::static_pointer_cast<ASTCreateQuery>(query.clone());
         adjustCreateQueryForBackup(new_query, global_context);
-        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
-        create.setUUID({});
-        create.if_not_exists = false;
+        new_query->resetUUIDs();
+        new_query->if_not_exists = false;
         return new_query;
     };
 
-    ASTPtr query1 = adjust_before_comparison(restored_table_create_query);
-    ASTPtr query2 = adjust_before_comparison(create_query_from_backup);
-    return serializeAST(*query1) == serializeAST(*query2);
+    auto query1 = adjust_before_comparison(restored_table_create_query);
+    auto query2 = adjust_before_comparison(create_query_from_backup);
+    if (query1->formatWithSecretsOneLine() == query2->formatWithSecretsOneLine())
+        return true;
+
+    if (query1->is_time_series_table && query2->is_time_series_table)
+    {
+        /// Normally queries are stored already normalized in a backup,
+        /// but in case there was an upgrade we may need to normalize the queries explicitly here.
+        auto normalize_time_series = [&](ASTCreateQuery & query)
+        {
+            /// Use the same mode as InterpreterCreateQuery uses during RESTORE.
+            normalizeTimeSeriesDefinition(query, global_context, LoadingStrictnessLevel::SECONDARY_CREATE, /*is_restore_from_backup=*/true);
+        };
+        normalize_time_series(*query1);
+        normalize_time_series(*query2);
+        if (query1->formatWithSecretsOneLine() == query2->formatWithSecretsOneLine())
+            return true;
+    }
+
+    return false;
 }
 
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
@@ -127,8 +145,8 @@ bool isInnerTable(const QualifiedTableName & table_name)
 
 bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
-    /// We skip inner tables of materialized views.
-    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.");
+    /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
+    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
 }
 
 }

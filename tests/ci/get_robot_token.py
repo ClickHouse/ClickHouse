@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
 import boto3  # type: ignore
@@ -16,6 +16,9 @@ class Token:
     user: Union[AuthenticatedUser, NamedUser]
     value: str
     rest: int
+
+
+SAFE_REQUESTS_LIMIT = 1000
 
 
 def get_parameter_from_ssm(
@@ -58,7 +61,7 @@ ROBOT_TOKEN = None  # type: Optional[Token]
 
 
 def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
-    global ROBOT_TOKEN
+    global ROBOT_TOKEN  # pylint:disable=global-statement
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
     client = boto3.client("ssm", region_name="us-east-1")
@@ -94,7 +97,7 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
             best_token = Token(user, value, rest)
         elif best_token.rest < rest:
             best_token = Token(user, value, rest)
-        if best_token.rest > 300:
+        if best_token.rest > SAFE_REQUESTS_LIMIT:
             break
     assert best_token
     ROBOT_TOKEN = best_token

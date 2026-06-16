@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database
+-- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database, no-flaky-check
 
 SET send_logs_level = 'fatal';
 
@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS rmt;
 DROP TABLE IF EXISTS rmt1;
 DROP TABLE IF EXISTS rmt2;
 DROP TABLE IF EXISTS rmt3;
+
+SET database_replicated_allow_replicated_engine_arguments=1;
 
 CREATE TABLE rmt (n UInt64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_01148/{shard}/{database}/{table}', '{replica}') ORDER BY n;
 SHOW CREATE TABLE rmt;

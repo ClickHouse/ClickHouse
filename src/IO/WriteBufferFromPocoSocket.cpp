@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
 
@@ -47,7 +48,7 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
     {
         socket.setBlocking(false);
         /// Set socket to blocking mode at the end.
-        SCOPE_EXIT(socket.setBlocking(true));
+        SCOPE_EXIT_SAFE(socket.setBlocking(true));
         bool secure = socket.secure();
         res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
 
@@ -136,6 +137,8 @@ void WriteBufferFromPocoSocket::nextImpl()
     SCOPE_EXIT({
         ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
+        if (write_event != ProfileEvents::end())
+            ProfileEvents::increment(write_event, bytes_written);
     });
 
     while (bytes_written < offset())
@@ -183,6 +186,7 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     , socket(socket_)
     , peer_address(socket.peerAddress())
     , our_address(socket.address())
+    , write_event(ProfileEvents::end())
     , socket_description("socket (" + peer_address.toString() + ")")
 {
 }
@@ -191,18 +195,6 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     : WriteBufferFromPocoSocket(socket_, buf_size)
 {
     write_event = write_event_;
-}
-
-WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 }

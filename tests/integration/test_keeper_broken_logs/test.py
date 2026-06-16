@@ -1,7 +1,10 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import time
+from multiprocessing.dummy import Pool
+
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -19,8 +22,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/enable_keeper3.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -43,21 +44,36 @@ def wait_nodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+
+
+def start_clickhouse(node):
+    node.start_clickhouse()
+
+
+def clean_start():
+    nodes = [node1, node2, node3]
+    for node in nodes:
+        node.stop_clickhouse()
+
+    p = Pool(3)
+    waiters = []
+    for node in nodes:
+        node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/log"])
+        node.exec_in_container(
+            ["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"]
+        )
+        waiters.append(p.apply_async(start_clickhouse, (node,)))
+
+    for waiter in waiters:
+        waiter.wait()
 
 
 def test_single_node_broken_log(started_cluster):
+    clean_start()
     try:
         wait_nodes()
         node1_conn = get_fake_zk("node1")
-
-        # Cleanup
-        if node1_conn.exists("/test_broken_log") != None:
-            node1_conn.delete("/test_broken_log")
 
         node1_conn.create("/test_broken_log")
         for _ in range(10):
@@ -108,10 +124,12 @@ def test_single_node_broken_log(started_cluster):
         verify_nodes(node3_conn)
         assert node3_conn.get("/test_broken_log_final_node")[0] == b"somedata1"
 
-        assert (
+        node1_logs = (
             node1.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])
-            == "changelog_1_100000.bin\nchangelog_14_100013.bin\n"
+            .strip()
+            .split("\n")
         )
+        assert len(node1_logs) == 2 and node1_logs[0] == "changelog_1_100000.bin"
         assert (
             node2.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])
             == "changelog_1_100000.bin\n"

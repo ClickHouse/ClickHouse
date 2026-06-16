@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INPUT_FILE=$CUR_DIR/$CLICKHOUSE_DATABASE.tsv
 echo "foo" > "$INPUT_FILE"
 
-$CLICKHOUSE_CLIENT --external --file="$INPUT_FILE" --name=t --structure='x String' -nm -q "
+$CLICKHOUSE_CLIENT --external --file="$INPUT_FILE" --name=t --structure='x String' -m -q "
 select * from t;
 select * from t;
 "

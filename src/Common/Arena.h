@@ -141,7 +141,7 @@ private:
                     / linear_growth_threshold) * linear_growth_threshold;
         }
 
-        assert(size_after_grow >= min_next_size);
+        chassert(size_after_grow >= min_next_size);
         return roundUpToPageSize(size_after_grow, page_size);
     }
 
@@ -247,12 +247,11 @@ public:
     char * allocContinue(size_t additional_bytes, char const *& range_start,
                          size_t start_alignment = 0)
     {
-        /*
-         * Allocating zero bytes doesn't make much sense. Also, a zero-sized
-         * range might break the invariant that the range begins at least before
-         * the current MemoryChunk end.
-         */
-        assert(additional_bytes > 0);
+        /** Allocating zero bytes doesn't make much sense. Also, a zero-sized
+          * range might break the invariant that the range begins at least before
+          * the current MemoryChunk end.
+          */
+        chassert(additional_bytes > 0);
 
         if (!range_start)
         {
@@ -270,8 +269,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current MemoryChunk.
-        assert(range_start >= head.begin);
-        assert(range_start < head.end);
+        chassert(range_start >= head.begin);
+        chassert(range_start < head.end);
 
         if (head.pos + additional_bytes <= head.end)
         {

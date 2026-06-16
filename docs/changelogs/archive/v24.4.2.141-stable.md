@@ -1,0 +1,101 @@
+---
+sidebar_position: 1
+sidebar_label: 2024
+---
+
+# 2024 Changelog
+
+### ClickHouse release v24.4.2.141-stable (9e23d27bd11) FIXME as compared to v24.4.1.2088-stable (6d4b31322d1)
+
+#### Improvement
+* Backported in [#63467](https://github.com/ClickHouse/ClickHouse/issues/63467): Make rabbitmq nack broken messages. Closes [#45350](https://github.com/ClickHouse/ClickHouse/issues/45350). [#60312](https://github.com/ClickHouse/ClickHouse/pull/60312) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+#### Build/Testing/Packaging Improvement
+* Backported in [#63612](https://github.com/ClickHouse/ClickHouse/issues/63612): The Dockerfile is reviewed by the docker official library in https://github.com/docker-library/official-images/pull/15846. [#63400](https://github.com/ClickHouse/ClickHouse/pull/63400) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+
+* Backported in [#64279](https://github.com/ClickHouse/ClickHouse/issues/64279): Fix queries with FINAL give wrong result when table does not use adaptive granularity. [#62432](https://github.com/ClickHouse/ClickHouse/pull/62432) ([Duc Canh Le](https://github.com/canhld94)).
+* Backported in [#63295](https://github.com/ClickHouse/ClickHouse/issues/63295): Fix crash with untuple and unresolved lambda. [#63131](https://github.com/ClickHouse/ClickHouse/pull/63131) ([Raúl Marín](https://github.com/Algunenano)).
+* Backported in [#63978](https://github.com/ClickHouse/ClickHouse/issues/63978): Fix intersect parts when restart after drop range. [#63202](https://github.com/ClickHouse/ClickHouse/pull/63202) ([Han Fei](https://github.com/hanfei1991)).
+* Backported in [#63413](https://github.com/ClickHouse/ClickHouse/issues/63413): Fix a misbehavior when SQL security defaults don't load for old tables during server startup. [#63209](https://github.com/ClickHouse/ClickHouse/pull/63209) ([pufit](https://github.com/pufit)).
+* Backported in [#63388](https://github.com/ClickHouse/ClickHouse/issues/63388): JOIN filter push down filled join fix. Closes [#63228](https://github.com/ClickHouse/ClickHouse/issues/63228). [#63234](https://github.com/ClickHouse/ClickHouse/pull/63234) ([Maksim Kita](https://github.com/kitaisreal)).
+* Backported in [#63618](https://github.com/ClickHouse/ClickHouse/issues/63618): Fix bug which could potentially lead to rare LOGICAL_ERROR during SELECT query with message: `Unexpected return type from materialize. Expected type_XXX. Got type_YYY.` Introduced in [#59379](https://github.com/ClickHouse/ClickHouse/issues/59379). [#63353](https://github.com/ClickHouse/ClickHouse/pull/63353) ([alesapin](https://github.com/alesapin)).
+* Backported in [#63451](https://github.com/ClickHouse/ClickHouse/issues/63451): Fix `X-ClickHouse-Timezone` header returning wrong timezone when using `session_timezone` as query level setting. [#63377](https://github.com/ClickHouse/ClickHouse/pull/63377) ([Andrey Zvonov](https://github.com/zvonand)).
+* Backported in [#63605](https://github.com/ClickHouse/ClickHouse/issues/63605): Fix backup of projection part in case projection was removed from table metadata, but part still has projection. [#63426](https://github.com/ClickHouse/ClickHouse/pull/63426) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Backported in [#63510](https://github.com/ClickHouse/ClickHouse/issues/63510): Fix 'Every derived table must have its own alias' error for MYSQL dictionary source, close [#63341](https://github.com/ClickHouse/ClickHouse/issues/63341). [#63481](https://github.com/ClickHouse/ClickHouse/pull/63481) ([vdimir](https://github.com/vdimir)).
+* Backported in [#63592](https://github.com/ClickHouse/ClickHouse/issues/63592): Avoid segafult in `MergeTreePrefetchedReadPool` while fetching projection parts. [#63513](https://github.com/ClickHouse/ClickHouse/pull/63513) ([Antonio Andelic](https://github.com/antonio2368)).
+* Backported in [#63750](https://github.com/ClickHouse/ClickHouse/issues/63750): Read only the necessary columns from VIEW (new analyzer). Closes [#62594](https://github.com/ClickHouse/ClickHouse/issues/62594). [#63688](https://github.com/ClickHouse/ClickHouse/pull/63688) ([Maksim Kita](https://github.com/kitaisreal)).
+* Backported in [#63772](https://github.com/ClickHouse/ClickHouse/issues/63772): Fix [#63539](https://github.com/ClickHouse/ClickHouse/issues/63539). Forbid WINDOW redefinition in new analyzer. [#63694](https://github.com/ClickHouse/ClickHouse/pull/63694) ([Dmitry Novik](https://github.com/novikd)).
+* Backported in [#63872](https://github.com/ClickHouse/ClickHouse/issues/63872): Flatten_nested is broken with replicated database. [#63695](https://github.com/ClickHouse/ClickHouse/pull/63695) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Backported in [#63854](https://github.com/ClickHouse/ClickHouse/issues/63854): Fix `Not found column` and `CAST AS Map from array requires nested tuple of 2 elements` exceptions for distributed queries which use `Map(Nothing, Nothing)` type. Fixes [#63637](https://github.com/ClickHouse/ClickHouse/issues/63637). [#63753](https://github.com/ClickHouse/ClickHouse/pull/63753) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Backported in [#63847](https://github.com/ClickHouse/ClickHouse/issues/63847): Fix possible `ILLEGAL_COLUMN` error in `partial_merge` join, close [#37928](https://github.com/ClickHouse/ClickHouse/issues/37928). [#63755](https://github.com/ClickHouse/ClickHouse/pull/63755) ([vdimir](https://github.com/vdimir)).
+* Backported in [#63908](https://github.com/ClickHouse/ClickHouse/issues/63908): `query_plan_remove_redundant_distinct` can break queries with WINDOW FUNCTIONS (with `allow_experimental_analyzer` is on). Fixes [#62820](https://github.com/ClickHouse/ClickHouse/issues/62820). [#63776](https://github.com/ClickHouse/ClickHouse/pull/63776) ([Igor Nikonov](https://github.com/devcrafter)).
+* Backported in [#63955](https://github.com/ClickHouse/ClickHouse/issues/63955): Fix possible crash with SYSTEM UNLOAD PRIMARY KEY. [#63778](https://github.com/ClickHouse/ClickHouse/pull/63778) ([Raúl Marín](https://github.com/Algunenano)).
+* Backported in [#63938](https://github.com/ClickHouse/ClickHouse/issues/63938): Allow JOIN filter push down to both streams if only single equivalent column is used in query. Closes [#63799](https://github.com/ClickHouse/ClickHouse/issues/63799). [#63819](https://github.com/ClickHouse/ClickHouse/pull/63819) ([Maksim Kita](https://github.com/kitaisreal)).
+* Backported in [#63991](https://github.com/ClickHouse/ClickHouse/issues/63991): Fix incorrect select query result when parallel replicas were used to read from a Materialized View. [#63861](https://github.com/ClickHouse/ClickHouse/pull/63861) ([Nikita Taranov](https://github.com/nickitat)).
+* Backported in [#64033](https://github.com/ClickHouse/ClickHouse/issues/64033): Fix a error `Database name is empty` for remote queries with lambdas over the cluster with modified default database. Fixes [#63471](https://github.com/ClickHouse/ClickHouse/issues/63471). [#63864](https://github.com/ClickHouse/ClickHouse/pull/63864) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Backported in [#64561](https://github.com/ClickHouse/ClickHouse/issues/64561): Fix SIGSEGV due to CPU/Real (`query_profiler_real_time_period_ns`/`query_profiler_cpu_time_period_ns`) profiler (has been an issue since 2022, that leads to periodic server crashes, especially if you were using distributed engine). [#63865](https://github.com/ClickHouse/ClickHouse/pull/63865) ([Azat Khuzhin](https://github.com/azat)).
+* Backported in [#64011](https://github.com/ClickHouse/ClickHouse/issues/64011): Fix analyzer - IN function with arbitrary deep sub-selects in materialized view to use insertion block. [#63930](https://github.com/ClickHouse/ClickHouse/pull/63930) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* Backported in [#64238](https://github.com/ClickHouse/ClickHouse/issues/64238): Fix resolve of unqualified COLUMNS matcher. Preserve the input columns order and forbid usage of unknown identifiers. [#63962](https://github.com/ClickHouse/ClickHouse/pull/63962) ([Dmitry Novik](https://github.com/novikd)).
+* Backported in [#64103](https://github.com/ClickHouse/ClickHouse/issues/64103): Deserialize untrusted binary inputs in a safer way. [#64024](https://github.com/ClickHouse/ClickHouse/pull/64024) ([Robert Schulze](https://github.com/rschu1ze)).
+* Backported in [#64170](https://github.com/ClickHouse/ClickHouse/issues/64170): Add missing settings to recoverLostReplica. [#64040](https://github.com/ClickHouse/ClickHouse/pull/64040) ([Raúl Marín](https://github.com/Algunenano)).
+* Backported in [#64322](https://github.com/ClickHouse/ClickHouse/issues/64322): This fix will use a proper redefined context with the correct definer for each individual view in the query pipeline Closes [#63777](https://github.com/ClickHouse/ClickHouse/issues/63777). [#64079](https://github.com/ClickHouse/ClickHouse/pull/64079) ([pufit](https://github.com/pufit)).
+* Backported in [#64382](https://github.com/ClickHouse/ClickHouse/issues/64382): Fix analyzer: "Not found column" error is fixed when using INTERPOLATE. [#64096](https://github.com/ClickHouse/ClickHouse/pull/64096) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* Backported in [#64568](https://github.com/ClickHouse/ClickHouse/issues/64568): Fix creating backups to S3 buckets with different credentials from the disk containing the file. [#64153](https://github.com/ClickHouse/ClickHouse/pull/64153) ([Antonio Andelic](https://github.com/antonio2368)).
+* Backported in [#64272](https://github.com/ClickHouse/ClickHouse/issues/64272): Prevent LOGICAL_ERROR on CREATE TABLE as MaterializedView. [#64174](https://github.com/ClickHouse/ClickHouse/pull/64174) ([Raúl Marín](https://github.com/Algunenano)).
+* Backported in [#64330](https://github.com/ClickHouse/ClickHouse/issues/64330): The query cache now considers two identical queries against different databases as different. The previous behavior could be used to bypass missing privileges to read from a table. [#64199](https://github.com/ClickHouse/ClickHouse/pull/64199) ([Robert Schulze](https://github.com/rschu1ze)).
+* Backported in [#64254](https://github.com/ClickHouse/ClickHouse/issues/64254): Ignore `text_log` config when using Keeper. [#64218](https://github.com/ClickHouse/ClickHouse/pull/64218) ([Antonio Andelic](https://github.com/antonio2368)).
+* Backported in [#64690](https://github.com/ClickHouse/ClickHouse/issues/64690): Fix Query Tree size validation. Closes [#63701](https://github.com/ClickHouse/ClickHouse/issues/63701). [#64377](https://github.com/ClickHouse/ClickHouse/pull/64377) ([Dmitry Novik](https://github.com/novikd)).
+* Backported in [#64409](https://github.com/ClickHouse/ClickHouse/issues/64409): Fix `Logical error: Bad cast` for `Buffer` table with `PREWHERE`. Fixes [#64172](https://github.com/ClickHouse/ClickHouse/issues/64172). [#64388](https://github.com/ClickHouse/ClickHouse/pull/64388) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Backported in [#64727](https://github.com/ClickHouse/ClickHouse/issues/64727): Fixed `CREATE TABLE AS` queries for tables with default expressions. [#64455](https://github.com/ClickHouse/ClickHouse/pull/64455) ([Anton Popov](https://github.com/CurtizJ)).
+* Backported in [#64623](https://github.com/ClickHouse/ClickHouse/issues/64623): Fix an error `Cannot find column` in distributed queries with constant CTE in the `GROUP BY` key. [#64519](https://github.com/ClickHouse/ClickHouse/pull/64519) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Backported in [#64680](https://github.com/ClickHouse/ClickHouse/issues/64680): Fix [#64612](https://github.com/ClickHouse/ClickHouse/issues/64612). Do not rewrite aggregation if `-If` combinator is already used. [#64638](https://github.com/ClickHouse/ClickHouse/pull/64638) ([Dmitry Novik](https://github.com/novikd)).
+* Backported in [#64942](https://github.com/ClickHouse/ClickHouse/issues/64942): Fix OrderByLimitByDuplicateEliminationVisitor across subqueries. [#64766](https://github.com/ClickHouse/ClickHouse/pull/64766) ([Raúl Marín](https://github.com/Algunenano)).
+* Backported in [#64871](https://github.com/ClickHouse/ClickHouse/issues/64871): Fixed memory possible incorrect memory tracking in several kinds of queries: queries that read any data from S3, queries via http protocol, asynchronous inserts. [#64844](https://github.com/ClickHouse/ClickHouse/pull/64844) ([Anton Popov](https://github.com/CurtizJ)).
+
+#### CI Fix or Improvement (changelog entry is not required)
+
+* Backported in [#63364](https://github.com/ClickHouse/ClickHouse/issues/63364): Implement cumulative A Sync status. [#61464](https://github.com/ClickHouse/ClickHouse/pull/61464) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+* Backported in [#63338](https://github.com/ClickHouse/ClickHouse/issues/63338): Use `/commit/` to have the URLs in [reports](https://play.clickhouse.com/play?user=play#c2VsZWN0IGRpc3RpbmN0IGNvbW1pdF91cmwgZnJvbSBjaGVja3Mgd2hlcmUgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIGludGVydmFsIDEgbW9udGggYW5kIHB1bGxfcmVxdWVzdF9udW1iZXI9NjA1MzI=) like https://github.com/ClickHouse/ClickHouse/commit/44f8bc5308b53797bec8cccc3bd29fab8a00235d and not like https://github.com/ClickHouse/ClickHouse/commits/44f8bc5308b53797bec8cccc3bd29fab8a00235d. [#63331](https://github.com/ClickHouse/ClickHouse/pull/63331) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+* Backported in [#63376](https://github.com/ClickHouse/ClickHouse/issues/63376):. [#63366](https://github.com/ClickHouse/ClickHouse/pull/63366) ([Aleksei Filatov](https://github.com/aalexfvk)).
+* Backported in [#63571](https://github.com/ClickHouse/ClickHouse/issues/63571):. [#63551](https://github.com/ClickHouse/ClickHouse/pull/63551) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Backported in [#63651](https://github.com/ClickHouse/ClickHouse/issues/63651): Fix 02362_part_log_merge_algorithm flaky test. [#63635](https://github.com/ClickHouse/ClickHouse/pull/63635) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Backported in [#63828](https://github.com/ClickHouse/ClickHouse/issues/63828): Fix test_odbc_interaction from aarch64 [#61457](https://github.com/ClickHouse/ClickHouse/issues/61457). [#63787](https://github.com/ClickHouse/ClickHouse/pull/63787) ([alesapin](https://github.com/alesapin)).
+* Backported in [#63897](https://github.com/ClickHouse/ClickHouse/issues/63897): Fix test `test_catboost_evaluate` for aarch64. [#61457](https://github.com/ClickHouse/ClickHouse/issues/61457). [#63789](https://github.com/ClickHouse/ClickHouse/pull/63789) ([alesapin](https://github.com/alesapin)).
+* Backported in [#63889](https://github.com/ClickHouse/ClickHouse/issues/63889): Remove HDFS from disks config for one integration test for arm. [#61457](https://github.com/ClickHouse/ClickHouse/issues/61457). [#63832](https://github.com/ClickHouse/ClickHouse/pull/63832) ([alesapin](https://github.com/alesapin)).
+* Backported in [#63881](https://github.com/ClickHouse/ClickHouse/issues/63881): Bump version for old image in test_short_strings_aggregation to make it work on arm. [#61457](https://github.com/ClickHouse/ClickHouse/issues/61457). [#63836](https://github.com/ClickHouse/ClickHouse/pull/63836) ([alesapin](https://github.com/alesapin)).
+* Backported in [#63919](https://github.com/ClickHouse/ClickHouse/issues/63919): Disable test `test_non_default_compression/test.py::test_preconfigured_deflateqpl_codec` on arm. [#61457](https://github.com/ClickHouse/ClickHouse/issues/61457). [#63839](https://github.com/ClickHouse/ClickHouse/pull/63839) ([alesapin](https://github.com/alesapin)).
+* Backported in [#63971](https://github.com/ClickHouse/ClickHouse/issues/63971): Fix 02124_insert_deduplication_token_multiple_blocks. [#63950](https://github.com/ClickHouse/ClickHouse/pull/63950) ([Han Fei](https://github.com/hanfei1991)).
+* Backported in [#64049](https://github.com/ClickHouse/ClickHouse/issues/64049): Add `ClickHouseVersion.copy` method. Create a branch release in advance without spinning out the release to increase the stability. [#64039](https://github.com/ClickHouse/ClickHouse/pull/64039) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+* Backported in [#64078](https://github.com/ClickHouse/ClickHouse/issues/64078): The mime type is not 100% reliable for Python and shell scripts without shebangs; add a check for file extension. [#64062](https://github.com/ClickHouse/ClickHouse/pull/64062) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+* Backported in [#64161](https://github.com/ClickHouse/ClickHouse/issues/64161): Add retries in git submodule update. [#64125](https://github.com/ClickHouse/ClickHouse/pull/64125) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)
+
+* Backported in [#64589](https://github.com/ClickHouse/ClickHouse/issues/64589): Disabled `enable_vertical_final` setting by default. This feature should not be used because it has a bug: [#64543](https://github.com/ClickHouse/ClickHouse/issues/64543). [#64544](https://github.com/ClickHouse/ClickHouse/pull/64544) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* Backported in [#64880](https://github.com/ClickHouse/ClickHouse/issues/64880): This PR fixes an error when a user in a specific situation can escalate their privileges on the default database without necessary grants. [#64769](https://github.com/ClickHouse/ClickHouse/pull/64769) ([pufit](https://github.com/pufit)).
+
+#### NO CL CATEGORY
+
+* Backported in [#63306](https://github.com/ClickHouse/ClickHouse/issues/63306):. [#63297](https://github.com/ClickHouse/ClickHouse/pull/63297) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Backported in [#63710](https://github.com/ClickHouse/ClickHouse/issues/63710):. [#63415](https://github.com/ClickHouse/ClickHouse/pull/63415) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+
+#### NO CL ENTRY
+
+* NO CL ENTRY:  'Revert "Backport [#64363](https://github.com/ClickHouse/ClickHouse/issues/64363) to 24.4: Split tests 03039_dynamic_all_merge_algorithms to avoid timeouts"'. [#64905](https://github.com/ClickHouse/ClickHouse/pull/64905) ([Raúl Marín](https://github.com/Algunenano)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* group_by_use_nulls strikes back [#62922](https://github.com/ClickHouse/ClickHouse/pull/62922) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Add `FROM` keyword to `TRUNCATE ALL TABLES` [#63241](https://github.com/ClickHouse/ClickHouse/pull/63241) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* More checks for concurrently deleted files and dirs in system.remote_data_paths [#63274](https://github.com/ClickHouse/ClickHouse/pull/63274) ([Alexander Gololobov](https://github.com/davenger)).
+* Try fix segfault in `MergeTreeReadPoolBase::createTask` [#63323](https://github.com/ClickHouse/ClickHouse/pull/63323) ([Antonio Andelic](https://github.com/antonio2368)).
+* Skip unaccessible table dirs in system.remote_data_paths [#63330](https://github.com/ClickHouse/ClickHouse/pull/63330) ([Alexander Gololobov](https://github.com/davenger)).
+* Workaround for `oklch()` inside canvas bug for firefox [#63404](https://github.com/ClickHouse/ClickHouse/pull/63404) ([Sergei Trifonov](https://github.com/serxa)).
+* Cancel S3 reads properly when parallel reads are used [#63687](https://github.com/ClickHouse/ClickHouse/pull/63687) ([Antonio Andelic](https://github.com/antonio2368)).
+* Userspace page cache: don't collect stats if cache is unused [#63730](https://github.com/ClickHouse/ClickHouse/pull/63730) ([Michael Kolupaev](https://github.com/al13n321)).
+* Fix sanitizers [#64090](https://github.com/ClickHouse/ClickHouse/pull/64090) ([Azat Khuzhin](https://github.com/azat)).
+* Split tests 03039_dynamic_all_merge_algorithms to avoid timeouts [#64363](https://github.com/ClickHouse/ClickHouse/pull/64363) ([Kruglov Pavel](https://github.com/Avogar)).
+* CI: Critical bugfix category in PR template [#64480](https://github.com/ClickHouse/ClickHouse/pull/64480) ([Max K.](https://github.com/maxknv)).
+

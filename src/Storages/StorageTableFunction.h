@@ -3,12 +3,11 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
-#include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -52,8 +51,8 @@ public:
     StoragePtr getNested() const override
     {
         StoragePtr nested_storage = getNestedImpl();
-        assert(!nested_storage->getStoragePolicy());
-        assert(!nested_storage->storesDataOnDisk());
+        chassert(!nested_storage->getStoragePolicy());
+        chassert(!nested_storage->storesDataOnDisk());
         return nested_storage;
     }
 
@@ -62,14 +61,7 @@ public:
     /// Avoid loading nested table by returning nullptr/false for all table functions.
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
-
-    String getName() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getName();
-        return StorageProxy::getName();
-    }
+    bool supportsReplication() const override { return false; }
 
     void startup() override { }
     void shutdown(bool is_drop) override
@@ -104,23 +96,24 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {
-            auto from_header = query_plan.getCurrentDataStream().header;
+            auto from_header = query_plan.getCurrentHeader();
             auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    from_header.getColumnsWithTypeAndName(),
-                    to_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
+                    from_header->getColumnsWithTypeAndName(),
+                    to_header->getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name,
+                    context);
 
             auto step = std::make_unique<ExpressionStep>(
-                query_plan.getCurrentDataStream(),
-                convert_actions_dag);
+                query_plan.getCurrentHeader(),
+                std::move(convert_actions_dag));
 
             step->setStepDescription("Converting columns");
             query_plan.addStep(std::move(step));
@@ -135,7 +128,7 @@ public:
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
-        auto actual_structure = storage->getInMemoryMetadataPtr()->getSampleBlock();
+        auto actual_structure = storage->getInMemoryMetadataPtr(context, false)->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");

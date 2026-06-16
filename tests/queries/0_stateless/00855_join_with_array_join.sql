@@ -1,5 +1,5 @@
 SET joined_subquery_requires_alias = 0;
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT ax, c FROM (SELECT [1,2] ax, 0 c) ARRAY JOIN ax JOIN (SELECT 0 c) USING (c);
 SELECT ax, c FROM (SELECT [3,4] ax, 0 c) JOIN (SELECT 0 c) USING (c) ARRAY JOIN ax;

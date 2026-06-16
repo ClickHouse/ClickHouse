@@ -13,12 +13,16 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 
 namespace DB
 {
 
 ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     auto description = ColumnsDescription
     {
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether this query comes directly from user or was issues by ClickHouse server in a scope of distributed query execution."},
@@ -38,6 +42,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"os_user", std::make_shared<DataTypeString>(), "Operating system username who runs clickhouse-client."},
         {"client_hostname", std::make_shared<DataTypeString>(), "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
+        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt64>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt64>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
@@ -62,13 +67,17 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"memory_usage", std::make_shared<DataTypeInt64>(), "Amount of RAM the query uses. It might not include some types of dedicated memory"},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The current peak of memory usage."},
         {"query", std::make_shared<DataTypeString>(), "The query text. For INSERT, it does not include the data to insert."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", std::make_shared<DataTypeString>(), "The type of the query - SELECT, INSERT, etc."},
 
-        {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identificators of all threads which executed this query."},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
-        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "The list of modified user-level settings."},
+        {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identifiers of all threads which participated in this query."},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
+        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string), "The list of modified user-level settings."},
 
         {"current_database", std::make_shared<DataTypeString>(), "The name of the current database."},
+
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 
     description.setAliases({
@@ -93,19 +102,20 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
 
         res_columns[i++]->insert(process.client_info.current_user);
         res_columns[i++]->insert(process.client_info.current_query_id);
-        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.current_address.host()).data(), 16);
-        res_columns[i++]->insert(process.client_info.current_address.port());
+        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.current_address->host()).data(), 16);
+        res_columns[i++]->insert(process.client_info.current_address->port());
 
         res_columns[i++]->insert(process.client_info.initial_user);
         res_columns[i++]->insert(process.client_info.initial_query_id);
-        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address.host()).data(), 16);
-        res_columns[i++]->insert(process.client_info.initial_address.port());
+        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address->host()).data(), 16);
+        res_columns[i++]->insert(process.client_info.initial_address->port());
 
         res_columns[i++]->insert(UInt64(process.client_info.interface));
 
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
+        res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
@@ -130,6 +140,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
+        res_columns[i++]->insert(process.normalized_query_hash);
         res_columns[i++]->insert(magic_enum::enum_name(process.query_kind));
 
         {
@@ -139,6 +150,8 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
                 threads_array.emplace_back(thread_id);
             res_columns[i++]->insert(threads_array);
         }
+
+        res_columns[i++]->insert(process.peak_threads_usage);
 
         {
             IColumn * column = res_columns[i++].get();
@@ -163,6 +176,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         res_columns[i++]->insert(process.current_database);
+        res_columns[i++]->insert(process.is_internal);
     }
 }
 

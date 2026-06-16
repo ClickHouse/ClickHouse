@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
 
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -41,9 +42,15 @@ def test_parallel_quorum_actually_parallel(started_cluster):
 
     p = Pool(10)
 
+    # The total sleep for the long insert (rows * seconds-per-row) must be larger
+    # than the time taken by the parallel inserts and assertions below. Otherwise
+    # the long insert can finish before the COUNT() == 2 assertions run, causing
+    # COUNT() to return 7 instead of 2. Sanitizer builds (`MSan`, `TSan`,
+    # `ASan + UBSan`) can slow client/server interaction by 10-20x, so use a
+    # generous total sleep duration (5 rows * 3s = 15s).
     def long_insert(node):
         node.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(1) == 0",
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(3) == 0",
             settings=settings,
         )
 

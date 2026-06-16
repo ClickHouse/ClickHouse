@@ -36,7 +36,7 @@ namespace
   * And you're right. But actually it's made similar to a random Python library from the internet:
   * https://github.com/jmoiron/humanize/blob/b37dc30ba61c2446eecb1a9d3e9ac8c9adf00f03/src/humanize/time.py#L462
   */
-class FunctionFormatReadableTimeDelta : public IFunction
+class FunctionFormatReadableTimeDelta final : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
@@ -64,7 +64,7 @@ public:
 
         const IDataType & type = *arguments[0];
 
-        if (!isNativeNumber(type) && !isInterval(type))
+        if (!isNumber(type) && !isInterval(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() >= 2)
@@ -83,6 +83,11 @@ public:
             }
         }
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -105,20 +110,21 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::string_view maximum_unit_str, minimum_unit_str;
+        std::string_view maximum_unit_str;
+        std::string_view minimum_unit_str;
         if (arguments.size() >= 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;
             const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
             if (maximum_unit_const_col)
-                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0).toView();
+                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0);
 
             if (arguments.size() == 3)
             {
                 const ColumnPtr & minimum_unit_column = arguments[2].column;
                 const ColumnConst * minimum_unit_const_col = checkAndGetColumnConstStringOrFixedString(minimum_unit_column.get());
                 if (minimum_unit_const_col)
-                    minimum_unit_str = minimum_unit_const_col->getDataColumn().getDataAt(0).toView();
+                    minimum_unit_str = minimum_unit_const_col->getDataColumn().getDataAt(0);
             }
         }
         /// Default means "use all available whole units".
@@ -169,7 +175,7 @@ public:
                 /// To output separators between parts: ", " and " and ".
                 bool has_output = false;
 
-                Float64 whole_part;
+                Float64 whole_part = 0;
                 std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
 
                 switch (max_unit) /// A kind of Duff Device.
@@ -227,7 +233,6 @@ public:
                 }
             }
 
-            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
 
@@ -242,7 +247,11 @@ public:
         if (unlikely(whole_part + 1.0 == whole_part))
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
-            writeText(std::floor(whole_part * DecimalUtils::scaleMultiplier<Int64>(unit_scale) / unit_multiplier), buf_to);
+            writeText(
+                std::floor(
+                    whole_part * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(unit_scale))
+                    / static_cast<Float64>(unit_multiplier)),
+                buf_to);
             buf_to.write(unit_name, unit_name_size);
             writeChar('s', buf_to);
             has_output = true;
@@ -252,7 +261,7 @@ public:
         UInt64 num_units = 0;
         if (unit_scale == 0)  /// dealing with whole number of seconds
         {
-            num_units = static_cast<UInt64>(std::floor(whole_part / unit_multiplier));
+            num_units = static_cast<UInt64>(std::floor(whole_part / static_cast<double>(unit_multiplier)));
 
             if (!num_units)
             {
@@ -262,7 +271,7 @@ public:
             }
 
             /// Remaining value to print on next iteration.
-            whole_part -= num_units * unit_multiplier;
+            whole_part -= static_cast<double>(num_units * unit_multiplier);
         }
         else   /// dealing with sub-seconds, a bit more peculiar to avoid more precision issues
         {
@@ -323,29 +332,31 @@ private:
     {
         if (unit_str.empty())
             return default_unit;
-        else if (unit_str == "years")
+        if (unit_str == "years")
             return Years;
-        else if (unit_str == "months")
+        if (unit_str == "months")
             return Months;
-        else if (unit_str == "days")
+        if (unit_str == "days")
             return Days;
-        else if (unit_str == "hours")
+        if (unit_str == "hours")
             return Hours;
-        else if (unit_str == "minutes")
+        if (unit_str == "minutes")
             return Minutes;
-        else if (unit_str == "seconds")
+        if (unit_str == "seconds")
             return Seconds;
-        else if (unit_str == "milliseconds")
+        if (unit_str == "milliseconds")
             return Milliseconds;
-        else if (unit_str == "microseconds")
+        if (unit_str == "microseconds")
             return Microseconds;
-        else if (unit_str == "nanoseconds")
+        if (unit_str == "nanoseconds")
             return Nanoseconds;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unexpected value of {} unit argument ({}) for function {}, the only allowed values are:"
-                            " 'nanoseconds', 'microseconds', 'nanoseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                            bound_name, unit_str, getName());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected value of {} unit argument ({}) for function {}, the only allowed values are:"
+            " 'nanoseconds', 'microseconds', 'nanoseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
+            bound_name,
+            unit_str,
+            getName());
     }
 };
 
@@ -353,7 +364,66 @@ private:
 
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
-    factory.registerFunction<FunctionFormatReadableTimeDelta>();
+    FunctionDocumentation::Description description = R"(
+Given a time interval (delta) in seconds or an `INTERVAL` expression, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+
+This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+
+When an `INTERVAL` expression is passed, its value is converted to seconds. Interval units of `MONTH` and greater (`MONTH`, `QUARTER`, `YEAR`) are not supported as they don't represent a fixed-sized interval in seconds.
+    )";
+    FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported.", {"Float64", "Interval"}},
+        {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
+        {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a time delta as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed) AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                        │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
+└────────────┴────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With maximum unit", R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With an INTERVAL expression", R"(
+SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
+        )",
+        R"(
+┌─time_delta─────────────────────────┐
+│ 3 hours, 25 minutes and 45 seconds │
+└────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFormatReadableTimeDelta>(documentation);
 }
 
 }

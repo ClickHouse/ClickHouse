@@ -21,7 +21,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTSubquery>(*this);
+        auto clone = make_intrusive<ASTSubquery>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -38,7 +38,7 @@ public:
     String tryGetAlias() const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 

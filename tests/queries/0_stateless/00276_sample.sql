@@ -1,3 +1,6 @@
+-- Tags: no-azure-blob-storage
+-- no-azure-blob-storage: too slow
+
 DROP TABLE IF EXISTS sample_00276;
 
 set allow_deprecated_syntax_for_merge_tree=1;

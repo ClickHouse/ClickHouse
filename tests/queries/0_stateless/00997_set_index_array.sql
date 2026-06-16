@@ -1,5 +1,8 @@
 -- Tags: no-random-merge-tree-settings
 
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 DROP TABLE IF EXISTS set_array;
 
 CREATE TABLE set_array
@@ -12,10 +15,12 @@ ORDER BY (primary_key);
 
 INSERT INTO set_array
 select
-  toString(intDiv(number, 1000000)) as primary_key,
+  toString(intDiv(number, 100000)) as primary_key,
   array(number) as index_array
 from system.numbers
-limit 10000000;
+limit 1000000;
+
+OPTIMIZE TABLE set_array FINAL;
 
 SET max_rows_to_read = 8192;
 

@@ -1,0 +1,13 @@
+<clickhouse>
+    <database_disk>
+        <disk>custom_db_disk</disk>
+    </database_disk>
+    <storage_configuration>
+        <disks>
+            <custom_db_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/default/</path>
+            </custom_db_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>

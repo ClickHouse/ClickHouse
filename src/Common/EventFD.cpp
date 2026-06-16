@@ -3,6 +3,7 @@
 
 #include <Common/EventFD.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -57,7 +58,7 @@ EventFD::~EventFD()
 {
     if (fd != -1)
     {
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 }

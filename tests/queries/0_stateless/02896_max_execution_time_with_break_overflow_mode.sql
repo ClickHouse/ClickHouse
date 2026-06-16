@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET max_rows_to_read = 0, max_execution_time = 0, max_estimated_execution_time = 0;
+
 -- Query stops after timeout without an error
 SELECT * FROM numbers(100000000) SETTINGS max_block_size=1, max_execution_time=2, timeout_overflow_mode='break' FORMAT Null;
 

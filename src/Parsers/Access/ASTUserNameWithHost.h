@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Parsers/IAST.h>
-
 
 namespace DB
 {
@@ -16,39 +16,50 @@ namespace DB
 class ASTUserNameWithHost : public IAST
 {
 public:
-    String base_name;
-    String host_pattern;
+    explicit ASTUserNameWithHost(const String & name_);
+    explicit ASTUserNameWithHost(ASTPtr && name_ast_, String && host_pattern_ = "");
 
+    String getHostPattern() const;
     String toString() const;
-    void concatParts();
 
-    ASTUserNameWithHost() = default;
-    explicit ASTUserNameWithHost(const String & name_) : base_name(name_) {}
     String getID(char) const override { return "UserNameWithHost"; }
-    ASTPtr clone() const override { return std::make_shared<ASTUserNameWithHost>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    ASTPtr clone() const override;
     void replace(String name_);
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+
+private:
+    String getStringFromAST(const ASTPtr & ast) const;
+    String getBaseName() const;
+
+    ASTPtr username;
+    ASTPtr host_pattern;
 };
 
 
 class ASTUserNamesWithHost : public IAST
 {
 public:
-    std::vector<std::shared_ptr<ASTUserNameWithHost>> names;
+    ASTUserNamesWithHost() = default;
+    explicit ASTUserNamesWithHost(const String & name_);
 
-    size_t size() const { return names.size(); }
-    auto begin() const { return names.begin(); }
-    auto end() const { return names.end(); }
-    auto front() const { return *begin(); }
-    void push_back(const String & name_) { names.push_back(std::make_shared<ASTUserNameWithHost>(name_)); } /// NOLINT
+    size_t size() const { return children.size(); }
+    auto begin() const { return children.begin(); }
+    auto end() const { return children.end(); }
 
     Strings toStrings() const;
-    void concatParts();
     bool getHostPatternIfCommon(String & out_common_host_pattern) const;
 
     String getID(char) const override { return "UserNamesWithHost"; }
-    ASTPtr clone() const override { return std::make_shared<ASTUserNamesWithHost>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-};
+    ASTPtr clone() const override
+    {
+        auto clone = make_intrusive<ASTUserNamesWithHost>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
 
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+};
 }

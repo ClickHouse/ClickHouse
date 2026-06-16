@@ -14,7 +14,6 @@ namespace DB
 class ASTFunction;
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 struct WindowFunctionDescription
 {
@@ -93,8 +92,8 @@ struct WindowDescription
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
 
-    std::vector<ActionsDAGPtr> partition_by_actions;
-    std::vector<ActionsDAGPtr> order_by_actions;
+    std::vector<std::shared_ptr<const ActionsDAG>> partition_by_actions;
+    std::vector<std::shared_ptr<const ActionsDAG>> order_by_actions;
 
     WindowFrame frame;
 

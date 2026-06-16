@@ -50,13 +50,13 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         rename_elements.back().from.database = from_db;
         rename_elements.back().to.database = to_db;
 
-        auto query = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
+        auto query = make_intrusive<ASTRenameQuery>(std::move(rename_elements));
         query->database = true;
         query->cluster = cluster_str;
         node = query;
         return true;
     }
-    else if (s_rename_table.ignore(pos, expected))
+    if (s_rename_table.ignore(pos, expected))
         ;
     else if (s_exchange_tables.ignore(pos, expected))
         exchange = true;
@@ -99,7 +99,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = std::make_shared<ASTRenameQuery>(std::move(elements));
+    auto query = make_intrusive<ASTRenameQuery>(std::move(elements));
     query->cluster = cluster_str;
     query->exchange = exchange;
     query->dictionary = dictionary;

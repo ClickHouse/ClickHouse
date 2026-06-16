@@ -1,0 +1,10 @@
+<test>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Encode(randomString(32)))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Encode(randomString(64)))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(33))))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(32))))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(65))))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(64))))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(32)), 32))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(64)), 64))</query>
+</test>

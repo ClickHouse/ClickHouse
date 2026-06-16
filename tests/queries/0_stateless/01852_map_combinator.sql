@@ -1,5 +1,4 @@
 SET send_logs_level = 'fatal';
-SET allow_experimental_map_type = 1;
 
 DROP TABLE IF EXISTS map_comb;
 CREATE TABLE map_comb(a int, statusMap Map(UInt16, UInt32)) ENGINE = Log;

@@ -3,6 +3,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ template<typename StorageT, int CommentSize, bool with_description, typename... 
 void attachImpl(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
 {
     static_assert(CommentSize > 15, "The comment for a system table is too short or empty");
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
     auto table_id = StorageID::createEmpty();
     if (system_database.getUUID() == UUIDHelpers::Nil)
@@ -22,9 +23,9 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
         /// Attach to Ordinary database.
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
         if constexpr (with_description)
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...));
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), {});
         else
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...));
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), {});
     }
     else
     {
@@ -33,7 +34,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
         /// and path is actually not used
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
-        String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
+        String path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
         if constexpr (with_description)
             system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), path);
         else
@@ -42,8 +43,8 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
 
     /// Set the comment
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
-    assert(table);
-    auto metadata = table->getInMemoryMetadata();
+    chassert(table);
+    StorageInMemoryMetadata metadata = *table->getInMemoryMetadataPtr(context, false);
     metadata.comment = comment;
     table->setInMemoryMetadata(metadata);
 }

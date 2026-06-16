@@ -1,18 +1,18 @@
-drop table if exists map_test;
-create table map_test engine=TinyLog() as (select ([1, number], [toInt32(2),2]) as map from numbers(1, 10));
+drop table if exists tab;
+create table tab engine=Memory() as (select ([1, number], [toInt32(2),2]) as map from numbers(1, 10));
 
 -- mapAdd
 select mapAdd([1], [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select mapAdd(([1], [1])); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select mapAdd(([1], [1]), map) from map_test; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select mapAdd(([toUInt64(1)], [1]), map) from map_test; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select mapAdd(([toUInt64(1), 2], [toInt32(1)]), map) from map_test; -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select mapAdd(([1], [1]), map) from tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select mapAdd(([toUInt64(1)], [1]), map) from tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select mapAdd(([toUInt64(1), 2], [toInt32(1)]), map) from tab; -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-select mapAdd(([toUInt64(1)], [toInt32(1)]), map) from map_test;
-select mapAdd(cast(map, 'Tuple(Array(UInt8), Array(UInt8))'), ([1], [1]), ([2],[2]) ) from map_test;
+select mapAdd(([toUInt64(1)], [toInt32(1)]), map) from tab;
+select mapAdd(cast(map, 'Tuple(Array(UInt8), Array(UInt8))'), ([1], [1]), ([2],[2]) ) from tab;
 
 -- cleanup
-drop table map_test;
+drop table tab;
 
 -- check types
 select mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res);

@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database
+# Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage
+# long: The test inserts 4M+ rows across the initial setup, 20s parallel insert/select/cancel phase,
+#     and final verification. On the encrypted-S3 + ASan+UBSan + meta-in-keeper flaky-check variant
+#     it consistently exceeds the 180s default budget, so we use the 600s budget instead.
+# no-fasttest: The test is slow (too many small blocks)
+# no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
+#     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -25,7 +31,7 @@ function insert_data
         $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$TXN_SETTINGS"
         SETTINGS="$SETTINGS&session_check=1"
         BEGIN="begin transaction;"
-        COMMIT=$(echo -ne "\n\ncommit")
+        COMMIT=$(echo -ne "\n\n\ncommit")
     fi
 
     # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)
@@ -40,18 +46,21 @@ function insert_data
         $CLICKHOUSE_CURL -sS -F 'file=@-' "$CLICKHOUSE_URL&$TRASH_SETTINGS&file_format=TSV&file_types=UInt64" -X POST --form-string 'query=insert into dedup_test select * from file' < $DATA_FILE
     else
         # client will send 1000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
-        $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
-            --max_block_size=1000 --max_insert_block_size=1000 --multiquery -q \
+        # Use -k 5s so that SIGKILL is sent 5 seconds after SIGTERM if the client does not exit.
+        # Under ASan, receiving SIGINT while the allocator lock is held causes DoLeakCheck (called from
+        # safeExit via interruptSignalHandler) to deadlock acquiring the same lock. The client then ignores
+        # SIGTERM too, so without -k the timeout wrapper waits forever, keeping the pipe open.
+        timeout -k 5s 120 $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
+            --max_block_size=1000 --max_insert_block_size=1000 -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
-            | grep -Fv "Transaction is not in RUNNING state"
+            | grep -Fv "Transaction is not in RUNNING state" | grep -Fv "There is no current transaction"
     fi
 
     if [[ "$IMPLICIT" -eq 0 ]]; then
-        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" 2>&1| grep -Fav "Transaction is not in RUNNING state"
+        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" 2>&1 \
+            | grep -Fav "Transaction is not in RUNNING state" | grep -Fav "There is no current transaction"
     fi
 }
-
-export -f insert_data
 
 ID="02435_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data 0
@@ -61,48 +70,56 @@ function thread_insert
 {
     # supress "Killed" messages from bash
     i=2
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
         export NUM="$i"
-        bash -c insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
+        insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
         i=$((i + 1))
     done
 }
 
 function thread_select
 {
-    while true; do
-        $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "with (select count() from dedup_test) as c select throwIf(c % 1000000 != 0, 'Expected 1000000 * N rows, got ' || toString(c)) format Null"
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        timeout 120 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "with (select count() from dedup_test) as c select throwIf(c % 1000000 != 0, 'Expected 1000000 * N rows, got ' || toString(c)) format Null"
         sleep 0.$RANDOM;
     done
 }
 
 function thread_cancel
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         SIGNAL="INT"
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
         fi
-        PID=$(grep -Fa "$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
-        if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
+        # Kill all matching processes, not just the first one. The TYPE=4 insert path wraps clickhouse-client
+        # in `timeout 120`, which forks a child: both the timeout wrapper (lower PID) and the clickhouse-client
+        # (higher PID) contain $TEST_MARK in their cmdlines. Killing only the wrapper (head -1 picks the lower
+        # PID) orphans the client, leaving the pipe write end open and blocking all downstream grep processes
+        # indefinitely.
+        for PID in $(grep -Fa "$TEST_MARK" /proc/*/cmdline 2>/dev/null | grep -Fav grep | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*"); do
+            kill -s "$SIGNAL" "$PID" 2>/dev/null || true
+        done
         sleep 0.$RANDOM;
     done
 }
 
-export -f thread_insert;
-export -f thread_select;
-export -f thread_cancel;
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c thread_insert &
-timeout $TIMEOUT bash -c thread_select &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+thread_insert &
+thread_select &
+thread_cancel 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q 'system flush logs'
+#$CLICKHOUSE_CLIENT -q 'system flush logs'
 
 ID="02435_insert_last_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data 1

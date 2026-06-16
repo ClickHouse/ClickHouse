@@ -4,7 +4,7 @@ test MergeTree undrop
 2
 3
 test detach
-UPDATE num = 2 WHERE id = 1
+(UPDATE num = 2 WHERE id = 1)
 test MergeTree with cluster
 02681_undrop_uuid_on_cluster
 1

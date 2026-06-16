@@ -9,6 +9,8 @@
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <absl/container/inlined_vector.h>
+
 #include <unordered_map>
 
 namespace DB
@@ -25,8 +27,9 @@ static inline bool checkRegexExpression(std::string_view match_str, const Compil
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-    std::string_view matches[num_captures];
-    return compiled_regex->Match({match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
+    absl::InlinedVector<std::string_view, 5> matches(num_captures);
+    return compiled_regex->Match(
+        {match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures);
 }
 
 static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
@@ -73,12 +76,28 @@ static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, c
     };
 }
 
+static inline auto fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
+{
+    return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
+    {
+        const auto & server_address = request.serverAddress();
+        std::string url(fmt::format("{}://{}{}",
+            request.isSecure() ? "https" : "http",
+            server_address.toString(),
+            request.getURI()
+        ));
+
+        const auto & end = find_first_symbols<'?'>(url.data(), url.data() + url.size());
+        return checkExpression(std::string_view(url.data(), end - url.data()), expression);
+    };
+}
+
 static inline auto emptyQueryStringFilter()
 {
     return [](const HTTPServerRequest & request)
     {
         const auto & uri = request.getURI();
-        return std::string::npos == uri.find('?');
+        return !uri.contains('?');
     };
 }
 

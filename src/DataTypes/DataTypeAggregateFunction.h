@@ -25,19 +25,14 @@ private:
     mutable std::optional<size_t> version;
 
     String getNameImpl(bool with_version) const;
-    size_t getVersion() const;
 
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
-        : function(std::move(function_))
-        , argument_types(argument_types_)
-        , parameters(parameters_)
-        , version(version_)
-    {
-    }
+                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt);
+
+    size_t getVersion() const;
 
     String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }
@@ -59,14 +54,21 @@ public:
 
     Field getDefault() const override;
 
-    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
+    /// Compares name, parameters, and argument types.
+    /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
+    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
+
+    /// Same as equals() but ignores the state variant (Aggregation vs Window).
+    bool equalsIgnoringVariant(const IDataType & rhs) const;
+
     bool equals(const IDataType & rhs) const override;
+    void updateHashImpl(SipHash & hash) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
     bool supportsSparseSerialization() const override { return false; }
 
     bool isVersioned() const;
@@ -88,5 +90,8 @@ public:
 };
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
+
+/// Checks type of any nested type is DataTypeAggregateFunction.
+bool hasAggregateFunctionType(const DataTypePtr & type);
 
 }

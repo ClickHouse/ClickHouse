@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 # CREATE TABLE local (x UInt8) Engine=Memory;
 # CREATE TABLE distributed ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), x)
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS local;
 DROP TABLE IF EXISTS distributed;
 CREATE TABLE local (x UInt8) Engine=Memory;

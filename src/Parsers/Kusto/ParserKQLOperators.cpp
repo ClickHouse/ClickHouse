@@ -1,20 +1,25 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
-#include "KustoFunctions/IParserKQLFunction.h"
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 namespace
 {
 
-enum class KQLOperatorValue : uint16_t
+enum class KQLOperatorValue
 {
     none,
     between,
@@ -56,7 +61,8 @@ enum class KQLOperatorValue : uint16_t
     not_startswith_cs,
 };
 
-const std::unordered_map<String, KQLOperatorValue> KQLOperator = {
+const std::unordered_map<String, KQLOperatorValue> KQLOperator =
+{
     {"between", KQLOperatorValue::between},
     {"!between", KQLOperatorValue::not_between},
     {"contains", KQLOperatorValue::contains},
@@ -96,43 +102,36 @@ const std::unordered_map<String, KQLOperatorValue> KQLOperator = {
     {"!startswith_cs", KQLOperatorValue::not_startswith_cs},
 };
 
-void rebuildSubqueryForInOperator(DB::ASTPtr & node, bool useLowerCase)
+void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
 {
     //A sub-query for in operator in kql can have multiple columns, but only takes the first column.
     //A sub-query for in operator in ClickHouse can not have multiple columns
     //So only take the first column if there are multiple columns.
     //select * not working for subquery. (a tabular statement without project)
 
-    const auto selectColumns = node->children[0]->children[0]->as<DB::ASTSelectQuery>()->select();
+    const auto selectColumns = node->children[0]->children[0]->as<ASTSelectQuery>()->select();
     while (selectColumns->children.size() > 1)
         selectColumns->children.pop_back();
 
     if (useLowerCase)
     {
-        auto args = std::make_shared<DB::ASTExpressionList>();
+        auto args = make_intrusive<ASTExpressionList>();
         args->children.push_back(selectColumns->children[0]);
-        auto func_lower = std::make_shared<DB::ASTFunction>();
+        auto func_lower = make_intrusive<ASTFunction>();
         func_lower->name = "lower";
-        func_lower->children.push_back(selectColumns->children[0]);
         func_lower->arguments = args;
-        if (selectColumns->children[0]->as<DB::ASTIdentifier>())
-            func_lower->alias = std::move(selectColumns->children[0]->as<DB::ASTIdentifier>()->alias);
-        else if (selectColumns->children[0]->as<DB::ASTFunction>())
-            func_lower->alias = std::move(selectColumns->children[0]->as<DB::ASTFunction>()->alias);
+        func_lower->children.push_back(func_lower->arguments);
+        if (selectColumns->children[0]->as<ASTIdentifier>())
+            func_lower->alias = std::move(selectColumns->children[0]->as<ASTIdentifier>()->alias);
+        else if (selectColumns->children[0]->as<ASTFunction>())
+            func_lower->alias = std::move(selectColumns->children[0]->as<ASTFunction>()->alias);
 
-        auto funcs = std::make_shared<DB::ASTExpressionList>();
+        auto funcs = make_intrusive<ASTExpressionList>();
         funcs->children.push_back(func_lower);
         selectColumns->children[0] = std::move(funcs);
     }
 }
 
-}
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
 }
 
 String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op)
@@ -166,7 +165,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
     return new_expr;
 }
 
-String genEqOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos, const String & ch_op)
+static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & ch_op)
 {
     String tmp_arg(token_pos->begin, token_pos->end);
 
@@ -178,30 +177,30 @@ String genEqOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos
     new_expr += ch_op + " ";
     ++token_pos;
 
-    if (token_pos->type == DB::TokenType::StringLiteral || token_pos->type == DB::TokenType::QuotedIdentifier)
-        new_expr += "lower('" + DB::IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
+    if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+        new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
     else
-        new_expr += "lower(" + DB::IParserKQLFunction::getExpression(token_pos) + ")";
+        new_expr += "lower(" + IParserKQLFunction::getExpression(token_pos) + ")";
 
     tokens.pop_back();
     return new_expr;
 }
 
-String genInOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
+static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
 {
-    DB::ParserKQLTableFunction kqlfun_p;
-    DB::ParserToken s_lparen(DB::TokenType::OpeningRoundBracket);
+    ParserKQLParenExpression kqlfun_p;
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
 
-    DB::ASTPtr select;
-    DB::Expected expected;
+    ASTPtr select;
+    Expected expected;
     String new_expr;
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
-        throw DB::Exception(DB::ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     if (tokens.empty())
-        throw DB::Exception(DB::ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     new_expr = "lower(" + tokens.back() + ") ";
     tokens.pop_back();
@@ -209,7 +208,7 @@ String genInOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, true);
-        new_expr += ch_op + " (" + serializeAST(*select) + ")";
+        new_expr += ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -218,45 +217,45 @@ String genInOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos
     --token_pos;
 
     new_expr += ch_op;
-    while (isValidKQLPos(token_pos) && token_pos->type != DB::TokenType::PipeMark && token_pos->type != DB::TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
     {
         auto tmp_arg = String(token_pos->begin, token_pos->end);
-        if (token_pos->type != DB::TokenType::Comma && token_pos->type != DB::TokenType::ClosingRoundBracket
-            && token_pos->type != DB::TokenType::OpeningRoundBracket && token_pos->type != DB::TokenType::OpeningSquareBracket
-            && token_pos->type != DB::TokenType::ClosingSquareBracket && tmp_arg != "~" && tmp_arg != "dynamic")
+        if (token_pos->type != TokenType::Comma && token_pos->type != TokenType::ClosingRoundBracket
+            && token_pos->type != TokenType::OpeningRoundBracket && token_pos->type != TokenType::OpeningSquareBracket
+            && token_pos->type != TokenType::ClosingSquareBracket && tmp_arg != "~" && tmp_arg != "dynamic")
         {
-            if (token_pos->type == DB::TokenType::StringLiteral || token_pos->type == DB::TokenType::QuotedIdentifier)
-                new_expr += "lower('" + DB::IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
+            if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+                new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
             else
                 new_expr += "lower(" + tmp_arg + ")";
         }
         else if (tmp_arg != "~" && tmp_arg != "dynamic" && tmp_arg != "[" && tmp_arg != "]")
             new_expr += tmp_arg;
 
-        if (token_pos->type == DB::TokenType::ClosingRoundBracket)
+        if (token_pos->type == TokenType::ClosingRoundBracket)
             break;
         ++token_pos;
     }
     return new_expr;
 }
 
-std::string genInOpExpr(DB::IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
+static std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
 {
-    DB::ParserKQLTableFunction kqlfun_p;
-    DB::ParserToken s_lparen(DB::TokenType::OpeningRoundBracket);
+    ParserKQLParenExpression kqlfun_p;
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
 
-    DB::ASTPtr select;
-    DB::Expected expected;
+    ASTPtr select;
+    Expected expected;
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
-        throw DB::Exception(DB::ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     auto pos = token_pos;
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, false);
-        auto new_expr = ch_op + " (" + serializeAST(*select) + ")";
+        auto new_expr = ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -269,7 +268,11 @@ std::string genInOpExpr(DB::IParser::Pos & token_pos, const std::string & kql_op
 String KQLOperators::genHaystackOpExpr(
     std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
 {
-    String new_expr, left_wildcards, right_wildcards, left_space, right_space;
+    String new_expr;
+    String left_wildcards;
+    String right_wildcards;
+    String left_space;
+    String right_space;
 
     switch (wildcards_pos)
     {
@@ -311,18 +314,83 @@ String KQLOperators::genHaystackOpExpr(
 
     ++token_pos;
 
-    if (!tokens.empty() && ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
-        new_expr = ch_op + "(" + tokens.back() + ", '" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
-            + right_space + right_wildcards + "')";
-    else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
+    String needle;
+    String raw_needle; /// needle without wildcards for position-based fallback
+    bool needle_is_literal = false;
+    if ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+    {
+        raw_needle = "'" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "'";
+        needle = "'" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
+            + right_space + right_wildcards + "'";
+        needle_is_literal = true;
+    }
+    else if ((token_pos)->type == TokenType::BareWord)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
-        new_expr = ch_op + "(" + tokens.back() + ", concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
-            + right_wildcards + "'))";
+        raw_needle = tmp_arg;
+        needle = "concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
+            + right_wildcards + "')";
     }
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+
+    if (tokens.empty())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+
+    auto haystack = tokens.back();
     tokens.pop_back();
+
+    /// If the haystack is a literal string and needle is a column expression,
+    /// ilike/like doesn't work. Use position-based approach instead.
+    bool haystack_is_literal = !haystack.empty() && haystack.front() == '\'' && haystack.back() == '\'';
+    if (haystack_is_literal && !needle_is_literal)
+    {
+        /// Wrap nullable column in ifNull to avoid type errors
+        /// Use materialize() on the constant haystack to allow non-constant needle matching
+        auto safe_needle = fmt::format("ifNull(toString({}), '')", raw_needle);
+        auto mat_haystack = fmt::format("materialize({})", haystack);
+        if (ch_op == "ilike" || ch_op == "not ilike")
+        {
+            bool negated = (ch_op == "not ilike");
+            if (wildcards_pos == WildcardsPos::both)
+                new_expr = fmt::format("toBool({}(positionCaseInsensitive({}, {}) > 0))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::right)
+                new_expr = fmt::format("toBool({}(startsWith(lower({}), lower({}))))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::left)
+                new_expr = fmt::format("toBool({}(endsWith(lower({}), lower({}))))", negated ? "not " : "", haystack, safe_needle);
+            else
+                new_expr = fmt::format("toBool({}(lower({}) = lower({})))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "like" || ch_op == "not like")
+        {
+            bool negated = (ch_op == "not like");
+            if (wildcards_pos == WildcardsPos::both)
+                new_expr = fmt::format("toBool({}(position({}, {}) > 0))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::right)
+                new_expr = fmt::format("toBool({}(startsWith({}, {})))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::left)
+                new_expr = fmt::format("toBool({}(endsWith({}, {})))", negated ? "not " : "", haystack, safe_needle);
+            else
+                new_expr = fmt::format("toBool({}({} = {}))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "startsWith" || ch_op == "not startsWith")
+        {
+            bool negated = ch_op.find("not") != String::npos;
+            new_expr = fmt::format("toBool({}startsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "endsWith" || ch_op == "not endsWith")
+        {
+            bool negated = ch_op.find("not") != String::npos;
+            new_expr = fmt::format("toBool({}endsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "match")
+            new_expr = fmt::format("toBool(match({}, {}))", mat_haystack, safe_needle);
+        else
+            new_expr = "toBool(" + ch_op + "(" + haystack + ", " + needle + "))";
+    }
+    else
+        new_expr = "toBool(" + ch_op + "(" + haystack + ", " + needle + "))";
+
     return new_expr;
 }
 
@@ -371,7 +439,7 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         else
             --pos;
 
-        if (KQLOperator.find(op) == KQLOperator.end())
+        if (!KQLOperator.contains(op))
         {
             pos = begin;
             return false;
@@ -393,6 +461,40 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
 
             switch (op_value)
             {
+                case KQLOperatorValue::between:
+                case KQLOperatorValue::not_between:
+                {
+                    /// between (low .. high) or !between (low .. high)
+                    ++pos;
+                    if (!isValidKQLPos(pos) || pos->type != TokenType::OpeningRoundBracket)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", op);
+                    ++pos;
+
+                    String low = IParserKQLFunction::getExpression(pos);
+                    ++pos;
+
+                    /// Require ".." (Dot Dot) between low and high
+                    if (!isValidKQLPos(pos) || String(pos->begin, pos->end) != ".")
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}: expected `..`", op);
+                    ++pos;
+                    if (!isValidKQLPos(pos) || String(pos->begin, pos->end) != ".")
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}: expected `..`", op);
+                    ++pos;
+
+                    String high = IParserKQLFunction::getExpression(pos);
+                    ++pos;
+                    /// Require the closing bracket
+                    if (!isValidKQLPos(pos) || pos->type != TokenType::ClosingRoundBracket)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}: expected `)`", op);
+
+                    if (op_value == KQLOperatorValue::between)
+                        new_expr = fmt::format("toBool({0} >= {1} and {0} <= {2})", tokens.back(), low, high);
+                    else
+                        new_expr = fmt::format("toBool({0} < {1} or {0} > {2})", tokens.back(), low, high);
+                    tokens.pop_back();
+                    break;
+                }
+
                 case KQLOperatorValue::contains:
                     new_expr = genHaystackOpExpr(tokens, pos, op, "ilike", WildcardsPos::both);
                     break;

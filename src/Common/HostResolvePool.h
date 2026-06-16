@@ -26,7 +26,7 @@
 //    a) it still occurs in resolve set after `history_` time or b) all other addresses are pessimized as well.
 // - resolve schedule
 //    Addresses are resolved through `DB::DNSResolver::instance()`.
-//    Usually it does not happen more often than once in `history_` time.
+//    Usually it does not happen more often than 3 times in `history_` period.
 //    But also new resolve performed each `setFail()` call.
 
 namespace DB
@@ -145,7 +145,7 @@ protected:
         Poco::Timestamp fail_time = 0;
         size_t consecutive_fail_count = 0;
 
-        size_t weight_prefix_sum;
+        size_t weight_prefix_sum{};
 
         bool operator <(const Record & r) const
         {
@@ -212,6 +212,7 @@ protected:
 
     const String host;
     const Poco::Timespan history;
+    const Poco::Timespan resolve_interval;
     const HostResolverMetrics metrics = getMetrics();
 
     // for tests purpose
@@ -245,4 +246,3 @@ private:
 };
 
 }
-

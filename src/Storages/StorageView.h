@@ -1,15 +1,18 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
 {
 
-class StorageView final : public IStorage
+class StorageView final : public StorageWithCommonVirtualColumns
 {
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     StorageView(
         const StorageID & table_id_,
@@ -20,15 +23,20 @@ public:
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
+    bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
-    void read(
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -38,7 +46,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static void replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+    void drop() override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+
+    static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
 
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot, const bool parameterized_view)
     {
@@ -47,6 +58,8 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+
+    static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
     bool is_parameterized_view;

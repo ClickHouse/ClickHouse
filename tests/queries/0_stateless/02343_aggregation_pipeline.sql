@@ -1,4 +1,4 @@
--- Tags: no-s3-storage
+-- Tags: no-object-storage
 
 -- produces different pipeline if enabled
 set enable_memory_bound_merging_of_aggregation_results = 0;
@@ -11,13 +11,28 @@ set max_block_size = 65505;
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
 
+-- The pipeline shape depends on the exact thread count;
+-- disable the free-memory limiter to keep `max_threads` as set in the queries.
+set max_threads_min_free_memory_per_thread = 0;
+set max_insert_threads_min_free_memory_per_thread = 0;
+
 -- { echoOn }
 
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0;
 
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 36;
 
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 48;
+
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 49;
 
 explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1;
 

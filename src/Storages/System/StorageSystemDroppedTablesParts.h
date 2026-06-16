@@ -9,7 +9,7 @@ namespace DB
 class StoragesDroppedInfoStream : public StoragesInfoStreamBase
 {
 public:
-    StoragesDroppedInfoStream(const ActionsDAGPtr & filter, ContextPtr context);
+    StoragesDroppedInfoStream(std::optional<ActionsDAG> filter, ContextPtr context);
 protected:
     bool tryLockTable(StoragesInfo &) override
     {
@@ -30,9 +30,9 @@ public:
 
     std::string getName() const override { return "SystemDroppedTablesParts"; }
 protected:
-    std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const ActionsDAGPtr &, const ActionsDAGPtr & filter, ContextPtr context) override
+    std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(std::optional<ActionsDAG>, std::optional<ActionsDAG> filter, ContextPtr context) override
     {
-        return std::make_unique<StoragesDroppedInfoStream>(filter, context);
+        return std::make_unique<StoragesDroppedInfoStream>(std::move(filter), context);
     }
 };
 

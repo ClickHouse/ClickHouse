@@ -1,14 +1,15 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
-#include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
 
 namespace DB
 {
 
-class RabbitMQSource : public ISource
+class RabbitMQSource final : public ISource
 {
 
 public:

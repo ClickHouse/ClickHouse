@@ -8,6 +8,7 @@
 #include <IO/Progress.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/Stopwatch.h>
+#include <functional>
 #include <utility>
 
 namespace DB
@@ -104,6 +105,8 @@ namespace JSONUtils
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
         const Stopwatch & watch,
         const Progress & progress,
         bool write_statistics,
@@ -134,6 +137,16 @@ namespace JSONUtils
 
     bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name, const FormatSettings::JSON & settings);
     void skipTheRestOfObject(ReadBuffer & in, const FormatSettings::JSON & settings);
+
+    template <typename ReturnType>
+    using NestedDeserialize = std::function<ReturnType(IColumn &, ReadBuffer &)>;
+
+    template <typename ReturnType, bool default_column_return_value = true>
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested);
+
+    extern template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
 }
 
 }

@@ -13,7 +13,6 @@ set (SRCS
     ${FMT_SOURCE_DIR}/include/fmt/core.h
     ${FMT_SOURCE_DIR}/include/fmt/format.h
     ${FMT_SOURCE_DIR}/include/fmt/format-inl.h
-    ${FMT_SOURCE_DIR}/include/fmt/locale.h
     ${FMT_SOURCE_DIR}/include/fmt/os.h
     ${FMT_SOURCE_DIR}/include/fmt/ostream.h
     ${FMT_SOURCE_DIR}/include/fmt/printf.h

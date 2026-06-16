@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types=1 --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types=1 --multiline --query="""
 
 DROP TABLE IF EXISTS t_01411;
 DROP TABLE IF EXISTS t_01411_num;
@@ -28,46 +28,42 @@ ORDER BY tuple();
 
 INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(100000);
 
-create table lc_dict_reading (val UInt64, str StringWithDictionary, pat String) engine = MergeTree order by val;
+create table lc_dict_reading (val UInt64, str LowCardinality(String), pat String) engine = MergeTree order by val;
 insert into lc_dict_reading select number, if(number < 8192 * 4, number % 100, number) as s, s from system.numbers limit 100000;
 """
 
 function go()
 {
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "select sum(toUInt64(str)), sum(toUInt64(pat)) from lc_dict_reading where val < 8129 or val > 8192 * 4"
 
-${CLICKHOUSE_CLIENT} --multiquery --multiline --query="""
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE str = 'asdf337'"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE arr[1] = 'asdf337'"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE has(arr, 'asdf337')"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE indexOf(arr, 'asdf337') > 0"
 
-select sum(toUInt64(str)), sum(toUInt64(pat)) from lc_dict_reading where val < 8129 or val > 8192 * 4;
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE arr[1] = str"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE has(arr, str)"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411 WHERE indexOf(arr, str) > 0"
 
-SELECT count() FROM t_01411 WHERE str = 'asdf337';
-SELECT count() FROM t_01411 WHERE arr[1] = 'asdf337';
-SELECT count() FROM t_01411 WHERE has(arr, 'asdf337');
-SELECT count() FROM t_01411 WHERE indexOf(arr, 'asdf337') > 0;
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE num = 42"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE arr[1] = 42"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE has(arr, 42)"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE indexOf(arr, 42) > 0"
 
-SELECT count() FROM t_01411 WHERE arr[1] = str;
-SELECT count() FROM t_01411 WHERE has(arr, str);
-SELECT count() FROM t_01411 WHERE indexOf(arr, str) > 0;
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE arr[1] = num"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE has(arr, num)"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE indexOf(arr, num) > 0"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM t_01411_num WHERE indexOf(arr, num % 337) > 0"
 
-SELECT count() FROM t_01411_num WHERE num = 42;
-SELECT count() FROM t_01411_num WHERE arr[1] = 42;
-SELECT count() FROM t_01411_num WHERE has(arr, 42);
-SELECT count() FROM t_01411_num WHERE indexOf(arr, 42) > 0;
-
-SELECT count() FROM t_01411_num WHERE arr[1] = num;
-SELECT count() FROM t_01411_num WHERE has(arr, num);
-SELECT count() FROM t_01411_num WHERE indexOf(arr, num) > 0;
-SELECT count() FROM t_01411_num WHERE indexOf(arr, num % 337) > 0;
-
-SELECT indexOf(['a', 'b', 'c'], toLowCardinality('a'));
-SELECT indexOf(['a', 'b', NULL], toLowCardinality('a'));
-"""
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT indexOf(['a', 'b', 'c'], toLowCardinality('a'))"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT indexOf(['a', 'b', NULL], toLowCardinality('a'))"
 }
 
-for _ in `seq 1 32`; do go | grep -q "Exception" && echo 'FAIL' || echo 'OK' ||: & done
+for _ in `seq 1 32`; do go | grep "Exception" && echo 'FAIL' || echo 'OK' ||: & done
 
 wait
 
-${CLICKHOUSE_CLIENT} --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --multiline --query="""
 DROP TABLE IF EXISTS t_01411;
 DROP TABLE IF EXISTS t_01411_num;
 """

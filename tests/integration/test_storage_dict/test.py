@@ -26,6 +26,15 @@ def cluster():
 def test_storage_dict(cluster):
     node1 = cluster.instances["node1"]
 
+    cluster.exec_in_container(
+        cluster.nginx_id,
+        ["rm", "-f", "/usr/share/nginx/files/test_dict"],
+    )
+
+    node1.query("DROP DICTIONARY IF EXISTS dict")
+    node1.query("DROP DICTIONARY IF EXISTS dict1")
+    node1.query("DROP DICTIONARY IF EXISTS dict2")
+
     node1.query(f"insert into table function url(urldb) values ('foo', 'bar')")
     result = node1.query(f"select * from url(urldb)")
     assert result.strip() == "foo\tbar"

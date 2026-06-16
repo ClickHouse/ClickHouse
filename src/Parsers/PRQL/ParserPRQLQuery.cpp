@@ -1,7 +1,7 @@
 #include <string>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 
-#include "Parsers/Lexer.h"
+#include <Parsers/Lexer.h>
 #include "config.h"
 
 #if USE_PRQL

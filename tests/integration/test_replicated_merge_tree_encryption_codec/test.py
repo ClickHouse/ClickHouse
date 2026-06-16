@@ -1,8 +1,9 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
 import os
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
@@ -67,8 +68,8 @@ def check_table():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     assert node1.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
     assert node2.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-    assert node1.query("CHECK TABLE tbl") == "1\n"
-    assert node2.query("CHECK TABLE tbl") == "1\n"
+    assert node1.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node2.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
 
 
 # Actual tests:
