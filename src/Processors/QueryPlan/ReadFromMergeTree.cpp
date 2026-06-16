@@ -2376,12 +2376,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             storage_snapshot->metadata,
             skip_partition_pruning);
 
-        /// KeyCondition only builds sets for top-level IN atoms, so an IN wrapped in a larger
-        /// expression would be executed unbuilt during partition pruning ("Not-ready Set").
-        /// Must run after buildIndexes and before the PREWHERE builds; GLOBAL IN is excluded.
-        if (index_filter_dag)
-            VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*index_filter_dag, context);
-
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the
         /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
