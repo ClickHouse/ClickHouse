@@ -35,6 +35,7 @@ public:
 
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
+        MODIFY_ENGINE,
         MODIFY_TTL,
         REWRITE_PARTS,
         MATERIALIZE_TTL,
@@ -114,6 +115,10 @@ public:
     /** For MODIFY SAMPLE BY
      */
     IAST * sample_by = nullptr;
+
+    /** For MODIFY ENGINE: the new MergeTree-family engine clause (an ASTFunction).
+     */
+    IAST * engine = nullptr;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */

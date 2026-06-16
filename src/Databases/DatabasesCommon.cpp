@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -198,6 +199,15 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (ast_create_query.storage)
     {
         ASTStorage & storage_ast = *ast_create_query.storage;
+
+        /// ALTER TABLE ... MODIFY ENGINE: replace the engine clause (the ASTFunction holding the
+        /// engine name and merge-parameter arguments). The ORDER BY / PARTITION BY / SETTINGS etc.
+        /// live directly on ASTStorage, not inside the engine function, so they are preserved.
+        if (metadata.new_engine)
+        {
+            if (const auto * new_engine_func = metadata.new_engine->as<ASTFunction>())
+                storage_ast.set(storage_ast.engine, new_engine_func->clone());
+        }
 
         bool is_extended_storage_def
             = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;

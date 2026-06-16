@@ -40,6 +40,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
+    ParserKeyword s_modify_engine(Keyword::MODIFY_ENGINE);
     ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
@@ -164,6 +165,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_column;
     ASTPtr command_order_by;
     ASTPtr command_sample_by;
+    ASTPtr command_engine;
     ASTPtr command_index_decl;
     ASTPtr command_index;
     ASTPtr command_constraint_decl;
@@ -890,6 +892,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
             }
+            else if (s_modify_engine.ignore(pos, expected))
+            {
+                /// MODIFY ENGINE = ReplacingMergeTree(...) — the '=' is optional, mirroring ENGINE in CREATE.
+                ParserToken s_eq(TokenType::Equals);
+                s_eq.ignore(pos, expected);
+
+                if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_engine, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_ENGINE;
+            }
             else if (s_remove_sample_by.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::REMOVE_SAMPLE_BY;
@@ -1118,6 +1131,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->order_by = command->children.emplace_back(std::move(command_order_by)).get();
     if (command_sample_by)
         command->sample_by = command->children.emplace_back(std::move(command_sample_by)).get();
+    if (command_engine)
+        command->engine = command->children.emplace_back(std::move(command_engine)).get();
     if (command_index_decl)
         command->index_decl = command->children.emplace_back(std::move(command_index_decl)).get();
     if (command_index)
