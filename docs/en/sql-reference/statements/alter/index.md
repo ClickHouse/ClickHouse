@@ -16,6 +16,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 | [DELETE](/sql-reference/statements/alter/delete.md)                         |
 | [UPDATE](/sql-reference/statements/alter/update.md)                         |
 | [ORDER BY](/sql-reference/statements/alter/order-by.md)                     |
+| [ENGINE](/sql-reference/statements/alter/engine.md)                         |
 | [INDEX](/sql-reference/statements/alter/skipping-index.md)                  |
 | [CONSTRAINT](/sql-reference/statements/alter/constraint.md)                 |
 | [TTL](/sql-reference/statements/alter/ttl.md)                               |

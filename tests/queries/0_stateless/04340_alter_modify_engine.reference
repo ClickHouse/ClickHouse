@@ -1,0 +1,6 @@
+before	3
+engine	ReplacingMergeTree
+replacing final	2
+summing	1	30
+summing	2	100
+collapsing	CollapsingMergeTree
