@@ -71,7 +71,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 configuration_change_tries_count;
     extern const CoordinationSettingsMilliseconds election_timeout_lower_bound_ms;
     extern const CoordinationSettingsMilliseconds election_timeout_upper_bound_ms;
-    extern const CoordinationSettingsBool experimental_use_rocksdb;
     extern const CoordinationSettingsUInt64 fresh_log_gap;
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
@@ -297,27 +296,13 @@ KeeperServer::KeeperServer(
     if (coordination_settings[CoordinationSetting::quorum_reads])
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-#if USE_ROCKSDB
-    if (coordination_settings[CoordinationSetting::experimental_use_rocksdb])
-    {
-        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
-            response_callback_,
-            snapshots_queue_,
-            keeper_context,
-            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
-            commit_callback,
-            checkAndGetSuperdigest(server_config->super_digest));
-        LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
-    }
-    else
-#endif
-        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
-            response_callback_,
-            snapshots_queue_,
-            keeper_context,
-            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
-            commit_callback,
-            checkAndGetSuperdigest(server_config->super_digest));
+    state_machine = nuraft::cs_new<KeeperStateMachine>(
+        response_callback_,
+        snapshots_queue_,
+        keeper_context,
+        config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
+        commit_callback,
+        checkAndGetSuperdigest(server_config->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,

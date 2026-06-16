@@ -26,7 +26,6 @@
 
 namespace DB::CoordinationSetting
 {
-    extern const CoordinationSettingsBool experimental_use_rocksdb;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
     extern const CoordinationSettingsUInt64 reserved_log_items;
     extern const CoordinationSettingsUInt64 snapshot_distance;
@@ -82,14 +81,8 @@ public:
         Poco::Logger::root().setLevel(log_level ? log_level : "none");
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
-#if USE_ROCKSDB
-        (*settings)[DB::CoordinationSetting::experimental_use_rocksdb] = std::is_same_v<Storage, DB::KeeperRocksStorage>;
-#else
-        (*settings)[DB::CoordinationSetting::experimental_use_rocksdb] = 0;
-#endif
         keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLocalLogsPreprocessed();
-        keeper_context->setRocksDBOptions();
         extension = enable_compression ? ".zstd" : "";
     }
 
@@ -98,11 +91,6 @@ public:
     void setSnapshotDirectory(const std::string & path)
     {
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path));
-    }
-
-    void setRocksDBDirectory(const std::string & path)
-    {
-        keeper_context->setRocksDBDisk(std::make_shared<DB::DiskLocal>("RocksDisk", path));
     }
 
     void setStateFileDirectory(const std::string & path)
@@ -140,12 +128,8 @@ Coordination::ACLs getUncommittedACLs(const Storage & storage, std::string_view 
     return storage.acl_map.convertNumber(acl_id);
 }
 
-using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>
-                                      ,TestParam<DB::KeeperMemoryStorage, false>
-#if USE_ROCKSDB
-                                      ,TestParam<DB::KeeperRocksStorage, true>
-                                      ,TestParam<DB::KeeperRocksStorage, false>
-#endif
+using Implementation = testing::Types<TestParam<DB::KeeperStorage, true>
+                                      ,TestParam<DB::KeeperStorage, false>
                                       >;
 TYPED_TEST_SUITE(CoordinationTest, Implementation);
 

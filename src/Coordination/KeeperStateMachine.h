@@ -237,7 +237,6 @@ protected:
 
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
 /// Responsible for entries commit, snapshots creation and so on.
-template<typename Storage>
 class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
@@ -274,7 +273,7 @@ public:
     // This should be used only for tests or keeper-data-dumper because it violates
     // TSA -- we can't acquire the lock outside of this class or return a storage under lock
     // in a reasonable way.
-    Storage & getStorageUnsafe()
+    KeeperStorage & getStorageUnsafe()
     {
         chassert(storage);
         return *storage;
@@ -328,10 +327,10 @@ public:
 
 private:
     /// Main state machine logic
-    std::unique_ptr<Storage> storage;
+    std::unique_ptr<KeeperStorage> storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
-    KeeperSnapshotManager<Storage> snapshot_manager;
+    KeeperSnapshotManager snapshot_manager;
 
     /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
     /// different term) and re-point retention protection at its backing snapshot file.
