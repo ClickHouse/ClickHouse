@@ -17,6 +17,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Core/Defines.h>
@@ -31,6 +32,7 @@
 
 #include <string>
 #include <memory>
+#include <optional>
 #include <variant>
 
 
@@ -93,24 +95,49 @@ concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type,
   *
   * The cache is bounded in size to avoid unbounded memory consumption for workloads
   * that use many distinct constant polygons; least recently used entries are evicted.
-  * Polygons and multipolygons live in one cache (the entry is a variant), so the bound
+  * Polygons and multipolygons live in one cache (each entry holds a variant), so the bound
   * configured by the server setting `point_in_polygon_cache_size` applies to the total.
   * A value larger than the entire cache capacity is still returned to the query,
   * it is just not retained in the cache.
   */
+
+/** A preprocessed constant polygon (a polygon or a multipolygon) as stored in the shared cache.
+  */
+template <typename PolygonImpl, typename MultiPolygonImpl>
+struct PreprocessedPolygonCacheEntry
+{
+    std::optional<std::variant<PolygonImpl, MultiPolygonImpl>> value;
+
+    template <typename Impl, typename Geometry>
+    PreprocessedPolygonCacheEntry(std::in_place_type_t<Impl> impl_tag, const Geometry & geometry)
+    {
+        MemoryTrackerBlockerInThread memory_blocker;
+        ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
+
+        value.emplace(impl_tag, geometry);
+    }
+
+    ~PreprocessedPolygonCacheEntry()
+    {
+        MemoryTrackerBlockerInThread memory_blocker;
+
+        value.reset();
+    }
+};
+
 template <typename PolygonImpl, typename MultiPolygonImpl>
 struct PreprocessedPolygonWeightFunction
 {
-    size_t operator()(const std::variant<PolygonImpl, MultiPolygonImpl> & entry) const
+    size_t operator()(const PreprocessedPolygonCacheEntry<PolygonImpl, MultiPolygonImpl> & entry) const
     {
-        return std::visit([](const auto & impl) { return impl.getAllocatedBytes(); }, entry);
+        return std::visit([](const auto & impl) { return impl.getAllocatedBytes(); }, *entry.value);
     }
 };
 
 template <typename PolygonImpl, typename MultiPolygonImpl>
 using PreprocessedPolygonsCache = CacheBase<
     UInt128,
-    std::variant<PolygonImpl, MultiPolygonImpl>,
+    PreprocessedPolygonCacheEntry<PolygonImpl, MultiPolygonImpl>,
     UInt128TrivialHash,
     PreprocessedPolygonWeightFunction<PolygonImpl, MultiPolygonImpl>>;
 
@@ -367,19 +394,17 @@ public:
 
                 auto load = [&multi_polygon]
                 {
-                    ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
-
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstMultiPolygonImpl>, multi_polygon);
 
                     ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
                     ProfileEvents::increment(
-                        ProfileEvents::PolygonsInPoolAllocatedBytes, std::get<PointInConstMultiPolygonImpl>(*ptr).getAllocatedBytes());
+                        ProfileEvents::PolygonsInPoolAllocatedBytes, std::get<PointInConstMultiPolygonImpl>(*ptr->value).getAllocatedBytes());
 
                     return ptr;
                 };
 
                 auto entry = known_polygons.getOrSet(sipHash128(multi_polygon), load).first;
-                const auto & impl = std::get<PointInConstMultiPolygonImpl>(*entry);
+                const auto & impl = std::get<PointInConstMultiPolygonImpl>(*entry->value);
 
                 if (point_is_const)
                 {
@@ -399,19 +424,17 @@ public:
 
                 auto load = [&polygon]
                 {
-                    ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
-
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstPolygonImpl>, polygon);
 
                     ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
                     ProfileEvents::increment(
-                        ProfileEvents::PolygonsInPoolAllocatedBytes, std::get<PointInConstPolygonImpl>(*ptr).getAllocatedBytes());
+                        ProfileEvents::PolygonsInPoolAllocatedBytes, std::get<PointInConstPolygonImpl>(*ptr->value).getAllocatedBytes());
 
                     return ptr;
                 };
 
                 auto entry = known_polygons.getOrSet(sipHash128(polygon), load).first;
-                const auto & impl = std::get<PointInConstPolygonImpl>(*entry);
+                const auto & impl = std::get<PointInConstPolygonImpl>(*entry->value);
 
                 if (point_is_const)
                 {
