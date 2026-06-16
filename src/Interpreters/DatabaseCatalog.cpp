@@ -707,10 +707,21 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
 
-        /// Old ClickHouse versions did not store database.sql files
-        /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-        default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
-        default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+        /// Databases managed by Shared Catalog keep no metadata on disk.
+        /// Skip the removal to avoid a needless metadata-disk transaction that could fail.
+#if CLICKHOUSE_CLOUD
+        const bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(db->getEngineName());
+#else
+        const bool managed_by_shared_catalog = false;
+#endif
+
+        if (!managed_by_shared_catalog)
+        {
+            /// Old ClickHouse versions did not store database.sql files
+            /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+            default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
+            default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+        }
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
