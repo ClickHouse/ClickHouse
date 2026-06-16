@@ -811,3 +811,63 @@ def test_url_prefix_handler():
             "",  # root
         ]:
             assert 404 == get(not_matching).status_code, not_matching
+
+
+def test_url_regex_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "url_regex_handler", "test_url_regex_handler"
+        )
+    ) as cluster:
+        def get(path):
+            return cluster.instance.http_request(path, method="GET")
+
+        # The rule is <url_regex>/test_regex/[0-9]+</url_regex>: the whole path must match the regular
+        # expression, regardless of the query string.
+        for matching in [
+            "test_regex/0",  # a single digit
+            "test_regex/123",  # several digits
+            "test_regex/123?param=value",  # query string is ignored
+        ]:
+            response = get(matching)
+            assert response.status_code == 200, f"{matching} -> {response.status_code}"
+            assert response.content == b"regex handler matched", matching
+
+        # These must NOT match: the regex must match the whole path.
+        for not_matching in [
+            "test_regex/abc",  # not digits
+            "test_regex/",  # no digits
+            "test_regex/123/extra",  # trailing segment is not part of the match
+            "test_regex",  # missing the digits segment
+            "other",  # unrelated path
+        ]:
+            assert 404 == get(not_matching).status_code, not_matching
+
+
+def test_headers_regex_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "headers_regex_handler",
+            "test_headers_regex_handler",
+        )
+    ) as cluster:
+        def get(headers):
+            return cluster.instance.http_request(
+                "test_headers_regex", method="GET", headers=headers
+            )
+
+        # The rule is <headers_regex><XXX>[0-9]+</XXX></headers_regex>: the value of header XXX must
+        # match the regular expression as a whole.
+        response = get({"XXX": "123"})
+        assert response.status_code == 200
+        assert response.content == b"headers regex handler matched"
+
+        # These must NOT match: the header is absent, empty, or does not match the regex as a whole.
+        for not_matching in [
+            {},  # header absent
+            {"XXX": ""},  # empty value
+            {"XXX": "abc"},  # not digits
+            {"XXX": "12a"},  # not digits as a whole
+        ]:
+            assert 404 == get(not_matching).status_code, not_matching

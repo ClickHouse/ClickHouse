@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-}
-
 class IServer;
 class AsynchronousMetrics;
 
@@ -43,36 +38,15 @@ public:
         };
     }
 
+    void addFilters(std::vector<Filter> filters)
+    {
+        for (auto & cur_filter : filters)
+            addFilter(std::move(cur_filter));
+    }
+
     void addFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
     {
-        Poco::Util::AbstractConfiguration::Keys filters_type;
-        config.keys(prefix, filters_type);
-
-        for (const auto & filter_type : filters_type)
-        {
-            if (filter_type == "handler")
-                continue;
-            /// URL path (the query string is ignored)
-            if (filter_type == "url")
-                addFilter(urlFilter(config, prefix + ".url", HTTPRequestFilterMatchType::Full));
-            /// URL path matched as a base path
-            else if (filter_type == "url_prefix")
-                addFilter(urlFilter(config, prefix + ".url_prefix", HTTPRequestFilterMatchType::Prefix));
-            /// Complete URL (scheme://host:port/path); the query string is ignored
-            else if (filter_type == "full_url")
-                addFilter(fullUrlFilter(config, prefix + ".full_url", HTTPRequestFilterMatchType::Full));
-            /// Complete URL matched as a base path
-            else if (filter_type == "full_url_prefix")
-                addFilter(fullUrlFilter(config, prefix + ".full_url_prefix", HTTPRequestFilterMatchType::Prefix));
-            else if (filter_type == "empty_query_string")
-                addFilter(emptyQueryStringFilter());
-            else if (filter_type == "headers")
-                addFilter(headersFilter(config, prefix + ".headers"));
-            else if (filter_type == "methods")
-                addFilter(methodsFilter(config, prefix + ".methods"));
-            else
-                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}", prefix, filter_type);
-        }
+        addFilters(buildFiltersFromConfig(config, prefix));
     }
 
     void attachStrictPath(const String & strict_path)

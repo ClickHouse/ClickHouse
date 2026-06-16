@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 namespace
@@ -81,9 +82,20 @@ bool checkExpression(std::string_view match_str, const FilterExpression & expres
     return match_str == expression.value;
 }
 
-FilterExpression getExpression(const std::string & expression, HTTPRequestFilterMatchType filter_type, bool ignore_query_string)
+CompiledRegexPtr compileRegex(const std::string & regex)
 {
-    if (filter_type == HTTPRequestFilterMatchType::Prefix)
+    auto compiled_regex = std::make_shared<const re2::RE2>(regex);
+
+    if (!compiled_regex->ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
+                        "Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                        regex, compiled_regex->error());
+    return compiled_regex;
+}
+
+FilterExpression getExpression(const std::string & expression, HTTPRequestFilterMatchType match_type, bool ignore_query_string)
+{
+    if (match_type == HTTPRequestFilterMatchType::Prefix)
     {
         /// Match the value as a base path on a path-segment boundary (see checkExpression). A trailing '/'
         /// is stripped here, so "/api/v1/" and "/api/v1" behave the same.
@@ -93,16 +105,13 @@ FilterExpression getExpression(const std::string & expression, HTTPRequestFilter
         return {.value = String{value}, .match_prefix = true, .ignore_query_string = ignore_query_string};
     }
 
-    if (startsWith(expression, "regex:"))
-    {
-        auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(strlen("regex:")));
+    /// `Regex` treats the whole value as a regular expression, while `Full` does so only when the value
+    /// starts with the "regex:" marker.
+    if (match_type == HTTPRequestFilterMatchType::Regex)
+        return {.value = expression, .regex = compileRegex(expression), .ignore_query_string = ignore_query_string};
 
-        if (!compiled_regex->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
-                            "Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                            expression, compiled_regex->error());
-        return {.value = expression, .regex = compiled_regex, .ignore_query_string = ignore_query_string};
-    }
+    if (startsWith(expression, "regex:"))
+        return {.value = expression, .regex = compileRegex(expression.substr(strlen("regex:"))), .ignore_query_string = ignore_query_string};
 
     return {.value = expression, .ignore_query_string = ignore_query_string};
 }
@@ -120,17 +129,17 @@ HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config
     return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
 }
 
-HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType filter_type)
+HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType match_type)
 {
-    return [expression = getExpression(config.getString(config_path), filter_type, /* ignore_query_string= */ true)](const HTTPServerRequest & request)
+    return [expression = getExpression(config.getString(config_path), match_type, /* ignore_query_string= */ true)](const HTTPServerRequest & request)
     {
         return checkExpression(request.getURI(), expression);
     };
 }
 
-HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType filter_type)
+HTTPRequestFilter fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType match_type)
 {
-    return [expression = getExpression(config.getString(config_path), filter_type, /* ignore_query_string= */ true)](const HTTPServerRequest & request)
+    return [expression = getExpression(config.getString(config_path), match_type, /* ignore_query_string= */ true)](const HTTPServerRequest & request)
     {
         const auto & server_address = request.serverAddress();
         std::string url = fmt::format("{}://{}{}",
@@ -151,7 +160,7 @@ HTTPRequestFilter emptyQueryStringFilter()
     };
 }
 
-HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix, HTTPRequestFilterMatchType match_type)
 {
     std::unordered_map<String, FilterExpression> headers_expression;
     Poco::Util::AbstractConfiguration::Keys headers_name;
@@ -160,7 +169,7 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
     for (const auto & header_name : headers_name)
     {
         const auto & expression = getExpression(
-            config.getString(prefix + "." + header_name), HTTPRequestFilterMatchType::Full, /* ignore_query_string= */ false);
+            config.getString(prefix + "." + header_name), match_type, /* ignore_query_string= */ false);
         checkExpression("", expression);    /// Check expression syntax is correct
         headers_expression.emplace(std::make_pair(header_name, expression));
     }
@@ -176,6 +185,51 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
 
         return true;
     };
+}
+
+std::vector<HTTPRequestFilter> buildFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    std::vector<HTTPRequestFilter> filters;
+
+    Poco::Util::AbstractConfiguration::Keys filter_types;
+    config.keys(config_prefix, filter_types);
+
+    for (const auto & filter_type : filter_types)
+    {
+        if (filter_type == "handler")
+            continue;
+        /// URL path (the query string is ignored)
+        if (filter_type == "url")
+            filters.push_back(urlFilter(config, config_prefix + ".url", HTTPRequestFilterMatchType::Full));
+        /// URL path matched as a regular expression
+        else if (filter_type == "url_regex")
+            filters.push_back(urlFilter(config, config_prefix + ".url_regex", HTTPRequestFilterMatchType::Regex));
+        /// URL path matched as a base path
+        else if (filter_type == "url_prefix")
+            filters.push_back(urlFilter(config, config_prefix + ".url_prefix", HTTPRequestFilterMatchType::Prefix));
+        /// Complete URL (scheme://host:port/path); the query string is ignored
+        else if (filter_type == "full_url")
+            filters.push_back(fullUrlFilter(config, config_prefix + ".full_url", HTTPRequestFilterMatchType::Full));
+        /// Complete URL matched as a regular expression
+        else if (filter_type == "full_url_regex")
+            filters.push_back(fullUrlFilter(config, config_prefix + ".full_url_regex", HTTPRequestFilterMatchType::Regex));
+        /// Complete URL matched as a base path
+        else if (filter_type == "full_url_prefix")
+            filters.push_back(fullUrlFilter(config, config_prefix + ".full_url_prefix", HTTPRequestFilterMatchType::Prefix));
+        else if (filter_type == "empty_query_string")
+            filters.push_back(emptyQueryStringFilter());
+        else if (filter_type == "headers")
+            filters.push_back(headersFilter(config, config_prefix + ".headers", HTTPRequestFilterMatchType::Full));
+        /// Each header value matched as a regular expression
+        else if (filter_type == "headers_regex")
+            filters.push_back(headersFilter(config, config_prefix + ".headers_regex", HTTPRequestFilterMatchType::Regex));
+        else if (filter_type == "methods")
+            filters.push_back(methodsFilter(config, config_prefix + ".methods"));
+        else
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}", config_prefix, filter_type);
+    }
+
+    return filters;
 }
 
 }
