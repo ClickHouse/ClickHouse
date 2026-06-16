@@ -1588,11 +1588,12 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// names, which the `JoinExpressionActions`-based reconstruction does not support. See the comment
     /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
-    if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings(), optimization_settings.merge_expression_into_join))
-    {
-        join_step->setOptimized();
-        return;
-    }
+    // if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings(), optimization_settings.merge_expression_into_join))
+    // {
+    //     join_step->setOptimized();
+    //     return;
+    // }
+    UNUSED(joinGraphHasOverlappingColumnNames);
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();
