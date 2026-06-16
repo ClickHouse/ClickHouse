@@ -228,12 +228,9 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
         .lock_acquired_time = lock_acquired_time_ }))
     , log(log_)
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-    {
-        chassert(checkBucketOwnership(ObjectStorageQueueMetadata::getZooKeeper(log, bucket_info->zookeeper_name)));
-    });
-#endif
+    /// Note: we do not assert ownership here. The lock node can legitimately disappear right after
+    /// acquisition (e.g. a short `persistent_processing_node_ttl_seconds` lets the cleanup remove
+    /// it), so an ownership assertion would be racy. Ownership is enforced atomically at commit.
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
@@ -272,22 +269,15 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, bucket_info->zookeeper_name);
-        if (zk_retry.isRetry())
+        /// Remove the lock only if we still own it. It may have been cleaned up by the TTL cleanup
+        /// and re-acquired by another processor (or, on a retry, removed by our own earlier attempt
+        /// whose confirmation was lost and then recreated). In either case removing it would delete
+        /// the new owner's lock, so leave it for the new owner / TTL cleanup instead.
+        if (!checkBucketOwnership(zk_client))
         {
-            /// It is possible that we fail "after operation",
-            /// e.g. we successfully removed the node, but did not get confirmation,
-            /// but then if we retry - we can remove a newly recreated node,
-            /// therefore avoid this with this check.
-            if (!checkBucketOwnership(zk_client))
-            {
-                LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
-                code = Coordination::Error::ZOK;
-                return;
-            }
-        }
-        else
-        {
-            chassert(checkBucketOwnership(zk_client));
+            LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
+            code = Coordination::Error::ZOK;
+            return;
         }
         code = zk_client->tryRemove(bucket_info->bucket_lock_path);
     });
@@ -808,20 +798,24 @@ bool ObjectStorageQueueOrderedFileMetadata::prepareBucketOwnershipCheckRequests(
         match.numChildren = -1;
         match.pzxid = -1;
 
+        /// Assert atomically (within the commit multi) that we still own this exact lock node ...
         requests.push_back(zkutil::makeCheckRequest(
             bucket_info->bucket_lock_path, /* version */-1, /* not_exists */false, match));
+        /// ... and only then refresh its mtime (heartbeat) so the TTL cleanup does not remove a
+        /// lock that is actively committing. The `Set` is guarded by the `CheckStat` above in the
+        /// same multi, so it can never overwrite a lock that was cleaned up and re-acquired by
+        /// another processor.
+        requests.push_back(zkutil::makeSetRequest(
+            bucket_info->bucket_lock_path, bucket_info->processor_info, /* version */-1));
+        return true;
     }
 
-    /// Refresh the lock node's mtime so the TTL cleanup does not clean up a lock that is actively
-    /// committing. This is a plain `SET`, so it also works against external ZooKeeper without
-    /// `CHECK_STAT`: it heartbeats the lock and, if the lock was already removed (e.g. by the TTL
-    /// cleanup) and not yet re-acquired, fails the whole commit multi with `ZNONODE` so the file is
-    /// retried instead of double-committed. Combined with the non-atomic `stillOwnsBucket` check on
-    /// the error path, this keeps the ownership-loss race covered even without `CHECK_STAT`, though
-    /// only the `CHECK_STAT` path makes it fully atomic.
-    requests.push_back(zkutil::makeSetRequest(
-        bucket_info->bucket_lock_path, bucket_info->processor_info, /* version */-1));
-    return true;
+    /// Without `CHECK_STAT` we cannot prove inside the commit multi that we still hold this exact
+    /// lock node, so we deliberately add nothing here. A blind `Set`/heartbeat could overwrite a
+    /// lock that the TTL cleanup removed and another processor re-acquired (stealing it). The
+    /// commit instead stays correct via the version-pinned processed pointer, and lost ownership is
+    /// surfaced (non-atomically) by `stillOwnsBucket` on the error path.
+    return false;
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::stillOwnsBucket() const
