@@ -877,6 +877,11 @@ void setPointInPolygonCacheMaxSizeInBytes(size_t max_size_in_bytes)
     CurrentMetrics::set(CurrentMetrics::PointInPolygonCacheSizeLimit, max_size_in_bytes);
 }
 
+void clearPointInPolygonCache()
+{
+    preprocessedPolygonsCache<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>().clear();
+}
+
 REGISTER_FUNCTION(PointInPolygon)
 {
     FunctionDocumentation::Description description = R"(

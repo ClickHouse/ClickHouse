@@ -11,4 +11,10 @@ namespace DB
   */
 void setPointInPolygonCacheMaxSizeInBytes(size_t max_size_in_bytes);
 
+/** Evicts all entries from the cache of preprocessed constant polygons used by the
+  * function pointInPolygon. The configured size limit is left unchanged, so the cache
+  * keeps accepting entries afterwards. Backs `SYSTEM DROP POINT IN POLYGON CACHE`.
+  */
+void clearPointInPolygonCache();
+
 }
