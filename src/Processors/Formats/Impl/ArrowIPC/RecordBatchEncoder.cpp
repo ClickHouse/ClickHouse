@@ -159,7 +159,8 @@ int arrowTimeUnitForScale(UInt32 scale)
 
 }
 
-void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr & type, size_t num_rows)
+void RecordBatchEncoder::encodeValues(
+    const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column)
 {
     const WhichDataType which(type);
 
@@ -215,9 +216,19 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
             for (UInt32 i = scale; i < target_scale; ++i)
                 factor *= 10;
             const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData();
+            const NullMap * null_map
+                = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
             PODArray<Int64> values(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
             {
+                /// A null row carries an arbitrary nested value that the validity bitmap already masks as
+                /// NULL; do not rescale it (matching the Apache Arrow writer), so junk in a NULL row cannot
+                /// raise DECIMAL_OVERFLOW for a value that is emitted as NULL anyway.
+                if (null_map && (*null_map)[i])
+                {
+                    values[i] = 0;
+                    continue;
+                }
                 /// Widening to a coarser Arrow unit multiplies the value; guard against silent wraparound,
                 /// matching the Apache Arrow writer which raises `DECIMAL_OVERFLOW` for the same case.
                 if (common::mulOverflow(data[i].value, factor, values[i]))
@@ -414,7 +425,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
 
     nodes.emplace_back(static_cast<int64_t>(num_rows), null_count);
     appendValidity(null_map_column, num_rows);
-    encodeValues(*nested, nested_type, num_rows);
+    encodeValues(*nested, nested_type, num_rows, null_map_column);
 }
 
 void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows)

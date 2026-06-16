@@ -46,7 +46,10 @@ public:
 
 private:
     void encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows);
-    void encodeValues(const IColumn & column, const DataTypePtr & type, size_t num_rows);
+    /// `null_map_column` (the outer `ColumnNullable`'s null map, or null for a non-nullable column) lets
+    /// leaf encoders skip work for null rows — e.g. `DateTime64` rescaling, which would otherwise overflow
+    /// on the arbitrary value a null row may carry.
+    void encodeValues(const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column = nullptr);
     /// Encodes a Variant column as an Arrow dense union (no validity buffer; a types and an offsets
     /// buffer, the variant children in global order, and a trailing single-element null child).
     void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows);
