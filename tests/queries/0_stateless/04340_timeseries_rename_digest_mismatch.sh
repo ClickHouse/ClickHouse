@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database, no-fasttest
+# Tags: zookeeper, no-parallel, no-replicated-database
 # Tag no-parallel: enables a REGULAR failpoint that affects the whole server process.
 # Tag no-replicated-database: the test creates its own Replicated database and the
 #                             failpoint is enabled only on one server node.
-# Tag no-fasttest: creates a TimeSeries table (experimental engine, disabled in fast test).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,3 +55,23 @@ ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}_renamed.probe"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT database_replicated_force_metadata_digest_check"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_renamed SYNC" 2>/dev/null || true
+
+# In a non-UUID (Ordinary) database the inner tables embed the outer table name, so renaming a
+# TimeSeries table renames each inner table too. Those inner renames are not transactional, so if
+# one destination name is already taken the rename must be rejected up front, before any inner
+# table is moved -- otherwise the table would be left half-renamed with an orphaned inner table.
+ORD="${CLICKHOUSE_DATABASE}_ord"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${ORD} SYNC"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE ${ORD} ENGINE = Ordinary"
+${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${ORD}.ts ENGINE = TimeSeries"
+# Occupy one of the destination inner-table names so the rename cannot complete.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${ORD}.\`.inner.tags.ts2\` (x UInt8) ENGINE = MergeTree ORDER BY x"
+# The rename is rejected before any inner table is moved.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "RENAME TABLE ${ORD}.ts TO ${ORD}.ts2" 2>&1 | grep -q -F "TABLE_ALREADY_EXISTS" && echo "rejected"
+# Every source inner table is still present (none orphaned), so the table keeps working.
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.samples.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.tags.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.metrics.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.ts"
+
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${ORD} SYNC" 2>/dev/null || true

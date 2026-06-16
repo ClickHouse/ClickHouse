@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int UNKNOWN_TABLE;
 }
@@ -496,6 +497,11 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
 
     if (!from_atomic_to_atomic_database && hasInnerTables())
     {
+        /// Collect every inner table rename first so that all destination names can be checked
+        /// before any rename is executed. The inner renames are not transactional, so renaming
+        /// them one by one would leave the table half-renamed (some inner tables moved, the rest
+        /// not) if a later destination name happened to be occupied.
+        std::vector<std::pair<StorageID, String>> inner_renames;
         for (auto target_kind : getTargetKinds())
         {
             if (!isInnerTable(target_kind))
@@ -508,6 +514,15 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
             auto inner_table_id = inner_table->getStorageID();
             auto new_inner_table_name = getTimeSeriesInnerTableName(target_kind, new_table_id);
 
+            if (DatabaseCatalog::instance().isTableExist(StorageID{new_table_id.database_name, new_inner_table_name}, getContext()))
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists",
+                                StorageID{new_table_id.database_name, new_inner_table_name}.getNameForLogs());
+
+            inner_renames.emplace_back(std::move(inner_table_id), std::move(new_inner_table_name));
+        }
+
+        for (const auto & [inner_table_id, new_inner_table_name] : inner_renames)
+        {
             auto rename = make_intrusive<ASTRenameQuery>();
             rename->addElement(inner_table_id.database_name, inner_table_id.table_name,
                                new_table_id.database_name, new_inner_table_name);
