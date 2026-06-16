@@ -88,6 +88,7 @@ private:
         size_t snapshot_version;
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    mutable DB::UInt128 kernel_state_credentials_fingerprint{};
 
     struct SchemaInfo
     {

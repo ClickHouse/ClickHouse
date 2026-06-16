@@ -1,5 +1,4 @@
 #include "config.h"
-#include <Common/CurrentThread.h>
 
 #if USE_DELTA_KERNEL_RS
 
@@ -13,6 +12,7 @@
 #include <Core/Settings.h>
 
 #include <Columns/IColumn.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
@@ -703,14 +703,19 @@ std::optional<size_t> TableSnapshot::getTotalBytes() const
 
 void TableSnapshot::initOrUpdateSnapshot() const
 {
-    if (kernel_snapshot_state)
+    /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
+    const auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
+    if (kernel_snapshot_state && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
 
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
-    LOG_TEST(log, "Initializing snapshot");
+    LOG_TEST(
+        log, "{} kernel snapshot state",
+        kernel_snapshot_state ? "Rebuilding (credentials rotated)" : "Initializing");
 
     kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    kernel_state_credentials_fingerprint = current_credentials_fingerprint;
 
     LOG_TRACE(
         log, "Initialized snapshot. Snapshot version: {}",

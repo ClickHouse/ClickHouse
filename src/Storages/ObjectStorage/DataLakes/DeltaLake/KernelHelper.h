@@ -2,6 +2,7 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
+#include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace ffi
@@ -34,6 +35,9 @@ public:
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
+
+    /// Hash of current credentials; override for providers with rotating sessions.
+    virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;

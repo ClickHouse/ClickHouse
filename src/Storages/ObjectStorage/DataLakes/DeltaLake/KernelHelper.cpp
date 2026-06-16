@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
@@ -100,6 +101,17 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return url.key; }
+
+    DB::UInt128 getCredentialsFingerprint() const override
+    {
+        const auto & credentials = client->getCredentials();
+
+        SipHash hash;
+        hash.update(credentials.GetAWSAccessKeyId());
+        hash.update(credentials.GetAWSSecretKey());
+        hash.update(credentials.GetSessionToken());
+        return hash.get128();
+    }
 
     ffi::EngineBuilder * createBuilder() const override
     {
