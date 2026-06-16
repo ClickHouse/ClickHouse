@@ -48,19 +48,27 @@ public:
 
     String getDoc() const { return document; }
 
-    rapidjson::Value getRapidJsonRepresentation() const
+    /// Returns the document as an owning rapidjson value. The returned Document
+    /// owns its allocator, so the JSON stays valid after this function returns
+    /// (the data must not reference the temporary local document's allocator).
+    rapidjson::Document getRapidJsonRepresentation() const
     {
         char * json_str = bson_as_legacy_extended_json(bson_doc, nullptr);
         rapidjson::Document json_doc;
         json_doc.Parse(json_str);
-
-        rapidjson::Value & root = json_doc;
-        return rapidjson::Value(root.GetObject());
+        bson_free(json_str);
+        return json_doc;
     }
 
     bson_t * getBson() const { return bson_doc; }
 
-    String getJson() const { return bson_as_legacy_extended_json(bson_doc, nullptr); }
+    String getJson() const
+    {
+        char * json_str = bson_as_legacy_extended_json(bson_doc, nullptr);
+        String result(json_str);
+        bson_free(json_str);
+        return result;
+    }
 
     ~Document() override;
 

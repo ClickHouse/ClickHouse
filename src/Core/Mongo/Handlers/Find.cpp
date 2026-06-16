@@ -33,25 +33,16 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     const auto & json_representation = document.getRapidJsonRepresentation();
     String table_name = json_representation["find"].GetString();
 
-    //bool has_projection = false;
-    rapidjson::Value filter;
+    // `filter` is a document so it owns its allocator: it is serialized below and
+    // must stay valid (it must not reference a temporary document's allocator).
+    rapidjson::Document filter;
+    auto & filter_allocator = filter.GetAllocator();
+    filter.CopyFrom(json_representation["filter"], filter_allocator);
     if (json_representation.FindMember("projection") != json_representation.MemberEnd())
     {
-        //has_projection = true;
-        rapidjson::Document new_filter;
-        new_filter.CopyFrom(json_representation["filter"], new_filter.GetAllocator());
-
-        rapidjson::Document new_projection;
-        new_projection.CopyFrom(json_representation["projection"], new_projection.GetAllocator());
-
-        new_filter.AddMember("$projection", rapidjson::Value(new_projection.GetObject()), new_filter.GetAllocator());
-        filter = rapidjson::Value(new_filter.GetObject());
-    }
-    else
-    {
-        rapidjson::Document new_filter;
-        new_filter.CopyFrom(json_representation["filter"], new_filter.GetAllocator());
-        filter = rapidjson::Value(new_filter.GetObject());
+        rapidjson::Value projection;
+        projection.CopyFrom(json_representation["projection"], filter_allocator);
+        filter.AddMember("$projection", projection, filter_allocator);
     }
 
     String serialized_filter;
