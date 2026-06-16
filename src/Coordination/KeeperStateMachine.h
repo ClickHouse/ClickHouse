@@ -317,7 +317,7 @@ private:
     {
         DiskPtr disk;
         std::string snapshot_file_name;
-        uint64_t log_idx;
+        uint64_t log_idx = 0;
     };
 
     std::optional<DetachedSnapshotReceiveFiles> detachUnfinishedSnapshotReceiveForCleanup() TSA_REQUIRES(snapshots_lock);

@@ -1072,11 +1072,9 @@ typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMac
     outcome.published = snapshot_manager.publishSnapshotFile(requested_idx, written_file_info);
     if (outcome.published != written_file_info)
     {
-        /// A saved-but-not-applied install already registered this index — legitimate.
-        /// Adopt the registered entry (state-equivalent by Raft log matching), retire our file.
-        /// Adopted WITHOUT an existence probe (this replaces the removed
-        /// SameIndexCreateFailsClosedOnMissingRegisteredFile test): the pending install is pinned
-        /// by `protected_pending_snapshot_log_idx`, so retention can't unlink it before apply.
+        /// A saved-but-not-applied install already registered this index — adopt it without probing
+        /// file existence (replaces removed SameIndexCreateFailsClosedOnMissingRegisteredFile test):
+        /// `protected_pending_snapshot_log_idx` pins it so retention can't unlink it before apply.
         snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
         outcome.loser_to_remove = written_file_info;
         advanceLatestSnapshotMeta(written_snapshot_meta);

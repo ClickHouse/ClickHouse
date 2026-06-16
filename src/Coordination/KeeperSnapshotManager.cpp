@@ -55,12 +55,9 @@ namespace
 {
     std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
     {
-        /// Unique-from-birth names make collisions between a local create, a receive and
-        /// stale-file cleanup impossible, so publication needs no rename and no coordination.
-        /// A random suffix is required because `writeFile` truncates an existing file
-        /// (WriteMode::Rewrite), so a name collision would silently rewrite published bytes.
-        /// 64 random bits is a large margin over the real collision space (a handful of files
-        /// per index); kept hex so the index stays the second `_`-separated token.
+        /// Unique-from-birth names make same-index write collisions impossible (so no rename or
+        /// coordination is needed); a collision would silently truncate published bytes via
+        /// `writeFile`. Hex keeps the index as the second `_`-separated token.
         auto base = fmt::format("snapshot_{}_{:016x}.bin", up_to_log_idx, thread_local_rng());
         if (compress_zstd)
             base += ".zstd";
@@ -762,7 +759,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     {
         DiskPtr disk;
         std::string path;
-        uint64_t up_to_log_idx;
+        uint64_t up_to_log_idx = 0;
     };
     /// Same-index duplicates found during the scan; handled after all disks are scanned
     /// because the decision depends on the latest registered index.
@@ -840,11 +837,10 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     if (latest_snapshot_disk != disk)
         load_snapshot_from_disk(latest_snapshot_disk);
 
-    /// Duplicates outside the retained window are deleted: their registered sibling is
-    /// about to be purged by maintenance anyway. Duplicates of retained indexes are KEPT
-    /// as redundant recovery points: `init` throws `CORRUPTED_DATA` with no fallback, the
-    /// operator drill (remove the broken snapshot, restart) can boot from any retained
-    /// index, and no copy is validated at scan time. No pins exist during startup.
+    /// Duplicates outside the retained window are deleted (sibling is purged by maintenance anyway).
+    /// Duplicates of retained indexes are KEPT as redundant recovery points: `init` throws
+    /// `CORRUPTED_DATA` with no fallback; operator can remove the broken copy and restart from
+    /// any retained index. No copy is validated at scan time; no pins exist during startup.
     const uint64_t latest_registered_idx = getLatestSnapshotIndex();
     std::optional<uint64_t> oldest_retained_idx;
     if (!existing_snapshots.empty() && snapshots_to_keep > 0)
@@ -853,7 +849,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
             = existing_snapshots.size() > snapshots_to_keep ? existing_snapshots.size() - snapshots_to_keep : 0;
         oldest_retained_idx = std::next(existing_snapshots.begin(), purged_count)->first;
     }
-    for (const auto & duplicate : duplicate_snapshot_files)
+    for (auto & duplicate : duplicate_snapshot_files)
     {
         const auto & registered = existing_snapshots.at(duplicate.up_to_log_idx);
         if (!oldest_retained_idx || duplicate.up_to_log_idx < *oldest_retained_idx)
@@ -905,7 +901,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
                 registered->disk->getName());
             /// Track the kept duplicate so it ages out with its index (as the message promises).
             retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
-                makeManagedSnapshotFileInfo(duplicate.path, duplicate.disk, duplicate.up_to_log_idx));
+                makeManagedSnapshotFileInfo(std::move(duplicate.path), std::move(duplicate.disk), duplicate.up_to_log_idx));
         }
     }
 
