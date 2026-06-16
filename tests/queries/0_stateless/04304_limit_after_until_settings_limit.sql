@@ -2,8 +2,6 @@
 -- With LIMIT AFTER ... ALL they must not be folded into the per-window length; instead they are
 -- applied as an outer LIMIT/OFFSET after the range step. Checked on both the analyzer and legacy paths.
 
-SET allow_experimental_limit_after = 1;
-
 -- limit setting with AFTER ... ALL and no explicit window length: global cap of 2 rows.
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (1, 5) ALL SETTINGS limit = 2;
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (1, 5) ALL SETTINGS limit = 2, enable_analyzer = 0;

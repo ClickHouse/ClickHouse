@@ -56,25 +56,40 @@ private:
 
     void transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col);
 
+    /// Expression that evaluates the AFTER condition per row.
     ExpressionActionsPtr start_expression;
+    /// Name of the boolean column produced by start_expression.
     String start_column_name;
+    /// Expression that evaluates the UNTIL condition per row.
     ExpressionActionsPtr end_expression;
+    /// Name of the boolean column produced by end_expression.
     String end_column_name;
+    /// ALL mode: emit the union of all windows opened by AFTER matches.
     bool start_all = false;
+    /// Maximum number of rows per window (nullopt = unlimited).
     std::optional<UInt64> limit;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
+    /// Keep reading input after output is done (for rows_before_limit_at_least).
     bool always_read_till_end = false;
+    /// True once output is finished; remaining chunks are cleared or counted.
     bool done_outputting = false;
 
+    /// Whether the AFTER condition has been met (non-ALL mode).
     bool started = false;
+    /// Total rows emitted so far (non-ALL mode).
     UInt64 rows_output = 0;
+    /// Total rows seen so far across all chunks (ALL mode, for absolute position tracking).
     UInt64 rows_read = 0;
+    /// Absolute row position up to which the current/latest window extends (ALL mode).
     UInt64 repeated_window_end = 0;
+    /// An AFTER match with no limit opened an unbounded window (ALL mode, no UNTIL yet).
     bool has_repeated_unbounded_window = false;
 
+    /// Position of the start condition column in the block after executing start_expression.
     size_t start_column_position = 0;
+    /// Position of the end condition column in the block after executing end_expression.
     size_t end_column_position = 0;
 
     /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.

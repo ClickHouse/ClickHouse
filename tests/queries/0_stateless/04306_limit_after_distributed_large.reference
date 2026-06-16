@@ -1,0 +1,36 @@
+-- { echo }
+
+-- LIMIT 3 AFTER (distributed, both analyzers)
+SELECT id FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test) ORDER BY id LIMIT 3 AFTER id >= 199995;
+199995
+199996
+199997
+SELECT id FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test) ORDER BY id LIMIT 3 AFTER id >= 199995 SETTINGS enable_analyzer = 0;
+199995
+199996
+199997
+-- LIMIT AFTER UNTIL (distributed, both analyzers)
+SELECT id FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test) ORDER BY id LIMIT 100 AFTER id >= 199990 UNTIL id >= 199995;
+199990
+199991
+199992
+199993
+199994
+SELECT id FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test) ORDER BY id LIMIT 100 AFTER id >= 199990 UNTIL id >= 199995 SETTINGS enable_analyzer = 0;
+199990
+199991
+199992
+199993
+199994
+-- LIMIT AFTER ALL (distributed, both analyzers)
+SELECT id FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test) ORDER BY id LIMIT 2 AFTER id IN (199990, 199995) ALL;
+199990
+199991
+199995
+199996
+SELECT id FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test) ORDER BY id LIMIT 2 AFTER id IN (199990, 199995) ALL SETTINGS enable_analyzer = 0;
+199990
+199991
+199995
+199996
+DROP TABLE test;

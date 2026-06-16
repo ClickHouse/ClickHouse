@@ -4,8 +4,6 @@
 --   3. extremes are computed on the pre-range stream (both analyzer and legacy paths).
 --   4. AFTER/UNTIL conditions may reference non-selected columns (legacy path, runs before projection).
 
-SET allow_experimental_limit_after = 1;
-
 -- 1. IN (subquery) must work in AFTER/UNTIL conditions (analyzer + legacy).
 SELECT number FROM numbers(8) ORDER BY number LIMIT AFTER number IN (SELECT 3);
 SELECT number FROM numbers(8) ORDER BY number LIMIT AFTER number IN (SELECT 3) SETTINGS enable_analyzer = 0;

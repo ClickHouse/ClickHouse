@@ -1,4 +1,3 @@
-SET allow_experimental_limit_after = 1;
 -- `LIMIT ... AFTER ... ALL` should emit the union of all matching windows.
 SELECT number
 FROM numbers(10)

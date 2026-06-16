@@ -199,7 +199,6 @@ namespace Setting
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
-    extern const SettingsBool allow_experimental_limit_after;
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -243,6 +242,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -3526,11 +3526,20 @@ static std::optional<std::pair<ActionsDAG, String>> buildLimitConditionDAG(
     const Block & header,
     const ASTPtr & expr,
     ContextPtr context,
-    PreparedSetsPtr prepared_sets)
+    PreparedSetsPtr prepared_sets,
+    const String & description)
 {
     if (!expr)
         return std::nullopt;
-    return std::make_optional(ExpressionAnalyzer::buildFilterActionsDAG(context, header, expr, prepared_sets));
+    auto result = ExpressionAnalyzer::buildFilterActionsDAG(context, header, expr, prepared_sets);
+    const auto * output = result.first.getOutputs().at(0);
+    if (!output->result_type->canBeUsedInBooleanContext())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "{} expression must be boolean, got {}",
+            description,
+            output->result_type->getName());
+    return std::make_optional(std::move(result));
 }
 
 void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
@@ -3539,11 +3548,6 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
     /// If there is LIMIT with AFTER or UNTIL, use LimitRangeStep
     if (query.limitAfter() || query.limitUntil())
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_limit_after])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "LIMIT ... AFTER/UNTIL syntax is experimental. "
-                "Enable it with `SET allow_experimental_limit_after = 1`");
-
         if (query.limit_with_ties)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
         if (query.limitOffset())
@@ -3567,8 +3571,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             always_read_till_end = true;
 
         const auto & header = query_plan.getCurrentHeader();
-        auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets);
-        auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets);
+        auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets, "LIMIT AFTER");
+        auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets, "LIMIT UNTIL");
         auto limit_range_step = std::make_unique<LimitRangeStep>(
             header,
             std::move(start_condition),

@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-}
-
 static UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
 {
     if (lhs > std::numeric_limits<UInt64>::max() - rhs)
@@ -51,20 +46,12 @@ LimitRangeTransform::LimitRangeTransform(
     {
         Block block = getInputPort().getHeader().cloneEmpty();
         start_expression->execute(block, /*dry_run=*/true);
-        const auto & col = block.getByName(start_column_name);
-        if (!col.type->canBeUsedInBooleanContext())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "LIMIT AFTER expression must be boolean, got {}", col.type->getName());
         start_column_position = block.getPositionByName(start_column_name);
     }
     if (end_expression)
     {
         Block block = getInputPort().getHeader().cloneEmpty();
         end_expression->execute(block, /*dry_run=*/true);
-        const auto & col = block.getByName(end_column_name);
-        if (!col.type->canBeUsedInBooleanContext())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "LIMIT UNTIL expression must be boolean, got {}", col.type->getName());
         end_column_position = block.getPositionByName(end_column_name);
     }
 }
@@ -136,6 +123,12 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
     IColumn::Filter filter(num_rows, 0);
     size_t filtered_rows = 0;
 
+    /// Track contiguous ranges so we can use IColumn::cut when possible.
+    size_t range_begin = num_rows; /// sentinel: no range open
+    size_t num_ranges = 0;
+    size_t first_range_begin = 0;
+    size_t first_range_end = 0;
+
     for (size_t row = 0; row < num_rows; ++row)
     {
         const UInt64 current_row = rows_read + row;
@@ -160,7 +153,29 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
         {
             filter[row] = 1;
             ++filtered_rows;
+            if (range_begin == num_rows)
+                range_begin = row;
         }
+        else if (range_begin != num_rows)
+        {
+            if (num_ranges == 0)
+            {
+                first_range_begin = range_begin;
+                first_range_end = row;
+            }
+            ++num_ranges;
+            range_begin = num_rows;
+        }
+    }
+
+    if (range_begin != num_rows)
+    {
+        if (num_ranges == 0)
+        {
+            first_range_begin = range_begin;
+            first_range_end = num_rows;
+        }
+        ++num_ranges;
     }
 
     rows_read += num_rows;
@@ -171,8 +186,17 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
         return;
     }
 
-    if (filtered_rows < num_rows)
-        filterChunk(chunk, filter, filtered_rows);
+    if (filtered_rows == num_rows)
+        return;
+
+    /// Single contiguous range: IColumn::cut is cheaper than IColumn::filter.
+    if (num_ranges == 1)
+    {
+        sliceChunk(chunk, first_range_begin, first_range_end);
+        return;
+    }
+
+    filterChunk(chunk, filter, filtered_rows);
 }
 
 void LimitRangeTransform::setDone()

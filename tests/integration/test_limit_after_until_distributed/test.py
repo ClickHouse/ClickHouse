@@ -59,7 +59,6 @@ def test_no_count_range_is_applied_on_initiator(boundary, log_comment):
     node2.query("INSERT INTO local SELECT number FROM numbers(10)")  # 0..9
 
     settings = {
-        "allow_experimental_limit_after": 1,
         "optimize_skip_unused_shards": 1,
         "optimize_distributed_group_by_sharding_key": 1,
         # Keep the range out of any limit pushdown so the shard returns the full mergeable state.

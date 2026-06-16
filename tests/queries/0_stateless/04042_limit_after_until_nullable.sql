@@ -1,4 +1,3 @@
-SET allow_experimental_limit_after = 1;
 -- `NULL` in `LIMIT AFTER`/`UNTIL` conditions must be treated as false.
 -- `nullIf` keeps the nested `UInt8` payload non-zero for null rows, so this catches
 -- ignoring the null map in the fast path.

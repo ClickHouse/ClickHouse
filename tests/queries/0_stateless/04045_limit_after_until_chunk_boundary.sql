@@ -3,7 +3,6 @@
 -- happens across separate transform() calls, which maximises coverage of the
 -- inter-chunk bookkeeping.
 
-SET allow_experimental_limit_after = 1;
 SET max_block_size = 1;
 
 -- UNTIL fires in an earlier chunk than AFTER.

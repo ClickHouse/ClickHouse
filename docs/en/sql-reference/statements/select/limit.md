@@ -145,10 +145,6 @@ This modifier can be combined with the [`ORDER BY ... WITH FILL`](/sql-reference
 
 ## LIMIT ... AFTER ... UNTIL (range by conditions) {#limit-after-until}
 
-:::note
-This feature is experimental. Enable it with `SET allow_experimental_limit_after = 1`.
-:::
-
 You can limit the result to a *range* of rows between two boundary conditions:
 
 ```sql
@@ -168,15 +164,63 @@ Without `ALL`, if the first `UNTIL` match appears before the first `AFTER` match
 
 **Examples:**
 
+First 3 rows starting from the first row where `number >= 3`:
+
 ```sql
--- First 3 rows starting from the first row where number >= 3
 SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 3;
+```
 
--- Rows from first row where number >= 2 until (exclusive) first row where number >= 6
+```response
+┌─number─┐
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Rows from first row where `number >= 2` until (exclusive) first row where `number >= 6`:
+
+```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 10 AFTER number >= 2 UNTIL number >= 6;
+```
 
--- Emit 2 rows after every matching row, without duplicating overlaps
+```response
+┌─number─┐
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Without `n`, all rows from the `AFTER` match to the end of the stream (or until `UNTIL`) are returned:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
+```
+
+```response
+┌─number─┐
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Emit 2 rows after every matching row, without duplicating overlaps:
+
+```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6) ALL;
+```
+
+```response
+┌─number─┐
+│      2 │
+│      3 │
+│      4 │
+│      6 │
+│      7 │
+└────────┘
 ```
 
 :::note
