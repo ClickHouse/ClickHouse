@@ -166,5 +166,6 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
 template struct SetVariantsTemplate<NonClearableSet>;
 template struct SetVariantsTemplate<ClearableSet>;
+template struct SetVariantsTemplate<CountingSet>;
 
 }

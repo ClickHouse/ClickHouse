@@ -4,9 +4,11 @@
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
+#include <Common/HashTable/FixedHashMap.h>
 
 
 namespace DB
@@ -22,7 +24,7 @@ namespace ErrorCodes
 
 
 /// For the case where there is one numeric key.
-template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
+template <typename FieldType, typename TData, bool use_cache = true, typename Mapped = void>    /// UInt8/16/32/64 for any types with corresponding bit width.
 struct SetMethodOneNumber
 {
     using Data = TData;
@@ -31,11 +33,11 @@ struct SetMethodOneNumber
     Data data;
 
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
-        void, FieldType, use_cache>;
+        Mapped, FieldType, use_cache>;
 };
 
 /// For the case where there is one string key.
-template <typename TData>
+template <typename TData, typename Mapped = void>
 struct SetMethodString
 {
     using Data = TData;
@@ -43,11 +45,11 @@ struct SetMethodString
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, true, false>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
 };
 
 /// For the case when there is one fixed-length string key.
-template <typename TData>
+template <typename TData, typename Mapped = void>
 struct SetMethodFixedString
 {
     using Data = TData;
@@ -55,7 +57,7 @@ struct SetMethodFixedString
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, true, false>;
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
 };
 
 namespace set_impl
@@ -152,7 +154,7 @@ protected:
 }
 
 /// For the case when all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename TData, bool has_nullable_keys_ = false>
+template <typename TData, bool has_nullable_keys_ = false, typename Mapped = void, bool use_cache = true>
 struct SetMethodKeysFixed
 {
     using Data = TData;
@@ -161,11 +163,11 @@ struct SetMethodKeysFixed
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, void, has_nullable_keys, false>;
+    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, false, use_cache>;
 };
 
 /// For other cases. 128 bit hash from the key.
-template <typename TData>
+template <typename TData, typename Mapped = void, bool use_cache = true>
 struct SetMethodHashed
 {
     using Data = TData;
@@ -173,7 +175,7 @@ struct SetMethodHashed
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, void>;
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, Mapped, use_cache>;
 };
 
 
@@ -231,6 +233,29 @@ struct ClearableSet
       */
 };
 
+/// Like NonClearableSet, but each distinct key carries a UInt64 occurrence count
+/// (a multiset). Used by INTERSECT ALL / EXCEPT ALL. `use_cache` is disabled so that
+/// `emplaceKey(...).getMapped()` returns a reference to the table slot (the consecutive-keys
+/// cache returns a reference to a by-value copy, which would break in-place increment).
+struct CountingSet
+{
+    using Count = UInt64;
+
+    std::unique_ptr<SetMethodOneNumber<UInt8,  FixedHashMap<UInt8,  Count>, false, Count>>  key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashMap<UInt16, Count>, false, Count>>  key16;
+
+    std::unique_ptr<SetMethodOneNumber<UInt32, HashMap<UInt32, Count, HashCRC32<UInt32>>, false, Count>> key32;
+    std::unique_ptr<SetMethodOneNumber<UInt64, HashMap<UInt64, Count, HashCRC32<UInt64>>, false, Count>> key64;
+    std::unique_ptr<SetMethodString<HashMapWithSavedHash<std::string_view, Count>, Count>>        key_string;
+    std::unique_ptr<SetMethodFixedString<HashMapWithSavedHash<std::string_view, Count>, Count>>   key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, false, Count, false>>  keys128;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, false, Count, false>>  keys256;
+    std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>, Count, false>>   hashed;
+
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true, Count, false>>   nullable_keys128;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true, Count, false>>   nullable_keys256;
+};
+
 template <typename Variant>
 struct SetVariantsTemplate: public Variant
 {
@@ -277,5 +302,6 @@ struct SetVariantsTemplate: public Variant
 
 using SetVariants = SetVariantsTemplate<NonClearableSet>;
 using ClearableSetVariants = SetVariantsTemplate<ClearableSet>;
+using CountingSetVariants = SetVariantsTemplate<CountingSet>;
 
 }
