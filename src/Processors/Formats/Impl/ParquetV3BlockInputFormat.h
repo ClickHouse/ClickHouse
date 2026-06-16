@@ -16,8 +16,17 @@ struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::vector<size_t> row_group_ids;
 
+    /// Total number of row groups the file had when the bucket assignment was computed (from the
+    /// footer read at planning time). Carried so the read path can verify the file still has the
+    /// same number of row groups and fail close if it diverged - e.g. an object overwritten
+    /// between the split decision and the per-bucket read on the object-storage path, which -
+    /// unlike the local `StorageFile` path - has no file-version guard. A value of 0 means
+    /// "unknown" (e.g. a bucket deserialized from a node that predates this field) and disables
+    /// the check.
+    size_t file_num_row_groups = 0;
+
     ParquetFileBucketInfo() = default;
-    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
+    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_, size_t file_num_row_groups_ = 0);
     void serialize(WriteBuffer & buffer) override;
     void deserialize(ReadBuffer & buffer) override;
     String getIdentifier() const override;

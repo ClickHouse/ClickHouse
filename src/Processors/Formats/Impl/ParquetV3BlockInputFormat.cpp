@@ -39,6 +39,26 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     return options;
 }
 
+/// Verify the file still has the same number of row groups as when the bucket (row-group)
+/// assignment was computed. The assignment is an invariant: the ids - and their count - were
+/// derived from a footer read at planning time. If the file diverged - e.g. an object overwritten
+/// between the footer read and the per-bucket read on the object-storage path, which (unlike the
+/// local `StorageFile` path) has no file-version guard - the assignment no longer maps to the file.
+/// A shrunk file is caught by the per-row-group out-of-range checks, but a file that *grew* keeps
+/// every old id in range while leaving the new row groups assigned to no bucket, which would
+/// silently undercount. Comparing the total row-group count fails close in both directions.
+/// `file_num_row_groups == 0` means the count is unknown (e.g. an older serialized bucket) and
+/// skips the check.
+static void checkFileMatchesBucketAssignment(size_t file_num_row_groups, size_t actual_num_row_groups)
+{
+    if (file_num_row_groups != 0 && actual_num_row_groups != file_num_row_groups)
+        throw Exception(
+            ErrorCodes::FILE_CHANGED_WHILE_READING,
+            "The Parquet file has {} row groups, but the parallel single-file bucket assignment was computed for a file "
+            "with {} row groups. The file was likely modified concurrently while a parallel single-file read was in progress",
+            actual_num_row_groups, file_num_row_groups);
+}
+
 ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     ReadBuffer & buf,
     SharedHeader header_,
@@ -99,6 +119,8 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
+            if (buckets_to_read)
+                checkFileMatchesBucketAssignment(buckets_to_read->file_num_row_groups, reader->reader.file_metadata.row_groups.size());
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
         }
@@ -146,7 +168,10 @@ Chunk ParquetV3BlockInputFormat::read()
             /// overwritten between the footer read and this count on the object-storage
             /// path, which - unlike the local `StorageFile` path - has no file-version
             /// guard). Fail close rather than silently dropping a row group and returning
-            /// an undercount.
+            /// an undercount. The out-of-range check below catches a shrunk file; the
+            /// total-count check here also catches a file that grew (every old id still in
+            /// range, but new row groups assigned to no bucket).
+            checkFileMatchesBucketAssignment(buckets_to_read->file_num_row_groups, file_metadata.row_groups.size());
             for (size_t rg : buckets_to_read->row_group_ids)
             {
                 if (rg >= file_metadata.row_groups.size())
@@ -266,6 +291,7 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
     writeVarUInt(row_group_ids.size(), buffer);
     for (auto chunk : row_group_ids)
         writeVarUInt(chunk, buffer);
+    writeVarUInt(file_num_row_groups, buffer);
 }
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
@@ -280,6 +306,7 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
         readVarUInt(bucket, buffer);
         row_group_ids[i] = bucket;
     }
+    readVarUInt(file_num_row_groups, buffer);
 }
 
 String ParquetFileBucketInfo::getIdentifier() const
@@ -290,8 +317,9 @@ String ParquetFileBucketInfo::getIdentifier() const
     return result;
 }
 
-ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
+ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_, size_t file_num_row_groups_)
     : row_group_ids(row_group_ids_)
+    , file_num_row_groups(file_num_row_groups_)
 {
 }
 
@@ -300,7 +328,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
-        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
+        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups, file_num_row_groups);
     std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
     std::vector<size_t> filtered;
     for (size_t rg : row_group_ids)
@@ -308,7 +336,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
             filtered.push_back(rg);
     if (filtered.empty())
         return nullptr;
-    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered), file_num_row_groups);
 }
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
@@ -346,10 +374,11 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
         }
     }
 
+    const size_t file_num_row_groups = size_t(metadata->num_row_groups());
     std::vector<FileBucketInfoPtr> result;
     for (const auto & bucket : buckets)
     {
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket, file_num_row_groups));
     }
     return result;
 }
@@ -398,7 +427,7 @@ std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t
         ids.reserve(hi - lo);
         for (size_t k = lo; k < hi; ++k)
             ids.push_back(k);
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(ids));
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(ids, num_row_groups));
     }
     return result;
 }
