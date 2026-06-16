@@ -1,5 +1,6 @@
 #include <Common/FieldVisitorHash.h>
 
+#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
 
 
@@ -67,7 +68,22 @@ void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;
     hash.update(type);
-    hash.update(x);
+
+    /// Normalize to be consistent with Field::operator== (FloatCompareHelper).
+    if (isNaN(x))
+    {
+        static constexpr Float64 canonical_nan = std::numeric_limits<Float64>::quiet_NaN();
+        hash.update(canonical_nan);
+    }
+    else if (x == static_cast<Float64>(0))
+    {
+        static constexpr Float64 positive_zero = static_cast<Float64>(0);
+        hash.update(positive_zero);
+    }
+    else
+    {
+        hash.update(x);
+    }
 }
 
 void FieldVisitorHash::operator() (const String & x) const
