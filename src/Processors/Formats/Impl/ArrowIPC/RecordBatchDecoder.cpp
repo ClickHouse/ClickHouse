@@ -969,8 +969,19 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
     /// Compressed body: each non-empty buffer is an 8-byte little-endian uncompressed length followed
     /// by the compressed bytes (or, when the length is -1, the bytes stored uncompressed).
-    const auto codec = batch.compression()->codec() == flatbuf::CompressionType_ZSTD
-        ? CompressionCodec::Zstd : CompressionCodec::Lz4Frame;
+    /// Validate the compression type explicitly: an unknown value must be rejected rather than silently
+    /// treated as LZ4 (which a malformed batch could otherwise pass off if its payload happens to decode
+    /// as valid LZ4). An if-chain (not a `switch`) so an out-of-range value — which the FlatBuffers enum
+    /// can still carry — is handled without tripping `-Wcovered-switch-default`.
+    const auto compression_type = batch.compression()->codec();
+    CompressionCodec codec;
+    if (compression_type == flatbuf::CompressionType_LZ4_FRAME)
+        codec = CompressionCodec::Lz4Frame;
+    else if (compression_type == flatbuf::CompressionType_ZSTD)
+        codec = CompressionCodec::Zstd;
+    else
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Unsupported Arrow IPC compression type {}", static_cast<int>(compression_type));
 
     /// First pass: lay out each buffer's decompressed slot (8-byte aligned) without touching the data,
     /// so the destination buffer can be allocated once and the buffers decompressed in parallel.
@@ -1002,6 +1013,12 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         int64_t uncompressed_length = 0;
         memcpy(&uncompressed_length, src, sizeof(uncompressed_length));
         uncompressed_length = DB::fromLittleEndian(uncompressed_length);
+
+        /// Arrow uses exactly -1 as the "stored uncompressed" sentinel; any other negative value is
+        /// malformed and must not be accepted as a raw (uncompressed) buffer.
+        if (uncompressed_length < -1)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "Arrow IPC buffer has an invalid uncompressed length prefix {}", uncompressed_length);
 
         const size_t out_len = uncompressed_length < 0 ? static_cast<size_t>(length - 8) : static_cast<size_t>(uncompressed_length);
         if (out_len > std::numeric_limits<size_t>::max() - pos)
