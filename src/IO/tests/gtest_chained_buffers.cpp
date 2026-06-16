@@ -229,6 +229,24 @@ TEST(ChainedBuffers, SliceKeepsBufferAlive)
     EXPECT_FALSE(weak.expired());
 }
 
+TEST(ChainedBuffers, SliceSkipsNodeEntirelyBehindCursor)
+{
+    /// Overlapping nodes: A=[0,10) keeps the front from being dropped, so after advancing
+    /// past B=[5,8) entirely, B survives in `nodes` but sits fully behind the cursor.
+    /// `slice` must skip it (the "node entirely consumed" branch).
+    auto buf = std::make_shared<OwnedChainedBuffer>(20);
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{buf, 0, 10, 0});   /// A = [0, 10)
+    chain.append(ChainedBufferNode{buf, 5, 3, 5});    /// B = [5, 8), overlaps and sits behind A
+    chain.advance(9);                                  /// cursor 9: A survives (ends at 10), B fully behind
+    ASSERT_FALSE(chain.atEnd());
+
+    ChainedBuffers s = chain.slice(ByteRange{0, 20});
+    EXPECT_EQ(s.getNodes().size(), 1u);   /// only A's live tail [9, 10); B skipped
+    EXPECT_EQ(s.range().offset, 9u);
+    EXPECT_EQ(s.range().size, 1u);
+}
+
 TEST(ChainedBuffers, TotalBytes)
 {
     auto buf = std::make_shared<OwnedChainedBuffer>(300);

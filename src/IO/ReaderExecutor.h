@@ -76,15 +76,6 @@ private:
         void add(Counter c, UInt64 value = 1);
         UInt64 get(Counter c) const { return values[c]; }
 
-        /// Roll a future transient sub-executor's tally into the parent without re-emitting
-        /// (each counter was already emitted at its `add`).
-        Stats & operator+=(const Stats & o)
-        {
-            for (size_t i = 0; i < NumCounters; ++i)
-                values[i] += o.values[i];
-            return *this;
-        }
-
     private:
         std::array<UInt64, NumCounters> values{};
     };
