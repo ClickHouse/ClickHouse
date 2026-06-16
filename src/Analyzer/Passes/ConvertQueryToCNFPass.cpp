@@ -299,7 +299,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
 
             for (const auto & primary_key_node : primary_key_only_nodes)
             {
-                ComparisonGraphCompareResult actual_result;
+                ComparisonGraphCompareResult actual_result = {};
                 if (index == 0)
                     actual_result = graph.compare(primary_key_node, arguments[index]);
                 else

@@ -24,6 +24,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include "config.h"
+#include <Core/UUID.h>
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
@@ -385,6 +386,11 @@ void KeeperContext::setSnapshotDisk(DiskPtr disk)
 {
     snapshot_storage = std::move(disk);
     latest_snapshot_storage = snapshot_storage;
+}
+
+void KeeperContext::setLatestSnapshotDisk(DiskPtr disk)
+{
+    latest_snapshot_storage = std::move(disk);
 }
 
 DiskPtr KeeperContext::getStateFileDisk() const
@@ -797,7 +803,7 @@ uint64_t KeeperContext::lastCommittedIndex() const
 
 void KeeperContext::setLastCommitIndex(uint64_t commit_index)
 {
-    bool should_notify;
+    bool should_notify = false;
     {
         std::lock_guard lock(last_committed_log_idx_cv_mutex);
         last_committed_log_idx.store(commit_index, std::memory_order_relaxed);
