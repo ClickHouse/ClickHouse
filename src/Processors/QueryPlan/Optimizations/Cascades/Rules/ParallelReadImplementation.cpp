@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -34,9 +35,20 @@ protected:
 
 bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
-        required_properties.distribution.node_count > 1 &&
-        !required_properties.distribution.is_replicated;
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
+    if (!read_step
+        || required_properties.distribution.node_count <= 1
+        || required_properties.distribution.is_replicated)
+        return false;
+
+    /// Mark-range bucketing splits rows with the same sorting key across buckets, breaking FINAL
+    /// dedup on engines with specialized merging (Replacing, Collapsing, ...). Keep such reads
+    /// serial, the same way `tryMakeDistributedRead` does for the non-Cascades distributed plan.
+    if (read_step->isQueryWithFinal()
+        && read_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        return false;
+
+    return true;
 }
 
 std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
