@@ -48,7 +48,7 @@ To undo the deletion of a table, please see [UNDROP TABLE](/sql-reference/statem
 :::
 
 :::note
-This is an experimental feature gated by the setting [`allow_experimental_drop_detached_table`](../../operations/settings/settings.md#allow-experimental-drop-detached-table) (disabled by default).
+This is an experimental feature gated by the setting [`allow_experimental_drop_detached_table`](../../operations/settings/settings.md#allow_experimental_drop_detached_table) (disabled by default).
 :::
 
 Syntax:
@@ -175,3 +175,4 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
+```

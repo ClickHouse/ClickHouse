@@ -2239,9 +2239,19 @@ void DatabaseReplicated::dropDetachedTable(
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    bool digest_updated = false;
 
+    /// Only update local digest if table is still in table_name_to_path (still counted in digest).
+    /// adjustDigestOnTableLostFromRestart already subtracted for tables lost during failed RESTART REPLICA.
+    /// detachTablePermanently already subtracted when table was properly detached.
+    bool digest_updated = false;
     std::lock_guard lock{metadata_mutex};
+    const bool table_in_map = std::invoke(
+        [this, table_name]()
+        {
+            std::lock_guard table_lock{mutex};
+            return table_name_to_path.contains(table_name);
+        });
+
     UInt64 new_digest = tables_metadata_digest;
     if (txn && txn->isInitialQuery())
     {
@@ -2251,8 +2261,11 @@ void DatabaseReplicated::dropDetachedTable(
         {
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
 
-            new_digest -= getMetadataHash(table_name);
-            digest_updated = true;
+            if (table_in_map)
+            {
+                new_digest -= getMetadataHash(table_name);
+                digest_updated = true;
+            }
             if (!is_recovering)
                 txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
         }
