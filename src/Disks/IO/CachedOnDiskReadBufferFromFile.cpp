@@ -309,8 +309,37 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     local_read_settings.local_fs_settings.buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
     local_read_settings.local_throttler = info.local_throttler;
 
-    info.cache_file_reader
-        = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    auto open_cache_file = [&](const String & path_to_open)
+    {
+        return createReadBufferFromFileBase(
+            path_to_open, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    };
+
+    try
+    {
+        info.cache_file_reader = open_cache_file(path);
+    }
+    catch (...)
+    {
+        /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>_<size>`
+        /// (`FileSegment::renameToIncludeSizeInNameUnlocked`) while we may still be reading it —
+        /// reads are allowed before the segment is fully downloaded. `getPath` is lock-free, so the
+        /// name computed above can become stale if the rename happens right before we open the file,
+        /// and the open fails because the file has already moved to its new name. Recompute the path
+        /// while holding the segment lock — the rename runs under the same lock, so this serializes
+        /// against it and observes the final name — and retry once. If the path is unchanged, the
+        /// failure is unrelated to the rename, so propagate it.
+        String current_path;
+        {
+            auto segment_lock = file_segment.lock();
+            current_path = file_segment.getPath();
+        }
+        if (current_path == path)
+            throw;
+
+        path = current_path;
+        info.cache_file_reader = open_cache_file(path);
+    }
 
     if (getFileSizeFromReadBuffer(*info.cache_file_reader) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
