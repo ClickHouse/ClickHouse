@@ -214,6 +214,23 @@ SELECT sumMap([toBFloat16(0.), toBFloat16(-0.)], [1, 2]);
 SELECT 'Float64 +0/-0 multi-row merge';
 SELECT sumMap(k, v) FROM values('k Array(Float64), v Array(Int64)', ([0.], [1]), ([-0.], [2]));
 
+-- Float32 NaN key normalization
+SELECT 'Float32 NaN key merging';
+SELECT sumMap([toFloat32(nan), toFloat32(nan)], [1, 2]);
+
+SELECT 'Float32 NaN key multi-row merge';
+SELECT sumMap(k, v) FROM values('k Array(Float32), v Array(Int64)', ([toFloat32(nan)], [10]), ([toFloat32(nan)], [20]));
+
+SELECT 'Float32 NaN key sorting';
+SELECT sumMap([x], [y]) FROM values('x Float32, y Int64', (toFloat32(4), 1), (toFloat32(1), 2), (toFloat32(nan), 3), (toFloat32(4), 5));
+
+-- BFloat16 NaN key normalization
+SELECT 'BFloat16 NaN key merging';
+SELECT sumMap([toBFloat16(nan), toBFloat16(nan)], [1, 2]);
+
+SELECT 'BFloat16 NaN key multi-row merge';
+SELECT sumMap(k, v) FROM values('k Array(BFloat16), v Array(Int64)', ([toBFloat16(nan)], [10]), ([toBFloat16(nan)], [20]));
+
 -- ===================== Nullable values =====================
 
 SELECT 'Nullable values - NULL as no-op';
@@ -273,6 +290,10 @@ SELECT sumMap([1, 2, 3, 1], [10, 20, 30, -10]);
 -- sumMapWithOverflow also compacts
 SELECT 'sumMapWithOverflow compaction';
 SELECT sumMapWithOverflow([1, 2, 1], [toInt32(10), toInt32(20), toInt32(-10)]);
+
+-- sumMapWithOverflow must accumulate Float32 in Float64 to avoid precision loss
+SELECT 'sumMapWithOverflow Float32 precision';
+SELECT sumMapWithOverflow([1, 1, 1], [toFloat32(16777216), toFloat32(1), toFloat32(-16777216)]);
 
 -- minMap/maxMap do NOT compact
 SELECT 'minMap no compaction';
@@ -398,6 +419,15 @@ SELECT sumMapFiltered([toUInt64(1), toUInt64(3)])(a, b) FROM values('a Array(Int
 SELECT 'sumMapFiltered cross-sign: negative filter ignored for unsigned keys';
 SELECT sumMapFiltered([toInt64(-1), toInt64(2)])(a, b) FROM values('a Array(UInt64), b Array(Int64)',
     ([1, 2, 3], [10, 20, 30]), ([2, 4, 6], [40, 50, 60]));
+
+-- Int64(-1) must NOT match UInt64 max via bit reinterpretation
+SELECT 'sumMapFiltered cross-sign: Int64(-1) must not match UInt64 max';
+SELECT sumMapFiltered([toInt64(-1)])([toUInt64(18446744073709551615), toUInt64(1)], [100, 200]);
+
+-- Filtered with decimal keys: filter scale differs from key column scale
+SELECT sumMapFiltered([toDecimal32(1.1, 1)])([toDecimal32(1.10, 2), toDecimal32(2.20, 2)], [10, 20]);
+
+SELECT sumMapFiltered([toDecimal64(1.1, 1)])([toDecimal64(1.10, 2), toDecimal64(2.20, 2)], [10, 20]);
 
 -- Filtered getName stability
 SELECT 'getName sumMapFiltered';

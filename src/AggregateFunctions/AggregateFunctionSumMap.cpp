@@ -131,7 +131,7 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData, Derived>
 {
 private:
-    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = SUMMAP_STATE_VERSION_1_MIN_REVISION;
 
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;

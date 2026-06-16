@@ -40,6 +40,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Minimum protocol revision that supports version 1 serialization format
+/// (Decimal32/64 widened to Decimal128). Shared between the generic and typed paths.
+inline constexpr auto SUMMAP_STATE_VERSION_1_MIN_REVISION = 54452;
+
 /// ---- Aggregation Operation ----
 
 enum class SumMapOp { Sum, Min, Max };
@@ -327,7 +331,7 @@ class AggregateFunctionSumMapTyped final
     using Base = IAggregateFunctionDataHelper<Data,
         AggregateFunctionSumMapTyped<KeyType>>;
 
-    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = SUMMAP_STATE_VERSION_1_MIN_REVISION;
 
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;
@@ -346,7 +350,7 @@ class AggregateFunctionSumMapTyped final
     bool tuple_argument;
 
     /// Key filter for sumMapFiltered / sumMapFilteredWithOverflow.
-    /// When non-empty, only keys present in this set are accumulated.
+    bool is_filtered = false;
     typename KT::FilterSet keys_to_keep;
 
     /// For string keys, the filter set stores string_views, so we need
@@ -374,6 +378,7 @@ public:
         /// Build key filter set if provided
         if (!keys_filter.empty())
         {
+            is_filtered = true;
             if constexpr (std::is_same_v<KeyType, std::string_view>)
             {
                 /// For string keys, collect all owned strings first (to avoid
@@ -388,7 +393,11 @@ public:
             else
             {
                 for (const auto & f : keys_filter)
-                    keys_to_keep.insert(keyFromField(f, nullptr));
+                {
+                    auto maybe_key = tryKeyFromField(f);
+                    if (maybe_key)
+                        keys_to_keep.insert(*maybe_key);
+                }
             }
         }
 
@@ -416,7 +425,10 @@ public:
             }
             else
             {
-                desc.acc_type_index = desc.input_type_index;
+                if (desc.input_type_index == TypeIndex::Float32 || desc.input_type_index == TypeIndex::BFloat16)
+                    desc.acc_type_index = TypeIndex::Float64;
+                else
+                    desc.acc_type_index = desc.input_type_index;
             }
 
             auto [sz, al] = nativeSizeAlignForTypeIndex(desc.acc_type_index);
@@ -454,7 +466,6 @@ public:
 
     String getName() const override
     {
-        bool is_filtered = !keys_to_keep.empty();
         switch (op)
         {
             case SumMapOp::Sum:
@@ -551,7 +562,7 @@ public:
         {
             auto key = KT::extractKey(key_col, keys_vec_offset + i);
 
-            if (!keys_to_keep.empty() && !keys_to_keep.has(key))
+            if (is_filtered && !keys_to_keep.has(key))
                 continue;
 
             auto [it, inserted] = KT::emplace(data.map, key, arena);
@@ -1081,6 +1092,53 @@ private:
         }
     }
 
+    /// Like keyFromField but returns std::nullopt when the field value is not
+    /// representable in MapKey (e.g. a negative Int64 filter for UInt64 keys).
+    /// Only called for integral key types (createSumMapTyped routes other types
+    /// to the generic path when a filter is present).
+    static std::optional<typename KT::MapKey> tryKeyFromField(const Field & field)
+    {
+        using MapKey = typename KT::MapKey;
+
+        if constexpr (!std::is_integral_v<MapKey>)
+        {
+            /// Non-integral keys use the generic (non-typed) path when a filter
+            /// is present, so this function is never called at runtime for them.
+            (void)field;
+            return std::nullopt;
+        }
+        else
+        {
+            if (field.getType() == Field::Types::UInt64)
+            {
+                auto v = field.safeGet<UInt64>();
+                if constexpr (sizeof(MapKey) < sizeof(UInt64) || std::is_signed_v<MapKey>)
+                {
+                    if (v > static_cast<UInt64>(std::numeric_limits<MapKey>::max()))
+                        return std::nullopt;
+                }
+                return static_cast<MapKey>(v);
+            }
+            if (field.getType() == Field::Types::Int64)
+            {
+                auto v = field.safeGet<Int64>();
+                if constexpr (std::is_unsigned_v<MapKey>)
+                {
+                    if (v < 0 || static_cast<UInt64>(v) > static_cast<UInt64>(std::numeric_limits<MapKey>::max()))
+                        return std::nullopt;
+                }
+                else if constexpr (sizeof(MapKey) < sizeof(Int64))
+                {
+                    if (v < static_cast<Int64>(std::numeric_limits<MapKey>::min())
+                        || v > static_cast<Int64>(std::numeric_limits<MapKey>::max()))
+                        return std::nullopt;
+                }
+                return static_cast<MapKey>(v);
+            }
+            return std::nullopt;
+        }
+    }
+
     /// Extract a Field from an accumulator slot for serialization
     Field fieldFromAccumulator(const char * block, size_t col, const SumMapValueColumnDesc & desc) const
     {
@@ -1180,6 +1238,15 @@ private:
             V val = *reinterpret_cast<const V *>(block + desc.offset);
             if constexpr (is_decimal<V>)
                 assert_cast<ColumnDecimal<V> &>(col).getData().push_back(val);
+            else if constexpr (std::is_same_v<V, Float64>)
+            {
+                if (overflow && desc.input_type_index == TypeIndex::Float32)
+                    assert_cast<ColumnVector<Float32> &>(col).getData().push_back(static_cast<Float32>(val));
+                else if (overflow && desc.input_type_index == TypeIndex::BFloat16)
+                    assert_cast<ColumnVector<BFloat16> &>(col).getData().push_back(static_cast<BFloat16>(val));
+                else
+                    assert_cast<ColumnVector<V> &>(col).getData().push_back(val);
+            }
             else
                 assert_cast<ColumnVector<V> &>(col).getData().push_back(val);
         });
@@ -1271,6 +1338,29 @@ inline AggregateFunctionPtr createSumMapTyped(
     const Array & keys_filter = {})
 {
     TypeIndex key_idx = keys_type->getTypeId();
+
+    /// Fall back to the generic (Field-based) path for filtered keys
+    /// to avoid problematic mismatches.
+    if (!keys_filter.empty())
+    {
+        switch (key_idx)
+        {
+            case TypeIndex::Decimal32:
+            case TypeIndex::Decimal64:
+            case TypeIndex::Decimal128:
+            case TypeIndex::Decimal256:
+            case TypeIndex::Int128:
+            case TypeIndex::UInt128:
+            case TypeIndex::Int256:
+            case TypeIndex::UInt256:
+            case TypeIndex::Float32:
+            case TypeIndex::Float64:
+            case TypeIndex::BFloat16:
+                return nullptr;
+            default:
+                break;
+        }
+    }
 
     switch (key_idx)
     {
