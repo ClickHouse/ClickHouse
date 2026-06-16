@@ -12,7 +12,8 @@
     <fill_query>INSERT INTO right SELECT number AS id, toFixedString(toString(intDiv(number, 200)), 16) AS k FROM numbers(2000000)</fill_query>
     <fill_query>INSERT INTO left SELECT number % 2222222 AS id, rand() % 10000 FROM numbers(3000000)</fill_query>
 
-    <query>SELECT r.k AS g, avg(l.v) FROM left AS l JOIN right AS r ON l.id = r.id GROUP BY g</query>
+    <query>SELECT r.k AS g, avg(l.v) FROM left AS l JOIN right AS r ON l.id = r.id GROUP BY g FORMAT Null SETTINGS max_threads = 16</query>
+    <query>SELECT r.k AS g, avg(l.v) FROM left AS l JOIN right AS r ON l.id = r.id GROUP BY g FORMAT Null SETTINGS max_threads = 32</query>
 
     <drop_query>DROP TABLE IF EXISTS right</drop_query>
     <drop_query>DROP TABLE IF EXISTS left</drop_query>
