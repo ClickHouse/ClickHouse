@@ -1560,6 +1560,14 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
                 order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
             return {};
 
+        /// This overload only fires without an upstream ORDER BY (otherwise the SortingStep
+        /// branch handles the in-order read). In that case `LimitByStep` runs
+        /// `LimitBySortedStreamTransform` per stream as a prefilter and merges the streams
+        /// with a final `resize(1)` + `LimitByTransform`, so it benefits from multiple
+        /// parallel input streams. Disable per-part `PrefetchingConcat`, which would collapse
+        /// them into one stream per part and serialize the per-key limiting.
+        reading->setPreferMultipleStreams();
+
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
@@ -1578,6 +1586,11 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
+
+        /// Same as the direct `ReadFromMergeTree` branch: LIMIT BY in streaming mode runs
+        /// per stream, so keep multiple parallel input streams instead of collapsing them
+        /// with `PrefetchingConcat`.
+        merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
