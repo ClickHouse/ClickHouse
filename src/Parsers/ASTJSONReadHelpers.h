@@ -56,7 +56,16 @@ public:
         const auto var = obj.get(key);
         if (!var.isInteger() || var.isBoolean())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an integer for key '{}' during AST JSON deserialization", key);
-        return obj.getValue<Int64>(key);
+        /// Poco reports an unsigned value outside the `Int64` range as `isInteger()` too, so the
+        /// conversion can throw `Poco::RangeException`; surface it as a controlled `BAD_ARGUMENTS`.
+        try
+        {
+            return obj.getValue<Int64>(key);
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Integer value for key '{}' is out of range during AST JSON deserialization", key);
+        }
     }
 
     UInt64 getUInt(const char * key, UInt64 default_value = 0) const
@@ -66,7 +75,16 @@ public:
         const auto var = obj.get(key);
         if (!var.isInteger() || var.isBoolean())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an unsigned integer for key '{}' during AST JSON deserialization", key);
-        return obj.getValue<Poco::UInt64>(key);
+        /// A negative (or otherwise out-of-`UInt64`-range) JSON integer still satisfies `isInteger()`,
+        /// so `getValue<UInt64>` would throw `Poco::RangeException`; reject it as `BAD_ARGUMENTS` here.
+        try
+        {
+            return obj.getValue<Poco::UInt64>(key);
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsigned integer value for key '{}' is out of range during AST JSON deserialization", key);
+        }
     }
 
     double getDouble(const char * key, double default_value = 0) const

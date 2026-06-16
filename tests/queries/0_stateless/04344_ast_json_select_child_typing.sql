@@ -29,6 +29,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (UPDATE x = 1 WHERE 1
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (RESET SETTING a)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN PLAN actions = 1 SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax GRANULARITY 3'));
 SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN AST SELECT 1'));
 
 -- ---------------------------------------------------------------------------
@@ -125,3 +126,9 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('EXPLAIN PLAN actions = 1 SE
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax'), '"index_name":{"type":"Identifier","name":"idx"}', '"index_name":{"type":"Literal","value":{"field_type":"String","value":"idx"}}')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (DROP COLUMN x)'), '{"type":"AlterCommand"', '{"type":"Asterisk"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN AST"}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- A negative (out-of-`UInt64`-range) value for an unsigned field (`getUInt`, e.g. index `GRANULARITY`)
+-- is rejected with a controlled `BAD_ARGUMENTS` instead of an uncaught `Poco::RangeException`.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE INDEX idx ON t (x) TYPE minmax GRANULARITY 3'), '"granularity":3', '"granularity":-1')); -- { serverError BAD_ARGUMENTS }
