@@ -265,9 +265,12 @@ TEST(ColumnDynamic, InsertFromOverflow3)
     auto field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, 42);
 
+    /// column_from and column_to share the same variant layout, but column_to has room (max_dynamic_types=254),
+    /// so the Float64 value coming from column_from's shared variant is promoted to a regular variant instead
+    /// of being left in the shared variant. This keeps the invariant that a type lives in exactly one storage.
     column_to->insertFrom(*column_from, 1);
-    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
-    ASSERT_EQ(column_to->getSharedVariant().size(), 1);
+    ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(column_to->getSharedVariant().size(), 0);
     field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, 42.42);
 }
@@ -409,9 +412,12 @@ TEST(ColumnDynamic, InsertManyFromOverflow3)
     field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, 42);
 
+    /// column_from and column_to share the same variant layout, but column_to has room (max_dynamic_types=254),
+    /// so the Float64 value coming from column_from's shared variant is promoted to a regular variant instead
+    /// of being left in the shared variant. This keeps the invariant that a type lives in exactly one storage.
     column_to->insertManyFrom(*column_from, 1, 2);
-    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
-    ASSERT_EQ(column_to->getSharedVariant().size(), 2);
+    ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(column_to->getSharedVariant().size(), 0);
     field = (*column_to)[column_to->size() - 2];
     ASSERT_EQ(field, 42.42);
     field = (*column_to)[column_to->size() - 1];
@@ -520,6 +526,69 @@ TEST(ColumnDynamic, InsertRangeFromSharedVariantKeepsInvariant)
     /// Both values must read back correctly regardless of which storage holds them.
     ASSERT_EQ((*column_to)[0], Field("from_shared"));
     ASSERT_EQ((*column_to)[1], Field("from_regular"));
+}
+
+/// Same invariant, but exercised through the same-variants fast path at the top of
+/// insertFrom/insertManyFrom/insertRangeFrom. Two Dynamic columns can share the same variant_names while
+/// having different max_dynamic_types: a low-limit source overflows a type into its shared variant, while
+/// a high-limit destination with the same layout still has room for it as a regular variant. The fast path
+/// used to copy the source shared-variant row straight into the destination shared variant, so a later
+/// insert could add the same type as a regular variant and leave it in both storages.
+TEST(ColumnDynamic, SameLayoutSharedVariantKeepsInvariant)
+{
+    enum Mode { One, Many, Range };
+    auto check = [](Mode mode)
+    {
+        /// src_shared: Int8 is the single regular variant (max_dynamic_types=1), String overflowed into
+        /// the shared variant. Its row 1 (String) lives in the shared variant.
+        auto src_shared = ColumnDynamic::create(1);
+        src_shared->insert(Field(1));
+        src_shared->insert(Field("from_shared"));
+        ASSERT_EQ(getTypeNamesInSharedVariant(*src_shared), (std::set<String>{"String"}));
+
+        /// src_regular: String is a regular variant.
+        auto src_regular = ColumnDynamic::create(10);
+        src_regular->insert(Field("from_regular"));
+        ASSERT_TRUE(src_regular->getVariantInfo().variant_name_to_discriminator.contains("String"));
+
+        /// column_to has the SAME variant_names as src_shared (Int8 + SharedVariant) but a higher limit,
+        /// so it still has room to add String as a regular variant.
+        auto column_to = ColumnDynamic::create(10);
+        column_to->insert(Field(2));
+        ASSERT_EQ(column_to->getVariantInfo().variant_names, src_shared->getVariantInfo().variant_names);
+
+        /// First copy the shared-variant String row (same-layout fast path), then copy the regular-variant
+        /// String row (different layout).
+        if (mode == Many)
+        {
+            column_to->insertManyFrom(*src_shared, 1, 2);
+            column_to->insertManyFrom(*src_regular, 0, 2);
+        }
+        else if (mode == Range)
+        {
+            column_to->insertRangeFrom(*src_shared, 1, 1);
+            column_to->insertRangeFrom(*src_regular, 0, 1);
+        }
+        else
+        {
+            column_to->insertFrom(*src_shared, 1);
+            column_to->insertFrom(*src_regular, 0);
+        }
+
+        /// Invariant: String must not be present both as a regular variant and inside the shared variant.
+        const bool string_is_regular = column_to->getVariantInfo().variant_name_to_discriminator.contains("String");
+        const bool string_in_shared = getTypeNamesInSharedVariant(*column_to).contains("String");
+        ASSERT_FALSE(string_is_regular && string_in_shared);
+
+        /// Values must read back correctly regardless of which storage holds them.
+        ASSERT_EQ((*column_to)[0], Field(2));
+        ASSERT_EQ((*column_to)[1], Field("from_shared"));
+        ASSERT_EQ((*column_to)[column_to->size() - 1], Field("from_regular"));
+    };
+
+    check(One);
+    check(Many);
+    check(Range);
 }
 
 static void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)

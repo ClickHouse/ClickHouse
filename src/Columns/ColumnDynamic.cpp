@@ -340,8 +340,11 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
-    /// Check if we have the same variants in both columns.
-    if (variant_info.variant_name == dynamic_src.variant_info.variant_name)
+    /// Same variants: copy the Variant column directly. Skip this fast path when the source has values in
+    /// its shared variant and we still have room, so those types get promoted to regular variants below
+    /// instead of ending up in both storages.
+    if (variant_info.variant_name == dynamic_src.variant_info.variant_name
+        && (dynamic_src.getSharedVariant().empty() || !canAddNewVariant()))
     {
         variant_column_ptr->insertFrom(*dynamic_src.variant_column, n);
         return;
@@ -421,8 +424,11 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
-    /// Check if we have the same variants in both columns.
-    if (variant_info.variant_names == dynamic_src.variant_info.variant_names)
+    /// Same variants: copy the Variant range directly. Skip this fast path when the source has values in
+    /// its shared variant and we still have room, so those types get promoted to regular variants in the
+    /// combine path below instead of ending up in both storages.
+    if (variant_info.variant_names == dynamic_src.variant_info.variant_names
+        && (dynamic_src.getSharedVariant().empty() || !canAddNewVariant()))
     {
         variant_col.insertRangeFrom(*dynamic_src.variant_column, start, length);
         return;
@@ -646,8 +652,11 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
-    /// Check if we have the same variants in both columns.
-    if (variant_info.variant_names == dynamic_src.variant_info.variant_names)
+    /// Same variants: copy the Variant value directly. Skip this fast path when the source has values in
+    /// its shared variant and we still have room, so a type living in the source shared variant gets
+    /// promoted to a regular variant below instead of ending up in both storages.
+    if (variant_info.variant_names == dynamic_src.variant_info.variant_names
+        && (dynamic_src.getSharedVariant().empty() || !canAddNewVariant()))
     {
         variant_col.insertManyFrom(*dynamic_src.variant_column, position, length);
         return;
