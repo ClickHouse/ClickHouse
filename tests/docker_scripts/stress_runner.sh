@@ -77,7 +77,15 @@ clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
-# Randomize cache policies.
+# Randomize cache policies. The filesystem cache (storage_conf) supports only LRU and SLRU,
+# while the mark and uncompressed caches (cache_policy.xml) also support SIEVE.
+file_cache_policy=""
+if [ $((RANDOM % 2)) -eq 0 ]; then
+    file_cache_policy="SLRU"
+else
+    file_cache_policy="LRU"
+fi
+
 cache_policy=""
 case $((RANDOM % 3)) in
     0) cache_policy="SLRU" ;;
@@ -85,11 +93,11 @@ case $((RANDOM % 3)) in
     *) cache_policy="LRU" ;;
 esac
 
-echo "Using cache policy: $cache_policy"
+echo "Using filesystem cache policy: $file_cache_policy, mark/uncompressed cache policy: $cache_policy"
 
 # The filesystem cache defaults to LRU (in storage_conf*.xml); the mark and uncompressed caches default to SLRU (in cache_policy.xml).
-if [ "$cache_policy" != "LRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>$cache_policy</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+if [ "$file_cache_policy" != "LRU" ]; then
+    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>$file_cache_policy</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
 if [ "$cache_policy" != "SLRU" ]; then
     sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
@@ -275,8 +283,8 @@ rm -f /etc/clickhouse-server/config.d/transactions.xml
 sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
 
 # The filesystem cache defaults to LRU (in storage_conf*.xml); the mark and uncompressed caches default to SLRU (in cache_policy.xml).
-if [ "$cache_policy" != "LRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>$cache_policy</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+if [ "$file_cache_policy" != "LRU" ]; then
+    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>$file_cache_policy</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
 if [ "$cache_policy" != "SLRU" ]; then
     sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml

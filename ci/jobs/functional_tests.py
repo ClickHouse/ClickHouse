@@ -550,9 +550,11 @@ def main():
             else:
                 print("skip log export config for local run")
 
-        # Randomize the cache policy across LRU, SLRU and SIEVE to exercise all eviction policies.
+        # Randomize cache policies. The filesystem cache (storage_conf) supports only LRU and
+        # SLRU, while the mark and uncompressed caches (cache_policy.xml) also support SIEVE.
+        file_cache_policy = random.choice(["LRU", "SLRU"])
         cache_policy = random.choice(["LRU", "SLRU", "SIEVE"])
-        print(f"Using cache policy: {cache_policy}")
+        print(f"Using filesystem cache policy: {file_cache_policy}, mark/uncompressed cache policy: {cache_policy}")
 
         commands = [
             f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
@@ -575,9 +577,9 @@ def main():
         ]
 
         # The filesystem cache defaults to LRU (in storage_conf*.xml); the mark and uncompressed caches default to SLRU (in cache_policy.xml).
-        if cache_policy != "LRU":
+        if file_cache_policy != "LRU":
             commands.append(
-                f"sed -i 's|<cache_policy>LRU</cache_policy>|<cache_policy>{cache_policy}</cache_policy>|' /etc/clickhouse-server/config.d/storage_conf*.xml"
+                f"sed -i 's|<cache_policy>LRU</cache_policy>|<cache_policy>{file_cache_policy}</cache_policy>|' /etc/clickhouse-server/config.d/storage_conf*.xml"
             )
         if cache_policy != "SLRU":
             commands.append(
