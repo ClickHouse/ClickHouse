@@ -12,6 +12,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -60,7 +62,18 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         }
         else
         {
-            readStringUntilEOF(file_data, in);
+            /// Validate the leading "ARROW1" magic before buffering the (possibly huge, possibly non-Arrow)
+            /// remainder, so schema inference on a non-seekable pipe fails fast instead of slurping the
+            /// whole stream first — matching the Apache Arrow library reader.
+            static constexpr std::string_view ARROW_FILE_MAGIC = "ARROW1";
+            char magic[ARROW_FILE_MAGIC.size()] = {};
+            in.readStrict(magic, sizeof(magic));
+            if (std::string_view(magic, sizeof(magic)) != ARROW_FILE_MAGIC)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: the leading {} magic is missing", ARROW_FILE_MAGIC);
+            file_data.assign(magic, sizeof(magic));
+            WriteBufferFromString out(file_data, AppendModeTag{});
+            copyData(in, out);
+            out.finalize();
             file_size = file_data.size();
             memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
             seekable = memory_buffer.get(); /// `ReadBufferFromMemory` is a `SeekableReadBuffer` (implicit upcast).
