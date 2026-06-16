@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -287,6 +288,15 @@ def test_list_tables(started_cluster):
     )
 
 
+def escape_like_literal(s):
+    # Escape SQL LIKE wildcards (`%`, `_`) and the escape character so the value
+    # is matched literally. ClickHouse keeps the backslash for LIKE convenience,
+    # so a single backslash in the query text is enough (no SQL-literal
+    # double-escaping needed). This mirrors the `escapeForLikeLiteral` the
+    # `SHOW TABLES` rewrite applies to the namespace path.
+    return re.sub(r"([\\%_])", r"\\\1", s)
+
+
 def test_namespace_filter_pushdown(started_cluster):
     """
     Verify that `system.tables` predicates that fully bind the namespace
@@ -360,9 +370,13 @@ def test_namespace_filter_pushdown(started_cluster):
 
     expected_ns1 = "\n".join(sorted(f"{namespace_1}.{t}" for t in namespace_1_tables))
 
-    # Case-sensitive LIKE pushdown.
+    # Case-sensitive LIKE pushdown. The namespace contains a literal `_`, which is
+    # a single-character wildcard in LIKE, so it must be escaped (`\_`) to bind the
+    # namespace exactly. Without the escape the pattern could also match sibling
+    # namespaces, so the push-down would (correctly) fall back to a full-catalog
+    # scan — this is the same escaping the `SHOW TABLES` rewrite applies on its own.
     assert_scoped(
-        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{namespace_1}.%' ORDER BY name "
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{escape_like_literal(namespace_1)}.%' ORDER BY name "
         "SETTINGS show_data_lake_catalogs_in_system_tables = true",
         expected_ns1,
     )
