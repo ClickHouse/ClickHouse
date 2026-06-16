@@ -1299,7 +1299,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     }
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    const StorageInMemoryMetadata & old_metadata(*metadata_snapshot);
+    StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1373,7 +1373,7 @@ void StorageObjectStorageQueue::alter(
         auto alter_commands = normalizeAlterCommands(commands);
 
         auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-        const StorageInMemoryMetadata & old_metadata(*metadata_snapshot);
+        StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
