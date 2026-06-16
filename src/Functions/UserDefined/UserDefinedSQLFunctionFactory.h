@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/NamePrompter.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
@@ -13,16 +14,16 @@ class IUserDefinedSQLObjectsStorage;
 class WasmModuleManager;
 
 /// Factory for SQLUserDefinedFunctions
-class UserDefinedSQLFunctionFactory : public IHints<>
+class UserDefinedSQLFunctionFactory : public IHints<>, private WithContext
 {
 public:
     static UserDefinedSQLFunctionFactory & instance();
 
     /// Register function for function_name in factory for specified create_function_query.
-    bool registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
+    bool registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
 
     /// Unregister function for function_name.
-    bool unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists);
+    bool unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists);
 
     /// Get function create query for function_name. If no function registered with function_name throws exception.
     ASTPtr get(const String & function_name) const;
@@ -34,7 +35,7 @@ public:
     bool has(const String & function_name) const;
 
     /// Get all user defined functions registered names.
-    std::vector<String> getAllRegisteredNames() const override;
+    Strings getAllRegisteredNames() const override;
 
     /// Check whether any UDFs have been registered
     bool empty() const;
@@ -48,8 +49,6 @@ public:
     void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
 
 private:
-    ContextPtr global_context;
-
     UserDefinedSQLFunctionFactory();
 };
 

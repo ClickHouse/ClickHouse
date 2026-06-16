@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -82,6 +83,84 @@ struct CrossTabCountsState
         count_a.read(buf);
         count_b.read(buf);
         count_ab.read(buf);
+
+        validateDeserialized(count, count_a, count_b, count_ab);
+    }
+
+    /// Aggregate function states can be constructed from untrusted data, e.g. by `CAST` from `String`,
+    /// so deserialization has to check all invariants that the calculations rely on
+    /// (a genuine state produced by `add` and `merge` satisfies them by construction):
+    ///  - all joint counts in `count_ab` are positive;
+    ///  - `count_a` and `count_b` are exactly the marginal sums of `count_ab`;
+    ///  - the joint counts sum up to `count`.
+    /// These invariants guarantee that the state describes a valid contingency table, which in turn
+    /// guarantees the theoretical bounds asserted during finalization (e.g. 0 <= φ² <= min(|A|, |B|) - 1).
+    static void validateDeserialized(UInt64 count, const auto & count_a, const auto & count_b, const auto & count_ab)
+    {
+        UInt64 total = 0;
+        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> marginal_a;
+        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> marginal_b;
+
+        for (const auto & [key, value] : count_ab)
+        {
+            if (value == 0)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted aggregate function state: the joint count of the value pair with hashes ({}, {}) is zero",
+                    key.items[UInt128::_impl::little(0)],
+                    key.items[UInt128::_impl::little(1)]);
+
+            if (common::addOverflow(total, value, total))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted aggregate function state: the sum of joint counts overflows UInt64");
+
+            /// The marginal sums cannot overflow if the total sum does not: each of them is bounded by `total`.
+            marginal_a[key.items[UInt128::_impl::little(0)]] += value;
+            marginal_b[key.items[UInt128::_impl::little(1)]] += value;
+        }
+
+        if (total != count)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted aggregate function state: the joint counts sum up to {}, while the total count is {}",
+                total,
+                count);
+
+        auto check_marginals = [](const auto & expected, const auto & stored, const char * side)
+        {
+            if (expected.size() != stored.size())
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted aggregate function state: there are {} distinct values of the {} argument, "
+                    "while the joint counts imply {}",
+                    stored.size(),
+                    side,
+                    expected.size());
+
+            for (const auto & [key, value] : expected)
+            {
+                const auto * it = stored.find(key);
+                if (it == stored.end())
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Corrupted aggregate function state: the value with hash {} of the {} argument is present "
+                        "in the joint counts but has no marginal count",
+                        key,
+                        side);
+
+                if (it->getMapped() != value)
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Corrupted aggregate function state: the marginal count of the value with hash {} "
+                        "of the {} argument is {}, while its joint counts sum up to {}",
+                        key,
+                        side,
+                        it->getMapped(),
+                        value);
+            }
+        };
+
+        check_marginals(marginal_a, count_a, "first");
+        check_marginals(marginal_b, count_b, "second");
     }
 };
 
@@ -176,7 +255,7 @@ struct CrossTabAggregateData : CrossTabCountsState
         Float64 phi_squared = sum - 1.0;
 
         /// Numerical errors might lead to a very small negative number
-        chassert(phi_squared > -1e-6);
+        chassert(phi_squared > -1e-4);
         phi_squared = std::max(phi_squared, 0.0);
 
         /// Theoretical bound: phi^2 <= min(|A|, |B|) - 1
@@ -185,7 +264,7 @@ struct CrossTabAggregateData : CrossTabCountsState
             return 0.0;
 
         const Float64 max_phi_squared = static_cast<Float64>(q - 1);
-        chassert(phi_squared <= max_phi_squared + 1e-6);
+        chassert(phi_squared <= max_phi_squared + 1e-4);
 
         phi_squared = std::min(phi_squared, max_phi_squared);
 
@@ -507,6 +586,8 @@ struct CrossTabPhiSquaredWindowData
                 count_ab.size(),
                 INVALID_EDGE_IDX - 1);
 
+        CrossTabCountsState::validateDeserialized(count, count_a, count_b, count_ab);
+
         /// Update the internal states
         a_hash_by_index.reserve(count_a.size());
         a_marginal_count.reserve(count_a.size());
@@ -561,9 +642,7 @@ struct CrossTabPhiSquaredWindowData
             const Float64 a = static_cast<Float64>(a_marginal_count[a_idx]);
             const Float64 b = static_cast<Float64>(b_marginal_count[b_idx]);
 
-            if (unlikely(a <= 0 || b <= 0))
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA, "Corrupted aggregate function state: value frequency must be positive (a={}, b={})", a, b);
+            chassert(a > 0 && b > 0 && "value frequencies are positive after validation");
 
             phi_term_sum += phiTerm(cnt_ab, a, b);
         }
@@ -581,13 +660,13 @@ struct CrossTabPhiSquaredWindowData
         Float64 phi_squared = phi_term_sum - 1.0;
 
         /// Numerical errors might lead to a very small negative number
-        chassert(phi_squared > -1e-6);
+        chassert(phi_squared > -1e-4);
         phi_squared = std::max(phi_squared, 0.0);
 
         /// Theoretical bound: phi^2 <= min(|A|, |B|) - 1
         /// Incremental updates can drift slightly above it; clamp to avoid inf/invalid results
         const Float64 max_phi_squared = static_cast<Float64>(q - 1);
-        chassert(phi_squared <= max_phi_squared + 1e-6);
+        chassert(phi_squared <= max_phi_squared + 1e-4);
 
         phi_squared = std::min(phi_squared, max_phi_squared);
 

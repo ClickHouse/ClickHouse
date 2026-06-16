@@ -121,6 +121,7 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
+include (cmake/profile_optimization.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -135,8 +136,12 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
-include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
+
+# Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
+# toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
+# version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
+include (cmake/block_build_time_checks.cmake)
 
 option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -416,9 +421,12 @@ include(cmake/limit_jobs.cmake)
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# Increase stack size on Musl. We need big stack for our recursive-descend parser.
+# Increase stack size on Musl. We need big stack for our recursive-descend parser
+# and for analyzer passes that recurse on deeply-nested join trees (e.g.
+# 1000-join queries). Match glibc's 8 MiB default; musl reads this from
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
 if (USE_MUSL)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)

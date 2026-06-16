@@ -6,8 +6,6 @@ title: 'Native Clients and Interfaces'
 doc_type: 'landing-page'
 ---
 
-# Native clients & interfaces
-
 ClickHouse provides a number of different native clients and interfaces that allow you to connect to ClickHouse.
 
 For more information see the pages below:

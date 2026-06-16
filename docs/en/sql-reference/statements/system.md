@@ -101,6 +101,10 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
+## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
+
+Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
+
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
@@ -240,7 +244,7 @@ There are three different kind of handlers to add to functions:
 
 **Syntax**
 ```sql
-SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
 ```
 
 where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
@@ -286,7 +290,7 @@ Removes either a single instrumentation point with:
 SYSTEM INSTRUMENT REMOVE ID
 ```
 
-all of them using the `ALL` parameter:
+all of them using the `ALL` keyword:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ALL
@@ -716,13 +720,32 @@ SYSTEM STOP VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
-If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
 ```
 ```sql
 SYSTEM START VIEWS
+```
+
+### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
+
+Disable periodic refreshing of the given view or all refreshable views.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+
+Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
+
+:::note
+The paused state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM PAUSE VIEW` only affects the current replica.
+:::
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+```sql
+SYSTEM PAUSE VIEWS
 ```
 
 ### SYSTEM REFRESH VIEW {#refresh-view}

@@ -146,7 +146,7 @@ struct FunctionDocumentation
     ReturnedValue returned_value {};              /// E.g. {"Starting position in bytes and counting from 1, if the substring was found.", {"(U)Int*"}}
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
-    Category category;                            /// E.g. Category::DatesAndTimes
+    Category category{};                            /// E.g. Category::DatesAndTimes
 
     String syntaxAsString() const;
     String argumentsAsString() const;

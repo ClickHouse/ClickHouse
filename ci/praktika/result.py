@@ -777,15 +777,34 @@ class Result(MetaClasses.Serializable):
             # gtest.json is missing — the binary was killed before it could write results
             # (e.g. by a sanitizer or OOM). Note: gdb returns 0 even when the inferior
             # exits with a non-zero code, so we can't rely on binary_failed here.
-            # Extract the sanitizer SUMMARY line from the log file if available.
-            sanitizer_info = ""
+            # Extract the first meaningful error line from the log file if available.
+            # Covers sanitizer reports ("SUMMARY:") and ClickHouse logical errors.
+            _ERROR_PREFIXES = ("SUMMARY:", "Logical error:", "Code: ", "Signal description:")
+            crash_info = ""
+            # Some gtests (e.g. the function property fuzzer, gtest_functions_stress) log the
+            # offending call as a runnable SQL query right before crashing, via
+            # logCurrentOperation: "(while executing: SELECT f(...);)". Surface it next to the
+            # error so the report shows a copy-pasteable repro instead of just the message.
+            repro_info = ""
+            _REPRO_MAX_LEN = 8192
             if result.files:
                 log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
                 for line in log_content.splitlines():
-                    if line.startswith("SUMMARY:"):
-                        sanitizer_info = line
+                    if not crash_info and any(line.startswith(p) for p in _ERROR_PREFIXES):
+                        crash_info = line
+                    if not repro_info and line.startswith("(while ") and "SELECT " in line:
+                        repro_info = line
+                        if len(repro_info) > _REPRO_MAX_LEN:
+                            repro_info = repro_info[:_REPRO_MAX_LEN] + " ... (truncated, see log)"
+                    if crash_info and repro_info:
                         break
-            result.info = sanitizer_info or info
+            crash_info = "\n".join(p for p in (crash_info, repro_info) if p)
+            result.info = crash_info or info
+            # Synthesize a failed sub-result so the job summary is not empty.
+            crashed_test = gtest_filter.rstrip(".*") or "unknown"
+            result.set_results(
+                [Result(name=crashed_test, status=Result.Status.FAIL, info=crash_info or info)]
+            )
             result.set_status(Result.Status.FAIL)
         return result
 

@@ -17,6 +17,7 @@ public:
     class SLRUIterator;
 
     SLRUFileCachePriority(
+        QueueType queue_type_,
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
@@ -31,6 +32,13 @@ public:
 
     size_t getElementsCount(const CacheStateGuard::Lock &) const override;
     size_t getElementsCountApprox() const override;
+
+    size_t getProtectedSize(const CacheStateGuard::Lock & lock) const { return protected_queue.getSize(lock); }
+    size_t getProtectedElementsCount(const CacheStateGuard::Lock & lock) const { return protected_queue.getElementsCount(lock); }
+    size_t getProbationarySize(const CacheStateGuard::Lock & lock) const { return probationary_queue.getSize(lock); }
+    size_t getProbationaryElementsCount(const CacheStateGuard::Lock & lock) const { return probationary_queue.getElementsCount(lock); }
+    size_t getProtectedSizeLimit(const CacheStateGuard::Lock & lock) const { return protected_queue.getSizeLimit(lock); }
+    size_t getProbationarySizeLimit(const CacheStateGuard::Lock & lock) const { return probationary_queue.getSizeLimit(lock); }
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
     void check(const CacheStateGuard::Lock &) const override;

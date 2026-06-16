@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFlattenTuple : public IFunction
+class FunctionFlattenTuple final : public IFunction
 {
 public:
     static constexpr auto name = "flattenTuple";
@@ -50,7 +50,17 @@ public:
                 "Tuple argument for function '{}' must be named. Got '{}'",
                 getName(), type->getName());
 
-        return flattenTuple(type);
+        auto result_type = flattenTuple(type);
+        const auto * result_tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(result_type).get());
+        if (!result_tuple || result_tuple->getElements().empty())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' has no scalar columns to flatten: '{}'. "
+                "Flattening produced an empty tuple because all leaf types are themselves empty tuples",
+                getName(),
+                type->getName());
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
