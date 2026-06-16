@@ -42,3 +42,9 @@ SELECT count() FROM (SELECT number FROM numbers(10)) SETTINGS limit = 3;
 
 SELECT '-- EXPLAIN wraps the explained query so its plan matches execution';
 EXPLAIN SYNTAX SELECT number FROM numbers(10) SETTINGS filter = 'number > 5';
+
+SELECT '-- CREATE ... AS SELECT ... SETTINGS limit caps the rows inserted into the new table';
+DROP TABLE IF EXISTS t_create_as_select;
+CREATE TABLE t_create_as_select ENGINE = Memory AS SELECT number FROM numbers(10) SETTINGS limit = 3;
+SELECT count() FROM t_create_as_select;
+DROP TABLE t_create_as_select;

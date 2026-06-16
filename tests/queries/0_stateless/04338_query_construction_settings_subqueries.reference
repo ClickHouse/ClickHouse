@@ -28,3 +28,5 @@ FROM
     FROM numbers(10)
 )
 WHERE greater(number, 5)
+-- CREATE ... AS SELECT ... SETTINGS limit caps the rows inserted into the new table
+3
