@@ -1055,9 +1055,9 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to apply snapshot", LogsLevel::fatal);
-        /// NuRaft exits if we throw from here anyway.
-        std::terminate();
+        tryLogCurrentException(log, "Failed to apply snapshot");
+        /// (It doesn't really matter if we throw or std::terminate, NuRaft exits on exception here anyway.)
+        throw;
     }
 }
 
