@@ -123,7 +123,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 void applyParentNullMapToExtractedSubcolumn(
     const MutableColumnPtr & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset, size_t length)
 {
-    chassert(column_offset + length <= column->size());
+    chassert(column_offset + length == column->size());
 
     /// When no row of the range is NULL in the parent, the subcolumn already holds the correct values and
     /// nothing needs to be marked NULL.
