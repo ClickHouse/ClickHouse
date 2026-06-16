@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 class CommandDiskUsage final : public ICommand
@@ -65,14 +66,18 @@ private:
             }
             else
             {
-                /// Be tolerant of files that disappear while we traverse: skip them instead of failing the whole command.
                 try
                 {
                     total += disk.getDisk()->getFileSize(disk.getRelativeFromRoot(current));
                 }
-                catch (...)
+                catch (const Exception & e)
                 {
-                    LOG_WARNING(log, "Cannot get size of '{}', skipping: {}", current, getCurrentExceptionMessage(false));
+                    /// Be tolerant of files that disappear while we traverse: skip them.
+                    /// Any other failure (object storage, metadata, permissions, ...) must
+                    /// not be swallowed, or `du` would silently report an undercount.
+                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                        throw;
+                    LOG_WARNING(log, "File '{}' disappeared while traversing, skipping", current);
                 }
             }
         }
