@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 DB="${CLICKHOUSE_DATABASE}_repl"
-ZK_PATH="/test/timeseries_create_or_replace_digest/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+ZK_PATH="/test/timeseries_rename_digest/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${DB}
@@ -19,13 +19,9 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
-# CREATE OR REPLACE renames a temporary table onto the target name; TimeSeries does
-# not support rename, so the statement must be rejected.
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table=1 \
-    -q "CREATE OR REPLACE TABLE ${DB}.ts ENGINE = TimeSeries" 2>&1 \
-    | grep -o "Renaming is not supported by storage TimeSeries yet" | head -1
-
-# A plain RENAME TABLE must be rejected the same way.
+# TimeSeries does not support rename. The reject must happen before any metadata/catalog
+# mutation, otherwise local state diverges from ZooKeeper and breaks the DatabaseReplicated
+# digest invariant. A plain RENAME TABLE must be rejected.
 ${CLICKHOUSE_CLIENT} \
     -q "RENAME TABLE ${DB}.ts TO ${DB}.ts2" 2>&1 \
     | grep -o "Renaming is not supported by storage TimeSeries yet" | head -1
@@ -40,7 +36,7 @@ ${CLICKHOUSE_CLIENT} \
 ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DB}"
 ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DB}_renamed"
 
-# The outer table must still be present after the rejected operations.
+# The table must still be present under its old name after the rejected operations.
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 
 # Force the metadata digest assertion to always run (skip the 1/16 probability gate).
