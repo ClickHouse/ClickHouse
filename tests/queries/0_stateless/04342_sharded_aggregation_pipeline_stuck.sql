@@ -18,6 +18,10 @@ INSERT INTO test_106237 SELECT 0 AS a, number AS b FROM numbers(100000);
 INSERT INTO test_106237 SELECT 1 AS a, number AS b FROM numbers(100000);
 INSERT INTO test_106237 SELECT 2 AS a, number AS b FROM numbers(100000);
 
+-- max_threads must be high enough that the sharded pipeline opens several shard outputs:
+-- with the skewed keys above, a wider fan-out guarantees the sequentially-activated
+-- ConcatProcessor demands an empty shard, which is what triggers the stuck state. A small
+-- value (e.g. 2-3) routes all keys onto the demanded shards and hides the bug.
 SELECT a, max(s)
 FROM (
     SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
@@ -27,7 +31,7 @@ FROM (
 GROUP BY a
 ORDER BY a
 SETTINGS enable_sharding_aggregator = 1,
-         max_threads = 5,
+         max_threads = 16,
          max_streams_for_union_step = 1;
 
 DROP TABLE test_106237;
