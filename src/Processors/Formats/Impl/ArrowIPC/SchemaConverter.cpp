@@ -223,10 +223,31 @@ ArrowType parseType(const flatbuf::Field & field)
             const auto * t = field.type_as_Union();
             type.kind = TypeKind::Union;
             type.union_mode = t->mode();
-            if (t->typeIds())
-                for (int id : *t->typeIds())
-                    type.union_type_ids.push_back(id);
             type.children = parseChildren(field.children());
+            /// `typeIds` is semantic schema metadata that must stay one-to-one with the children: each
+            /// entry maps a child to the type id carried in the union's Int8 type-ids buffer. FlatBuffers
+            /// verification proves the buffer shape but not these Arrow semantics, so validate a present
+            /// vector here. Otherwise `decodeUnion` stores the ids in a map where a duplicate would
+            /// silently overwrite an earlier child (decoding rows as the wrong child), and an id outside
+            /// the Int8 range could never match the type-ids buffer.
+            if (const auto * type_ids = t->typeIds())
+            {
+                if (static_cast<size_t>(type_ids->size()) != type.children.size())
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC Union has {} typeIds but {} children",
+                        type_ids->size(), type.children.size());
+                for (int id : *type_ids)
+                {
+                    if (id < -128 || id > 127)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA, "Arrow IPC Union type id {} does not fit the Int8 type-ids buffer", id);
+                    for (int existing : type.union_type_ids)
+                        if (existing == id)
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC Union has duplicate type id {}", id);
+                    type.union_type_ids.push_back(id);
+                }
+            }
             break;
         }
         default:
