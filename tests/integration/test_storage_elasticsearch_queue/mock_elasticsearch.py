@@ -13,7 +13,7 @@ def make_hit(seq):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
-    partial_response_sent = False
+    response_index = 0
 
     def do_GET(self):
         if self.path == "/":
@@ -30,23 +30,35 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
             return
 
-        if not RequestHandler.partial_response_sent:
-            RequestHandler.partial_response_sent = True
-            self.send_json(
-                {
-                    "timed_out": True,
-                    "_shards": {"total": 1, "successful": 1, "failed": 0},
-                    "hits": {"hits": [make_hit(2)]},
-                }
-            )
+        responses = [
+            {
+                "timed_out": True,
+                "_shards": {"total": 1, "successful": 1, "failed": 0},
+                "hits": {"hits": [make_hit(99)]},
+            },
+            {
+                "timed_out": False,
+                "_shards": {"total": 1, "successful": 1, "failed": 0},
+                "hits": {"hits": [make_hit(1)]},
+            },
+            {
+                "timed_out": False,
+                "_shards": {"total": 1, "successful": 1, "failed": 0},
+                "hits": {"hits": [make_hit(2)]},
+            },
+        ]
+
+        response_index = RequestHandler.response_index
+        RequestHandler.response_index += 1
+        if response_index < len(responses):
+            self.send_json(responses[response_index])
             return
 
-        hits = [] if body.get("search_after") else [make_hit(1), make_hit(2)]
         self.send_json(
             {
                 "timed_out": False,
                 "_shards": {"total": 1, "successful": 1, "failed": 0},
-                "hits": {"hits": hits},
+                "hits": {"hits": []},
             }
         )
 
