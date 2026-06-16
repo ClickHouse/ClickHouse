@@ -606,8 +606,7 @@ void QueryPlan::explainPlan(
 {
     checkInitialized();
 
-    static const PrettyNames empty_pretty_names;
-    const PrettyNames & pretty_names = precomputed_pretty_names ? *precomputed_pretty_names : empty_pretty_names;
+    PrettyNames empty_pretty_names;
 
     IQueryPlanStep::FormatSettings settings{
         .out = buffer,
@@ -616,8 +615,8 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
-        .pretty_names = pretty_names.pretty_names,
-        .runtime_filter_names = pretty_names.runtime_filter_names
+        .pretty_names = precomputed_pretty_names ? precomputed_pretty_names->pretty_names : empty_pretty_names.pretty_names,
+        .runtime_filter_names = precomputed_pretty_names ? precomputed_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {

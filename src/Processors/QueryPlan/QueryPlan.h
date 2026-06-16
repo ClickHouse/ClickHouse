@@ -11,6 +11,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -138,6 +139,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+
     void explainPlan(
         WriteBuffer & buffer,
         const ExplainPlanOptions & options,

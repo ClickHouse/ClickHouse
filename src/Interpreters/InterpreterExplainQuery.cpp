@@ -877,7 +877,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length], precomputed_pretty_names);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length], &precomputed_pretty_names);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -1093,7 +1093,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             settings.query_plan_options,
             0,
             query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
-            precomputed_pretty_names,
+            &precomputed_pretty_names,
             "",
             false,
             &steps_to_stats);
