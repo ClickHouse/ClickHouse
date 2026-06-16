@@ -4515,10 +4515,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// Validate ALTER ... MODIFY ENGINE: it is gated behind an experimental setting, may only target
     /// another MergeTree-family engine, and the resulting MergingParams must be valid for the table's
     /// columns (after any column changes in the same ALTER are applied).
+    ///
+    /// The engine to validate is either the one this ALTER sets, or one still pending from an earlier
+    /// reload-only MODIFY ENGINE: `new_engine` is rewritten into the persisted CREATE but the live
+    /// `merging_params` stays at the old mode until the table is reloaded, so the pending engine lingers
+    /// on the live metadata. A later ALTER with no MODIFY ENGINE of its own can then invalidate that
+    /// pending engine -- e.g. `MODIFY SETTING allow_summing_columns_in_partition_or_order_key = 0` or
+    /// dropping a summing/sign/version column -- and, because the live `merging_params` is still the old
+    /// mode, neither the special-column guards nor the engine validation below would catch it, leaving an
+    /// unloadable CREATE on disk. Re-validate the pending engine here, before any live or persisted
+    /// metadata changes.
+    std::vector<ASTPtr> engines_to_validate;
+    bool has_modify_engine_command = false;
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::MODIFY_ENGINE)
             continue;
+
+        has_modify_engine_command = true;
 
         if (!local_context->getSettingsRef()[Setting::allow_experimental_alter_modify_engine])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -4550,10 +4564,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "MODIFY ENGINE cannot change replication: table engine is {}, requested {}", getName(), engine_ast->name);
 
-        /// Build the candidate MergingParams and validate it against the (possibly already altered) columns.
-        /// parseFromEngineAST throws for a non-MergeTree or unknown engine name.
-        MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
+        engines_to_validate.push_back(command.engine);
+    }
 
+    /// No MODIFY ENGINE in this ALTER: re-validate the engine left pending by an earlier reload-only
+    /// MODIFY ENGINE, if any, against the post-ALTER columns and settings. The command-specific gates
+    /// above (experimental setting, replication, old syntax) were already checked when that engine was
+    /// set, and protect the feature -- here we only protect metadata integrity, so they are not re-applied.
+    if (!has_modify_engine_command)
+    {
+        auto current_metadata = getInMemoryMetadataPtr(local_context, false);
+        if (current_metadata->new_engine)
+            engines_to_validate.push_back(current_metadata->new_engine);
+    }
+
+    if (!engines_to_validate.empty())
+    {
         /// Apply the in-flight column and setting changes from the same ALTER so a column added before
         /// MODIFY ENGINE (e.g. the sign/version column) is visible to the validation, and so a setting
         /// changed in the same statement (e.g. allow_summing_columns_in_partition_or_order_key) is the
@@ -4570,12 +4596,23 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             ? &metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes
             : nullptr;
         auto settings_for_check = getSettings(setting_changes_for_check);
-        /// parseFromEngineAST leaves allow_tuple_element_aggregation off; derive it from the final settings
-        /// (with any in-flight MODIFY SETTING applied) so this check gates the tuple constraints exactly as
-        /// the reload path will -- otherwise a Summing/Aggregating/Coalescing target with a Nullable Tuple
-        /// column would pass here and only fail on the next ATTACH.
-        new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
-        new_merging_params.check(*settings_for_check, metadata_for_check);
+
+        for (const auto & engine : engines_to_validate)
+        {
+            const auto * engine_ast = engine->as<ASTFunction>();
+            if (!engine_ast)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY ENGINE expects an engine function AST");
+
+            /// Build the candidate MergingParams and validate it against the (possibly already altered)
+            /// columns. parseFromEngineAST throws for a non-MergeTree or unknown engine name.
+            MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
+            /// parseFromEngineAST leaves allow_tuple_element_aggregation off; derive it from the final
+            /// settings (with any in-flight MODIFY SETTING applied) so this check gates the tuple
+            /// constraints exactly as the reload path will -- otherwise a Summing/Aggregating/Coalescing
+            /// target with a Nullable Tuple column would pass here and only fail on the next ATTACH.
+            new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
+            new_merging_params.check(*settings_for_check, metadata_for_check);
+        }
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.

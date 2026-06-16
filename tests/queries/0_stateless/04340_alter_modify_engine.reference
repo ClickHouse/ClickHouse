@@ -5,3 +5,6 @@ summing	1	30
 summing	2	100
 collapsing	CollapsingMergeTree
 tuple-key replacing	ReplacingMergeTree
+pending setting guard	SummingMergeTree
+pending drop guard	SummingMergeTree
+pending unrelated alter	SummingMergeTree

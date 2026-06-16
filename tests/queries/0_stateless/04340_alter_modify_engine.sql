@@ -86,3 +86,35 @@ DETACH TABLE t_tea;
 ATTACH TABLE t_tea;
 SELECT 'tuple-key replacing', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_tea';
 DROP TABLE t_tea;
+
+-- A reload-only MODIFY ENGINE leaves the new engine pending on the live metadata while merging_params
+-- stays the old mode until reload. A subsequent ALTER with no MODIFY ENGINE of its own must re-validate
+-- that pending engine before changing any metadata, otherwise it can persist an unloadable CREATE.
+
+-- (d) a later MODIFY SETTING that invalidates the pending engine is rejected; the table stays loadable.
+CREATE TABLE t_pending (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY (k, v)
+    SETTINGS allow_summing_columns_in_partition_or_order_key = 1;
+ALTER TABLE t_pending MODIFY ENGINE = SummingMergeTree(v);
+ALTER TABLE t_pending MODIFY SETTING allow_summing_columns_in_partition_or_order_key = 0; -- { serverError BAD_ARGUMENTS }
+DETACH TABLE t_pending;
+ATTACH TABLE t_pending;
+SELECT 'pending setting guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
+DROP TABLE t_pending;
+
+-- (e) dropping the summing column of the pending engine is rejected before the live metadata changes.
+CREATE TABLE t_pending (k UInt32, v UInt64, w UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_pending MODIFY ENGINE = SummingMergeTree(v);
+ALTER TABLE t_pending DROP COLUMN v; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DETACH TABLE t_pending;
+ATTACH TABLE t_pending;
+SELECT 'pending drop guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
+DROP TABLE t_pending;
+
+-- (f) an unrelated later ALTER on a table with a pending engine still works.
+CREATE TABLE t_pending (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_pending MODIFY ENGINE = SummingMergeTree(v);
+ALTER TABLE t_pending ADD COLUMN z UInt8;
+DETACH TABLE t_pending;
+ATTACH TABLE t_pending;
+SELECT 'pending unrelated alter', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
+DROP TABLE t_pending;
