@@ -832,6 +832,52 @@ public:
     }
 };
 
+/** When buildQueryTreeDistributed disambiguates a duplicate-ALIAS projection item by wrapping it
+  * in __actionName(expr, '<unique_name>') and moving the alias onto the wrapper, any GROUP BY / ORDER BY /
+  * HAVING / WINDOW / etc. key that referenced the same alias keeps pointing at a sibling node that still
+  * carries the bare inlined expression together with that alias. On shard re-analysis two structurally
+  * different nodes would then share one alias in the same scope -> MULTIPLE_EXPRESSIONS_FOR_ALIAS.
+  *
+  * This visitor rewrites those sibling nodes to the wrapper as well, so a single (structurally identical)
+  * expression carries the alias everywhere in the scope. It deliberately does not descend into nested
+  * subqueries/unions, which have their own alias scope.
+  */
+class RewriteDuplicateAliasSiblingsVisitor : public InDepthQueryTreeVisitor<RewriteDuplicateAliasSiblingsVisitor>
+{
+public:
+    struct Target
+    {
+        IQueryTreeNode::Hash inlined_hash;
+        QueryTreeNodePtr wrapper;
+    };
+
+    std::unordered_map<String, Target> alias_to_target;
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        const auto & alias = node->getAlias();
+        if (alias.empty())
+            return;
+
+        auto it = alias_to_target.find(alias);
+        if (it == alias_to_target.end())
+            return;
+
+        /// Skip the projection wrapper itself (and any structurally identical wrapper): only sibling
+        /// nodes still holding the bare inlined expression have the original structural hash.
+        if (node->getTreeHash({.compare_aliases = false}) != it->second.inlined_hash)
+            return;
+
+        node = it->second.wrapper->clone();
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        auto type = child->getNodeType();
+        return type != QueryTreeNodeType::QUERY && type != QueryTreeNodeType::UNION;
+    }
+};
+
 bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
 {
     bool rewrite = false;
@@ -978,6 +1024,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             std::unordered_map<IQueryTreeNode::Hash, std::vector<OriginEntry>, TreeHashHash> bucket;
             FunctionOverloadResolverPtr action_name_resolver;
             size_t wrap_counter = 0;
+            std::unordered_map<String, RewriteDuplicateAliasSiblingsVisitor::Target> alias_to_target;
 
             for (size_t i = 0; i < projection_nodes.size(); ++i)
             {
@@ -1017,8 +1064,21 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 wrapper->getArguments().getNodes().push_back(std::move(name_node));
                 wrapper->resolveAsFunction(action_name_resolver);
                 if (!node_alias.empty())
+                {
                     wrapper->setAlias(node_alias);
+                    /// Remember this wrap so that GROUP BY / ORDER BY / HAVING / etc. keys referencing
+                    /// the same alias are rewritten to the wrapper too (see the visitor below). inlined_hash
+                    /// is the structural hash of the bare expression that such sibling nodes still carry.
+                    alias_to_target[node_alias] = {inlined_hash, wrapper};
+                }
                 projection_nodes[i] = std::move(wrapper);
+            }
+
+            if (!alias_to_target.empty())
+            {
+                RewriteDuplicateAliasSiblingsVisitor rewrite_visitor;
+                rewrite_visitor.alias_to_target = std::move(alias_to_target);
+                rewrite_visitor.visit(query_tree_to_modify);
             }
         }
     }
