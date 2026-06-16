@@ -190,7 +190,7 @@ static void appendRightColumns(
     block.erase(block_columns_to_erase);
 }
 
-MutableColumns copyEmptyColumns(const MutableColumns & columns)
+static MutableColumns copyEmptyColumns(const MutableColumns & columns)
 {
     MutableColumns res_columns;
     res_columns.reserve(columns.size());
@@ -199,7 +199,7 @@ MutableColumns copyEmptyColumns(const MutableColumns & columns)
     return res_columns;
 }
 
-void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
+static void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
 {
     out_offsets.clear();
     out_offsets.resize_fill(offsets.size(), 0);

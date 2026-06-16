@@ -26,7 +26,6 @@
 #    include <simsimd/simsimd.h>
 #endif
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -78,7 +77,7 @@ struct L2DistanceTransposed
             AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
             d2 += (xi - yi) * (xi - yi);
         }
-        *result = static_cast<Float64>(sqrt(d2));
+        *result = static_cast<Float64>(std::sqrt(d2));
     }
 };
 
@@ -132,8 +131,8 @@ struct CosineDistanceTransposed
         }
         else
         {
-            const auto unclipped_result = AccumulatorType(1) - ab / (sqrt(a2) * sqrt(b2));
-            *result = unclipped_result > 0 ? unclipped_result : 0;
+            const auto unclipped_result = AccumulatorType(1) - ab / (std::sqrt(a2) * std::sqrt(b2));
+            *result = unclipped_result > 0 ? static_cast<Float64>(unclipped_result) : Float64{0};
         }
     }
 };
@@ -400,7 +399,7 @@ private:
 
         /// Add dimension and reference vector as last two arguments
         auto dimension_column = DataTypeUInt64().createColumnConst(1, qbit_dimension);
-        converted_arguments.emplace_back(dimension_column, std::make_shared<DataTypeUInt64>(), "dimension");
+        converted_arguments.emplace_back(std::move(dimension_column), std::make_shared<DataTypeUInt64>(), "dimension");
 
         /// Cast reference vector to match QBit element type to ensure correct dispatch
         auto ref_vec_type = arguments[1].type;
@@ -431,7 +430,7 @@ private:
 
         /// For the sake of speed, downcast the reference vector to CalcT if `precision` is low enough
         const auto & array_data = static_cast<const ColumnVector<RefT> &>(col_y.getData()).getData();
-        const PaddedPODArray<CalcT> * data_ptr;
+        const PaddedPODArray<CalcT> * data_ptr = nullptr;
         PaddedPODArray<CalcT> array_data_downcasted;
         if constexpr (!std::is_same_v<RefT, CalcT>)
         {
@@ -500,6 +499,9 @@ private:
 };
 
 /// Used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
+FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<L2DistanceTransposed>::create(context_);
