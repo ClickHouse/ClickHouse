@@ -3,6 +3,7 @@ OPTIMIZE TABLE {db:Identifier}.{t:Identifier}
 USE db
 SYSTEM SYNC REPLICA db.t
 DROP TABLE {tbl:Identifier}
+DROP TABLE db.t
 SYSTEM SCHEDULE MERGE t PARTS \'p1\', \'p2\'
 SYSTEM FLUSH DISTRIBUTED t SETTINGS max_threads = 1
 CREATE TABLE t (`x` UInt8 COMMENT \'c\') ENGINE = Memory

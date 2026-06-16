@@ -88,26 +88,34 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    String db = r.getString("database");
-    if (!db.empty())
-        setDatabase(db);
-    String tbl = r.getString("table");
-    if (!tbl.empty())
-        setTable(tbl);
-
-    /// Prefer the full identifier ASTs when present (they preserve parameterized names
-    /// like `{tbl:Identifier}` that the string form above cannot represent). These slots are
-    /// parser-produced identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`,
-    /// so reject other node types here.
+    /// Restore the full identifier ASTs first, falling back to the plain string names only when the
+    /// AST key is absent. `writeJSON` emits both forms, so reading AST-first (like `ASTDropIndexQuery`/
+    /// `ASTAlterQuery`) avoids leaving a stale extra `children` entry from `setDatabase`/`setTable` that
+    /// no longer matches the `database`/`table` member. The AST form also preserves parameterized names
+    /// like `{tbl:Identifier}` that the string form cannot represent. These slots are parser-produced
+    /// identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`, so reject other
+    /// node types here.
     if (auto database_child = r.readIdentifierChild("database_ast"))
     {
         database = database_child;
         children.push_back(database);
     }
+    else
+    {
+        String db = r.getString("database");
+        if (!db.empty())
+            setDatabase(db);
+    }
     if (auto table_child = r.readIdentifierChild("table_ast"))
     {
         table = table_child;
         children.push_back(table);
+    }
+    else
+    {
+        String tbl = r.getString("table");
+        if (!tbl.empty())
+            setTable(tbl);
     }
 
     cluster = r.getString("cluster");

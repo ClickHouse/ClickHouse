@@ -15,6 +15,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE {db:Identifier}.{t:I
 SELECT formatQueryFromJSON(parseQueryToJSON('USE db'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM SYNC REPLICA db.t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE {tbl:Identifier}'));
+-- Plain string-form `DROP TABLE db.t`: `writeJSON` emits both string and AST target fields; the reader
+-- must restore the AST field first (or fall back to the string) so it does not leave a stale extra
+-- `children` entry that disagrees with the `table` member. Round-trips unchanged.
+SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE db.t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM SCHEDULE MERGE t PARTS \'p1\', \'p2\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM FLUSH DISTRIBUTED t SETTINGS max_threads = 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt8 COMMENT \'c\') ENGINE = Memory'));
