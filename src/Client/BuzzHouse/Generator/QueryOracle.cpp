@@ -259,28 +259,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             gen.generateWherePredicate(rg, bexpr->mutable_lhs());
         }
 
-        /// GROUP BY without auto-generated HAVING (allow_settings=false disables it)
-        gen.generateGroupBy(rg, 1, true, false, inner_ssc);
-
-        /// HAVING predicate restricted to GROUP BY key columns. Wrapped as
-        /// `pred = TRUE` like the WHERE path: the second query SUMs this whole
-        /// expression, and a bare predicate would be summed as its raw value
-        /// (e.g. `HAVING number` keeps every non-zero group, while
-        /// `sum(number)` adds the numbers themselves instead of counting).
-        const auto & gcols = gen.levels[gen.current_level].gcols;
-        if (!gcols.empty())
-        {
-            BinaryExpr * hexpr = inner_ssc->mutable_groupby()
-                                     ->mutable_having_expr()
-                                     ->mutable_expr()
-                                     ->mutable_expr()
-                                     ->mutable_comp_expr()
-                                     ->mutable_binary_expr();
-            hexpr->set_op(BinaryOperator::BINOP_EQ);
-            hexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
-                SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
-            gen.addWhereFilter(rg, gcols, hexpr->mutable_lhs());
-        }
+        gen.generateGroupBy(rg, 1, true, true, inner_ssc);
 
         /// Inner result: count() AS cnt
         ExprColAlias * inner_eca = inner_ssc->add_result_columns()->mutable_eca();
@@ -592,7 +571,7 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
     if (rg.nextSmallNumber() < 4)
         gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
     if (rg.nextSmallNumber() < 3)
-        gen.generateGroupBy(rg, 1, rg.nextBool(), false, ssc1);
+        gen.generateGroupBy(rg, 1, rg.nextSmallNumber() < 4, true, ssc1);
 
     gen.levels.clear();
     gen.ctes.clear();
