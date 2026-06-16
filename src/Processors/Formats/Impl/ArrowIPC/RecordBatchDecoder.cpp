@@ -819,15 +819,6 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();
 
-    /// Validate the validity bitmap against the declared row count whenever the field declares nulls,
-    /// before decoding the value buffers — even when the resulting column type drops the null map
-    /// (Array/Tuple/Map cannot be `Nullable` in ClickHouse, so their outer validity is not built). A
-    /// non-zero (or unknown, i.e. negative) null count with a present-but-too-small bitmap, or a forged
-    /// huge length, is corrupt data: building the null map or scanning the bitmap would read past the
-    /// buffer or drive an oversized allocation.
-    if (node.null_count() != 0 && validity.length != 0)
-        checkBufferSize(validity, (rows + 7) / 8, "validity");
-
     /// A non-nullable field must not declare nulls. We build no null map for non-nullable fields (and
     /// Array/Tuple/Map drop their outer validity), so a non-zero (or unknown, i.e. negative) FieldNode
     /// null count would otherwise let those null rows be decoded silently as whatever is in the value
@@ -837,6 +828,23 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC field '{}' is declared non-nullable but its FieldNode reports {} nulls",
             field.name, node.null_count());
+
+    /// Validate the validity buffer against the declared row count whenever the field declares nulls,
+    /// before decoding the value buffers — even when the resulting column type drops the null map
+    /// (Array/Tuple/Map cannot be `Nullable` in ClickHouse, so their outer validity is not built). A
+    /// non-zero (or unknown, i.e. negative) null count needs a bitmap to say which rows are null: an
+    /// absent (zero-length) validity buffer would otherwise be treated as all-valid and silently turn the
+    /// declared nulls into real values. A present bitmap must also be large enough for the row count (a
+    /// too-small or forged-huge length would read past the buffer or drive an oversized allocation).
+    if (node.null_count() != 0)
+    {
+        if (validity.length == 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC field '{}' declares {} nulls but carries no validity bitmap",
+                field.name, node.null_count());
+        checkBufferSize(validity, (rows + 7) / 8, "validity");
+    }
 
     /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch.
     if (field.dictionary)
