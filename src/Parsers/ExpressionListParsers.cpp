@@ -725,6 +725,43 @@ public:
         return true;
     }
 
+    /// `kql_array_sort_asc`/`kql_array_sort_desc` return `Tuple(Array, ...)`, so a `[i]`
+    /// subscript on their result is tuple-element access. The subscript is built as an
+    /// `arrayElement` operator and is rewritten to `tupleElement` here. This must run at
+    /// every site that constructs an `arrayElement` operator: both `mergeElement` and the
+    /// equal-priority operator-merge loop in `ParserExpressionImpl::parse` build it, and
+    /// only folding in one of them left chains like `kql_array_sort_*(...)[i].j` with a
+    /// raw `arrayElement(kql, i)` that re-parses as `tupleElement`, breaking the
+    /// format-parse-format round-trip (STID 1941-1bfa). `function` is the just-built node
+    /// with its arguments already populated.
+    static void foldKqlArraySortSubscript(const ASTPtr & function)
+    {
+        auto * func = function->as<ASTFunction>();
+        if (!func || func->name != "arrayElement" || !func->arguments || func->arguments->children.empty())
+            return;
+
+        auto * array_arg = func->arguments->children[0]->as<ASTFunction>();
+        if (!array_arg)
+            return;
+
+        if (array_arg->name == "kql_array_sort_asc" || array_arg->name == "kql_array_sort_desc")
+        {
+            func->name = "tupleElement";
+        }
+        else if (array_arg->isOperator()
+            && array_arg->name == "arrayElement"
+            && array_arg->arguments && !array_arg->arguments->children.empty())
+        {
+            /// Chained subscript `kql_array_sort_*(...)[i][j]`: the inner operator-built
+            /// `arrayElement(kql, i)` is the tuple-element access. Only rewrite an inner
+            /// node built via operator syntax so call-syntax `arrayElement(kql, ...)` is
+            /// preserved verbatim and still round-trips.
+            auto * inner = array_arg->arguments->children[0]->as<ASTFunction>();
+            if (inner && (inner->name == "kql_array_sort_asc" || inner->name == "kql_array_sort_desc"))
+                array_arg->name = "tupleElement";
+        }
+    }
+
     /// Merge operators and operands into a single element (column), then push it to 'elements' vector.
     ///  Operators are previously sorted in ascending order of priority
     ///  (operator with priority 1 has higher priority than operator with priority 2),
@@ -773,30 +810,13 @@ public:
             }
             else
             {
-                /// enable using subscript operator for kql_array_sort
-                if (cur_op.function_name == "arrayElement" && !operands.empty())
-                {
-                    auto* first_arg_as_node = operands.front()->as<ASTFunction>();
-                    if (first_arg_as_node)
-                    {
-                        if (first_arg_as_node->name == "kql_array_sort_asc" || first_arg_as_node->name == "kql_array_sort_desc")
-                        {
-                            cur_op.function_name = "tupleElement";
-                            cur_op.type = OperatorType::TupleElement;
-                        }
-                        else if (first_arg_as_node->name == "arrayElement" && !first_arg_as_node->arguments->children.empty())
-                        {
-                            auto *arg_inside = first_arg_as_node->arguments->children[0]->as<ASTFunction>();
-                            if (arg_inside && (arg_inside->name == "kql_array_sort_asc" || arg_inside->name == "kql_array_sort_desc"))
-                                first_arg_as_node->name = "tupleElement";
-                        }
-                    }
-                }
-
                 function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
                     return false;
+
+                /// Subscript on a `kql_array_sort_*` result is tuple-element access.
+                foldKqlArraySortSubscript(function);
             }
 
             pushOperand(function);
@@ -3727,6 +3747,9 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
             if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
                 return Action::NONE;
+
+            /// Subscript on a `kql_array_sort_*` result is tuple-element access.
+            Layer::foldKqlArraySortSubscript(function);
         }
 
         layers.back()->pushOperand(function);
