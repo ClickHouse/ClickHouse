@@ -123,6 +123,7 @@ bool authenticateUserByHTTP(
         if (request.havePeerCertificate())
         {
             auto certificate = X509Certificate(request.peerCertificate());
+            session.setClientCertificate(certificate);
             certificate_subjects = certificate.extractAllSubjects();
         }
 

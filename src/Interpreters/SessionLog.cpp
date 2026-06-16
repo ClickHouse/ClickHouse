@@ -56,6 +56,19 @@ void fillColumnArray(const Strings & data, IColumn & column)
     offsets.push_back(offsets.back() + size);
 }
 
+void fillCertificateInfo(SessionLogElement & log_entry, const std::optional<ClientCertificateInfo> & certificate_info)
+{
+    if (!certificate_info)
+        return;
+
+    log_entry.has_certificate = true;
+    log_entry.certificate_subjects = certificate_info->subjects;
+    log_entry.certificate_serial = certificate_info->serial;
+    log_entry.certificate_issuer = certificate_info->issuer;
+    log_entry.certificate_not_before = certificate_info->not_before;
+    log_entry.certificate_not_after = certificate_info->not_after;
+}
+
 }
 
 namespace DB
@@ -157,6 +170,15 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
 
         {"failure_reason", std::make_shared<DataTypeString>(), "The exception message containing the reason for the login/logout failure."},
+
+        {"certificate_subjects", std::make_shared<DataTypeArray>(lc_string_datatype),
+            "The list of subjects (Common Name and Subject Alternative Names) of the TLS client certificate presented on the connection, in the form 'CN:...' / 'SAN:...'. Empty if no certificate was presented."},
+        {"certificate_serial", lc_string_datatype, "Serial number of the TLS client certificate. Empty if no certificate was presented."},
+        {"certificate_issuer", lc_string_datatype, "Issuer of the TLS client certificate. Empty if no certificate was presented."},
+        {"certificate_not_before", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+            "Time from which the TLS client certificate is valid. NULL if no certificate was presented."},
+        {"certificate_not_after", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+            "Time after which the TLS client certificate expires. NULL if no certificate was presented."},
     };
 }
 
@@ -213,6 +235,20 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(client_info.client_version_patch);
 
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
+
+    fillColumnArray(certificate_subjects, *columns[i++]);
+    columns[i++]->insertData(certificate_serial.data(), certificate_serial.length());
+    columns[i++]->insertData(certificate_issuer.data(), certificate_issuer.length());
+    if (has_certificate)
+    {
+        columns[i++]->insert(certificate_not_before);
+        columns[i++]->insert(certificate_not_after);
+    }
+    else
+    {
+        columns[i++]->insertDefault();
+        columns[i++]->insertDefault();
+    }
 }
 
 void SessionLog::addLoginSuccess(const UUID & auth_id,
@@ -221,10 +257,12 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const ContextAccessPtr & access,
                                  const ClientInfo & client_info,
                                  const UserPtr & login_user,
-                                 const AuthenticationData & user_authenticated_with)
+                                 const AuthenticationData & user_authenticated_with,
+                                 const std::optional<ClientCertificateInfo> & certificate_info)
 {
     SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
+    fillCertificateInfo(log_entry, certificate_info);
 
     if (login_user)
     {
@@ -254,7 +292,8 @@ void SessionLog::addLoginFailure(
         const UUID & auth_id,
         const ClientInfo & info,
         const std::optional<String> & user,
-        const Exception & reason)
+        const Exception & reason,
+        const std::optional<ClientCertificateInfo> & certificate_info)
 {
     SessionLogElement log_entry(auth_id, SESSION_LOGIN_FAILURE);
 
@@ -262,6 +301,7 @@ void SessionLog::addLoginFailure(
     log_entry.auth_failure_reason = reason.message();
     log_entry.client_info = info;
     log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
+    fillCertificateInfo(log_entry, certificate_info);
 
     add(std::move(log_entry));
 }
@@ -270,7 +310,8 @@ void SessionLog::addLogOut(
     const UUID & auth_id,
     const UserPtr & login_user,
     const AuthenticationData & user_authenticated_with,
-    const ClientInfo & client_info)
+    const ClientInfo & client_info,
+    const std::optional<ClientCertificateInfo> & certificate_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
     if (login_user)
@@ -280,6 +321,7 @@ void SessionLog::addLogOut(
     }
     log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
     log_entry.client_info = client_info;
+    fillCertificateInfo(log_entry, certificate_info);
 
     add(std::move(log_entry));
 }

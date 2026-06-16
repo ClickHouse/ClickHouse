@@ -1986,10 +1986,14 @@ void TCPHandler::receiveHello()
         Poco::Net::SecureStreamSocket secure_socket(socket());
         if (secure_socket.havePeerCertificate())
         {
+            X509Certificate peer_certificate(secure_socket.peerCertificate());
+            /// Remember the certificate for session_log regardless of whether certificate authentication
+            /// succeeds: the connection may fall back to another method, but the certificate was presented.
+            session->setClientCertificate(peer_certificate);
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
+                    SSLCertificateCredentials{user, peer_certificate.extractAllSubjects()},
                     getClientAddress(client_info), socket().peerAddress());
                 return;
             }
