@@ -29,7 +29,8 @@ DROP TABLE remote_restore_src SYNC;
 -- own explicit columns and must not re-analyze the table-function target just to be restored.
 RESTORE TABLE remote_restore_t FROM Memory('04341_remote_storage_engine_restore') FORMAT Null;
 
--- The restored table is present and is a `Remote` engine.
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 'remote_restore_t';
+-- The restored table is present; it persists as a `Remote` engine definition (which builds a
+-- `Distributed` storage at runtime). `engine_full` embeds the database name, so only check its prefix.
+SELECT name, engine, startsWith(engine_full, 'Remote(') FROM system.tables WHERE database = currentDatabase() AND name = 'remote_restore_t';
 
 DROP TABLE remote_restore_t SYNC;
