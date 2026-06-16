@@ -33,7 +33,6 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
-#include <iostream>
 #include <ranges>
 
 
@@ -44,6 +43,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
 }
 
 namespace ErrorCodes
@@ -53,6 +53,8 @@ namespace ErrorCodes
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
+    extern const int TABLE_UUID_MISMATCH;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -310,7 +312,31 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     {
         /// If table is the target of a refreshable materialized view, it needs additional
         /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        try
+        {
+            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        }
+        catch (const Exception & e)
+        {
+            /// `EXCHANGE TABLES` + `DROP` during refresh can race with this resolution:
+            /// `resolveStorageID` above stamps the original UUID onto `storage_id`, then the
+            /// refresh swaps the target slot and drops the old table. Inside
+            /// `getAndLockTargetTable`, `DatabaseCatalog::getTable` takes the UUID shortcut in
+            /// `getTableImpl` and either throws `UNKNOWN_TABLE` (after the old UUID is fully
+            /// removed) or `TABLE_UUID_MISMATCH` (post-EXCHANGE but pre-DROP, when the UUID
+            /// still resolves to the now-renamed old storage). Either way, the retry loop
+            /// inside `getAndLockTargetTable` never gets a chance to run.
+            ///
+            /// Mirror the established UUID -> name fallback at the if-block below: when the
+            /// original UUID is unusable, retry against the current table at the same name.
+            /// Re-entering `getAndLockTargetTable` (instead of plain `tryGetTable`) preserves
+            /// the retry loop and the `SYSTEM SYNC REPLICA` call that this path needs.
+            if ((e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::TABLE_UUID_MISMATCH)
+                || !storage_id.hasUUID())
+                throw;
+            StorageID name_only_id(storage_id.database_name, storage_id.table_name);
+            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(name_only_id, context);
+        }
     }
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
@@ -772,6 +798,29 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
+    /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
+      * strip path over `hasFullIdentifierName` / subcolumn lookup. This restores the
+      * old-analyzer convention where `b.id` against a table aliased `b` resolves to the
+      * `id` column even when the table also has a same-named subcolumn or when a
+      * sibling subquery exposes an asterisk-renamed `b.id` column.
+      */
+    if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
+        && identifier.getPartsSize() > 1)
+    {
+        const auto & table_name_compat = table_expression_data.table_name;
+        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
+        const bool prefix_matches_alias
+            = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+        if (prefix_matches_table_name || prefix_matches_alias)
+        {
+            auto alias_prefix_result = tryResolveIdentifierFromStorage(
+                identifier_lookup, table_expression_node, table_expression_data, scope,
+                1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+            if (alias_prefix_result.resolved_identifier)
+                return alias_prefix_result;
+        }
+    }
+
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
@@ -1006,6 +1055,48 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+static bool qualifierBindsToJoinSubtree(
+    const QueryTreeNodePtr & join_tree_node,
+    const std::string & qualifier,
+    const IdentifierResolveScope & scope)
+{
+    if (!join_tree_node || qualifier.empty())
+        return false;
+
+    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+        return true;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join = join_tree_node->as<JoinNode &>();
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope);
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            const auto & cross = join_tree_node->as<CrossJoinNode &>();
+            for (const auto & expr : cross.getTableExpressions())
+                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
+                    return true;
+            return false;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+        {
+            const auto & arr = join_tree_node->as<ArrayJoinNode &>();
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope);
+        }
+        default:
+            break;
+    }
+
+    auto it = scope.table_expression_node_to_data.find(join_tree_node);
+    if (it == scope.table_expression_node_to_data.end())
+        return false;
+    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -1039,8 +1130,36 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         return std::move(res.resolved_identifier);
     };
 
-    auto left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
-    auto right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
+    /** When analyzer_compatibility_resolve_alias_prefix_over_subcolumn is enabled,
+      * if the leading part of a compound identifier binds as a qualifier (alias / table name)
+      * to exactly one side of the JOIN, restrict resolution to that side, otherwise try both.
+      *
+      * For example (table `t2` has columns `id Int, b Tuple(id Int)`):
+      * `SELECT * FROM t2 a LEFT JOIN (SELECT * FROM t2 a) b ON a.id = b.id;`
+      *
+      * Here `b.id` in the ON condition is ambiguous:
+      * it can be the `id` column of the right subquery aliased as `b`,
+      * or it can be the Tuple subcolumn `b.id` of column `b` from the left table `t2 a`.
+      *
+      * Without this check both sides resolve successfully and the query fails with `AMBIGUOUS_IDENTIFIER`.
+      * With setting enabled we prefer alias prefix, so try resolve `b.id` only from the right side.
+      */
+    bool prefer_alias = scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn];
+    bool binds_left = true;
+    bool binds_right = true;
+    if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
+    {
+        const auto & path_start = identifier_lookup.identifier.front();
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
+    }
+
+    QueryTreeNodePtr left_resolved_identifier = nullptr;
+    QueryTreeNodePtr right_resolved_identifier = nullptr;
+    if (binds_left || !binds_right)
+        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
+    if (!binds_left || binds_right)
+        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
 
     if (!identifier_lookup.isExpressionLookup())
     {
