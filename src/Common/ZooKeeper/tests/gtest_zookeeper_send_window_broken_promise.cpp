@@ -75,7 +75,7 @@ void runSendWindow(RequestInfoLike && popped, bool throw_in_window, bool with_gu
     RequestInfoLike info = std::move(popped);
 
     bool callback_registered = false;
-    /// The guard, copied verbatim from the fix in ZooKeeperImpl.cpp::sendThread.
+    /// The guard, mirroring the fix in ZooKeeperImpl.cpp::sendThread.
     SCOPE_EXIT({
         if (!with_guard)
             return;
@@ -88,7 +88,7 @@ void runSendWindow(RequestInfoLike && popped, bool throw_in_window, bool with_gu
             response->xid = info.request->xid;
             info.callback(*response);
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: a scope-exit guard must never let an exception escape during unwinding (matches the production SCOPE_EXIT in sendThread); the test exercises only the no-throw satisfy path
         {
         }
     });
@@ -104,10 +104,8 @@ void runSendWindow(RequestInfoLike && popped, bool throw_in_window, bool with_gu
         operations = info;
         callback_registered = true;
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: sendThread has no inner catch in this window (the throw propagates to its outer catch); here we swallow only so the test can inspect the future the guard already satisfied
     {
-        /// sendThread has no inner catch in this window; the throw propagates out of the while body
-        /// to the outer catch. We swallow it here only so the test can inspect the future.
     }
 }
 
