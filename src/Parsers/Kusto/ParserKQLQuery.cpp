@@ -602,9 +602,9 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     struct KQLOperatorDataFlowState
     {
         String operator_name;
-        bool need_input;
-        bool gen_output;
-        int8_t backspace_steps; // how many steps to last token of previous pipe
+        bool need_input{};
+        bool gen_output{};
+        int8_t backspace_steps{}; // how many steps to last token of previous pipe
     };
 
     auto select_query = make_intrusive<ASTSelectQuery>();
@@ -1064,7 +1064,7 @@ bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr select_node;
 
-    if (!ParserKQLTableFunction().parse(pos, select_node, expected))
+    if (!ParserKQLParenExpression().parse(pos, select_node, expected))
         return false;
 
     ASTPtr node_subquery = make_intrusive<ASTSubquery>(std::move(select_node));

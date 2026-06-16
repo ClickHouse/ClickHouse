@@ -5,6 +5,7 @@ Tests are parametrized over available catalog backends via the
 missing are automatically skipped.
 """
 
+import concurrent.futures
 import datetime
 import decimal
 import time
@@ -192,7 +193,7 @@ def started_cluster(catalog_manager):
     cluster = ClickHouseCluster(__file__, name=f"test_e2e_catalogs_{catalog_manager}")
     cluster.add_instance(
         "node1",
-        main_configs=["configs/merge_tree.xml"],
+        main_configs=["configs/merge_tree.xml", "configs/biglake_metadata_hosts.xml"],
         user_configs=["configs/allow_experimental.xml"],
         env_variables=catalog_manager.clickhouse_env_variables(),
         stay_alive=True,
@@ -1191,8 +1192,28 @@ def test_list_tables_pagination(node, catalog_manager):
     created = []
     db = None
     try:
-        for short in expected:
-            created.append(catalog_manager.create_table(data, table_name=short))
+        # Catalog round-trips dominate per-table create time (~2-4s each on
+        # OneLake / BigLake / Glue), so creating tables serially adds 2-4 min
+        # per backend. Issue them in parallel; each catalog client + REST
+        # endpoint handles concurrent creates fine.  Record every
+        # successful result as it completes (rather than via `list(map())`
+        # at the end), so if one worker raises we still know about the
+        # tables that already succeeded and the `finally` block can drop
+        # them instead of leaking catalog/storage artifacts.
+        first_exc = None
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [
+                pool.submit(catalog_manager.create_table, data, table_name=short)
+                for short in expected
+            ]
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    created.append(fut.result())
+                except BaseException as exc:
+                    if first_exc is None:
+                        first_exc = exc
+        if first_exc is not None:
+            raise first_exc
 
         db = catalog_manager.make_database_name()
         catalog_manager.create_catalog(node, db)
@@ -1252,8 +1273,9 @@ def test_list_tables_pagination(node, catalog_manager):
             f"Expected 1 row in last-page table {late}, got {rows}"
         )
     finally:
-        for name in created:
-            catalog_manager.cleanup_table(name)
+        if created:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+                list(pool.map(catalog_manager.cleanup_table, created))
         if db is not None:
             try:
                 node.query(f"DROP DATABASE IF EXISTS {db}")

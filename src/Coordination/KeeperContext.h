@@ -65,6 +65,9 @@ public:
     std::vector<DiskPtr> getOldSnapshotDisks() const;
     void setSnapshotDisk(DiskPtr disk);
 
+    /// Test-only: set the latest-snapshot storage alone (`setSnapshotDisk` overwrites both).
+    void setLatestSnapshotDisk(DiskPtr disk);
+
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
 
@@ -84,8 +87,6 @@ public:
 
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
-
-    static void initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     void updateSettings(CoordinationSettingsPtr new_settings);
 

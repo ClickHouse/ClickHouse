@@ -88,6 +88,9 @@ DEFINE_ICEBERG_FIELD(key_metadata);
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
+DEFINE_ICEBERG_FIELD_ALIAS(first_row_id, first-row-id);
+DEFINE_ICEBERG_FIELD_ALIAS(added_rows, added-rows);
+DEFINE_ICEBERG_FIELD_ALIAS(next_row_id, next-row-id);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(parent_snapshot_id, parent-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(snapshot_log, snapshot-log);
