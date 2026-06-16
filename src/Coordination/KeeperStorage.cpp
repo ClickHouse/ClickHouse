@@ -1845,7 +1845,7 @@ Coordination::Error preprocess(
     auto parent_node = parent_node_ref.get();
 
     if (!parent_node)
-        return Coordination::Error::ZNONODE;
+        return zk_request.try_remove ? Coordination::Error::ZOK : Coordination::Error::ZNONODE;
 
     if (check_acl && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
