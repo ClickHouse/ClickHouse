@@ -23,7 +23,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions resolve provider credentials and configuration from a **named collection**. To set a named collection to use for credentials, use the [`ai_function_credentials`](/operations/settings/settings#ai_function_credentials) setting.
+AI functions resolve provider credentials and configuration from a [**named collection**](/operations/named-collections). To set a named collection to use for credentials, use the [`ai_function_credentials`](/operations/settings/settings#ai_function_credentials) setting.
 
 Example statement to create a named collection with provider credentials:
 ```sql
