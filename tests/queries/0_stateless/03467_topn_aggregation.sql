@@ -145,20 +145,22 @@ SELECT
     (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM (SELECT k, -ts AS ts FROM t_topn_expr) GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0));
 DROP TABLE t_topn_expr;
 
--- Aggregate projection on the ORDER BY aggregate. Guards the `params.only_merge` rejection in the
--- rewrite (the fused transform calls Aggregator::executeOnBlock and cannot consume AggregateFunction
--- state columns). For a Mode-1-eligible query the rewrite fires on the base table and the projection
--- is not selected, so this asserts the user-visible invariant: the result matches the standard
--- pipeline whether the optimizer answers from the projection (merge state) or the base table.
+-- Forced aggregate projection. The rewrite runs at the LimitStep, before projection selection
+-- reaches the child AggregatingStep; if it fired on the base-table plan it would leave the forced
+-- projection unused and `force_optimize_projection = 1` would raise PROJECTION_NOT_USED. The rewrite
+-- must defer to forced projection: not applied, and the query succeeds via the projection with the
+-- same result as the standard pipeline.
 DROP TABLE IF EXISTS t_topn_proj;
 CREATE TABLE t_topn_proj (k UInt64, ts UInt64, PROJECTION p (SELECT k, max(ts) GROUP BY k))
 ENGINE = MergeTree ORDER BY ts;
 INSERT INTO t_topn_proj SELECT number % 100, number FROM numbers(10000);
 OPTIMIZE TABLE t_topn_proj FINAL;
-SELECT '-- aggregate projection: optimized == reference';
+SELECT '-- forced projection: rewrite deferred (not applied)';
+SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, optimize_use_projections = 1, force_optimize_projection = 1) WHERE explain LIKE '%TopNAggregating%';
+SELECT '-- forced projection: optimized == reference';
 SELECT
-    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1)) =
-    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0));
+    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, optimize_use_projections = 1, force_optimize_projection = 1)) =
+    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0, optimize_use_projections = 1, force_optimize_projection = 1));
 DROP TABLE t_topn_proj;
 
 -- No statistics: the gate falls back to the absolute topn_aggregation_max_limit cap (applies for

@@ -318,6 +318,13 @@ bool requestSortedInput(
   */
 void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    /// Defer to forced projection. With force_optimize_projection / force_optimize_projection_name the
+    /// user requires an aggregate projection to answer the query. This rewrite runs at the LimitStep,
+    /// before projection selection reaches the child AggregatingStep, so firing it on the base-table
+    /// plan would leave the forced projection unused and later raise PROJECTION_NOT_USED. Skip it.
+    if (optimization_settings.force_use_projection || !optimization_settings.force_projection_name.empty())
+        return;
+
     PlanMatch match;
     if (!matchPlan(node, match))
         return;

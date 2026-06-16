@@ -50,7 +50,9 @@ trace_4	2024-01-01 00:00:04	4
 1
 -- computed arg aliasing key: optimized == reference
 1
--- aggregate projection: optimized == reference
+-- forced projection: rewrite deferred (not applied)
+1
+-- forced projection: optimized == reference
 1
 -- no stats, LIMIT <= max_limit: applied
 1
