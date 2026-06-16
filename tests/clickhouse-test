@@ -92,6 +92,14 @@ STOP_TESTING_EXIT_CODE = 2
 # `ci/jobs/scripts/functional_tests_results.py`.
 GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 
+# Exit code returned when the run stopped early because the `--max-failures` /
+# `--max-failures-chain` limit was reached. The server is alive and the failing
+# tests are real and already attributed - so this must NOT be conflated with
+# `STOP_TESTING_EXIT_CODE` (reported as "Server died", which also blanks out the
+# per-test attribution). Kept in sync with `MAX_FAILURES_EXIT_CODE` in
+# `ci/jobs/scripts/functional_tests_results.py`.
+MAX_FAILURES_EXIT_CODE = 4
+
 USE_JINJA = True
 try:
     import jinja2
@@ -4158,8 +4166,10 @@ class StopTesting(Exception):
     "Test run aborted:" so it stands out in the log, and exits with
     `exit_code` so the job side can distinguish the cause: the default
     `STOP_TESTING_EXIT_CODE` means the run was catastrophically interrupted
-    (reported as "Server died"), while `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
-    benign, expected stop after the time budget was reached.
+    (reported as "Server died"), `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
+    benign, expected stop after the time budget was reached, and
+    `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
+    still alive) so the run stopped early.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -4524,7 +4534,8 @@ def run_tests_array(
                             stop_tests()
                             stop_testing.set()
                             raise StopTesting(
-                                f"reached --max-failures limit ({args.max_failures})"
+                                f"reached --max-failures limit ({args.max_failures})",
+                                exit_code=MAX_FAILURES_EXIT_CODE,
                             )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
@@ -4538,7 +4549,8 @@ def run_tests_array(
             stop_tests()
             stop_testing.set()
             raise StopTesting(
-                f"reached --max-failures-chain limit ({args.max_failures_chain})"
+                f"reached --max-failures-chain limit ({args.max_failures_chain})",
+                exit_code=MAX_FAILURES_EXIT_CODE,
             )
 
     if failures_total > 0:
@@ -5053,6 +5065,15 @@ def do_run_tests(
                     raise StopTesting(
                         "global time limit reached",
                         exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
+                    )
+                # A worker that hit `--max-failures` set `stop_testing` and bumped
+                # the shared counter before exiting. The server is alive and the
+                # failing tests are real (and already attributed), so report this
+                # as a max-failures stop, not "Server died".
+                if args.max_failures > 0 and total_failures_shared.value >= args.max_failures:
+                    raise StopTesting(
+                        f"reached --max-failures limit ({args.max_failures})",
+                        exit_code=MAX_FAILURES_EXIT_CODE,
                     )
                 raise StopTesting(
                     "test run was stopped (see earlier output for the cause)"
