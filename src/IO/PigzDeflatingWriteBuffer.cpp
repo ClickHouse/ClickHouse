@@ -113,6 +113,10 @@ PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(
 
     deflateEnd(&strm);
 
+    /// out_buf wrote directly into `mem`; finalize() is a no-op flush here but is required by the
+    /// WriteBuffer contract before the buffer is destroyed.
+    out_buf.finalize();
+
     return {mem, out_buf.count()};
 }
 
