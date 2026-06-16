@@ -663,6 +663,27 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t num_rows, bool 
     return addBlockToJoin(materialized, ScatteredBlock::Selector(rows), check_limits);
 }
 
+namespace
+{
+/// Per-column compaction used under memory pressure when `enable_join_in_memory_compression` is on.
+/// A column is kept in compressed form only when compression shrinks its data by at least 10%;
+/// otherwise it is just shrunk to fit. This keeps barely- or in-compressible columns directly readable,
+/// so they incur no probe-time decompression cost (and `have_compressed` stays false if nothing helped).
+ColumnPtr compressColumnIfWorthwhile(const ColumnPtr & column, bool & compressed_any)
+{
+    auto compressed = column->compress(/*force_compression=*/true);
+    /// `byteSize` is the actual data size; comparing the compressed footprint against it (rather than
+    /// against the possibly over-allocated `allocatedBytes`) measures real data compressibility, since
+    /// `cloneResized` already reclaims over-allocation for free.
+    if (compressed->allocatedBytes() * 10 <= column->byteSize() * 9)
+    {
+        compressed_any = true;
+        return compressed;
+    }
+    return column->cloneResized(column->size());
+}
+}
+
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
 {
     if (!data)
@@ -774,8 +795,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         }
         else if (compress_on_insert)
         {
-            block_to_save = block_to_save.compress();
-            have_compressed = true;
+            /// Compress each column only when it is worthwhile (>= 10% smaller), otherwise shrink it.
+            for (size_t i = 0; i < block_to_save.columns(); ++i)
+            {
+                auto & elem = block_to_save.getByPosition(i);
+                elem.column = compressColumnIfWorthwhile(elem.column, have_compressed);
+            }
         }
 
         doDebugAsserts();
@@ -933,6 +958,12 @@ DecompressedColumnsPtr HashJoin::getDecompressedColumns(const ColumnsInfo * comp
 
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
 {
+    /// Stored blocks are already compacted (some columns are `ColumnCompressed`, which cannot be
+    /// `cloneResized`). Nothing more to do, and re-running would be unsafe. This also guards the
+    /// `force_optimize` path (`StorageJoin::optimize`) from touching already-compressed data.
+    if (have_compressed)
+        return;
+
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
     Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
@@ -969,9 +1000,6 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
-    if (compress_in_memory)
-        have_compressed = true;
-
     for (auto & stored_columns : data->columns)
     {
         doDebugAsserts();
@@ -981,7 +1009,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         try
         {
             for (auto & column : stored_columns.columns_info.columns)
-                column = compress_in_memory ? column->compress(/*force_compression=*/false) : column->cloneResized(column->size());
+                column = compress_in_memory ? compressColumnIfWorthwhile(column, have_compressed) : column->cloneResized(column->size());
 
             /// `cloneResized`/`compress` replaces each column with a new object.
             /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
