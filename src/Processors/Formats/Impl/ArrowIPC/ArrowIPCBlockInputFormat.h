@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -74,6 +75,10 @@ private:
     /// For each Arrow dictionary id, the field describing its value type (used to decode dictionary batches).
     std::unordered_map<int64_t, ArrowIPC::ArrowField> dictionary_value_fields;
     std::unique_ptr<ArrowIPC::RecordBatchDecoder> decoder;
+    /// Top-level Arrow field names the requested header needs (normalized for case-insensitive matching).
+    /// The decoder skips every other column so a SELECT of a subset of columns does not decode — or fail
+    /// on — the unrequested ones. Empty until `prepareReader` runs.
+    std::unordered_set<String> requested_top_level_fields;
     bool prepared = false;
     PODArray<char> body_buffer;
 

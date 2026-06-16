@@ -208,6 +208,21 @@ void ArrowIPCBlockInputFormat::prepareReader()
 
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+
+    /// Determine which top-level Arrow fields the requested header needs, so the decoder can skip the rest
+    /// (subset-of-columns support): a field is needed if a header column matches it by name, or is a
+    /// `Nested`/struct subcolumn of it (a header column `name.sub` keeps the field `name`) — mirroring how
+    /// `buildChunk` maps columns. Names are lower-cased when case-insensitive matching is on, matching the
+    /// lookup in `decodeColumns`.
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
+    requested_top_level_fields.clear();
+    for (const auto & header_column : getPort().getHeader())
+    {
+        requested_top_level_fields.insert(normalize(header_column.name));
+        requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
+    }
+
     prepared = true;
 }
 
@@ -599,7 +614,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 }
 
                 message_reader->readBody(msg.body_length, body_buffer);
-                auto decoded = decoder->decodeBatch(*batch, body_buffer);
+                auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields);
                 Chunk chunk = buildChunk(decoded, num_rows);
 
                 const size_t batch_end = in->count();
@@ -661,7 +676,7 @@ Chunk ArrowIPCBlockInputFormat::readFile()
         return getChunkForCount(num_rows);
 
     message_reader->readBody(msg.body_length, body_buffer);
-    auto decoded = decoder->decodeBatch(*batch, body_buffer);
+    auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields);
     return buildChunk(decoded, num_rows);
 }
 

@@ -23,6 +23,7 @@
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/UUID.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -888,8 +889,104 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
     return inner;
 }
 
+void RecordBatchDecoder::skipField(const ArrowField & field)
+{
+    /// Consume this field's FieldNode, mirroring decodeField.
+    nextNode();
+
+    /// Unions carry no validity buffer (decodeField dispatches to decodeUnion before consuming one):
+    /// a type-ids buffer, an offsets buffer for dense unions, then one subtree per child — a null-typed
+    /// child being just a placeholder node, exactly as decodeUnion consumes them.
+    if (field.type.kind == TypeKind::Union)
+    {
+        nextBuffer();
+        if (field.type.union_mode == flatbuf::UnionMode_Dense)
+            nextBuffer();
+        for (const ArrowField & child : field.type.children)
+        {
+            if (child.type.kind == TypeKind::Null)
+                nextNode();
+            else
+                skipField(child);
+        }
+        return;
+    }
+
+    /// A null-typed field has no buffers at all (not even validity).
+    if (field.type.kind == TypeKind::Null)
+        return;
+
+    /// Validity buffer, present for every other field.
+    nextBuffer();
+
+    /// A dictionary-encoded field carries only its index buffer here; the values are in a DictionaryBatch.
+    if (field.dictionary)
+    {
+        nextBuffer();
+        return;
+    }
+
+    switch (field.type.kind)
+    {
+        /// Fixed-width / primitive layouts: a single data buffer after the validity buffer. `Interval` is
+        /// included for skipping although decodeInner does not decode it, so an unrequested Arrow interval
+        /// column does not block reading the other columns.
+        case TypeKind::Int:
+        case TypeKind::FloatingPoint:
+        case TypeKind::Bool:
+        case TypeKind::Decimal:
+        case TypeKind::Date:
+        case TypeKind::Time:
+        case TypeKind::Timestamp:
+        case TypeKind::Duration:
+        case TypeKind::Interval:
+        case TypeKind::FixedSizeBinary:
+            nextBuffer();
+            break;
+        /// Variable-length binary/utf8: an offsets buffer and a data buffer.
+        case TypeKind::Utf8:
+        case TypeKind::LargeUtf8:
+        case TypeKind::Binary:
+        case TypeKind::LargeBinary:
+            nextBuffer();
+            nextBuffer();
+            break;
+        /// View layouts: a views buffer plus a metadata-declared number of variadic data buffers.
+        case TypeKind::BinaryView:
+        case TypeKind::Utf8View:
+        {
+            nextBuffer();
+            const int64_t num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
+            ++variadic_index;
+            for (int64_t i = 0; i < num_data; ++i)
+                nextBuffer();
+            break;
+        }
+        /// List/Map: an offsets buffer, then the single child subtree.
+        case TypeKind::List:
+        case TypeKind::LargeList:
+        case TypeKind::Map:
+            nextBuffer();
+            skipField(field.type.children.at(0));
+            break;
+        /// FixedSizeList: no buffer of its own beyond validity, only the child subtree.
+        case TypeKind::FixedSizeList:
+            skipField(field.type.children.at(0));
+            break;
+        /// Struct: no buffer of its own beyond validity, only the child subtrees.
+        case TypeKind::Struct:
+            for (const ArrowField & child : field.type.children)
+                skipField(child);
+            break;
+        case TypeKind::Null:
+        case TypeKind::Union:
+            break; /// handled above
+    }
+}
+
 std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns(
-    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields)
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
+    const std::unordered_set<String> * keep_top_level_fields)
 {
     current_batch = &batch;
     node_index = 0;
@@ -907,10 +1004,28 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
         }
     prepareBuffers(batch, body);
 
+    const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
+    bool pruned = false;
+
     std::vector<DecodedColumn> result;
     result.reserve(fields.size());
     for (const ArrowField & field : fields)
     {
+        if (keep_top_level_fields)
+        {
+            String name = field.name;
+            if (case_insensitive)
+                boost::to_lower(name);
+            if (!keep_top_level_fields->contains(name))
+            {
+                /// Unrequested column: advance the node/buffer cursors past it without decoding, so a
+                /// SELECT of a subset of columns neither pays for nor fails on columns it did not request.
+                skipField(field);
+                pruned = true;
+                continue;
+            }
+        }
+
         DecodedColumn decoded;
         decoded.name = field.name;
         decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
@@ -919,6 +1034,21 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
         decoded.column = decodeField(field, /*allow_low_cardinality=*/true);
         result.push_back(std::move(decoded));
+    }
+
+    /// When columns were skipped, verify the skip math is exact: every FieldNode and buffer the batch
+    /// declares must have been consumed by the decoded-or-skipped fields. A mismatch means `skipField`
+    /// mis-counted a layout; fail loudly here (only on the pruning path) rather than risk reading a later
+    /// column from the wrong buffer.
+    if (pruned)
+    {
+        const size_t total_nodes = current_batch->nodes() ? current_batch->nodes()->size() : 0;
+        if (node_index != total_nodes || buffer_index != buffer_slices.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC column pruning consumed {}/{} field nodes and {}/{} buffers; "
+                "the record batch layout does not match the schema",
+                node_index, total_nodes, buffer_index, buffer_slices.size());
     }
 
     current_batch = nullptr;
@@ -1049,9 +1179,10 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 }
 
 std::vector<RecordBatchDecoder::DecodedColumn>
-RecordBatchDecoder::decodeBatch(const flatbuf::RecordBatch & batch, const PODArray<char> & body)
+RecordBatchDecoder::decodeBatch(
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::unordered_set<String> * keep_top_level_fields)
 {
-    return decodeColumns(batch, body, schema.fields);
+    return decodeColumns(batch, body, schema.fields, keep_top_level_fields);
 }
 
 }

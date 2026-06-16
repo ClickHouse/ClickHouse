@@ -10,6 +10,7 @@
 #include <Common/PODArray.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB::ArrowIPC
 {
@@ -56,12 +57,19 @@ public:
         int64_t length = 0;
     };
 
-    /// Decodes the schema's fields from one record batch and its full message body.
-    std::vector<DecodedColumn> decodeBatch(const flatbuf::RecordBatch & batch, const PODArray<char> & body);
+    /// Decodes the schema's fields from one record batch and its full message body. When
+    /// `keep_top_level_fields` is set, only the named top-level fields are decoded; the others are skipped
+    /// (their buffers consumed but not materialized), so a `SELECT` of a subset of columns does not pay
+    /// for — or fail on — unrequested columns. The set holds field names normalized the same way the
+    /// reader matches them to the header (lower-cased when case-insensitive matching is on).
+    std::vector<DecodedColumn> decodeBatch(
+        const flatbuf::RecordBatch & batch, const PODArray<char> & body,
+        const std::unordered_set<String> * keep_top_level_fields = nullptr);
 
     /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
     std::vector<DecodedColumn> decodeColumns(
-        const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields);
+        const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
+        const std::unordered_set<String> * keep_top_level_fields = nullptr);
 
 private:
     Slice nextBuffer();
@@ -71,6 +79,10 @@ private:
     /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized
     /// to its plain value column (matching the type `fieldToCHType` declares for the nested field).
     ColumnPtr decodeField(const ArrowField & field, bool allow_low_cardinality = false);
+    /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
+    /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
+    /// flat node/buffer cursors aligned for the columns that follow.
+    void skipField(const ArrowField & field);
     ColumnPtr decodeInner(const ArrowField & field, size_t rows);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
     ColumnPtr decodeDictionary(
