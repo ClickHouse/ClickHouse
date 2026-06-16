@@ -136,8 +136,21 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         Names shuffle_columns;
         for (const auto & distribution_column : required_properties.distribution.columns)
         {
-            /// TODO: take the column that is present in the expression and is equivalent to required distribution column
-            shuffle_columns.push_back(*distribution_column.begin());
+            /// Pick the equivalent name that is present in the input header: the shuffle step
+            /// resolves the column by name, so a dropped equivalent would fail at execution.
+            String chosen_column;
+            for (const auto & equivalent_name : distribution_column)
+            {
+                if (input_header->has(equivalent_name))
+                {
+                    chosen_column = equivalent_name;
+                    break;
+                }
+            }
+            /// None of the equivalents survive in the input: this shuffle cannot be built.
+            if (chosen_column.empty())
+                return result;
+            shuffle_columns.push_back(chosen_column);
         }
 
         /// Cast keys before hashing when the requirement pins hash types (mismatched
