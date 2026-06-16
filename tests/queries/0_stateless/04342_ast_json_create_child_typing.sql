@@ -20,6 +20,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE =
 -- database-less target round-trips (it previously threw in `getFullTableName`), as does a `db.table` one.
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW mv TO dst AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW mv TO db2.dst AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t AS remote(\'addr\', \'db\', \'tbl\')'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY d (`k` UInt64, `v` String) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(0)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2'));
@@ -73,3 +74,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE DICTIONARY d (`k` UI
 -- `ASTCreateQuery.comment` is an `ASTLiteral` (`StorageFactory`/`DatabaseFactory` read it as a string).
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (`x` UInt8) ENGINE = Memory COMMENT \'c\''), '"comment":{"type":"Literal","value":{"field_type":"String","value":"c"}}', '"comment":{"type":"Identifier","name":"c"}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTCreateQuery.as_table_function` is an `ASTFunction` (`setEngine` reads its `name`), and the
+-- `dictionary_attributes_list` children are `ASTDictionaryAttributeDeclaration`s.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t AS remote(\'addr\', \'db\', \'tbl\')'), '"as_table_function":{"type":"Function"', '"as_table_function":{"type":"Identifier","name":"f"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE DICTIONARY d (`k` UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(0)'), '"dictionary_attributes_list":{"type":"ExpressionList","children":[{"type":"DictionaryAttributeDeclaration"', '"dictionary_attributes_list":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"')); -- { serverError BAD_ARGUMENTS }

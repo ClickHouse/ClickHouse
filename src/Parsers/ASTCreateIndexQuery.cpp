@@ -1,6 +1,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -75,7 +76,9 @@ void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
 
     cluster = r.getString("cluster");
 
-    index_name = r.readChild("index_name");
+    /// `index_name` is parser-produced as an `ASTIdentifier`; `convertToASTAlterCommand` and
+    /// `validateCreateIndexQuery` read it as one, so reject any other node type here.
+    index_name = r.readChildOfType<ASTIdentifier>("index_name");
     if (!index_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_name' during AST JSON deserialization");
     children.push_back(index_name);

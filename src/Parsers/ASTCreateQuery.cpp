@@ -1,6 +1,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -591,7 +592,9 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(lateness_function, child);
 
-    child = r.readChild("as_table_function");
+    /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
+    /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
+    child = r.readChildOfType<ASTFunction>("as_table_function");
     if (child)
         set(as_table_function, child);
 
@@ -619,7 +622,15 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     child = r.readChildOfType<ASTExpressionList>("dictionary_attributes_list");
     if (child)
+    {
+        /// Dictionary configuration walks this list and downcasts each child to
+        /// `ASTDictionaryAttributeDeclaration` (the only type `ParserDictionaryAttributeDeclarationList` produces).
+        for (const auto & attribute : child->children)
+            if (!attribute || !attribute->as<ASTDictionaryAttributeDeclaration>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'dictionary_attributes_list' must contain only dictionary attribute declarations during AST JSON deserialization");
         set(dictionary_attributes_list, child);
+    }
 
     child = r.readChildOfType<ASTDictionary>("dictionary");
     if (child)

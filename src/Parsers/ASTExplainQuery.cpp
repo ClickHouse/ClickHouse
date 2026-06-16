@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTExplainQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "ExplainQuery");
@@ -42,6 +47,25 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     auto table_override_child = r.readChildOfType<ASTTableOverride>("table_override");
     if (table_override_child)
         setTableOverride(std::move(table_override_child));
+
+    /// Enforce the parser-produced child set per kind: `EXPLAIN TABLE OVERRIDE` dereferences the table
+    /// function and override, `EXPLAIN CURRENT TRANSACTION` explains nothing, and every other kind
+    /// dereferences the explained query (e.g. `dumpAST(*getExplainedQuery())`).
+    switch (kind)
+    {
+        case ExplainKind::TableOverride:
+            if (!getTableFunction() || !getTableOverride())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TABLE OVERRIDE requires 'table_function' and 'table_override' during AST JSON deserialization");
+            break;
+        case ExplainKind::CurrentTransaction:
+            break;
+        default:
+            if (!getExplainedQuery())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "{} requires an explained query during AST JSON deserialization", toString(kind));
+            break;
+    }
 
     readOutputOptionsJSON(r);
 }

@@ -1173,9 +1173,13 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("command_list");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_list' field in `AlterQuery` during AST JSON deserialization");
-    /// `formatQueryImpl` and `forEachPointerToChild` both cast `command_list` to `ASTExpressionList`.
+    /// `formatQueryImpl` and `forEachPointerToChild` both cast `command_list` to `ASTExpressionList`,
+    /// and later ALTER handling downcasts every element to `ASTAlterCommand`.
     if (!child->as<ASTExpressionList>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'command_list' of `AlterQuery` must be an ExpressionList during AST JSON deserialization");
+    for (const auto & command : child->children)
+        if (!command || !command->as<ASTAlterCommand>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'command_list' of `AlterQuery` must contain only alter commands during AST JSON deserialization");
     set(command_list, child);
 
     /// Validate the target against the parser invariants: `ALTER TABLE` always has a table
