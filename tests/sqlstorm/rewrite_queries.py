@@ -313,7 +313,14 @@ def rewrite_unnest_lateral(sql):
     # earlier function rewrites) are taken in full; a `([^)]+)`-style regex would
     # stop at the first `)` and leave behind a correlated subquery that
     # ClickHouse cannot execute.
-    join_pat = re.compile(r'\b(LEFT\s+(?:OUTER\s+)?|CROSS\s+|INNER\s+)?JOIN\s*\(', re.IGNORECASE)
+    # `RIGHT`/`FULL` are captured here only so the qualifier is not left dangling
+    # in the prefix (which produced an invalid `RIGHT ARRAY JOIN ...`); those
+    # joins are left unchanged below, mirroring the direct
+    # `UNNEST(...)`/`arrayJoin(...)` path in `rewrite_arrayjoin_to_array_join`.
+    join_pat = re.compile(
+        r'\b(LEFT\s+(?:OUTER\s+)?|RIGHT\s+(?:OUTER\s+)?|FULL\s+(?:OUTER\s+)?|CROSS\s+|INNER\s+)?JOIN\s*\(',
+        re.IGNORECASE,
+    )
     result = []
     i = 0
     while i < len(sql):
@@ -321,6 +328,13 @@ def rewrite_unnest_lateral(sql):
         if not m:
             result.append(sql[i:])
             break
+        join_kw = (m.group(1) or '').upper()
+        if join_kw.startswith('RIGHT') or join_kw.startswith('FULL'):
+            # `RIGHT`/`FULL ARRAY JOIN` has no ClickHouse equivalent; leave the
+            # construct unchanged instead of dropping the qualifier.
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
         paren_start = m.end() - 1
         paren_end = find_balanced_parens(sql, paren_start)
         if paren_end == -1:
@@ -372,14 +386,15 @@ def rewrite_unnest_lateral(sql):
                 i = m.end()
                 continue
             pos += on_true_m.end()
-        elif re.match(r'\s*[,(]', after[pos:]):
-            # Without `ON TRUE`, a following comma would merge the next FROM
-            # item into the ARRAY JOIN expression list, and a leftover `(`
-            # means the alias tail was not fully parsed; be conservative.
+        elif re.match(r'\s*(?:USING\b|[,(])', after[pos:], re.IGNORECASE):
+            # A `USING (...)` clause is a real join predicate that `ARRAY JOIN`
+            # cannot carry, so it is left unchanged like a non-trivial `ON`.
+            # Without `ON TRUE`, a following comma would also merge the next FROM
+            # item into the ARRAY JOIN expression list, and a leftover `(` means
+            # the alias tail was not fully parsed; be conservative in all cases.
             result.append(sql[i:m.end()])
             i = m.end()
             continue
-        join_kw = (m.group(1) or '').upper()
         join_type = 'LEFT ARRAY JOIN' if join_kw.startswith('LEFT') else 'ARRAY JOIN'
         result.append(sql[i:m.start()])
         result.append(f"{join_type} {expr} AS {col}")
@@ -398,6 +413,14 @@ def rewrite_pg_cast(sql):
     sql = re.sub(r'::\s*jsonb?\b', '', sql, flags=re.IGNORECASE)
     # ::regclass -> remove
     sql = re.sub(r'::\s*regclass\b', '', sql, flags=re.IGNORECASE)
+    # `CAST(expr AS JSON/JSONB)` -> `expr`. ClickHouse has no JSON type for
+    # casts. This must run before the `->>` translation below: a JSON cast
+    # feeding the operator (`CAST(data AS JSONB) ->> 'name'`) is first reduced to
+    # the bare identifier `data ->> 'name'`, which the translation then turns
+    # into `JSONExtractString(data, 'name')`. Removing the cast afterwards (the
+    # previous ordering) left the PostgreSQL operator intact because the operand
+    # was still a complex `CAST(...)` when the translation ran.
+    sql = re.sub(r'\bCAST\s*\(([^)]+)\s+AS\s+JSON(?:B)?\s*\)', r'\1', sql, flags=re.IGNORECASE)
     # PostgreSQL JSON text-extraction operator: `expr ->> 'key'`.
     # Translate it to the ClickHouse equivalent `JSONExtractString(expr, 'key')`
     # when the left operand is a simple or qualified (optionally quoted)
@@ -539,14 +562,16 @@ def rewrite_arrayjoin_to_array_join(sql):
             i = paren_end + 1
             continue
 
-        # Only a no-op `ON TRUE` predicate can be dropped. A real predicate
-        # cannot be expressed as an `ARRAY JOIN` condition, so the whole
-        # construct is left unchanged instead of silently dropping the filter
-        # (which would turn a filtered join into an unfiltered cross product).
+        # Only a no-op `ON TRUE` predicate can be dropped. A real `ON` predicate
+        # or a `USING (...)` clause is a genuine join condition that `ARRAY JOIN`
+        # cannot carry, so the whole construct is left unchanged instead of
+        # silently dropping the filter (which would turn a filtered join into an
+        # unfiltered cross product) or emitting invalid SQL such as
+        # `ARRAY JOIN arr AS id USING (id)`.
         on_true_match = re.match(r'\s+ON\s+TRUE\b(?!\s+(?:AND|OR)\b)', rest, re.IGNORECASE)
         if on_true_match:
             rest = rest[on_true_match.end():]
-        elif re.match(r'\s+ON\b', rest, re.IGNORECASE):
+        elif re.match(r'\s+(?:ON|USING)\b', rest, re.IGNORECASE):
             result.append(sql[i:paren_end + 1])
             i = paren_end + 1
             continue
@@ -566,12 +591,15 @@ def rewrite_arrayjoin_to_array_join(sql):
 
         result.append(sql[i:len(new_prefix)])
         if wrap_in_subquery:
-            # FROM arrayJoin(expr) AS alias -> FROM (SELECT arrayJoin(expr) AS alias)
-            # Wrap in a subquery since arrayJoin is not a table function. The
-            # `FROM` keyword was dropped together with the rest of `new_prefix`,
-            # so it has to be re-emitted here; otherwise the result is the
-            # invalid `SELECT ... (SELECT arrayJoin(expr) AS alias) AS _aj`.
-            result.append(f"FROM (SELECT arrayJoin({expr}) AS {col_name}) AS _aj")
+            # FROM UNNEST(arr) AS u(x) -> FROM (SELECT arrayJoin(arr) AS x) AS u
+            # arrayJoin/UNNEST is not a table function, so it is wrapped in a
+            # subquery. The original table alias (`u`) is kept as the subquery
+            # alias so a qualified projection such as `u.x` still resolves; a
+            # synthetic alias would silently break that reference. The `FROM`
+            # keyword was dropped together with the rest of `new_prefix`, so it
+            # is re-emitted here; otherwise the result is a stray
+            # `SELECT ... (SELECT ...)` with no `FROM`.
+            result.append(f"FROM (SELECT arrayJoin({expr}) AS {col_name}) AS {alias}")
         else:
             result.append(f"\n{join_type} {expr} AS {col_name}")
         sql = rest
@@ -663,13 +691,10 @@ def rewrite_query(sql):
         flags=re.IGNORECASE,
     )
 
-    # 4. Remove `CAST(... AS JSON/JSONB)` — ClickHouse has no JSON type for casts.
-    sql = re.sub(r'\bCAST\s*\(([^)]+)\s+AS\s+JSON(?:B)?\s*\)', r'\1', sql, flags=re.IGNORECASE)
-
-    # 5. Convert arrayJoin(...) in FROM/JOIN position to ARRAY JOIN syntax.
+    # 4. Convert arrayJoin(...) in FROM/JOIN position to ARRAY JOIN syntax.
     sql = rewrite_arrayjoin_to_array_join(sql)
 
-    # 6. Fix remaining "LEFT JOIN\nARRAY JOIN" -> "LEFT ARRAY JOIN" patterns.
+    # 5. Fix remaining "LEFT JOIN\nARRAY JOIN" -> "LEFT ARRAY JOIN" patterns.
     sql = re.sub(
         r'\bLEFT\s+JOIN\s*\n(\s*)ARRAY\s+JOIN\b',
         r'LEFT ARRAY JOIN',
@@ -685,7 +710,7 @@ def rewrite_query(sql):
     sql = re.sub(r'\bLEFT\s+JOIN\s+ARRAY\s+JOIN\b', 'LEFT ARRAY JOIN', sql, flags=re.IGNORECASE)
     sql = re.sub(r'\bCROSS\s+JOIN\s+ARRAY\s+JOIN\b', 'ARRAY JOIN', sql, flags=re.IGNORECASE)
 
-    # 7. Fix PostgreSQL `OFFSET X LIMIT Y` -> ClickHouse `LIMIT Y OFFSET X`.
+    # 6. Fix PostgreSQL `OFFSET X LIMIT Y` -> ClickHouse `LIMIT Y OFFSET X`.
     sql = re.sub(
         r'\bOFFSET\s+(\d+)\s+LIMIT\s+(\d+)',
         r'LIMIT \2 OFFSET \1',
@@ -693,9 +718,9 @@ def rewrite_query(sql):
         flags=re.IGNORECASE,
     )
 
-    # 8a. Rewrite SQL-standard `OFFSET N ROW[S] FETCH FIRST M ROW[S] ONLY` together.
+    # 7a. Rewrite SQL-standard `OFFSET N ROW[S] FETCH FIRST M ROW[S] ONLY` together.
     #     ClickHouse accepts this form, but only with ORDER BY; rewriting to
-    #     `LIMIT M OFFSET N` works in both cases. Must run before 8b so that the
+    #     `LIMIT M OFFSET N` works in both cases. Must run before 7b so that the
     #     standalone FETCH rewrite below does not strip FETCH while leaving the
     #     orphan `OFFSET ... ROWS` behind.
     sql = re.sub(
@@ -705,7 +730,7 @@ def rewrite_query(sql):
         flags=re.IGNORECASE,
     )
 
-    # 8b. Convert standalone `FETCH FIRST N ROWS ONLY` to `LIMIT N`.
+    # 7b. Convert standalone `FETCH FIRST N ROWS ONLY` to `LIMIT N`.
     sql = re.sub(
         r'\bFETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b',
         r'LIMIT \1',
@@ -713,7 +738,7 @@ def rewrite_query(sql):
         flags=re.IGNORECASE,
     )
 
-    # 9. Restore the string literals, quoted identifiers and comments hidden in
+    # 8. Restore the string literals, quoted identifiers and comments hidden in
     #    step 0.
     sql = restore_protected_spans(sql, protected_spans)
 

@@ -71,6 +71,14 @@ class TestArrayJoinOnClause(unittest.TestCase):
             "SELECT * FROM t \nLEFT ARRAY JOIN arr AS TagName WHERE id = 1",
         )
 
+    def test_using_clause_left_unchanged(self):
+        # `USING (...)` is a real join predicate, like a non-trivial `ON`.
+        # `ARRAY JOIN` cannot carry it, so the construct must be left unchanged
+        # rather than emitting invalid `ARRAY JOIN arr AS id USING (id)` (which
+        # would also drop the table alias `u`).
+        sql = "SELECT * FROM t JOIN UNNEST(arr) AS u(id) USING (id)"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 class TestArrayJoinKeyword(unittest.TestCase):
     def test_inner_join_strips_inner_keyword(self):
@@ -106,24 +114,34 @@ class TestArrayJoinKeyword(unittest.TestCase):
 class TestArrayJoinFromPosition(unittest.TestCase):
     # `arrayJoin`/`UNNEST` directly in `FROM` position is wrapped in a subquery,
     # since neither is a table function. The `FROM` keyword must be re-emitted in
-    # the replacement — dropping it produces invalid `SELECT ... (SELECT ...)`.
+    # the replacement — dropping it produces invalid `SELECT ... (SELECT ...)` —
+    # and the original table alias must be preserved as the subquery alias so a
+    # qualified projection such as `u.x` still resolves.
     def test_unnest_in_from_position_wrapped_in_subquery(self):
         self.assertEqual(
             rewrite_query("SELECT * FROM UNNEST(arr) AS u(x)"),
-            "SELECT * FROM (SELECT arrayJoin(arr) AS x) AS _aj",
+            "SELECT * FROM (SELECT arrayJoin(arr) AS x) AS u",
+        )
+
+    def test_unnest_in_from_position_preserves_qualified_reference(self):
+        # The table alias `u` must survive so `u.x` in the projection resolves;
+        # replacing it with a synthetic alias would break the reference.
+        self.assertEqual(
+            rewrite_query("SELECT u.x FROM UNNEST(arr) AS u(x)"),
+            "SELECT u.x FROM (SELECT arrayJoin(arr) AS x) AS u",
         )
 
     def test_array_join_in_from_position_wrapped_in_subquery(self):
         self.assertEqual(
             rewrite_query("SELECT * FROM arrayJoin(arr) AS a"),
-            "SELECT * FROM (SELECT arrayJoin(arr) AS a) AS _aj",
+            "SELECT * FROM (SELECT arrayJoin(arr) AS a) AS a",
         )
 
     def test_unnest_in_from_position_with_function_operand(self):
         # The operand keeps its nested parentheses after the function rewrites.
         self.assertEqual(
             rewrite_query("SELECT x FROM UNNEST(string_to_array(tags, ',')) AS u(tag)"),
-            "SELECT x FROM (SELECT arrayJoin(splitByString(',', assumeNotNull(tags))) AS tag) AS _aj",
+            "SELECT x FROM (SELECT arrayJoin(splitByString(',', assumeNotNull(tags))) AS tag) AS u",
         )
 
 
@@ -307,6 +325,25 @@ class TestUnnestJoinRewrite(unittest.TestCase):
         sql = "SELECT * FROM t JOIN (SELECT unnest(arr) AS a) u ON TRUE OR u.a > 0"
         self.assertEqual(rewrite_query(sql), sql)
 
+    def test_right_join_subquery_left_unchanged(self):
+        # `RIGHT`/`FULL ARRAY JOIN` has no ClickHouse equivalent. The qualifier
+        # must be recognised so it is not left dangling in the prefix as an
+        # invalid `RIGHT ARRAY JOIN ...`; the construct is left unchanged,
+        # matching the direct `arrayJoin(...)`/`UNNEST(...)` path.
+        sql = "SELECT * FROM t RIGHT JOIN (SELECT unnest(arr) AS a) u ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_full_outer_join_subquery_left_unchanged(self):
+        sql = "SELECT * FROM t FULL OUTER JOIN (SELECT unnest(arr) AS a) u ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_join_subquery_using_clause_left_unchanged(self):
+        # `USING (...)` is a real join predicate that `ARRAY JOIN` cannot carry;
+        # leave the construct unchanged instead of emitting a trailing
+        # `ARRAY JOIN arr AS a USING (id)`.
+        sql = "SELECT * FROM t JOIN (SELECT unnest(arr) AS a) u USING (id)"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 class TestJsonExtractRewrite(unittest.TestCase):
     def test_arrow_text_operator_simple_identifier(self):
@@ -337,13 +374,32 @@ class TestJsonExtractRewrite(unittest.TestCase):
         sql = "SELECT json_extract(data) ->> 'name' FROM t"
         self.assertEqual(rewrite_query(sql), sql)
 
+    def test_cast_to_jsonb_feeding_arrow_operator(self):
+        # A removable `CAST(... AS JSONB)` feeding `->>` must be normalised away
+        # before the operator translation, so the result is
+        # `JSONExtractString(data, 'name')` rather than leaving the PostgreSQL
+        # operator intact (`data ->> 'name'`) because the cast was only stripped
+        # afterwards.
+        self.assertEqual(
+            rewrite_query("SELECT CAST(data AS JSONB) ->> 'name' FROM t"),
+            "SELECT JSONExtractString(data, 'name') FROM t",
+        )
+
+    def test_pg_cast_jsonb_feeding_arrow_operator(self):
+        # The `::jsonb` cast form feeding `->>` is likewise normalised first.
+        self.assertEqual(
+            rewrite_query("SELECT data::jsonb ->> 'name' FROM t"),
+            "SELECT JSONExtractString(data, 'name') FROM t",
+        )
+
 
 class TestUnnestAliasWithoutAs(unittest.TestCase):
     def test_unnest_from_position_alias_without_as(self):
-        # PostgreSQL allows omitting `AS` before a table-function alias.
+        # PostgreSQL allows omitting `AS` before a table-function alias; the
+        # alias `u` is still preserved as the subquery alias.
         self.assertEqual(
             rewrite_query("SELECT * FROM UNNEST(arr) u(x)"),
-            "SELECT * FROM (SELECT arrayJoin(arr) AS x) AS _aj",
+            "SELECT * FROM (SELECT arrayJoin(arr) AS x) AS u",
         )
 
     def test_cross_join_unnest_alias_without_as(self):
