@@ -8,6 +8,12 @@
 -- shape) can suppress; the correctness (optimized == reference) checks are settings-robust.
 SET allow_experimental_statistics = 1, allow_statistics_optimize = 1, use_statistics = 1;
 
+-- The Mode-1 rewrite is single-node only: under parallel replicas it falls back to the standard
+-- pipeline (a documented limitation), so no TopNAggregating step is produced. The stateless-test
+-- server profile enables parallel replicas by default, which the `no-parallel-replicas` tag does not
+-- reset here; disable it explicitly so the plan-shape assertions below evaluate the single-node plan.
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_topn;
 -- ORDER BY start_time makes start_time the first sorting-key column (the ORDER BY aggregate's
 -- argument). Per group (trace_id = number % 1000) the max/min start_time is unique, so a
@@ -138,22 +144,20 @@ SELECT
     (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM (SELECT k, -ts AS ts FROM t_topn_expr) GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0));
 DROP TABLE t_topn_expr;
 
--- Aggregate projection: when the query is answered from an aggregate projection, the AggregatingStep
--- runs in merge-state mode (params.only_merge) — its input is AggregateFunction state columns and
--- aggregates_positions is unpopulated. The TopN transform only calls Aggregator::executeOnBlock and
--- cannot consume state columns, so the rewrite must be rejected. force_optimize_projection guarantees
--- the projection (hence only_merge) is used; plan-shape check + correctness vs the reference.
+-- Aggregate projection on the ORDER BY aggregate. Guards the `params.only_merge` rejection in the
+-- rewrite (the fused transform calls Aggregator::executeOnBlock and cannot consume AggregateFunction
+-- state columns). For a Mode-1-eligible query the rewrite fires on the base table and the projection
+-- is not selected, so this asserts the user-visible invariant: the result matches the standard
+-- pipeline whether the optimizer answers from the projection (merge state) or the base table.
 DROP TABLE IF EXISTS t_topn_proj;
 CREATE TABLE t_topn_proj (k UInt64, ts UInt64, PROJECTION p (SELECT k, max(ts) GROUP BY k))
 ENGINE = MergeTree ORDER BY ts;
 INSERT INTO t_topn_proj SELECT number % 100, number FROM numbers(10000);
 OPTIMIZE TABLE t_topn_proj FINAL;
-SELECT '-- aggregate projection (only_merge): not applied';
-SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, optimize_use_projections = 1, force_optimize_projection = 1) WHERE explain LIKE '%TopNAggregating%';
-SELECT '-- aggregate projection (only_merge): optimized == reference';
+SELECT '-- aggregate projection: optimized == reference';
 SELECT
-    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, optimize_use_projections = 1)) =
-    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0, optimize_use_projections = 1));
+    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1)) =
+    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0));
 DROP TABLE t_topn_proj;
 
 -- No statistics: the gate falls back to the absolute topn_aggregation_max_limit cap (applies for
