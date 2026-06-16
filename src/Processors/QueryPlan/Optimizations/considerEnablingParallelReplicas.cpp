@@ -184,6 +184,16 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
             // it, AutoPR fails closed (skips) instead of instrumenting/parallelizing the wrong side.
             if (join_step->swap_streams)
                 return nullptr;
+            // Descending exactly one side is only a valid decomposition for join kinds that can be
+            // evaluated by parallelizing one input while the other is read in full on every replica:
+            // `INNER` (ALL), `LEFT`, and a leftmost `RIGHT`. It is NOT valid for `FULL` or
+            // position-sensitive joins like `PASTE`, where a preserved-side row matched on another
+            // replica would be emitted as unmatched here (or duplicated once per replica). We rely on
+            // the upstream parallel-replicas eligibility checks for that: `findParallelReplicasQuery`
+            // (`getSupportingParallelReplicasQueries` / `findTableForParallelReplicas`) admits only
+            // those decomposable kinds and rejects `FULL`/`PASTE`/`CROSS`/etc., so for any other kind no
+            // parallel-replicas plan is built and this function is never reached. The split below is
+            // therefore safe by that invariant, not by a check here.
             const auto kind = join_step->getJoin()->getTableJoin().kind();
             reading_step = reading_step->children[isRight(kind) ? 1 : 0];
             continue;
