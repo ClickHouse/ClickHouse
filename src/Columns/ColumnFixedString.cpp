@@ -7,13 +7,18 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
 #endif
 
 
@@ -58,7 +63,7 @@ void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, si
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    assert(index < size());
+    chassert(index < size());
     return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
@@ -141,23 +146,25 @@ void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
 }
 
-WeakHash32 ColumnFixedString::getWeakHash32() const
+void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    auto s = size();
-    WeakHash32 hash(s);
+    hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
+}
 
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-
-    for (size_t row = 0; row < s; ++row)
+void ColumnFixedString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// The per-row hash seeds with `WEAK_HASH32_INITIAL_VALUE` (mixing the width in, so rows of
+    /// different widths never collide) and combines the finalized hash via `combineWeakHash32`.
+    /// CRC32C is a hardware dependency chain with no packed form, so a plain scalar loop is used.
+    /// See IColumn::computeHashInto.
+    const UInt8 * pos = chars.data() + row_begin * n;
+    for (size_t row = row_begin; row < row_end; ++row)
     {
-        *hash_data = ::updateWeakHash32(pos, n, *hash_data);
-
+        const UInt32 h = ::updateWeakHash32(pos, n, WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[row - row_begin];
+        out = initial ? h : combineWeakHash32(h, out);
         pos += n;
-        ++hash_data;
     }
-
-    return hash;
 }
 
 void ColumnFixedString::updateHashFast(SipHash & hash) const
@@ -165,6 +172,34 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(n);
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
+
+#if USE_EMBEDDED_COMPILER
+bool ColumnFixedString::isComparatorCompilable() const { return true; }
+llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_row_index = b.CreateExtractValue(lhs, {1});
+    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_row_index = b.CreateExtractValue(rhs, {1});
+
+    auto * size_type = b.getInt64Ty();
+    auto * n_value = llvm::ConstantInt::get(size_type, n);
+
+    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, b.CreateMul(lhs_row_index, n_value));
+    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, b.CreateMul(rhs_row_index, n_value));
+
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    auto * memcmp_func_type = llvm::FunctionType::get(b.getInt32Ty(),
+        {lhs_current_ptr->getType(), n_value->getType(), rhs_current_ptr->getType(), n_value->getType()}, false);
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
+    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, n_value, rhs_current_ptr, n_value});
+
+    /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
+    return b.CreateTrunc(compare_result, b.getInt8Ty());
+}
+#endif
 
 struct ColumnFixedString::ComparatorBase
 {
@@ -421,7 +456,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 

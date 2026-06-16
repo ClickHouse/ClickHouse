@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -16,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
@@ -319,14 +321,20 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    writeQuotedString(buf.str(), ostr);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(buf.str(), ostr);
+    else
+        writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
-    readQuotedString(object, istr);
+    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
+    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
+    /// and a JSON column written by us via `Values` must be parseable back by the same path.
+    readQuotedStringWithSQLStyle(object, istr);
     deserializeObject(column, object, settings);
 }
 
@@ -372,6 +380,17 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
     deserializeObject(column, object_view, settings);
+}
+
+template <typename Parser>
+UInt128 SerializationJSON<Parser>::getHash(
+    const std::unordered_map<String, DataTypePtr> &,
+    const std::unordered_set<String> &,
+    const std::vector<String> &,
+    const DataTypePtr &)
+{
+    /// Check the comment in the ::create method.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationJSON");
 }
 
 #if USE_SIMDJSON

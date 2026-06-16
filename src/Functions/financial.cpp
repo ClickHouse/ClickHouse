@@ -83,7 +83,7 @@ enum class IndexMode
 template <typename T>
 struct NpvCalculator
 {
-    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
+    using FloatType = double;
 
     explicit NpvCalculator(std::span<T> cashflows_)
         : cashflows(cashflows_)
@@ -162,7 +162,7 @@ double npv(double rate, std::span<T> cashflows)
 template <typename T, typename D, DayCountType day_count>
 struct XnpvCalculator
 {
-    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
+    using FloatType = double;
 
     XnpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
         : cashflows(cashflows_)
@@ -380,7 +380,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 }
 
-class FunctionXirr : public IFunction
+class FunctionXirr final : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturnExtended";
@@ -498,7 +498,7 @@ public:
     }
 };
 
-class FunctionIRR : public IFunction
+class FunctionIRR final : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturn";
@@ -594,7 +594,7 @@ public:
     }
 };
 
-class FunctionXnpv : public IFunction
+class FunctionXnpv final : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValueExtended";
@@ -674,7 +674,7 @@ public:
                     if (current_offset != date_offsets[i])
                         throw Exception(
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
-                    const auto rate = rate_pod[i];
+                    const double rate = static_cast<double>(rate_pod[i]);
 
                     const auto length = current_offset - previous_offset;
                     auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
@@ -712,7 +712,7 @@ public:
     }
 };
 
-class FunctionNPV : public IFunction
+class FunctionNPV final : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValue";
@@ -776,7 +776,7 @@ public:
                 {
                     const auto current_offset = cashflow_offsets[i];
                     const auto length = current_offset - previous_offset;
-                    const auto rate = rate_pod[i];
+                    const double rate = static_cast<double>(rate_pod[i]);
                     auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
 
                     result_data[i] = npv<index_mode, CashFlowType>(rate, cashflow_span);

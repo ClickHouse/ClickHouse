@@ -6,8 +6,6 @@ title: 'DataLakeCatalog'
 doc_type: 'reference'
 ---
 
-# DataLakeCatalog
-
 The `DataLakeCatalog` database engine enables you to connect ClickHouse to external
 data catalogs and query open table format data without the need for data duplication.
 This transforms ClickHouse into a powerful query engine that works seamlessly with
@@ -69,18 +67,18 @@ See below sections for examples of using the `DataLakeCatalog` engine:
 * [Unity Catalog](/use-cases/data-lake/unity-catalog)
 * [Glue Catalog](/use-cases/data-lake/glue-catalog)
 * OneLake Catalog
-  Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
+    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint)
 SETTINGS
-   catalog_type = 'onelake',
-   warehouse = warehouse,
-   onelake_tenant_id = tenant_id,
-   oauth_server_uri = server_uri,
-   auth_scope = auth_scope, 
-   onelake_client_id = client_id, 
-   onelake_client_secret = client_secret;
-SHOW TABLES IN databse_name;       
+    catalog_type = 'onelake',
+    warehouse = warehouse,
+    onelake_tenant_id = tenant_id,
+    oauth_server_uri = server_uri,
+    auth_scope = auth_scope,
+    onelake_client_id = client_id,
+    onelake_client_secret = client_secret;
+SHOW TABLES IN database_name;
 SELECT count() from database_name.table_name;
 ```

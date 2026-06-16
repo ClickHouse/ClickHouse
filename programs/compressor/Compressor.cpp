@@ -51,8 +51,8 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
     while (!in.eof())
     {
-        UInt32 size_compressed;
-        UInt32 size_decompressed;
+        UInt32 size_compressed = {};
+        UInt32 size_decompressed = {};
         auto codec = DB::getCompressionCodecForFile(in, size_compressed, size_decompressed, true /* skip_to_next_block */);
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
@@ -69,6 +69,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 }
 
+int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
     using namespace DB;
@@ -106,8 +107,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
-            std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
+            std::cout << "Usage: clickhouse compressor [options] < INPUT > OUTPUT" << std::endl;
+            std::cout << "Alternative usage: clickhouse compressor [options] INPUT OUTPUT" << std::endl;
             std::cout << desc << std::endl;
             std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/\n";
             return 0;

@@ -1,9 +1,11 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -25,6 +27,15 @@ namespace ErrorCodes
 }
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
+
+
+UInt128 SerializationFixedString::getHash(size_t n_)
+{
+    SipHash hash;
+    hash.update("FixedString");
+    hash.update(n_);
+    return hash.get128();
+}
 
 static const char * getEndWithOptionalTrim(const char * pos, size_t n, const FormatSettings & settings)
 {
@@ -98,15 +109,15 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
-    size_t skipped_bytes;
+    size_t skipped_bytes = 0;
 
     if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
     istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
-    size_t max_bytes;
-    size_t new_data_size;
+    size_t max_bytes = 0;
+    size_t new_data_size = 0;
 
     if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
@@ -201,8 +212,15 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return false;
     }
+}
+
+SerializationPtr SerializationFixedString::create(size_t n_)
+{
+    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
 }
 
 

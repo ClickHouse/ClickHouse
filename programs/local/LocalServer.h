@@ -6,6 +6,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Loggers/Loggers.h>
+#include <Common/MemoryWorker.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>
@@ -51,6 +52,8 @@ protected:
     void updateLoggerLevel(const String & logs_level) override;
 
 private:
+    String getHelpHeader() const;
+    String getHelpFooter() const;
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
       * Returns a pair of the table name and the corresponding create table statement.
@@ -69,10 +72,21 @@ private:
 
     ServerSettings server_settings;
 
+    /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
+    /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
+    /// (`./clickhouse-local.{xml,yaml,yml}`, `~/.clickhouse-local/config.{xml,yaml,yml}`,
+    /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). Needed by `setupUsers` to resolve relative
+    /// paths in `user_directories.users_xml.path` against the config's own directory.
+    String loaded_config_path;
+
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
     std::unique_ptr<ReadBufferFromFile> input;
+
+    /// MemoryWorker periodically updates RSS and resizes the userspace page cache.
+    /// Without it the page cache stays stuck at `page_cache_min_size`.
+    std::optional<MemoryWorker> memory_worker;
 };
 
 }

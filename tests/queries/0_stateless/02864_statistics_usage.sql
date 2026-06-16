@@ -7,6 +7,9 @@ SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 1;
 SET enable_analyzer = 1;
+SET materialize_statistics_on_insert = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET allow_reorder_prewhere_conditions = 1; -- CI may inject False, preventing statistics-based reordering of prewhere conditions (test validates a appears before b/c when tdigest stats are used)
 
 DROP TABLE IF EXISTS tab;
 
@@ -32,7 +35,7 @@ ALTER TABLE tab MATERIALIZE STATISTICS ALL;
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After add and materialize statistic';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
-SELECT name, column, statistics from system.parts_columns where (database = currentDatabase()) AND (table = 'tab') AND active;
+SELECT name, column, statistics from system.parts_columns where (database = currentDatabase()) AND (table = 'tab') AND active order by name, column;
 
 OPTIMIZE TABLE tab FINAL;
 SELECT 'After merge';
