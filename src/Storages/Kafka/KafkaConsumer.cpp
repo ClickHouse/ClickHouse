@@ -396,6 +396,12 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
     LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
 }
 
+void KafkaConsumer::rollbackToLastCommitted()
+{
+    cleanUnprocessed();
+    resetToLastCommitted("Aborted in-flight block.");
+}
+
 
 void KafkaConsumer::doPoll()
 {

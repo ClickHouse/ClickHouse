@@ -251,7 +251,7 @@ def test_refresh_on_viewless_table_is_not_leaked(kafka_cluster, keeper):
 
 def test_refresh_runs_once_while_start_keeps_consuming(kafka_cluster):
     # REFRESH runs exactly one polling cycle out of order without resuming the stream; START resumes
-    # continuous polling. With the stream STOPped, a single REFRESH drains exactly the backlog
+    # continuous polling. While the stream is stopped, a single REFRESH drains exactly the backlog
     # present at that moment, and messages produced afterwards stay unread until START — whereas
     # after START every later batch is consumed without any further command.
     admin_client = k.get_admin_client(kafka_cluster)
@@ -259,24 +259,26 @@ def test_refresh_runs_once_while_start_keeps_consuming(kafka_cluster):
     with k.kafka_topic(admin_client, table):
         setup_consuming_table(table, table)
 
+        produce(kafka_cluster, table, 0, 1)
+        wait_dst_count(table, 1)
+
         instance.query(f"SYSTEM STOP test.{table}")
 
         # First batch, then one REFRESH: the single cycle drains exactly these rows.
-        produce(kafka_cluster, table, 0, 5)
+        produce(kafka_cluster, table, 1, 5)
         instance.query(f"SYSTEM REFRESH test.{table}")
-        wait_dst_count(table, 5)
+        wait_dst_count(table, 6)
 
         # Second batch, no further REFRESH: the stream is still stopped, so REFRESH having run once
         # does not keep consuming — these rows stay in the topic, unread.
-        produce(kafka_cluster, table, 5, 5)
-        assert_dst_count_stable(table, 5)
+        produce(kafka_cluster, table, 6, 5)
+        assert_dst_count_stable(table, 6)
 
-        # START resumes continuous polling: the backlog drains and later batches keep being consumed
-        # "forever" without any further command.
+        # START resumes continuous polling: the backlog drains and later batches keep being consumed.
         instance.query(f"SYSTEM START test.{table}")
-        wait_dst_count(table, 10)
-        produce(kafka_cluster, table, 10, 5)
-        wait_dst_count(table, 15)
+        wait_dst_count(table, 11)
+        produce(kafka_cluster, table, 11, 5)
+        wait_dst_count(table, 16)
 
 
 def test_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):

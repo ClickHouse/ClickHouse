@@ -326,8 +326,7 @@ Chunk KafkaSource::generateImpl()
 
     if (cancelled)
     {
-        /// Abort the in-flight block: discard everything polled this cycle
-        consumer->markDirty();
+        consumer->rollbackToLastCommitted();
         return {};
     }
 

@@ -54,6 +54,9 @@ public:
     // it causes rebalance (and is an expensive way of exception handling)
     void markDirty();
 
+    /// Abort an in-flight, not-yet-committed batch while staying in the consumer group
+    void rollbackToLastCommitted();
+
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledMessages() const
