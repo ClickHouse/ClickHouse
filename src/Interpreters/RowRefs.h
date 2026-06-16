@@ -284,88 +284,82 @@ struct BuildRefList
 
     /// Iterates encoded ref words: head first, then the cell node's local slots, then the overflow
     /// nodes newest-first (each in slot order). Handles singleton, list, and range representations.
+    ///
+    /// The list of duplicates is a sequence of contiguous runs: `head` is immediately followed by
+    /// `slots[]` in `Batch`, so the cell node's [head .. last local slot] is a single run starting at
+    /// `&head`, and each overflow node contributes the run `slots[0 .. size)`. The hot path (the
+    /// overflow walk of a heavily-duplicated key, where emit time concentrates) is then just three
+    /// live pointers - `cur`/`run_end`/`next_node` - which keeps the emit loop off the stack. The
+    /// singleton and range representations take the separate `range_*` path (`cur == nullptr`).
     class ForwardIterator
     {
     public:
         explicit ForwardIterator(const BuildRefList & list)
         {
             if (list.word == 0)
-                return; /// empty (default-constructed) list
+                return; /// empty (default-constructed) list -> ok() is false
 
             if (list.isSingleton())
             {
-                head_word = list.word;
-                remaining_range = 1;
+                range_word = list.word;
+                range_remaining = 1;
                 return;
             }
 
             const Batch * b = list.asBatch();
-            head_word = b->head;
             if (b->is_range)
             {
-                remaining_range = static_cast<UInt32>(b->total_rows);
+                range_word = b->head;
+                range_remaining = static_cast<UInt32>(b->total_rows);
                 return;
             }
 
-            remaining_range = 1; /// yield the head once
-            cell = b;
-            if (b->size != b->total_rows) /// chained
-            {
-                local_refs = Batch::SLOTS - 1;
-                overflow = reinterpret_cast<const Batch *>(b->slots[Batch::SLOTS - 1]); /// NOLINT(performance-no-int-to-ptr)
-            }
-            else
-            {
-                local_refs = static_cast<UInt32>(b->size) - 1;
-            }
+            /// Run mode. The cell run covers `head` + the local slots, contiguous from `&head`:
+            /// `size` words when unchained, `head` + `SLOTS - 1` slots (= `SLOTS` words, the last slot
+            /// holds the overflow pointer) when chained. The overflow chain follows, newest-first.
+            const bool chained = b->size != b->total_rows;
+            cur = &b->head;
+            run_end = &b->head + (chained ? Batch::SLOTS : static_cast<size_t>(b->size));
+            next_node = chained ? reinterpret_cast<const Batch *>(b->slots[Batch::SLOTS - 1]) : nullptr; /// NOLINT(performance-no-int-to-ptr)
         }
 
-        UInt64 operator * () const
-        {
-            if (remaining_range)
-                return head_word;
-            if (local_pos < local_refs)
-                return cell->slots[local_pos];
-            return overflow->slots[overflow_pos];
-        }
+        UInt64 operator * () const { return cur ? *cur : range_word; }
 
         void operator ++ ()
         {
-            if (remaining_range)
+            if (cur) /// run mode - the hot path: only cur/run_end/next_node are live here
             {
-                --remaining_range;
-                /// Consecutive rows of a range live in one block: only row_no advances.
-                head_word += 1;
-                return;
-            }
-
-            if (local_pos < local_refs)
-            {
-                ++local_pos;
-                return;
-            }
-
-            if (overflow)
-            {
-                ++overflow_pos;
-                if (overflow_pos >= overflow->size)
+                ++cur;
+                if (cur == run_end)
                 {
-                    overflow = reinterpret_cast<const Batch *>(overflow->head); /// NOLINT(performance-no-int-to-ptr)
-                    overflow_pos = 0;
+                    if (next_node)
+                    {
+                        cur = next_node->slots;
+                        run_end = next_node->slots + next_node->size;
+                        next_node = reinterpret_cast<const Batch *>(next_node->head); /// NOLINT(performance-no-int-to-ptr)
+                    }
+                    else
+                        cur = nullptr; /// exhausted
                 }
+                return;
             }
+
+            /// Range mode (singleton / rerange run): consecutive rows live in one block, only row_no advances.
+            if (--range_remaining)
+                ++range_word;
         }
 
-        bool ok() const { return remaining_range || local_pos < local_refs || overflow != nullptr; }
+        bool ok() const { return cur != nullptr || range_remaining != 0; }
 
     private:
-        UInt64 head_word = 0;
-        UInt32 remaining_range = 0;
-        const Batch * cell = nullptr;
-        const Batch * overflow = nullptr;
-        UInt32 local_refs = 0;
-        UInt32 local_pos = 0;
-        UInt32 overflow_pos = 0;
+        /// Run mode (eviction list): `cur` walks the current contiguous run bounded by `run_end`,
+        /// `next_node` is the next overflow node (newest-first). `cur == nullptr` => range mode or done.
+        const UInt64 * cur = nullptr;
+        const UInt64 * run_end = nullptr;
+        const Batch * next_node = nullptr;
+        /// Range mode (singleton / rerange): `range_word` is the current ref, `range_remaining` the count.
+        UInt64 range_word = 0;
+        UInt32 range_remaining = 0;
     };
 
     ForwardIterator begin() const { return ForwardIterator(*this); }

@@ -601,16 +601,54 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
             }
             else
             {
+                /// Coalesce a run of consecutive same-block refs into one `insertRangeFrom` (a memcpy
+                /// for fixed-width columns, a batched copy for strings) instead of one `insertFrom` per
+                /// row. A build side ordered by the join key (e.g. a `MergeTree` `ORDER BY` the key, or
+                /// any key whose duplicates were inserted consecutively) stores a key's rows
+                /// contiguously, so its refs form one long run; a scattered build degrades to the
+                /// per-row path (runs of length one) for the cost of one extra comparison per ref.
+                const ColumnsInfo * run_columns = nullptr;
+                UInt32 run_block_no = 0;
+                size_t run_start_row = 0;
+                size_t run_length = 0;
+
+                auto flush_run = [&]
+                {
+                    if (!run_length)
+                        return;
+                    if (const auto * source_replicated = run_columns->replicated_columns[source_column_index_in_block])
+                    {
+                        const auto & source_nested_column = source_replicated->getNestedColumn();
+                        const auto & source_indexes = source_replicated->getIndexes();
+                        for (size_t i = run_start_row; i != run_start_row + run_length; ++i)
+                            col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
+                    }
+                    else if (run_length == 1)
+                        col->insertFrom(*run_columns->columns[source_column_index_in_block], run_start_row);
+                    else
+                        col->insertRangeFrom(*run_columns->columns[source_column_index_in_block], run_start_row, run_length);
+                    run_length = 0;
+                };
+
                 for (auto it = ref_list.begin(); it.ok(); ++it)
                 {
                     const UInt64 ref_word = *it;
-                    const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(ref_word)];
-                    const size_t row_num = refWordRowNo(ref_word);
-                    if (const auto * source_replicated = columns_info->replicated_columns[source_column_index_in_block])
-                        col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_num));
+                    const UInt32 block_no = refWordBlockNo(ref_word);
+                    const UInt32 row_num = refWordRowNo(ref_word);
+                    if (run_length && block_no == run_block_no && row_num == run_start_row + run_length)
+                    {
+                        ++run_length;
+                    }
                     else
-                        col->insertFrom(*columns_info->columns[source_column_index_in_block], row_num);
+                    {
+                        flush_run();
+                        run_columns = stored_columns[block_no];
+                        run_block_no = block_no;
+                        run_start_row = row_num;
+                        run_length = 1;
+                    }
                 }
+                flush_run();
             }
         }
         else
