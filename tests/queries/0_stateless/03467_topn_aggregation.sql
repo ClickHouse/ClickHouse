@@ -1,8 +1,11 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas, no-random-settings
 
 -- Fused TopN aggregation (Mode 1, sorted-input early termination): correctness vs the standard
 -- pipeline, and plan-shape checks for the gates. The cardinality gate reads column uniq
 -- statistics, so keep statistics enabled regardless of any randomized test settings.
+-- no-random-settings: the plan-shape assertions (EXPLAIN ... LIKE '%TopNAggregating%') depend on
+-- whether the rewrite fires, which randomized settings (e.g. read-in-order / aggregation plan
+-- shape) can suppress; the correctness (optimized == reference) checks are settings-robust.
 SET allow_experimental_statistics = 1, allow_statistics_optimize = 1, use_statistics = 1;
 
 DROP TABLE IF EXISTS t_topn;
