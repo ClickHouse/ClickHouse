@@ -70,6 +70,13 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
     /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
     /// rename-only step keeps the same byte layout and stays transparent.
+    ///
+    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
+    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
+    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
+    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
+    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
+    /// consequence is a slightly-off estimate, never a wrong result.
     if (transform.getTransformTraits().preserves_number_of_rows
         && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
         return 0;
