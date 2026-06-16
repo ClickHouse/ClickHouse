@@ -344,10 +344,6 @@ public:
     /// one-shot connection (the stateless path).
     size_t buffer_slots = 10;
 
-    /// Run `readNextWindow` as the schedule-driven interpreter (the "sched" matrix column)
-    /// instead of the live walk. Served bytes are unchanged; this measures the R/I/O delta.
-    bool schedule_driven = false;
-
     /// A list of reads, each (offset, optional size); a nullopt size reads to the end
     /// of the file (FILE_SIZE - offset).
     using ReadList = std::vector<std::pair<size_t, std::optional<size_t>>>;
@@ -379,7 +375,6 @@ public:
         executor_options.log_file_path = {};
         executor_options.max_tail_for_drain = MAX_TAIL_FOR_DRAIN;
         executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(buffer_slots);
-        executor_options.schedule_driven = schedule_driven;
         ReaderExecutor executor(src, objects, std::move(caches), executor_options);
 
         size_t total = 0;
@@ -440,11 +435,12 @@ public:
     /// connection) and stateless (no budget -> a short-lived connection per window).
     static constexpr size_t LIVE_SLOTS = 10;
 
-    /// The matrix columns: {label, buffer_slots, schedule_driven}. `live`/`stateless` are
-    /// the live walk (long-conn on/off); `sched` is the schedule-driven interpreter (long-conn
-    /// on) - byte-identical served output, measured for its R/I/O delta vs `live`.
-    inline static const std::array<std::tuple<const char *, size_t, bool>, 3> MODES{{
-        {"live", LIVE_SLOTS, false}, {"stateless", 0, false}, {"sched", LIVE_SLOTS, true}}};
+    /// The matrix columns: {label, buffer_slots}. `live` keeps a reusable (long) source
+    /// connection across windows; `stateless` has no budget, so every window opens a
+    /// short-lived one-shot connection. Both run the schedule-driven interpreter (the
+    /// only read path).
+    inline static const std::array<std::tuple<const char *, size_t>, 2> MODES{{
+        {"live", LIVE_SLOTS}, {"stateless", 0}}};
 
     /// Run a scenario — `warm_ranges` to initialise the cache state, then `reads` as
     /// the read pattern — under BOTH budget modes on a fresh cache each, printing both.
@@ -458,27 +454,17 @@ public:
         StoredObjects objects;
         objects.emplace_back("obj", "", FILE_SIZE);
 
-        std::array<CostVector, 3> out;
+        std::array<CostVector, 2> out;
         for (size_t i = 0; i < MODES.size(); ++i)
         {
             buffer_slots = std::get<1>(MODES[i]);
-            schedule_driven = std::get<2>(MODES[i]);
             auto fc = makeFileCache(name + "_" + std::get<0>(MODES[i]), SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
             if (!warm_ranges.empty())
                 warmCache(fc, data, objects, warm_ranges);
             out[i] = measure(fc, data, objects, reads);
             std::cout << "[" << name << "/" << std::get<0>(MODES[i]) << "] " << out[i].str() << "\n";
         }
-        schedule_driven = false;
         results[name] = out;
-        /// Re-baseline guard: the schedule-driven interpreter (out[2], "sched") matches the
-        /// live walk's R/I/O on every FileCache scenario, and serves the same bytes (checked
-        /// by executeReads' EXPECT_EQ(total, want_total) on each run). The only intended
-        /// divergence is the block-granular pc_gaps case (see runMatrixPageCache); a mismatch
-        /// here is a regression in the interpreter.
-        EXPECT_EQ(out[2].requests, out[0].requests) << name << ": sched R == live R";
-        EXPECT_EQ(out[2].incomplete, out[0].incomplete) << name << ": sched I == live I";
-        EXPECT_EQ(out[2].over_read, out[0].over_read) << name << ": sched O == live O";
         return {out[0], out[1]};
     }
 
@@ -493,11 +479,10 @@ public:
         StoredObjects objects;
         objects.emplace_back("obj", "", FILE_SIZE);
 
-        std::array<CostVector, 3> out;
+        std::array<CostVector, 2> out;
         for (size_t i = 0; i < MODES.size(); ++i)
         {
             buffer_slots = std::get<1>(MODES[i]);
-            schedule_driven = std::get<2>(MODES[i]);
             page_cache = makePageCache();
             if (!warm_ranges.empty())
                 warmCache({}, data, objects, warm_ranges);
@@ -505,25 +490,7 @@ public:
             std::cout << "[" << name << "/" << std::get<0>(MODES[i]) << "] " << out[i].str() << "\n";
         }
         page_cache.reset();
-        schedule_driven = false;
         results[name] = out;
-        /// pc_gaps is the ONE intended coalescing shift of the schedule-driven interpreter:
-        /// it reads the coalesced job through its block-sized cached holes in one cleanly-
-        /// draining connection - fewer GETs and ZERO incomplete connections vs the live
-        /// walk's reach-bounded reopens (live R=9/I=7), at a little more over-read. Served
-        /// bytes unchanged. Other PageCache scenarios (none today) would match live.
-        if (name == "pc_gaps")
-        {
-            EXPECT_LE(out[2].requests, out[0].requests) << "pc_gaps sched: coalesces at least as well (live R=9)";
-            EXPECT_EQ(out[2].incomplete, 0u) << "pc_gaps sched: job-bounded connection drains cleanly (live I=7)";
-            EXPECT_GE(out[2].over_read, out[0].over_read) << "pc_gaps sched: coalesced cached holes read as over-read";
-        }
-        else
-        {
-            EXPECT_EQ(out[2].requests, out[0].requests) << name << ": sched R == live R";
-            EXPECT_EQ(out[2].incomplete, out[0].incomplete) << name << ": sched I == live I";
-            EXPECT_EQ(out[2].over_read, out[0].over_read) << name << ": sched O == live O";
-        }
         return {out[0], out[1]};
     }
 
@@ -531,7 +498,7 @@ public:
     /// table by TearDownTestSuite after all ReaderExecutorMetric.* tests run: a full run
     /// shows the whole matrix, a subset only its rows. Recorded BEFORE each cell's
     /// assertions, so a value that changed still appears in the table.
-    inline static std::unordered_map<String, std::array<CostVector, 3>> results;
+    inline static std::unordered_map<String, std::array<CostVector, 2>> results;
 
     static String fmtCell(const CostVector & m)
     {
@@ -553,18 +520,17 @@ public:
             "cold_seq", "warm_seq", "checkerboard", "small_gaps", "pc_gaps", "prefix_hit", "suffix_hit",
             "interior_hole", "sparse_cold", "midseg", "random_scattered",
             "random_runs", "reverse_seq"};
-        auto print_row = [](const String & name, const std::array<CostVector, 3> & r)
+        auto print_row = [](const String & name, const std::array<CostVector, 2> & r)
         {
             std::cout << std::left << std::setw(16) << name << " | "
-                      << std::setw(50) << fmtCell(r[0]) << " | "
-                      << std::setw(50) << fmtCell(r[1]) << " | " << fmtCell(r[2]) << "\n";
+                      << std::setw(50) << fmtCell(r[0]) << " | " << fmtCell(r[1]) << "\n";
         };
         std::cout << "\n=== ReaderExecutorMetric: cache-state x read-pattern x budget ===\n"
                   << "cost = 30ms*R + 5ms*I + 20ms*S_MiB + 0.1ms*Wc + 0.05ms*Rc (S = bytes from source,\n"
                   << "byte counters rescaled by COMPRESSION); /MiB = cost per MiB requested (load-independent KPI)\n"
-                  << "live/stateless = live walk (long-conn on/off); sched = schedule-driven interpreter\n"
+                  << "live/stateless = long source connection on/off (both schedule-driven)\n"
                   << std::left << std::setw(16) << "scenario" << " | "
-                  << std::setw(50) << "live" << " | " << std::setw(50) << "stateless" << " | sched\n";
+                  << std::setw(50) << "live" << " | stateless\n";
         for (const auto & name : order)
             if (auto it = results.find(name); it != results.end())
                 print_row(name, it->second);
@@ -624,7 +590,7 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
     auto [live, stateless] = runMatrix("checkerboard", even, {{0, std::nullopt}});
 
     EXPECT_EQ(live.requests, 33u) << "live: reach-bounded GETs, not coalesced across cached holes";
-    EXPECT_EQ(live.incomplete, 28u) << "live: each cold run abandoned at the next cached segment / reach bound";
+    EXPECT_EQ(live.incomplete, 15u) << "live: a connection drains to its reach bound and reopens cleanly; only a cold run whose connection over-runs into the next WIDE cached segment is dropped there (the plan-window lookahead cannot foresee a run past the extent)";
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window, no reuse";
@@ -646,17 +612,17 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
     EXPECT_EQ(live.requests, 20u) << "live: above-bound holes are not bridged; reach-bounded reopens per cold run";
-    EXPECT_EQ(live.incomplete, 12u) << "each connection abandoned at a hole or before its far reach bound";
-    EXPECT_EQ(live.over_read, 1664u) << "alignment-prefix slack where a reopen lands inside a cold segment";
+    EXPECT_EQ(live.incomplete, 8u) << "a connection drains to its reach bound and reopens at the bound; only the runs whose connection over-runs into an above-bound hole are dropped there";
+    EXPECT_EQ(live.over_read, 0u) << "reopens land on the reach bound, not inside a segment, so no alignment-prefix slack";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
 
 /// PageCache is block-granular and in-memory, so a cached hole can be a single
 /// BLOCK (1 MiB production) - below both the seek threshold AND the cost breakeven.
-/// The live connection bridges every such block-sized hole as over-read; it still
-/// reopens (reach-bounded) along the scan, and is abandoned where a reopen's reach
-/// bound trails the extent. Unlike the 4 MiB-aligned FileCache holes, bridging here
-/// is cost-POSITIVE: skipping a sub-breakeven gap costs less than the reopen it avoids.
+/// The schedule-driven interpreter coalesces the scan into one job that reads through
+/// every such block-sized hole (the bytes re-read as over-read) in a cleanly-draining
+/// connection. Unlike the 4 MiB-aligned FileCache holes, bridging here is cost-POSITIVE:
+/// reading through a sub-breakeven gap costs less than the reopen it avoids.
 TEST_F(ReaderExecutorMetric, PageCacheGaps)
 {
     const size_t hole = BLOCK;          /// one-block cached hole (PageCache granularity)
@@ -667,10 +633,10 @@ TEST_F(ReaderExecutorMetric, PageCacheGaps)
     const size_t n_holes = warm.size();
     auto [live, stateless] = runMatrixPageCache("pc_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 9u) << "live: bridges block-sized holes, reach-bounded reopens along the scan";
-    EXPECT_EQ(live.incomplete, 7u) << "connection abandoned where a reopen's reach bound trails the extent";
+    EXPECT_LE(live.requests, 9u) << "live: coalesces the scan through the block-sized cached holes";
+    EXPECT_EQ(live.incomplete, 0u) << "live: the job-bounded connection drains cleanly through the holes";
     EXPECT_GT(live.over_read, 0u) << "skipped cached blocks are re-read from source as over-read";
-    EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each bridged gap is <= the seek threshold";
+    EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each read-through gap is <= the seek threshold";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window, no bridge";
 }
 
@@ -815,7 +781,7 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
     auto [live, stateless] = runMatrix("sparse_cold", warm_ranges, {{0, std::nullopt}});
 
     EXPECT_EQ(live.requests, 9u) << "live: reach-bounded GETs across the scattered cold segments";
-    EXPECT_EQ(live.incomplete, 5u) << "live: connection churn at each cold segment / reach bound";
+    EXPECT_EQ(live.incomplete, 4u) << "live: a connection drains to its bound and reopens cleanly; the residual is the cold segments whose connection over-runs into the following warm segment";
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
@@ -838,7 +804,7 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
     auto [live, stateless] = runMatrix("reverse_seq", {}, reads);
 
     EXPECT_EQ(live.requests, 65u) << "backward seeks defeat forward streaming -> reach-bounded GETs per chunk (vs a few forward)";
-    EXPECT_EQ(live.incomplete, 60u) << "the forward-reach bound over-runs each chunk and is abandoned at the backward seek (the first chunk has no prior estimate, so it stays extent-bounded)";
+    EXPECT_EQ(live.incomplete, 31u) << "within a chunk a connection drains to its reach bound and reopens cleanly; the residual is the chunks whose forward-reach bound over-runs the chunk and is abandoned at the backward seek";
     EXPECT_EQ(live.over_read, 0u) << "the channel is dropped at the chunk end before reading past it, so no wasted bytes";
     EXPECT_EQ(stateless.incomplete, 0u);
 }

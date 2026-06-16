@@ -355,7 +355,6 @@ namespace Setting
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool reader_executor_use_long_connections;
-    extern const SettingsBool reader_executor_schedule_driven;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
@@ -406,6 +405,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 reader_executor_prefetch_pool_size;
     extern const ServerSettingsUInt64 reader_executor_prefetch_queue_size;
+    extern const ServerSettingsNonZeroUInt64 reader_executor_cache_filler_pool_size;
+    extern const ServerSettingsUInt64 reader_executor_cache_filler_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
@@ -625,6 +626,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag prefetch_thread_pool_initialized;
     mutable std::shared_ptr<PrefetchThreadPool> prefetch_thread_pool;
+
+    mutable OnceFlag cache_filler_thread_pool_initialized;
+    mutable std::shared_ptr<PrefetchThreadPool> cache_filler_thread_pool;
 
     mutable OnceFlag long_connection_limit_initialized;
     mutable std::shared_ptr<LongConnectionLimit> long_connection_limit;
@@ -7784,6 +7788,18 @@ std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
     return shared->prefetch_thread_pool;
 }
 
+std::shared_ptr<PrefetchThreadPool> Context::getReaderExecutorCacheFillerPool() const
+{
+    callOnce(shared->cache_filler_thread_pool_initialized, [&]
+    {
+        const auto & server_settings = getServerSettings();
+        size_t pool_size = server_settings[ServerSetting::reader_executor_cache_filler_pool_size];
+        size_t queue_size = server_settings[ServerSetting::reader_executor_cache_filler_queue_size];
+        shared->cache_filler_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size, queue_size);
+    });
+    return shared->cache_filler_thread_pool;
+}
+
 std::shared_ptr<LongConnectionLimit> Context::getLongConnectionLimit() const
 {
     callOnce(shared->long_connection_limit_initialized, [&]
@@ -7912,7 +7928,6 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor_min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor_max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.reader_executor_use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
-    res.reader_executor_schedule_driven = settings_ref[Setting::reader_executor_schedule_driven];
 
     return res;
 }

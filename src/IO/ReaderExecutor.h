@@ -52,9 +52,10 @@ class ReaderExecutor
 {
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
-    /// Gap bound for `mergeRanges` / `buildSchedule`: gaps up to this are
-    /// coalesced into one source request rather than read separately. Near the
-    /// bandwidth/request cost breakeven.
+    /// Gap bound for `mergeRanges` / `buildSchedule`: a gap strictly smaller than
+    /// this is coalesced (over-read) into one source request rather than read
+    /// separately; a gap at or above it reopens, and if a faster tier holds it the
+    /// bytes are filled down from there. Near the bandwidth/request cost breakeven.
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     /// Drain bound for the future long-connection rework; dormant for now.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
@@ -75,9 +76,13 @@ public:
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
+        /// The `CacheFiller` pool that drives deferred cache-fill / write-back
+        /// (put) steps, kept separate from `prefetch_pool` so cache-fill work
+        /// does not compete with read-ahead fetches for the same slots. Null =>
+        /// put steps run synchronously inline.
+        std::shared_ptr<PrefetchThreadPool> cache_filler_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
-        bool schedule_driven = false;
     };
 
     ReaderExecutor(
@@ -210,6 +215,7 @@ public:
     }
     bool shouldOpenLongForTest(size_t phys_off) const { return shouldOpenLong(phys_off); }
     size_t clampReachForTest(size_t reach, size_t phys_off) const { return clampReach(reach, phys_off); }
+    size_t scheduleLookaheadReachForTest(size_t phys_off) const { return scheduleLookaheadReach(phys_off); }
     void openLongForTest(size_t phys_offset, size_t reach);
     Rope serveFromLongForTest(size_t phys_offset, size_t want);
     void dropLongForTest() { dropLong(long_conn, stats); }
@@ -374,12 +380,25 @@ private:
         /// as incomplete.
         bool everTransferred() const { return current_position > opened_at; }
         bool servesObject(const String & path) const { return object_path == path; }
-        /// Forward, within `near_gap`, and `[off, off+want)` stays inside the bound.
+        /// Forward and `[off, off+want)` stays inside the bound. A contiguous read
+        /// (`off == current_position`) always continues - it is not a bridge. A
+        /// forward HOLE is bridged (over-read on the open GET) only if STRICTLY smaller
+        /// than `near_gap`; a hole of exactly `near_gap` reopens instead - over-reading
+        /// it costs about as much, and a faster tier holding it fills it down.
         bool canContinue(size_t off, size_t want, size_t near_gap) const
         {
+            return canStartServing(off, near_gap) && off + want <= read_until;
+        }
+
+        /// Whether the channel can START serving at `off` - forward and inside the bound -
+        /// even if the read would cross `read_until`. `readFromSource` serves the prefix up to
+        /// the bound (the channel then drains clean) and reopens for the remainder, so a held
+        /// channel that `canStartServing` must NOT be dropped as un-continuable.
+        bool canStartServing(size_t off, size_t near_gap) const
+        {
             return off >= current_position
-                && off - current_position <= near_gap
-                && off + want <= read_until;
+                && (off == current_position || off - current_position < near_gap)
+                && off < read_until;
         }
 
         /// Read the pre-allocated `blocks` off the open stream into a Rope,
@@ -537,13 +556,9 @@ private:
 
     // ─── Window serve path ───────────────────────────────────────────────
 
-    /// The two tracks of `readNextWindow`, dispatched by `residentAt(cursor)`:
-    /// `serveCacheBlock` streams a granular block of the resident run straight
-    /// from the plan's held cache readers; `coverWindow` consumes an in-flight
-    /// prefetch for the gap or reads it synchronously, fills the caches, and
-    /// bounds the read to one plan gap.
+    /// Streams a granular block of a resident run straight from the plan's held cache
+    /// readers; `serveHitStep` calls it to serve a resident cursor step.
     Rope serveCacheBlock(size_t position_phys, size_t to_read);
-    Rope coverWindow(size_t position_phys, size_t to_read);
 
     /// The collect verb. With a machine in flight for this gap: if its step
     /// started/finished, COLLECT it (wait the release edge, reclaim its
@@ -704,6 +719,11 @@ private:
     /// end when the size is known (an unknown-size object has no end to clamp).
     size_t clampReach(size_t reach, size_t phys_off) const;
 
+    /// The physical end a source connection opened at `phys_off` reaches before a cached run
+    /// forces a reopen - the plan-geometry lookahead that sizes the long connection. See the
+    /// definition: bridges resident runs strictly below `min_bytes_for_seek`.
+    size_t scheduleLookaheadReach(size_t phys_off) const;
+
     /// Whether to open a long connection at physical `phys_off`: the estimator's
     /// predicted contiguous reach runs past the current read extent (the right boundary
     /// where a short connection would stop), a connection slot is configured
@@ -713,19 +733,18 @@ private:
 
     /// The long-connection bound (object-local) for an open at physical `phys_offset`:
     /// the forward reach, floored at the current read extent and capped at the object end,
-    /// so a forward run extends the channel past the current right boundary. The reach is
-    /// the schedule job's exact physical end (`hard_end`, when the schedule-driven launch
-    /// knows it) or the `predictedReach` EWMA estimate (`hard_end == 0`). See the definition.
-    size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset, size_t hard_end = 0) const;
+    /// so a forward run extends the channel past the current right boundary. The reach is the
+    /// `predictedReach` estimate clamped at the next wide cached run the plan shows. See the
+    /// definition.
+    size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const;
 
     /// Foreground open hook: when `shouldOpenLong(phys_offset)` and a slot can be
     /// acquired, open a long connection over `object` (object-local `object_offset`),
     /// bounded at `longConnectionBound`, so the following source read - and the windows
     /// after it - drain it. A no-op when already held / not warranted / at capacity
-    /// (then the read falls back to a one-shot). `hard_end` (physical, 0 = unset) bounds the
-    /// channel at the schedule job's exact end instead of the `predictedReach` estimate.
+    /// (then the read falls back to a one-shot).
     void openLongIfWarranted(const StoredObject & object, size_t object_offset,
-        size_t phys_offset, size_t want, Stats & out_stats, size_t hard_end = 0);
+        size_t phys_offset, Stats & out_stats);
 
     /// Open a bounded GET over `object` for the object-local range `[offset, read_end)`,
     /// taking the already-acquired `slot`; store it in `conn` (its `read_until` bound is
@@ -825,10 +844,10 @@ private:
     void shadowSetPhase(const FetchMachine & m, RetrievePhase phase);
     void shadowResetRetrieve(const FetchMachine & m);
 
-    /// The schedule-driven interpreter (active when `schedule_driven`): `readNextWindow`
-    /// runs the schedule's already-planned jobs instead of re-deriving the next gap from
-    /// the coverage map. `interpretStep` dispatches on `steps[cursor]`; `maybeLaunchAhead`
-    /// launches the schedule's `Remote` jobs at a frontier.
+    /// The schedule-driven interpreter: `readNextWindow` runs the schedule's already-planned
+    /// jobs instead of re-deriving the next gap from the coverage map. `interpretStep`
+    /// dispatches on `steps[cursor]`; `maybeLaunchAhead` launches the schedule's `Remote`
+    /// jobs at a frontier.
     Rope interpretStep(size_t position_phys, size_t to_read);
     Rope serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read);
     Rope serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read);
@@ -872,8 +891,6 @@ private:
     CacheWriter::CacheSegmentPin writerPinAt(size_t frontier) const;
 
     // ─── Machine lifecycle ───────────────────────────────────────────────
-
-    void maybeTriggerPrefetch();
 
     /// The cancel verb: drop the in-flight machine. `cancelled` is true for a
     /// real cancellation (seek / extent change), false for destructor cleanup.
@@ -926,8 +943,6 @@ private:
     size_t min_bytes_for_seek;
     size_t block_size;
     size_t max_tail_for_drain;
-    /// Run `readNextWindow` as a decision-free interpreter of the schedule.
-    bool schedule_driven;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
 
@@ -949,7 +964,16 @@ private:
     /// The machine driver over `prefetch_pool`: state writes, scheduling and
     /// the revoke/release edges live there; every policy decision stays here.
     /// Created in the constructor from `Options::prefetch_pool`; null without a pool.
+    /// Drives the FETCH machines only.
     std::unique_ptr<FetchMachineRunner> runner;
+    /// The `CacheFiller` pool, held only so `put_runner` outlives the machines it
+    /// drives. Separate from `prefetch_pool` so deferred cache-fill (put) work does
+    /// not compete with read-ahead fetches.
+    std::shared_ptr<PrefetchThreadPool> cache_filler_pool;
+    /// The machine driver over `cache_filler_pool` for the deferred PUT machines
+    /// (cache fills + promotes). Created from `Options::cache_filler_pool`; null
+    /// without a pool, in which case put steps run synchronously inline.
+    std::unique_ptr<FetchMachineRunner> put_runner;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the
@@ -985,8 +1009,7 @@ private:
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
     /// and every seek. Constructed with `near_gap == min_bytes_for_seek` so a
     /// bridged gap counts identically whether modeled as a read-through or a seek.
-    /// Its prediction is snapshotted into `schedule.predicted_reach`; nothing acts
-    /// on it yet.
+    /// `predictedReach` sizes the long source connection (see `longConnectionBound`).
     ContinuityTracker continuity_tracker;
     /// Highest physical offset already fed to `continuity_tracker` from a plan, so
     /// overlapping re-plans never double-feed. Reset to the target on seek.

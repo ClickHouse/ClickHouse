@@ -1795,6 +1795,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
     std::shared_ptr<PrefetchThreadPool> getPrefetchThreadPool() const;
+    std::shared_ptr<PrefetchThreadPool> getReaderExecutorCacheFillerPool() const;
     std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
 #if USE_LIBURING
     IOUringReader & getIOUringReader() const;

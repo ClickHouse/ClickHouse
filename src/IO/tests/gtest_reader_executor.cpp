@@ -552,6 +552,7 @@ TEST(ReaderExecutor, PrefetchTriggersOnReadNextWindow)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1000;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope1 = executor.readNextWindow();
@@ -595,6 +596,7 @@ TEST(ReaderExecutor, PrefetchBoxRoundTripServesAllBytes)
         executor_options.window_size = 1000;
         executor_options.min_bytes_for_seek = 0;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         executor_options.long_connection_limit = limit;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
@@ -644,6 +646,7 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 500;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope1 = executor.readNextWindow();
@@ -676,6 +679,7 @@ TEST(ReaderExecutor, SeekDiscardsPrefetch)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 500;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     auto rope1 = executor.readNextWindow();
@@ -705,6 +709,7 @@ TEST(ReaderExecutor, SeekTriggersPrefetch)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 500;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Before the first readNextWindow nothing has been prefetched yet.
@@ -769,6 +774,7 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
         executor_options.min_bytes_for_seek = 0;
         executor_options.block_size = 32u << 10;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         executor_options.long_connection_limit = limit;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
@@ -1311,6 +1317,7 @@ TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = 500;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
         /// First sync read consumes the 1st open() and primes maybeTriggerPrefetch,
@@ -1342,6 +1349,7 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
         ReaderExecutor::Options executor_options;
         executor_options.window_size = 500;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
         /// 1st readNextWindow: synchronous open (success) + queues a prefetch
@@ -1879,6 +1887,7 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     executor_options.long_connection_limit = limit;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
@@ -2560,29 +2569,43 @@ public:
 
     size_t write(Rope data) override
     {
+        if (data.empty())
+            return 0;
         size_t bytes_written = 0;
+        const ByteRange dr = data.range();
         for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
         {
             const size_t b = offset / block_size;
             const ByteRange block_range{offset, block_size};
 
             if (committed_ranges.subtract(block_range).empty())
-                continue;
-            if (!data.covers(block_range))
+                continue;  /// block already fully written
+
+            /// The part of this block `data` carries.
+            const size_t lo = std::max(block_range.offset, dr.offset);
+            const size_t hi = std::min(block_range.end(), dr.end());
+            if (lo >= hi)
                 continue;
 
-            Rope slice = data.slice(block_range);
-            put_log.emplace_back(block_range, slice.totalBytes());
-
-            if (!storage.contains(b))
+            /// Accumulate incrementally, like a real `FileSegment` filled across several
+            /// writes: stage the covered bytes in a per-block buffer and commit the block
+            /// to `storage` only once every byte has arrived. A whole-block cell split
+            /// across machine windows still completes.
+            String & buf = pending.try_emplace(b, String(block_size, '\0')).first->second;
+            for (const auto & sub : committed_ranges.subtract(ByteRange{lo, hi - lo}))
             {
-                String content;
-                content.resize(slice.totalBytes());
-                slice.copyTo(content.data(), block_range);
-                bytes_written += content.size();
-                storage[b] = std::move(content);
+                if (!data.covers(sub))
+                    continue;
+                data.slice(sub).copyTo(buf.data() + (sub.offset - block_range.offset), sub);
+                committed_ranges.add(sub);
+                bytes_written += sub.size;
             }
-            committed_ranges.add(block_range);
+            if (committed_ranges.subtract(block_range).empty())
+            {
+                put_log.emplace_back(block_range, block_size);
+                storage[b] = std::move(buf);
+                pending.erase(b);
+            }
         }
         return bytes_written;
     }
@@ -2617,6 +2640,9 @@ private:
     std::vector<std::pair<ByteRange, size_t>> & put_log;
     size_t block_size;
     IntervalSet committed_ranges;
+    /// Per-block staging buffers for bytes that arrived but have not yet completed the
+    /// whole block (incremental fill across multiple `write` calls).
+    std::unordered_map<size_t, String> pending;
 };
 
 class WideGranularityMockCache : public ICacheProvider
@@ -3140,6 +3166,7 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     executor_options.window_size = window;
     executor_options.min_bytes_for_seek = 0;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// First call: sync-read [0, 16). At the end of the call,
@@ -3203,6 +3230,7 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     executor_options.window_size = total;
     executor_options.min_bytes_for_seek = 0;
     executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
     ReaderExecutor executor(source, objects, {cache}, executor_options);
 
     /// Cold gap [0,100); advances the cursor to the resident run at 100.
@@ -3281,6 +3309,7 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
             ReaderExecutor::Options executor_options;
             executor_options.window_size = window;
             executor_options.prefetch_pool = pool;
+            executor_options.cache_filler_pool = pool;
             ReaderExecutor executor(source, objects, {cache}, executor_options);
             while (!executor.readNextWindow().empty()) {}
         }
@@ -3825,6 +3854,7 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
         executor_options.min_bytes_for_seek = 0;
         executor_options.block_size = BLOCK;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         ReaderExecutor executor(source, objects, caches, executor_options);
 
         String cold;
@@ -3857,6 +3887,7 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
         executor_options.min_bytes_for_seek = 0;
         executor_options.block_size = BLOCK;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         ReaderExecutor executor(source, objects, caches, executor_options);
         const auto src_before = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
         String warm;
@@ -3911,6 +3942,7 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
             executor_options.min_bytes_for_seek = 0;
             executor_options.block_size = BLOCK;
             executor_options.prefetch_pool = pool;
+            executor_options.cache_filler_pool = pool;
             ReaderExecutor executor(source, make_objects(), caches, executor_options);
 
             auto w1 = executor.readNextWindow();   /// sync; launches machine for w2 (inline fetch)
@@ -3951,6 +3983,7 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
             executor_options.min_bytes_for_seek = 0;
             executor_options.block_size = BLOCK;
             executor_options.prefetch_pool = pool;
+            executor_options.cache_filler_pool = pool;
             ReaderExecutor executor(source, make_objects(), caches, executor_options);
 
             auto w1 = executor.readNextWindow();
@@ -4005,6 +4038,7 @@ TEST(ReaderExecutor, WarmServeDefersPromoteToPutStep)
         executor_options.min_bytes_for_seek = 0;
         executor_options.block_size = BLOCK;
         executor_options.prefetch_pool = pool;
+        executor_options.cache_filler_pool = pool;
         ReaderExecutor executor(source, objects, caches, executor_options);
 
         String result;
@@ -4208,6 +4242,7 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
     opts.plan_look_ahead_window = file;  // ONE plan over the file -> the cursor spans it
     opts.min_bytes_for_seek = 0;         // no bridging -> 1:1 gap:retrieve, clean phases
     opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;
     ReaderExecutor executor(src, objects, {cache}, opts);
 
     size_t windows = 0;
@@ -4237,123 +4272,112 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
 #endif
 }
 
-/// The schedule-driven interpreter must deliver byte-identical output to the live walk
-/// over the same source + cache state: it changes the fetch coordination, not the served
-/// windows. Two resident islands (one wide, one bridgeable) make a coalesced job span a
-/// bridged hole + multi-window jobs - exactly what banking exists for. Run both flag states
-/// and compare. (In a debug build the ON run also exercises the assert spine.)
-TEST(ReaderExecutor, ScheduleDrivenMatchesLiveWalk)
+/// The schedule-driven interpreter serves a coalesced job spanning a bridged hole and
+/// multi-window jobs byte-correctly: it changes the fetch coordination, not the served
+/// windows. Two resident islands (one wide, kept separate; one narrow, bridged into the
+/// coalesced source job) over an all-'S' source - the served bytes are the cache-seeded
+/// chars where resident, 'S' from the source elsewhere. (In a debug build this also
+/// exercises the assert spine.)
+TEST(ReaderExecutor, ScheduleDrivenCoalescedReadContent)
 {
     const size_t block = 4096;
     const size_t file = block * 20;  // 80K
-    auto read_all = [&](bool schedule_driven)
+    auto [src, objects] = srcOf(file);
+    auto page = std::make_shared<WideGranularityMockCache>(block, "page");
+    auto fs = std::make_shared<WideGranularityMockCache>(block, "fs");
+    page->seedBlock(2, 'P'); page->seedBlock(3, 'P');  // wide island [8K,16K), not bridged
+    fs->seedBlock(10, 'F');                            // narrow island [40K,44K), bridged
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    ReaderExecutor::Options opts;
+    opts.window_size = block * 3;
+    opts.block_size = block;
+    opts.plan_look_ahead_window = file;
+    opts.min_bytes_for_seek = block;   // bridges the 4K island into one coalesced job
+    opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;
+    ReaderExecutor executor(src, objects, {page, fs}, opts);
+    String out;
+    while (true)
     {
-        auto [src, objects] = srcOf(file);
-        auto page = std::make_shared<WideGranularityMockCache>(block, "page");
-        auto fs = std::make_shared<WideGranularityMockCache>(block, "fs");
-        page->seedBlock(2, 'P'); page->seedBlock(3, 'P');  // wide island [8K,16K), not bridged
-        fs->seedBlock(10, 'F');                            // narrow island [40K,44K), bridged
-        auto pool = std::make_shared<SyncPrefetchPool>();
-        ReaderExecutor::Options opts;
-        opts.window_size = block * 3;
-        opts.block_size = block;
-        opts.plan_look_ahead_window = file;
-        opts.min_bytes_for_seek = block;   // bridges the 4K island into one coalesced job
-        opts.prefetch_pool = pool;
-        opts.schedule_driven = schedule_driven;
-        ReaderExecutor executor(src, objects, {page, fs}, opts);
-        String out;
-        while (true)
-        {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
-                break;
-            for (const auto & node : rope.getNodes())
-                out.append(node.data(), node.size);
-        }
-        return out;
-    };
-    const String live = read_all(false);
-    const String sched = read_all(true);
-    EXPECT_EQ(live.size(), file);
-    EXPECT_EQ(sched, live) << "schedule-driven output must equal the live walk byte for byte";
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            out.append(node.data(), node.size);
+    }
+    String expected(file, 'S');
+    for (size_t i = 2 * block; i < 4 * block; ++i) expected[i] = 'P';   // wide island served from cache
+    for (size_t i = 10 * block; i < 11 * block; ++i) expected[i] = 'F'; // narrow island served from cache
+    EXPECT_EQ(out, expected) << "schedule-driven read must serve the resident islands from cache and the rest from source";
 }
 
 /// A backward seek INSIDE the look-ahead plan must not serve a discontiguous rope: the
 /// jump invalidates the ahead-banked ready_bytes, so the interpreter must re-plan from the
 /// new position. Read forward (banking ahead), seek back inside the plan, read to the end,
-/// and compare the post-seek tail to the live walk.
-TEST(ReaderExecutor, ScheduleDrivenBackwardSeekMatchesLiveWalk)
+/// and check the post-seek tail is the contiguous, byte-correct [4K, end).
+TEST(ReaderExecutor, ScheduleDrivenBackwardSeekTail)
 {
     const size_t block = 4096;
     const size_t file = block * 20;  // 80K
-    auto tail_after_seek = [&](bool schedule_driven)
+    auto [src, objects] = srcOf(file);
+    auto cache = std::make_shared<WideGranularityMockCache>(block, "c");
+    cache->seedBlock(5, 'R');  // an island so steps mix hit/gap
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    ReaderExecutor::Options opts;
+    opts.window_size = block * 2;
+    opts.block_size = block;
+    opts.plan_look_ahead_window = file;   // ONE plan -> the seek stays within it
+    opts.min_bytes_for_seek = block;
+    opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;
+    ReaderExecutor executor(src, objects, {cache}, opts);
+    for (int i = 0; i < 4; ++i)           // read forward ~32K, banking ahead
+        executor.readNextWindow();
+    executor.seek(block);                 // backward, into the surviving plan
+    String out;
+    while (true)
     {
-        auto [src, objects] = srcOf(file);
-        auto cache = std::make_shared<WideGranularityMockCache>(block, "c");
-        cache->seedBlock(5, 'R');  // an island so steps mix hit/gap
-        auto pool = std::make_shared<SyncPrefetchPool>();
-        ReaderExecutor::Options opts;
-        opts.window_size = block * 2;
-        opts.block_size = block;
-        opts.plan_look_ahead_window = file;   // ONE plan -> the seek stays within it
-        opts.min_bytes_for_seek = block;
-        opts.prefetch_pool = pool;
-        opts.schedule_driven = schedule_driven;
-        ReaderExecutor executor(src, objects, {cache}, opts);
-        for (int i = 0; i < 4; ++i)           // read forward ~32K, banking ahead
-            executor.readNextWindow();
-        executor.seek(block);                 // backward, into the surviving plan
-        String out;
-        while (true)
-        {
-            auto r = executor.readNextWindow();
-            if (r.empty())
-                break;
-            for (const auto & node : r.getNodes())
-                out.append(node.data(), node.size);
-        }
-        return out;                           // bytes [4K, end)
-    };
-    EXPECT_EQ(tail_after_seek(true), tail_after_seek(false)) << "post-backward-seek tail must match the live walk";
-    EXPECT_EQ(tail_after_seek(true).size(), file - block);
+        auto r = executor.readNextWindow();
+        if (r.empty())
+            break;
+        for (const auto & node : r.getNodes())
+            out.append(node.data(), node.size);
+    }
+    String expected(file - block, 'S');                                 // tail [4K, end)
+    for (size_t i = 5 * block; i < 6 * block; ++i) expected[i - block] = 'R'; // island block 5 served from cache
+    EXPECT_EQ(out, expected) << "post-backward-seek tail must be the contiguous, byte-correct [4K, end)";
 }
 
 /// The per-mark-range setReadExtent cadence (advance the extent one window ahead before
 /// each read) must not strand a stale machine handle: setReadExtent cancels the in-flight
-/// prefetch, and a later serve must not collect the cancelled machine. Equivalence (and no
-/// crash) confirms the cancelled job's machine handle is cleared.
+/// prefetch, and a later serve must not collect the cancelled machine. A full byte-correct
+/// read (and no crash) confirms the cancelled job's machine handle is cleared.
 TEST(ReaderExecutor, ScheduleDrivenSetReadExtentCadence)
 {
     const size_t block = 4096;
     const size_t file = block * 20;  // 80K
-    auto read_with_extent = [&](bool schedule_driven)
+    auto [src, objects] = srcOf(file);
+    auto cache = std::make_shared<WideGranularityMockCache>(block, "c");
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    ReaderExecutor::Options opts;
+    opts.window_size = block * 2;
+    opts.block_size = block;
+    opts.plan_look_ahead_window = file;
+    opts.min_bytes_for_seek = 0;
+    opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;
+    ReaderExecutor executor(src, objects, {cache}, opts);
+    String out;
+    while (true)
     {
-        auto [src, objects] = srcOf(file);
-        auto cache = std::make_shared<WideGranularityMockCache>(block, "c");
-        auto pool = std::make_shared<SyncPrefetchPool>();
-        ReaderExecutor::Options opts;
-        opts.window_size = block * 2;
-        opts.block_size = block;
-        opts.plan_look_ahead_window = file;
-        opts.min_bytes_for_seek = 0;
-        opts.prefetch_pool = pool;
-        opts.schedule_driven = schedule_driven;
-        ReaderExecutor executor(src, objects, {cache}, opts);
-        String out;
-        while (true)
-        {
-            executor.setReadExtent(std::min(file, executor.getPosition() + block * 2));  // advance ahead of the cursor
-            auto r = executor.readNextWindow();
-            if (r.empty())
-                break;
-            for (const auto & node : r.getNodes())
-                out.append(node.data(), node.size);
-        }
-        return out;
-    };
-    EXPECT_EQ(read_with_extent(true), read_with_extent(false)) << "per-window setReadExtent cadence must match the live walk";
-    EXPECT_EQ(read_with_extent(true).size(), file);
+        executor.setReadExtent(std::min(file, executor.getPosition() + block * 2));  // advance ahead of the cursor
+        auto r = executor.readNextWindow();
+        if (r.empty())
+            break;
+        for (const auto & node : r.getNodes())
+            out.append(node.data(), node.size);
+    }
+    EXPECT_EQ(out, String(file, 'S')) << "per-window setReadExtent cadence must read the file byte-correctly";
 }
 
 /// Schedule-driven fill, seek mid-coarse-segment: seeking to 64K lands inside
@@ -4378,6 +4402,7 @@ TEST(ReaderExecutor, SchedulesFillOfSeekStraddledLowerSegment)
     opts.plan_look_ahead_window = file;
     opts.min_bytes_for_seek = 0;
     opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;
     ReaderExecutor executor(src, objects, {fast, slow}, opts);
     executor.seek(64 * 1024);  // request [64K,256K); slow segment head [0,64K) is before-slack
 
@@ -4414,6 +4439,7 @@ TEST(ReaderExecutor, SeveralFetchesFillAllGaps)
     opts.plan_look_ahead_window = file;   // ONE plan over the whole file -> one schedule, many fetches
     opts.min_bytes_for_seek = 0;
     opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;
     ReaderExecutor executor(src, objects, {cache}, opts);
 
     size_t delivered = 0;
@@ -4519,6 +4545,49 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
 }
 
+/// Same rule, REOPEN side: the embedded faster-tier hit is WIDER than
+/// `min_bytes_for_seek` (128K > 64K), so bridging it on the open GET would
+/// over-read more than the breakeven. The schedule splits the slow segment into
+/// gap [0,128K) / hit [128K,256K) / gap [256K,512K): the two gaps are fetched as
+/// SEPARATE source reads (reopen), the hit is filled DOWN from the faster tier,
+/// and nothing is over-read. Complements `EmbeddedUpperHitFilledFromUpperServeNotRemote`,
+/// which sits exactly AT the boundary (a `< min_bytes_for_seek` hole would bridge
+/// instead, over-reading the hole rather than reopening).
+TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
+{
+    const size_t file = 512 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto fast = std::make_shared<WideGranularityMockCache>(64 * 1024, "fast");
+    auto slow = std::make_shared<WideGranularityMockCache>(256 * 1024, "slow");
+    fast->seedBlock(2, 'F');  // resident [128K,256K): 128K, wider than min_bytes_for_seek,
+    fast->seedBlock(3, 'F');  // embedded in the slow segment [0,256K)
+
+    TestThreadGroup tg;
+    auto & pe = CurrentThread::getProfileEvents();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+
+    ReaderExecutor::Options opts;
+    opts.window_size = file * 2 + 1;       // window >= segment: the production case
+    opts.block_size = file * 2 + 1;
+    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.min_bytes_for_seek = 64 * 1024;
+    ReaderExecutor executor(src, objects, {fast, slow}, opts);
+
+    while (!executor.readNextWindow().empty()) {}
+    executor.seek(0);  // reap any deferred fills
+
+    /// The hit (128K >= min_bytes_for_seek) is NOT bridged: only the two gaps reach
+    /// the source, and the hit is never over-read.
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, 384u * 1024u)
+        << "only the gaps [0,128K)+[256K,512K) are fetched; the wide hit reopens, not bridges";
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, 0u)
+        << "the embedded hit is sourced from the upper serve, not over-read";
+    /// The slow segment still completes (filled down across the embedded hit).
+    EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
+    EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
+}
+
 /// Case 3 of the embedded-hit rule: when an upper tier fully covers a lower
 /// tier's miss, the read needs ZERO remote and ZERO over-read (the cost the
 /// rule promises). The lower tier is NOT written down today - a fully-covered
@@ -4558,6 +4627,39 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
     /// today (no gap -> no fetch -> no assemble-push); a page->fs write-down is
     /// a separate unimplemented policy. Pins the current behavior.
     EXPECT_FALSE(slow->hasBlock(0)) << "lower tier not written down from a fully-covering upper hit";
+}
+
+/// Stage 0 of the connection-decision unification: the plan-geometry lookahead that will size the
+/// long connection. From a start offset it streams across cold gaps and bridges resident runs
+/// STRICTLY below `min_bytes_for_seek`, stopping at the first run at/above the bound (a wide cached
+/// run is where the connection reopens, not bridges) or the plan end. Behavior-neutral here - not
+/// yet consulted by any open decision.
+TEST(ReaderExecutor, ScheduleLookaheadReachBridgesSmallCachedRuns)
+{
+    const size_t file = 512 * 1024;
+    auto [src, objects] = srcOf(file);
+    auto cache = std::make_shared<WideGranularityMockCache>(32 * 1024, "c");
+    cache->seedBlock(4, 'C');             // [128K,160K): a 32K cached run (< 64K -> bridged)
+    cache->seedBlock(8, 'C');             // [256K,320K): a 64K cached run (== 64K -> NOT bridged)
+    cache->seedBlock(9, 'C');
+
+    TestThreadGroup tg;
+    ReaderExecutor::Options opts;
+    opts.window_size = file * 2 + 1;      // one plan over the whole object
+    opts.block_size = file * 2 + 1;
+    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.min_bytes_for_seek = 64 * 1024;
+    ReaderExecutor executor(src, objects, {cache}, opts);
+
+    executor.readNextWindow();            // build the plan (geometry)
+
+    /// From 0: stream the cold [0,128K), bridge the 32K run [128K,160K), stream the cold
+    /// [160K,256K), then STOP at the 64K run [256K,320K) (== min_bytes_for_seek, not bridged).
+    EXPECT_EQ(executor.scheduleLookaheadReachForTest(0), 256u * 1024u);
+    /// From just after the bridged run: same stop at the wide run.
+    EXPECT_EQ(executor.scheduleLookaheadReachForTest(160 * 1024), 256u * 1024u);
+    /// From past the wide run: only cold remains, so it streams to the plan end (the file).
+    EXPECT_EQ(executor.scheduleLookaheadReachForTest(320 * 1024), file);
 }
 
 TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
@@ -4819,6 +4921,7 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     opts.window_size = window;
     opts.min_bytes_for_seek = 4096;
     opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
+    opts.cache_filler_pool = std::make_shared<SyncPrefetchPool>();
     opts.long_connection_limit = limit;
     ReaderExecutor ex(source, objects, {}, opts);
 
@@ -4874,6 +4977,7 @@ TEST(ReaderExecutor, LongConnectionOpensOnPrefetchPath)
     opts.window_size = window;
     opts.min_bytes_for_seek = 4096;
     opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
+    opts.cache_filler_pool = std::make_shared<SyncPrefetchPool>();
     opts.long_connection_limit = limit;
     ReaderExecutor ex(source, objects, {}, opts);
 

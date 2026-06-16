@@ -78,8 +78,9 @@ size_t CoverageMap::streamReach(size_t from, size_t min_gap) const
         }
         /// A resident run [pos, run_end): bridge it only if small enough to skip
         /// forward over AND something follows it (a trailing resident run is just
-        /// where the connection stops, not bridged).
-        if (r.run_end - pos <= min_gap && r.run_end < plan_end)
+        /// where the connection stops, not bridged). Strictly below `min_gap` - a run
+        /// of exactly `min_gap` reopens, matching `LongConnection::canContinue`.
+        if (r.run_end - pos < min_gap && r.run_end < plan_end)
         {
             pos = r.run_end;
             continue;

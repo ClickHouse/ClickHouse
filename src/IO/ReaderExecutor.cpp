@@ -110,15 +110,6 @@ namespace DB::FailPoints
 namespace DB
 {
 
-/// True in builds where `chassert` is live (the assert spine runs). Used to keep the
-/// schedule processing-state maintenance running for the spine even when the
-/// schedule-driven interpreter is off, so the OFF path cross-checks the schedule.
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-static constexpr bool spine_build = true;
-#else
-static constexpr bool spine_build = false;
-#endif
-
 /// The ONE place a counter is mapped to its ProfileEvent. Bump the counter, emit the event,
 /// and (for the cost-model counters) add the modeled-cost contribution - so a running query's
 /// events advance as the read happens. The prefetch worker runs in the submitter's thread
@@ -269,10 +260,11 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
-    , schedule_driven(options.schedule_driven)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
+    , cache_filler_pool(std::move(options.cache_filler_pool))
+    , put_runner(cache_filler_pool ? std::make_unique<FetchMachineRunner>(cache_filler_pool) : nullptr)
     , long_connection_limit(std::move(options.long_connection_limit))
     , reader_executor_log(std::move(options.reader_executor_log))
     , active_metric(CurrentMetrics::ReaderExecutorActive)
@@ -444,10 +436,9 @@ Rope ReaderExecutor::readNextWindow()
 
     Rope rope;
 
-    /// Plan-first: build/refresh the geometry and ask what sits at the cursor.
-    /// RESIDENT -> stream the run from the held cache handle; GAP -> consume the
-    /// in-flight gap read-ahead (launched last call) or fetch synchronously.
-    CoverageMap::Resident at;
+    /// Plan-first: build/refresh the geometry, then let the interpreter serve the
+    /// cursor step - a resident run streamed from the held cache handle, or an
+    /// in-flight / synchronous gap fetch.
     if (to_read > 0)
     {
         /// Re-plan only when the cursor leaves the planned span. The margin is the
@@ -466,53 +457,35 @@ Rope ReaderExecutor::readNextWindow()
                 || position_phys + window_size > read_plan.geometry()->plan_end))
         {
             observeAndSchedule(position_phys);
-            if (schedule_driven || spine_build)
-                shadowReconstructCursor();
+            shadowReconstructCursor();
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: a fresh plan starts at the cursor
             chassert(read_plan.schedule.steps.empty()
                 || read_plan.schedule.steps.front().output.offset == position_phys);
 #endif
         }
-        /// The OFF path picks the track live; the interpreter dispatches on the cursor step.
-        if (!schedule_driven && read_plan.geometry())
-            at = read_plan.geometry()->residentAt(position_phys);
     }
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: track-pick parity (live residency vs schedule classification), OFF path
-    if (!schedule_driven && to_read > 0 && read_plan.geometry() && !read_plan.schedule.steps.empty()
-        && read_plan.cursor < read_plan.schedule.steps.size())
-        chassert(read_plan.schedule.steps[read_plan.cursor].require_retrieve.has_value() == !at.resident());
-#endif
-
-    if (schedule_driven)
-        rope = interpretStep(position_phys, to_read);
-    else if (at.resident())
-        rope = serveCacheBlock(position_phys, to_read);
-    else
-        rope = coverWindow(position_phys, to_read);
+    rope = interpretStep(position_phys, to_read);
 
     stats.add(Stats::RequestedBytes, rope.range().size);
     position += rope.range().size;
-    if (schedule_driven || spine_build)
-    {
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
-        if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !rope.empty() && !reached_eof
-            && read_plan.cursor < read_plan.schedule.steps.size())
-        {
-            const size_t produced_off_phys = (position - rope.range().size) + data_start_offset;
-            const auto & step = read_plan.schedule.steps[read_plan.cursor];
-            chassert(produced_off_phys >= step.output.offset);
-            chassert(produced_off_phys + rope.range().size <= step.output.end());
-            /// Strict equality only when this window spanned the whole step (known size); a
-            /// step wider than the per-call block/window is served over several windows.
-            if (!offset_map.hasUnknownSize()
-                && produced_off_phys == step.output.offset
-                && position + data_start_offset == step.output.end())
-                chassert(rope.range().size == step.output.size);
-        }
-#endif
-        shadowAdvanceCursor();
+    if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !rope.empty() && !reached_eof
+        && read_plan.cursor < read_plan.schedule.steps.size())
+    {
+        const size_t produced_off_phys = (position - rope.range().size) + data_start_offset;
+        const auto & step = read_plan.schedule.steps[read_plan.cursor];
+        chassert(produced_off_phys >= step.output.offset);
+        chassert(produced_off_phys + rope.range().size <= step.output.end());
+        /// Strict equality only when this window spanned the whole step (known size); a
+        /// step wider than the per-call block/window is served over several windows.
+        if (!offset_map.hasUnknownSize()
+            && produced_off_phys == step.output.offset
+            && position + data_start_offset == step.output.end())
+            chassert(rope.range().size == step.output.size);
     }
+#endif
+    shadowAdvanceCursor();
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         rope.range().size, rope.getNodes().size(), position);
 
@@ -522,10 +495,7 @@ Rope ReaderExecutor::readNextWindow()
     if (reached_eof)
         inflight_segment_pin.reset();
 
-    if (schedule_driven)
-        maybeLaunchAhead();
-    else
-        maybeTriggerPrefetch();
+    maybeLaunchAhead();
 
     return rope;
 }
@@ -541,8 +511,7 @@ void ReaderExecutor::seek(size_t new_position)
         LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
             machine->requested_range.offset, machine->requested_range.end());
         position = new_position;
-        if (schedule_driven || spine_build)  /// jumped within the surviving plan
-            shadowReconstructCursor();
+        shadowReconstructCursor();  /// jumped within the surviving plan
         return;
     }
 
@@ -565,24 +534,17 @@ void ReaderExecutor::seek(size_t new_position)
     /// cursor (a foreground read below the ahead-bank makes a gappy rope). Drop the plan so
     /// the next launch re-plans + rebuilds `retrieve_status` from the new position. (The
     /// fast path above keeps the plan only for a forward seek into the in-flight window,
-    /// where the bank stays contiguous.) The OFF path re-plans lazily and uses no bank.
-    if (schedule_driven)
-    {
-        /// Reap outstanding deferred-fill (put) machines FIRST: each holds writer_origins
-        /// into this plan's `bufs`, and `reapPutMachine` writes its writers back into
-        /// `read_plan.bufs[origin]`. Dropping the plan with puts still in flight would
-        /// reap them against the next plan's (smaller) bufs - an out-of-range origin.
-        /// `observeAndSchedule` does the same drain before every re-plan; mirror it here.
-        sweepPutMachines(/*wait=*/true);
-        read_plan = {};
-    }
-    else if (spine_build)  /// jumped position; reconstruct against the (possibly surviving) plan
-        shadowReconstructCursor();
+    /// where the bank stays contiguous.)
+    ///
+    /// Reap outstanding deferred-fill (put) machines FIRST: each holds writer_origins
+    /// into this plan's `bufs`, and `reapPutMachine` writes its writers back into
+    /// `read_plan.bufs[origin]`. Dropping the plan with puts still in flight would
+    /// reap them against the next plan's (smaller) bufs - an out-of-range origin.
+    /// `observeAndSchedule` does the same drain before every re-plan; mirror it here.
+    sweepPutMachines(/*wait=*/true);
+    read_plan = {};
 
-    if (schedule_driven)
-        maybeLaunchAhead();
-    else
-        maybeTriggerPrefetch();
+    maybeLaunchAhead();
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -608,10 +570,11 @@ void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const
 {
-    /// `prefetch_pool` and `reader_executor_log` are intentionally NOT
-    /// propagated: a one-shot `readBigAt` can't amortise prefetch latency, and
-    /// per-call log rows would spam `system.reader_executor_log`. `long_connection_limit`
-    /// is shared (dormant until the long-connection rework).
+    /// `prefetch_pool`, `cache_filler_pool` and `reader_executor_log` are
+    /// intentionally NOT propagated: a one-shot `readBigAt` can't amortise
+    /// prefetch latency (and so fills/promotes run synchronously inline), and
+    /// per-call log rows would spam `system.reader_executor_log`.
+    /// `long_connection_limit` is shared (dormant until the long-connection rework).
     Options transient_options;
     transient_options.window_size = window_size;
     transient_options.min_bytes_for_seek = min_bytes_for_seek;
@@ -620,7 +583,6 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     transient_options.max_tail_for_drain = max_tail_for_drain;
     transient_options.plan_look_ahead_window = plan_look_ahead_window;
     transient_options.long_connection_limit = long_connection_limit;
-    transient_options.schedule_driven = schedule_driven;
     auto t = std::make_unique<ReaderExecutor>(source, stored_objects, caches, std::move(transient_options));
 
 #if USE_SSL
@@ -823,7 +785,10 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
         /// collapse to gap = 0 and merge via the same branch as adjacent ranges.
         size_t gap = sorted[i].offset > prev.end() ? sorted[i].offset - prev.end() : 0;
 
-        if (gap <= min_gap)
+        /// Strict `<`: a gap exactly `min_gap` wide is NOT bridged - reopening past it
+        /// costs about the same as over-reading it, and if it is resident in a faster
+        /// tier it is filled down from there rather than re-fetched.
+        if (gap < min_gap)
         {
             size_t new_end = std::max(prev.end(), sorted[i].end());
             prev.size = new_end - prev.offset;
@@ -893,31 +858,6 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
     return rope;
 }
 
-Rope ReaderExecutor::coverWindow(size_t position_phys, size_t to_read)
-{
-    /// A gap (or extent reached): the source-fetching path. Bound the read to one plan gap
-    /// `[position, gapEnd)` so each call returns one pure run (the next resident run is
-    /// served from cache on the following call). A remote gap reads a full (pressure-scaled,
-    /// cached-level) window to amortise the source open, clamped to the extent and the gap.
-    size_t gap_size = to_read;
-    if (to_read > 0)
-        gap_size = std::min(clampToExtent(effectiveWindowSize(read_plan.geometry()->pressure_level)),
-            read_plan.geometry()->gapEnd(position_phys) - position_phys);
-    const ByteRange physical_window{position_phys, gap_size};
-
-    /// Ensure a (possibly empty) geometry snapshot exists for the read below: an
-    /// extent-reached (`to_read == 0`) gap could still see a null snapshot.
-    if (!read_plan.geometry())
-        observeAndSchedule(position_phys);
-
-    /// Collect an in-flight read-ahead for this gap if it has started; if it was still
-    /// queued, `tryCollectMachine` revokes it and we read synchronously below.
-    Rope rope;
-    if (machine && tryCollectMachine(rope))
-        return rope;
-    return syncGapRead(physical_window);
-}
-
 bool ReaderExecutor::tryCollectMachine(Rope & rope)
 {
     /// The worker may own the connection mid-read, so the revoke/release handoff
@@ -937,7 +877,7 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         /// before checking cancellation, so ~ReaderExecutor must join it before
         /// our state is freed (a throw on the unwind would otherwise drop it
         /// un-joined; see `cancelMachine`).
-        LOG_TRACE(log, "coverWindow: prefetch was queued, cancelling and reading from position {}", position);
+        LOG_TRACE(log, "tryCollectMachine: prefetch was queued, cancelling and reading from position {}", position);
         stats.add(Stats::PrefetchCancelled);
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: revoked before serving -> NotLaunched
         shadowResetRetrieve(*m);
@@ -951,7 +891,7 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
     /// no takeover: a one-shot fetch has nothing to take over (the GET is read to
     /// its bound, and splitting it would forfeit the request). Interruption remains
     /// the CANCEL mechanism, where the remainder is never fetched at all.
-    LOG_TRACE(log, "coverWindow: waiting on prefetched [{}, {})", m->requested_range.offset, m->requested_range.end());
+    LOG_TRACE(log, "tryCollectMachine: waiting on prefetched [{}, {})", m->requested_range.offset, m->requested_range.end());
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
     runner->waitReleased(*m);
 
@@ -1056,7 +996,7 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
 
 Rope ReaderExecutor::syncGapRead(ByteRange physical_window)
 {
-    LOG_TRACE(log, "coverWindow: synchronous gap read physical [{}, {})",
+    LOG_TRACE(log, "syncGapRead: synchronous gap read physical [{}, {})",
         physical_window.offset, physical_window.end());
     StatTimer sync_scope(stats, Stats::SyncReadMicroseconds);
     Rope rope = readWindowLogical(physical_window, *read_plan.geometry(), reached_eof, stats);
@@ -1099,11 +1039,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
     /// the end needs its writers home.
     joinPutMachinesOverlapping(fetch_window, /*writers_too=*/true);
 
-    /// With pools present the sync path defers its cache fill exactly like a
-    /// machine collect: assemble only, then hand the writers + rope to a
-    /// put-only machine below. Transients and pool-less executors keep the
-    /// synchronous push.
-    const bool defer_fill = runner != nullptr;
+    /// With a `CacheFiller` pool present the sync path defers its cache fill
+    /// exactly like a machine collect: assemble only, then hand the writers +
+    /// rope to a put-only machine below. Without one, the put step runs
+    /// synchronously inline (the `push_to_writers` write here).
+    const bool defer_fill = put_runner != nullptr;
 
     /// Serve resident bytes over the ALIGNED window: a byte that is a miss on the tier
     /// driving the alignment but resident on a faster tier is covered here, so the gap
@@ -1354,41 +1294,58 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             LOG_TRACE(log, "fetchAndBackfillGaps: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
 
-            /// Split at the REQUESTED window edges so user-data bytes and segment-aligned
-            /// head/tail-extension bytes land in separate `OwnedRopeBuffer`s (released
-            /// independently).
-            VectorWithMemoryTracking<size_t> splits;
-            const size_t pr_lo = logical_pos;
-            const size_t pr_hi = logical_pos + pr.size;
-            if (requested_window.offset > pr_lo && requested_window.offset < pr_hi)
-                splits.push_back(requested_window.offset - pr_lo);
-            if (requested_window.end() > pr_lo && requested_window.end() < pr_hi)
-                splits.push_back(requested_window.end() - pr_lo);
-            std::sort(splits.begin(), splits.end());
-
-            auto blocks = allocateBlocks(pr.size, window_block_size, splits);
-            /// W3: open a long source connection for this gap when the run is long, so
-            /// the read below drains it (and the following windows continue the same GET
-            /// instead of a one-shot per window).
-            openLongIfWarranted(pr.object, pr.object_offset, logical_pos, pr.size, out_stats);
-            StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
-            Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
-                read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
-            HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
-                static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
-            const size_t actual = sr.totalBytes();
-            out_stats.add(Stats::BytesFromSource, actual);
-            /// Size-known short reads are fatal (the map promised those bytes).
-            /// Size-unknown short reads are how EOF is learned - latch it.
-            if (actual != pr.size)
+            /// Read the physical range in sub-spans bounded by a held long connection's
+            /// `read_until`: each held GET then drains EXACTLY to its bound (a clean release,
+            /// not an incomplete drop), and the next sub-span reopens a fresh long connection -
+            /// one GET per reach span, rather than a one-shot at every bound crossing. When the
+            /// channel reaches past this range (or none is held), the whole range is one read.
+            /// The long connection coalesces contiguous sub-spans across windows via its frontier.
+            const size_t pr_obj_end = pr.object_offset + pr.size;
+            size_t sub_obj_off = pr.object_offset;
+            size_t sub_logical = logical_pos;
+            while (sub_obj_off < pr_obj_end)
             {
-                if (!offset_map.hasUnknownSize())
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
-                        pr.object.remote_path, pr.object_offset, pr.size, actual);
-                eof_latch = true;
+                /// W3: open/keep a long connection at the sub-span start when the run is long.
+                openLongIfWarranted(pr.object, sub_obj_off, sub_logical, out_stats);
+                size_t sub_end = pr_obj_end;
+                if (long_conn && long_conn->servesObject(pr.object.remote_path)
+                    && long_conn->read_until > sub_obj_off && long_conn->read_until < pr_obj_end)
+                    sub_end = long_conn->read_until;
+                const size_t sub_size = sub_end - sub_obj_off;
+
+                /// Split at the REQUESTED window edges so user-data bytes and segment-aligned
+                /// head/tail-extension bytes land in separate `OwnedRopeBuffer`s (released
+                /// independently).
+                VectorWithMemoryTracking<size_t> splits;
+                if (requested_window.offset > sub_logical && requested_window.offset < sub_logical + sub_size)
+                    splits.push_back(requested_window.offset - sub_logical);
+                if (requested_window.end() > sub_logical && requested_window.end() < sub_logical + sub_size)
+                    splits.push_back(requested_window.end() - sub_logical);
+                std::sort(splits.begin(), splits.end());
+
+                auto blocks = allocateBlocks(sub_size, window_block_size, splits);
+                StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
+                Rope sr = readFromSource(pr.object, sub_obj_off, std::move(blocks), sub_logical,
+                    read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
+                HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
+                    static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
+                const size_t actual = sr.totalBytes();
+                out_stats.add(Stats::BytesFromSource, actual);
+                source_bytes.append(std::move(sr));
+                /// Size-known short reads are fatal (the map promised those bytes).
+                /// Size-unknown short reads are how EOF is learned - latch it and stop.
+                if (actual != sub_size)
+                {
+                    if (!offset_map.hasUnknownSize())
+                        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
+                            pr.object.remote_path, sub_obj_off, sub_size, actual);
+                    eof_latch = true;
+                    break;
+                }
+                sub_obj_off = sub_end;
+                sub_logical += sub_size;
             }
-            source_bytes.append(std::move(sr));
             logical_pos += pr.size;
         }
     }
@@ -1696,17 +1653,49 @@ Rope ReaderExecutor::readFromSource(
         want += block->size();
 
     /// Drain a held/carried long connection if it can serve this fetch contiguously
-    /// within its bound. A held connection that cannot continue (wrong object /
-    /// backward / far / past bound) is dropped here and the read falls through to a
-    /// one-shot - the long-connection OPEN path is wired in a later stage. `lc` is the
-    /// foreground's `long_conn` or the worker's machine payload, never the other's, so
-    /// each thread drains only its own.
+    /// within its bound. `lc` is the foreground's `long_conn` or the worker's machine
+    /// payload, never the other's, so each thread drains only its own.
+    Rope head;  /// the prefix served from a held connection that drains to its bound mid-read
     if (lc && *lc)
     {
         if ((*lc)->servesObject(object.remote_path)
             && (*lc)->canContinue(offset, want, min_bytes_for_seek))
             return serveFromLong(*lc, offset, std::move(blocks), logical_offset, stop, out_stats);
-        dropLong(*lc, out_stats);
+        /// The read is forward-continuable from `offset` but CROSSES the channel bound. Serve the
+        /// prefix up to `read_until` from the held connection - it drains exactly to its bound and
+        /// releases clean - then read the remainder from a fresh GET below (the same request a
+        /// reopen would cost, but the connection is no longer abandoned mid-run as an incomplete).
+        /// Only split on a block boundary; if `read_until` does not land on one (rare - the reach
+        /// is cache-aligned), or the connection cannot continue at all, drop and reopen.
+        bool split = false;
+        if ((*lc)->servesObject(object.remote_path)
+            && offset >= (*lc)->current_position
+            && (offset == (*lc)->current_position || offset - (*lc)->current_position < min_bytes_for_seek)
+            && offset < (*lc)->read_until)
+        {
+            const size_t prefix_span = (*lc)->read_until - offset;
+            size_t prefix_bytes = 0;
+            size_t n = 0;
+            while (n < blocks.size() && prefix_bytes + blocks[n]->size() <= prefix_span)
+                prefix_bytes += blocks[n++]->size();
+            if (prefix_bytes == prefix_span && n > 0)
+            {
+                VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> prefix;
+                VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> suffix;
+                for (size_t i = 0; i < blocks.size(); ++i)
+                    (i < n ? prefix : suffix).push_back(std::move(blocks[i]));
+                head = serveFromLong(*lc, offset, std::move(prefix), logical_offset, stop, out_stats);
+                if (*lc)
+                    return head;   /// EOF before the bound: the read ends here
+                logical_offset += prefix_bytes;
+                offset += prefix_span;   /// == read_until; continue with the suffix below
+                want -= prefix_bytes;
+                blocks = std::move(suffix);
+                split = true;
+            }
+        }
+        if (!split)
+            dropLong(*lc, out_stats);
     }
 
     auto opened = source->open(object);
@@ -1727,7 +1716,7 @@ Rope ReaderExecutor::readFromSource(
     auto & buf = *opened;
     out_stats.add(Stats::SourceRequests);
 
-    Rope rope;
+    Rope rope = std::move(head);  /// the connection-served prefix, if the read was split at the bound
     size_t total_read = 0;
     bool hit_eof = false;
 
@@ -1837,6 +1826,20 @@ size_t ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_b
     return skipForward(tail, block_bytes);
 }
 
+size_t ReaderExecutor::scheduleLookaheadReach(size_t phys_off) const
+{
+    /// How far a source connection opened at `phys_off` streams before a cached run forces a
+    /// reopen: the plan's coverage walked forward, bridging resident runs strictly smaller than
+    /// `min_bytes_for_seek` (the same strict-< rule `LongConnection::canContinue` applies on the
+    /// open GET - the connection over-reads such a hole), stopping at the first run at/above the
+    /// bound or the plan end. The single reach source for the connection bound: it reads only the
+    /// plan geometry, so it is independent of how the schedule groups jobs.
+    const auto & geom = read_plan.geometry();
+    if (!geom)
+        return phys_off;
+    return geom->streamReach(phys_off, min_bytes_for_seek);
+}
+
 size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
 {
     /// The estimator's reach is unclamped; bound it to the physical file end when the
@@ -1870,7 +1873,7 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
     return clampReach(continuity_tracker.predictedReach(), phys_off) > boundary;
 }
 
-size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset, size_t hard_end) const
+size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
 {
     /// The channel bound, in object-local coordinates: the forward reach, floored at the
     /// current read extent and capped at the object end. The reach term lets a confirmed
@@ -1880,10 +1883,13 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     /// stranding the channel before its real end. The object end caps a GET to the single
     /// object it streams.
     ///
-    /// The reach is either the schedule job's EXACT physical end (`hard_end`, when the
-    /// schedule-driven launch passes it) or the `predictedReach` EWMA estimate. The exact
-    /// end drains the channel precisely at the job - no reopen where the estimate undershoots,
-    /// no abandoned (incomplete) connection where it overshoots the run.
+    /// The reach is the `predictedReach` estimate - the read's forward trajectory, which
+    /// extrapolates past the current extent - clamped at the next WIDE cached run the plan
+    /// shows (a resident run at/above `min_bytes_for_seek`: there the channel must stop - that
+    /// region is served from cache / filled down, not over-read - so the GET drains cleanly at
+    /// it instead of being abandoned mid-run). Holes strictly below the bound are bridged by
+    /// `LongConnection::canContinue` on the open GET. Both terms read only the plan geometry,
+    /// never a connection grouping baked into the schedule.
     const size_t object_base = phys_offset - object_offset;
     const size_t object_end = hasUnknownSize()
         ? std::numeric_limits<size_t>::max()
@@ -1891,23 +1897,34 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     const size_t extent = read_extent_end
         ? std::min<size_t>(*read_extent_end + data_start_offset, object_end)
         : object_end;
-    const size_t reach = hard_end ? hard_end : clampReach(continuity_tracker.predictedReach(), phys_offset);
+    size_t reach = clampReach(continuity_tracker.predictedReach(), phys_offset);
+    const auto & geom = read_plan.geometry();
+    if (geom)
+    {
+        /// Stop the channel before a wide cached run the plan shows - but only a GENUINELY wide
+        /// run (at/above `min_bytes_for_seek`). A run cut by the plan boundary (a cached region
+        /// continuing past `plan_end`) appears short here and is not a real stop - the trajectory
+        /// estimate must be free to extend past the look-ahead. Holes below the bound are bridged.
+        const size_t wide = scheduleLookaheadReach(phys_offset);
+        const auto res = wide < geom->plan_end ? geom->residentAt(wide) : CoverageMap::Resident{};
+        if (res.resident() && res.run_end - wide >= min_bytes_for_seek)
+            reach = std::min(reach, wide);
+    }
     const size_t phys_bound = std::min(object_end, std::max(extent, reach));
     return phys_bound - object_base;
 }
 
 void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t object_offset,
-    size_t phys_offset, size_t want, Stats & out_stats, size_t hard_end)
+    size_t phys_offset, Stats & out_stats)
 {
-    /// Drop a held channel that cannot serve THIS fetch - wrong object, or a gap wider
-    /// than `min_bytes_for_seek` - before deciding to open, so a fresh channel covers the
-    /// run from its first byte. `readFromSource` drops it too, but that drop happens AFTER
-    /// this open hook: leaving it held here makes `shouldOpenLong` skip the open (a channel
-    /// is still set), the current window degrades to a one-shot, and the fresh channel
-    /// opens only on the NEXT window - doubling the GET count of every cold run that
-    /// follows a wide cached gap. A channel that CAN continue is left for `serveFromLong`.
+    /// Drop a held channel that cannot even START serving this fetch - wrong object, backward,
+    /// a gap at/above `min_bytes_for_seek`, or already past its bound - before deciding to open,
+    /// so a fresh channel covers the run from its first byte. A channel that CAN start serving
+    /// is left for `readFromSource`, which serves up to the bound and reopens for any remainder;
+    /// dropping it here would degrade the window to a one-shot and reopen only on the NEXT
+    /// window, doubling the GET count of every cold run that follows a wide cached gap.
     if (long_conn && !(long_conn->servesObject(object.remote_path)
-            && long_conn->canContinue(phys_offset, want, min_bytes_for_seek)))
+            && long_conn->canStartServing(phys_offset, min_bytes_for_seek)))
         dropLong(long_conn, out_stats);
     if (!shouldOpenLong(phys_offset))
         return;
@@ -1918,7 +1935,7 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
         out_stats.add(Stats::LongConnectionFallbacks);
         return;
     }
-    openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset, hard_end),
+    openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
         std::move(slot), out_stats);
 }
 
@@ -2115,7 +2132,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
-    if (runner->schedule(m))
+    if (put_runner->schedule(m))
         stats.add(Stats::PutScheduled);
     else
         stats.add(Stats::PutPoolFull);  /// parked; the sweep grants one reschedule
@@ -2187,7 +2204,7 @@ void ReaderExecutor::sweepPutMachines(bool wait)
                 }
                 /// Plan rebuild / destruction: let the bounded write finish
                 /// (one window of local I/O) rather than drop bytes in hand.
-                runner->waitReleased(m);
+                put_runner->waitReleased(m);
                 break;
             }
             case MachineState::ParkedPoolFull:
@@ -2198,7 +2215,7 @@ void ReaderExecutor::sweepPutMachines(bool wait)
                 if (!wait && !m.put_rescheduled)
                 {
                     m.put_rescheduled = true;
-                    if (runner->schedule(*it))
+                    if (put_runner->schedule(*it))
                     {
                         stats.add(Stats::PutScheduled);
                         ++it;
@@ -2260,7 +2277,7 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
         }
         else
         {
-            runner->waitReleased(m);
+            put_runner->waitReleased(m);
         }
         reapPutMachine(m);
         it = put_machines.erase(it);
@@ -2270,8 +2287,8 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
 void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
 {
 
-    /// Pool-less executors promote synchronously, as always.
-    if (!runner)
+    /// Without a `CacheFiller` pool the promote runs synchronously, as always.
+    if (!put_runner)
     {
         maybePromote(from_tier, range, bytes, out_stats);
         return;
@@ -2327,7 +2344,7 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
-    if (runner->schedule(pm))
+    if (put_runner->schedule(pm))
     {
         stats.add(Stats::PutScheduled);
         put_machines.push_back(std::move(pm));
@@ -2428,7 +2445,7 @@ void ReaderExecutor::shadowResetRetrieve(const FetchMachine & m)
         read_plan.retrieve_status[m.retrieve_index] = {};
 }
 
-// ─── Schedule-driven interpreter (active when `schedule_driven`) ──────────────
+// ─── Schedule-driven interpreter ──────────────────────────────────────────────
 //
 // `readNextWindow` runs the schedule's already-planned jobs instead of re-deriving
 // the next gap from the coverage map. Two decoupled frontiers: the serve `cursor`
@@ -2475,14 +2492,13 @@ void ReaderExecutor::launchRetrieve(size_t ri)
 
     /// The foreground is the sole opener; the aligned window's first physical range gives
     /// the object and its object-local offset. A no-op when not warranted / at capacity /
-    /// a usable connection is already held. Bound the channel at the JOB's exact end
-    /// (`r.range.end()`) - the schedule knows the coalesced connection's real span, so the
-    /// GET drains precisely at the job instead of at the `predictedReach` estimate (which
-    /// reopens when it undershoots, or strands an incomplete connection when it overshoots).
+    /// a usable connection is already held. The channel bound comes from the runtime reach
+    /// (`longConnectionBound`: `predictedReach` clamped at the next wide cached run), the same
+    /// on the prefetch and foreground paths - the schedule no longer hands down a span.
     auto prefetch_ranges = offset_map.map(next_physical_window);
     if (!prefetch_ranges.empty())
         openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
-            next_physical_window.offset, prefetch_ranges.front().size, stats, /*hard_end=*/r.range.end());
+            next_physical_window.offset, stats);
     m->long_conn = takeLong(long_conn);
 
     m->run_step = [this, self = m.get()]
@@ -2599,10 +2615,16 @@ Rope ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, si
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
-    /// Read one window within the job range at the cursor; `syncGapRead` runs the late-hit
-    /// salvage + the source read + the deferred fill in its I/O leaf. The long connection
-    /// coalesces across windows.
-    const size_t want = std::min({to_read, r.range.end() - position_phys, boundedReadSize(effectiveWindowSize(level))});
+    /// Read one window of THIS STEP only - never past the cursor step's end. A bridged
+    /// retrieve can span several steps (an embedded faster-tier hit splits a gap into
+    /// gap / hit / gap); reading to `r.range.end()` would bank past the hit and serve the
+    /// hit + the next gap as one window, so the serve would no longer map 1:1 to the
+    /// schedule. The long connection still coalesces ACROSS steps: it persists in
+    /// `long_conn`, so the next gap step's source read continues it - skipping a small
+    /// cached hole (`canContinue`) - or reopens past a hole at/above `min_bytes_for_seek`
+    /// (the hole then filled down from the faster tier).
+    const size_t step_end = read_plan.schedule.steps[read_plan.cursor].output.end();
+    const size_t want = std::min({to_read, step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
     if (want == 0)
         return {};
     Rope w = syncGapRead(ByteRange{position_phys, want});  /// returns logical, banked directly
@@ -2793,22 +2815,18 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan.geometry()->pressure_level,
         min_bytes_for_seek);
 
-    /// Feed this plan's predicted source reads into the continuity estimator, then
-    /// snapshot its prediction into the schedule (unused for now - a later revision
-    /// sizes long source connections from it).
+    /// Feed this plan's predicted source reads into the continuity estimator so its
+    /// reach prediction (which sizes long source connections) stays current.
     feedScheduleToContinuity(read_plan.schedule);
-    read_plan.schedule.predicted_reach = continuity_tracker.predictedReach();
 
     /// Allocate the per-job status sidecar 1:1 with the schedule's jobs. The
     /// schedule-driven processing loop branches on these phases instead of
-    /// re-querying the coverage map; nothing consumes them yet. `cursor` is 0
-    /// from the fresh `ReadPlan` above.
+    /// re-querying the coverage map. `cursor` is 0 from the fresh `ReadPlan` above.
     read_plan.retrieve_status.assign(read_plan.schedule.retrieves.size(), {});
 
-    LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves, predicted_reach={}",
+    LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
-        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size(),
-        read_plan.schedule.predicted_reach);
+        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
 }
 
 void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
@@ -2920,187 +2938,6 @@ CacheWriter::CacheSegmentPin ReaderExecutor::writerPinAt(size_t frontier) const
                 if (auto pin = w.writer->pin(frontier))
                     return pin;
     return {};
-}
-
-void ReaderExecutor::maybeTriggerPrefetch()
-{
-    if (!prefetch_pool || machine || atEnd())
-        return;
-
-    drainAbandonedMachines();
-
-    const size_t position_phys = position + data_start_offset;
-
-    /// Bound the read-ahead to the file end and the advertised extent. `residentAt` is a
-    /// point query, so this plain `window_size` probe (no pressure-scaled sizing) is
-    /// enough to refresh and consult the plan. At the boundary there is nothing to read
-    /// ahead - return.
-    const size_t probe_size = boundedReadSize(window_size);
-    if (probe_size == 0)
-        return;
-
-    /// Read-ahead the FIRST GAP in the plan at or after the cursor (`nextGapStart`), even
-    /// when the cursor itself is resident: the gap fills in the background while the resident
-    /// run before it streams from cache (the resident/prefetch overlap). Skip only when the
-    /// plan holds no gap left to fetch (everything resident to `plan_end`).
-    if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe_size}))
-    {
-        observeAndSchedule(position_phys);
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: keep the cursor on the re-planned step (symmetric with readNextWindow)
-        shadowReconstructCursor();
-#endif
-    }
-    const size_t gap_start = read_plan.geometry()->nextGapStart(position_phys);
-    if (gap_start >= read_plan.geometry()->plan_end)
-    {
-        LOG_TRACE(log, "Prefetch: no gap ahead of {} in plan, nothing to read ahead", position);
-        stats.add(Stats::PrefetchSkippedResident);
-        return;
-    }
-
-    /// A gap within the extent: commit to a prefetch.
-    const size_t prefetch_window = effectivePrefetchWindowSize(read_plan.geometry()->pressure_level);
-    if (prefetch_window == 0)
-        return;  /// read-ahead suppressed under High/Critical memory pressure
-
-    size_t next_size = boundedReadSize(prefetch_window);
-    if (next_size == 0)
-        return;  /// at the file end / extent boundary, nothing left to prefetch
-
-    /// Bound the read-ahead to the gap `[gap_start, gapEnd)`, mirroring the synchronous gap
-    /// read: one pure run per fetch, never straddling a resident run. The gap clamp keeps it
-    /// within the plan (and thus the extent) even though `boundedReadSize` measured from the
-    /// cursor.
-    next_size = std::min(next_size, read_plan.geometry()->gapEnd(gap_start) - gap_start);
-    const size_t next_logical_offset = gap_start - data_start_offset;
-
-    /// Align the worker's fetch to the cache cells from the plan's immutable geometry
-    /// (`fetchWindowAt` unions the aligned miss ranges - whole page-cache blocks,
-    /// disk-segment boundary - that overlap this gap): the worker is a pure source fetch
-    /// and cannot align itself, so the foreground bounds the aligned window here so the
-    /// collect `write` lands aligned in every tier. The machine's `requested_range` stays
-    /// the logical REQUESTED range (seek and the collect slice work in that space); collect
-    /// backfills the aligned `physical_window` and slices back to the request.
-    const ByteRange next_physical_window = read_plan.geometry()->fetchWindowAt(ByteRange{gap_start, next_size});
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: launch parity - the live gap is covered by a scheduled Remote job
-    std::optional<size_t> debug_ri;
-    for (size_t i = 0; i < read_plan.schedule.retrieves.size(); ++i)
-    {
-        const auto & r = read_plan.schedule.retrieves[i];
-        /// `contains`, not `==`: a bridged job range (gaps merged across a hole
-        /// <= min_bytes_for_seek) is wider than this one live gap, and a prefetch/extent
-        /// clamp can make the live window narrower. Coverage, not launch-order (that is Stage 3).
-        if (r.source == PlanSchedule::Source::Remote
-            && r.range.offset <= next_physical_window.offset
-            && next_physical_window.end() <= r.range.end())
-        {
-            debug_ri = i;
-            break;
-        }
-    }
-    chassert(debug_ri.has_value());
-#endif
-
-    LOG_TRACE(log, "Prefetch: submitting physical [{}, {}) (requested gap [{}, {}))",
-        next_physical_window.offset, next_physical_window.end(), gap_start, gap_start + next_size);
-
-    /// The co-owned machine: the worker accumulates served-byte counters into
-    /// `m->stats` (never the shared `this->stats`). Merged at collect.
-    auto m = std::make_shared<FetchMachine>();
-
-    /// Reserve the stash slot up front so a later cancel of this machine (seek or
-    /// the readNextWindow revoke path) can move it into `abandoned_machines`
-    /// WITHOUT allocating. A `push_back` realloc there could throw; on the revoke
-    /// path that drops the machine before its queued job is joined (the no-op
-    /// pickup still runs - use-after-free). Capacity is retained across drains, so
-    /// this allocates only on the first launch; reserving here keeps it off the
-    /// hot cancel paths.
-    abandoned_machines.reserve(abandoned_machines.size() + 1);
-
-    /// Track the LOGICAL requested range (the space `position`, seek and the
-    /// collect slice work in) and the PHYSICAL, cache-aligned window the worker
-    /// fetches - collect backfills the caches over the latter (so each tier's
-    /// `put` aligns), pins at its frontier, and slices back to the former.
-    m->requested_range = ByteRange{next_logical_offset, next_size};
-    m->physical_window = next_physical_window;
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: carry the retrieve index for the lifecycle shadow
-    if (debug_ri)
-        m->retrieve_index = *debug_ri;
-#endif
-    /// Immutable snapshot, co-owned by design; the worker consults only its
-    /// cached `pressure_level` (no cache lookup, no resident serve), so there
-    /// is nothing for a foreground re-plan to race. The read extent is
-    /// snapshotted too: the worker must never read the live member, or a
-    /// soft-cancelled machine would race `setReadExtent`'s mutation.
-    m->geometry = read_plan.geometry();
-    m->extent_snapshot = read_extent_end;
-
-    /// Open the long connection HERE, on the foreground, for the gap the worker is about
-    /// to fetch: the foreground is the sole opener, so without this a prefetch-driven read
-    /// (the steady state - a machine in flight, the foreground holding nothing) would never
-    /// open one and every machine would fetch a one-shot. The aligned window's first
-    /// physical range gives the object and its object-local offset; `openLongIfWarranted`
-    /// is a no-op when not warranted / at capacity / a usable connection is already held.
-    auto prefetch_ranges = offset_map.map(next_physical_window);
-    if (!prefetch_ranges.empty())
-        openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
-            next_physical_window.offset, prefetch_ranges.front().size, stats);
-
-    /// Carry the held long connection into the machine so its fetch extends the same
-    /// open GET (a machine only RECEIVES one, never opens). Moved in BEFORE scheduling so
-    /// the worker sees it from the start; reclaimed below if the schedule fails.
-    m->long_conn = takeLong(long_conn);
-
-    /// The machine's single step: a PURE source fetch of the pre-bounded aligned
-    /// gap window into machine-owned state - no shared `this->`, no cache, no
-    /// mutable plan. The foreground does the cache backfill + logical shift at
-    /// collect. `interrupt_requested` is polled between source blocks; a set flag
-    /// wraps the step up with the partial rope as its product - the executor then
-    /// keeps it (collect takeover) or destroys it (cancel). (`self` stays valid
-    /// for the step's whole run: the runner's pool job co-owns the machine.)
-    m->run_step = [this, self = m.get()]
-    {
-        self->fetched = fetchGapsFromSource(
-            self->physical_window, /*from_prefetch=*/true,
-            self->reached_eof, self->geometry->pressure_level,
-            self->extent_snapshot, &self->long_conn, self, self->stats);
-        /// Wrapped early iff the fetch actually stopped short on the flag (a
-        /// request near the tail completes instead; an EOF-short is not a wrap).
-        const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;
-        const bool stopped_short = !self->reached_eof
-            && fetched_size < self->physical_window.size
-            && self->interrupt_requested.load();
-        if (stopped_short)
-        {
-            self->stats.add(Stats::MachineInterrupted);
-            return StepResult::Interrupted;
-        }
-        return StepResult::AwaitCollect;
-    };
-
-    /// The machine's window must not race a still-uncommitted fill of the same
-    /// cells (its fetch would re-read them from the source). Writer ranges are
-    /// NOT joined on: the fetch step never touches writers, and waiting here
-    /// would serialize the next fetch behind the previous window's put whenever
-    /// one writer spans both (the common case).
-    joinPutMachinesOverlapping(next_physical_window, /*writers_too=*/false);
-
-    if (!runner->schedule(m))
-    {
-        /// The worker never started - reclaim the carried connection rather than lose
-        /// it with the dropped machine.
-        long_conn = takeLong(m->long_conn);
-        LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
-        stats.add(Stats::PrefetchPoolFull);
-        return;
-    }
-
-    machine = std::move(m);
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: NotLaunched -> InFlight at the publish point
-    if (debug_ri)
-        read_plan.retrieve_status[*debug_ri].phase = RetrievePhase::InFlight;
-#endif
 }
 
 void ReaderExecutor::cancelMachine(bool cancelled)

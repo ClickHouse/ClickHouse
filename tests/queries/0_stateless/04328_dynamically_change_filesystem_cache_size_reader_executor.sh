@@ -9,10 +9,9 @@ disk_name="s3_cache_02944_lru"
 
 # Exercises the `ReaderExecutor` pipeline on the dynamic-cache-resize scenario
 # from `02944_dynamically_change_filesystem_cache_size.sh` (which forces the legacy
-# reader). The schedule-driven executor bounds each source connection at its job's
-# end, so a re-read after partial eviction caches the bytes it reads without padding
-# the trailing cell up to the `boundary_alignment` ceiling - hence the 98 / 18 / 98
-# occupancy below. A first cold scan still fills the whole object (100).
+# reader). The executor sizes each source connection from the plan-geometry reach and
+# fetches whole cache cells, so a re-read after partial eviction fills the full trailing
+# cell - the same occupancy a cold scan produces (100 / 20 / 100 below).
 ch="$CLICKHOUSE_CLIENT --use_reader_executor=1"
 
 $ch --query "SYSTEM CLEAR FILESYSTEM CACHE"

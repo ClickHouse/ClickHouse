@@ -60,28 +60,26 @@ ALL_EVENTS = {**METRIC_EVENTS, **POOL_EVENTS}
 # or 0 (stateless: a short-lived one-shot connection per window). max_threads=8 because
 # the read pool hands each thread non-contiguous task ranges, which is where long
 # connections get abandoned (the incomplete-connection / reset regime).
-def _settings(live, sched=False):
+def _settings(use_long_conn):
     return {
         "use_reader_executor": 1,
         "max_threads": 8,
-        "reader_executor_use_long_connections": 1 if live else 0,
-        "reader_executor_schedule_driven": 1 if sched else 0,
+        "reader_executor_use_long_connections": 1 if use_long_conn else 0,
     }
 
 
 # Page-cache path: a raw-S3 disk (no file cache) plus this setting makes the
 # executor route reads through the userspace page cache (block-granular, 1 MiB).
-def _pc_settings(live, sched=False):
-    s = _settings(live, sched)
+def _pc_settings(use_long_conn):
+    s = _settings(use_long_conn)
     s["use_page_cache_for_disks_without_file_cache"] = 1
     return s
 
 
-# Matrix modes: (label, long_connections, schedule_driven). `live`/`stateless` are the
-# live walk (long connection on/off); `sched` is the schedule-driven interpreter (long
-# connection on) - byte-identical served output, measured for its R/I/O delta. `sched`
-# shares the live mode-invariant (long connection on -> I bounded by the pool resets).
-MODES = [("live", True, False), ("stateless", False, False), ("sched", True, True)]
+# Matrix modes: (label, long_connections). `live` keeps a reusable (long) source
+# connection across windows; `stateless` opens a short-lived one-shot connection per
+# window. Both run the schedule-driven interpreter (the only read path).
+MODES = [("live", True), ("stateless", False)]
 
 LOADS = {
     # full-column scan -> R + I regime
@@ -97,54 +95,34 @@ LOADS = {
     "prewhere": "SELECT sum(v) FROM t PREWHERE bucket = 0",
 }
 
-# Explicit [lo, hi] band per (metric x case), derived from repeated runs as
-# center +- max(2.5 x observed-half-range, 12%). Tight where the metric is stable
-# (cost/MiB varies <=5% run-to-run, R/I cold are near-deterministic), wide only where
-# the data demands it (over-read O on fragmented cells genuinely swings ~30-40%).
-# cost/MiB is the headline load-independent KPI (modeled ms per MiB requested); R/I/O
-# are the diagnostic levers. Stateless I is gated by the I==0 invariant, not here.
-# The deterministic unit grid remains the tight value gate; update a row when an
-# executor change intentionally moves its magnitudes. Warm cells are ~0, gated by invariants.
-# Regenerated (see test_recompute_baseline) after the boundary-based long-connection open
-# ("open when the predicted reach runs past the read extent"): live R drops sharply on the
-# big scans (sequential 108->~43, aggregation 183->~70) as one long connection coalesces the
-# run, with modest extra `I` churn where the reach over-runs an extent. The small-count live
-# `I` bands carry a manual absolute floor: a single regen run pins selective/fragmented to
-# (0, 0), too tight for run-to-run variance (the recompute docstring flags this).
+# Explicit [lo, hi] band per (metric x case) - a gross-regression gate, NOT a tight assertion
+# (the deterministic unit grid is the precise value gate). cost/MiB is the headline
+# load-independent KPI; R/I/O are diagnostic levers. Stateless I is gated by the I==0 invariant,
+# not here. Warm cells are ~0, gated by invariants. The real-load metrics are NOISY: prewhere on
+# a cold cache swings wildly within AND between runs (R 40-104, I 14-60, cv up to 0.44) and the
+# fragmented cells vary with the random eviction pattern, so a single recompute under-samples the
+# volatile cells. These bands are the UNION of two runs (see test_recompute_baseline) plus margin
+# - deliberately wide on prewhere/cold and the fragmented cells. After the connection-reach
+# unification the clean drains shift O/I on some loads. CI on consistent hardware is the
+# authoritative gate; re-tune a row from the CI metric report if it regresses. Update a row only
+# when an executor change intentionally moves its magnitude.
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (25, 59), "I": (6, 13), "O": (7, 30), "cost/MiB": (13.3, 39.8)},
-    ("sequential", "fragmented", "live"): {"R": (16, 50), "I": (7, 20), "O": (7, 42), "cost/MiB": (6.1, 24.5)},
-    ("selective", "cold", "live"): {"R": (18, 42), "I": (7, 17), "O": (15, 60), "cost/MiB": (34.5, 103.5)},
-    ("selective", "fragmented", "live"): {"R": (7, 22), "I": (0, 0), "O": (0, 0), "cost/MiB": (43.8, 175.1)},
-    ("aggregation", "cold", "live"): {"R": (40, 94), "I": (8, 18), "O": (24, 94), "cost/MiB": (15.8, 47.4)},
-    ("aggregation", "fragmented", "live"): {"R": (15, 45), "I": (9, 26), "O": (7, 40), "cost/MiB": (5.7, 22.8)},
-    ("prewhere", "cold", "live"): {"R": (36, 84), "I": (19, 45), "O": (36, 142), "cost/MiB": (19.1, 57.4)},
-    ("prewhere", "fragmented", "live"): {"R": (21, 64), "I": (7, 22), "O": (13, 73), "cost/MiB": (8.4, 33.5)},
-    ("sequential", "cold", "stateless"): {"R": (76, 177), "O": (7, 28), "cost/MiB": (18.1, 54.2)},
-    ("sequential", "fragmented", "stateless"): {"R": (33, 99), "O": (7, 40), "cost/MiB": (7.6, 30.2)},
-    ("selective", "cold", "stateless"): {"R": (22, 52), "O": (15, 60), "cost/MiB": (37.9, 113.8)},
-    ("selective", "fragmented", "stateless"): {"R": (7, 22), "O": (0, 0), "cost/MiB": (44.1, 176.4)},
-    ("aggregation", "cold", "stateless"): {"R": (102, 238), "O": (23, 91), "cost/MiB": (21.7, 65.1)},
-    ("aggregation", "fragmented", "stateless"): {"R": (34, 101), "O": (6, 33), "cost/MiB": (7.1, 28.6)},
-    ("prewhere", "cold", "stateless"): {"R": (37, 86), "O": (33, 132), "cost/MiB": (18.5, 55.6)},
-    ("prewhere", "fragmented", "stateless"): {"R": (20, 61), "O": (13, 74), "cost/MiB": (8.1, 32.5)},
-    # sched = the schedule-driven interpreter (long connection on). At MT scale it differs
-    # from `live` per load (e.g. selective coalesces better: lower R/O). Bounding the long
-    # connection by the schedule job's exact end (G2) drains it cleanly, so the seek-heavy
-    # loads have far fewer incomplete connections than `live` (prewhere/cold I ~3x lower).
-    # Same served bytes and the same mode invariant (I bounded by the pool resets) hold.
-    ("sequential", "cold", "sched"): {"R": (26, 62), "I": (6, 13), "O": (6, 23), "cost/MiB": (13.2, 39.7)},
-    ("sequential", "fragmented", "sched"): {"R": (19, 57), "I": (9, 27), "O": (5, 26), "cost/MiB": (5.9, 23.8)},
-    # I bands on the scatter/seek loads are hand-widened beyond the recompute margin: the
-    # small incomplete-connection counts swing several units run-to-run, but stay well below
-    # the `live` bands above (the G2 job-range bound's win). A gross-regression gate, not a
-    # tight assertion - the cost/MiB KPI in the report is the precise signal.
-    ("selective", "cold", "sched"): {"R": (14, 34), "I": (2, 14), "O": (6, 25), "cost/MiB": (29.1, 87.4)},
-    ("selective", "fragmented", "sched"): {"R": (8, 23), "I": (0, 0), "O": (0, 0), "cost/MiB": (39.4, 157.4)},
-    ("aggregation", "cold", "sched"): {"R": (47, 110), "I": (3, 20), "O": (10, 39), "cost/MiB": (15.6, 46.8)},
-    ("aggregation", "fragmented", "sched"): {"R": (18, 54), "I": (5, 30), "O": (5, 26), "cost/MiB": (5.7, 22.9)},
-    ("prewhere", "cold", "sched"): {"R": (42, 98), "I": (3, 24), "O": (25, 101), "cost/MiB": (20.1, 60.2)},
-    ("prewhere", "fragmented", "sched"): {"R": (24, 71), "I": (1, 16), "O": (10, 55), "cost/MiB": (8.4, 33.7)},
+    ("sequential", "cold", "live"): {"R": (26, 60), "I": (5, 12), "O": (7, 27), "cost/MiB": (13.3, 39.8)},
+    ("sequential", "fragmented", "live"): {"R": (18, 54), "I": (4, 12), "O": (3, 17), "cost/MiB": (5.6, 22.5)},
+    ("selective", "cold", "live"): {"R": (16, 38), "I": (5, 15), "O": (6, 23), "cost/MiB": (28.1, 84.2)},
+    ("selective", "fragmented", "live"): {"R": (5, 28), "I": (0, 3), "O": (0, 5), "cost/MiB": (46.8, 187.1)},
+    ("aggregation", "cold", "live"): {"R": (55, 129), "I": (10, 24), "O": (14, 57), "cost/MiB": (17.0, 51.0)},
+    ("aggregation", "fragmented", "live"): {"R": (16, 49), "I": (5, 16), "O": (4, 20), "cost/MiB": (5.4, 21.7)},
+    ("prewhere", "cold", "live"): {"R": (29, 115), "I": (14, 68), "O": (15, 120), "cost/MiB": (16.4, 58.0)},
+    ("prewhere", "fragmented", "live"): {"R": (21, 64), "I": (8, 30), "O": (11, 68), "cost/MiB": (8.4, 33.5)},
+    ("sequential", "cold", "stateless"): {"R": (77, 181), "O": (5, 28), "cost/MiB": (18.1, 54.2)},
+    ("sequential", "fragmented", "stateless"): {"R": (37, 111), "O": (3, 19), "cost/MiB": (7.5, 30.1)},
+    ("selective", "cold", "stateless"): {"R": (24, 56), "O": (5, 22), "cost/MiB": (32.7, 98.0)},
+    ("selective", "fragmented", "stateless"): {"R": (5, 25), "O": (0, 0), "cost/MiB": (43.7, 174.8)},
+    ("aggregation", "cold", "stateless"): {"R": (116, 271), "O": (11, 43), "cost/MiB": (22.5, 67.6)},
+    ("aggregation", "fragmented", "stateless"): {"R": (38, 113), "O": (3, 18), "cost/MiB": (7.4, 29.5)},
+    ("prewhere", "cold", "stateless"): {"R": (35, 130), "O": (12, 98), "cost/MiB": (16.5, 60.0)},
+    ("prewhere", "fragmented", "stateless"): {"R": (22, 80), "O": (7, 40), "cost/MiB": (8.0, 32.1)},
 }
 
 
@@ -239,9 +217,9 @@ def _drop_pc():
     node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
 
-def _measure(query, live, pc=False, sched=False):
+def _measure(query, use_long_conn, pc=False):
     qid = str(uuid.uuid4())
-    node.query(query, query_id=qid, settings=_pc_settings(live, sched) if pc else _settings(live, sched))
+    node.query(query, query_id=qid, settings=_pc_settings(use_long_conn) if pc else _settings(use_long_conn))
     node.query("SYSTEM FLUSH LOGS")
     extra = ["ReaderExecutorModeledCostMicroseconds", "ReaderExecutorRequestedBytes"]
     cols = ", ".join(f"ProfileEvents['{e}']" for e in list(ALL_EVENTS.values()) + extra)
@@ -257,7 +235,7 @@ def _measure(query, live, pc=False, sched=False):
     return m
 
 
-def _warm_even_blocks(live):
+def _warm_even_blocks(use_long_conn):
     # Warm the even 1/16 blocks of the table; the odd blocks stay cold. Touch every
     # column the loads read (v and k, plus id via the filter) so each load sees a
     # genuinely half-warm cache -> reads then alternate cache-hit / cold-miss (the
@@ -266,30 +244,29 @@ def _warm_even_blocks(live):
     ranges = " OR ".join(
         f"(id >= {b * block} AND id < {(b + 1) * block})" for b in range(0, 16, 2)
     )
-    node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=_settings(live))
+    node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=_settings(use_long_conn))
 
 
-def _collect_samples(query, live, state, sched=False):
-    """Gather SAMPLES measurements for one (load, mode, cache-state) cell. Warming is
-    mode-independent (same cache content), so only the measured read carries `sched`."""
+def _collect_samples(query, use_long_conn, state):
+    """Gather SAMPLES measurements for one (load, mode, cache-state) cell."""
     if state == "warm":
         _drop_caches()
-        _measure(query, live, sched=sched)  # prime once, then measure the warm cache
-        return [_measure(query, live, sched=sched) for _ in range(SAMPLES)]
+        _measure(query, use_long_conn)  # prime once, then measure the warm cache
+        return [_measure(query, use_long_conn) for _ in range(SAMPLES)]
     if state == "fragmented":
         # Re-establish the half-warm cache per sample (measuring it would
         # otherwise populate the cold blocks and turn the cache fully warm).
         samples = []
         for _ in range(SAMPLES):
             _drop_caches()
-            _warm_even_blocks(live)
-            samples.append(_measure(query, live, sched=sched))
+            _warm_even_blocks(use_long_conn)
+            samples.append(_measure(query, use_long_conn))
         return samples
     # cold
     samples = []
     for _ in range(SAMPLES):
         _drop_caches()
-        samples.append(_measure(query, live, sched=sched))
+        samples.append(_measure(query, use_long_conn))
     return samples
 
 
@@ -328,10 +305,10 @@ def _check_bands(name, state, mode, st, cost_per_mib):
 def test_metric_values_and_stability(started_cluster):
     report = []
     band_violations = []
-    for mode, live, sched in MODES:
+    for mode, use_long_conn in MODES:
         for name, query in LOADS.items():
             for state in ("cold", "warm", "fragmented"):
-                samples = _collect_samples(query, live, state, sched)
+                samples = _collect_samples(query, use_long_conn, state)
 
                 st = _stats(samples)
                 cost = sum(_cost_ms(s) for s in samples) / len(samples)
@@ -347,31 +324,24 @@ def test_metric_values_and_stability(started_cluster):
                 report.append(line)
                 logging.info(line)
 
-                # Mode-aware invariant. Every executor-counted incomplete connection is a
+                # Pool-side upper bound. Every executor-counted incomplete connection is a
                 # connection the pool could not re-store: counted as `ConnReset`, or as
                 # `ConnExpired` when the session's keep-alive request budget was already
                 # exhausted at destroy (the pool checks expiry BEFORE completeness, so an
-                # abandoned connection on a spent session lands in Expired, not Reset).
-                # Live: resets only come from executor-visible abandons, so I is bounded
-                # below by ConnReset too. Stateless: one-shots are normally read to their
-                # bound (preserved -> neither counter moves); only a cost-positive takeover
-                # interrupt (remainder > min_bytes_for_seek) forfeits one, so I stays
-                # within the same pool-side upper bound.
+                # abandoned connection on a spent session lands in Expired, not Reset). So
+                # I <= ConnReset + ConnExpired in every mode. There is no sound lower bound:
+                # the pool also resets COMPLETE connections under its own eviction/keep-alive
+                # policy, so ConnReset is not bounded above by I.
                 for s in samples:
-                    if live:
-                        assert s["ConnReset"] <= s["I"] <= s["ConnReset"] + s["ConnExpired"], (
-                            f"{name}/{state}/live: executor I={s['I']} outside "
-                            f"[ConnReset={s['ConnReset']}, +ConnExpired={s['ConnReset'] + s['ConnExpired']}]")
-                    else:
-                        assert s["I"] <= s["ConnReset"] + s["ConnExpired"], (
-                            f"{name}/{state}/stateless: executor I={s['I']} exceeds "
-                            f"ConnReset+ConnExpired={s['ConnReset'] + s['ConnExpired']}")
+                    assert s["I"] <= s["ConnReset"] + s["ConnExpired"], (
+                        f"{name}/{state}/{mode}: executor I={s['I']} exceeds "
+                        f"ConnReset+ConnExpired={s['ConnReset'] + s['ConnExpired']}")
                     # The server's modeled-cost event must equal the formula recomputed from the raw
                     # counters (only integer-us truncation on the bandwidth term differs).
                     assert abs(_cost_ms(s) - _formula_cost_ms(s)) <= max(2.0, 0.005 * _formula_cost_ms(s)), (
                         f"{name}/{state}/{mode}: cost event {_cost_ms(s):.1f}ms != formula {_formula_cost_ms(s):.1f}ms")
                 # Sanity: the executor actually ran (no legacy fallback).
-                if state == "cold" and name == "sequential" and live:
+                if state == "cold" and name == "sequential" and use_long_conn:
                     assert st["R"][0] > 0, "executor did not run (R=0 cold sequential -> likely legacy fallback)"
 
                 # Loose magnitude gate against the recorded baseline (collected,
@@ -401,22 +371,22 @@ def test_page_cache_path(started_cluster):
     source reads - the regime where connection churn (and the seek-side optimisation)
     matters most. Warm reads are served from the page cache (no source request).
     Asserts the executor runs on the page-cache disk, warm reads hit the cache, the
-    metric/cost wiring works there, and the mode invariant holds (live: I == pool
-    resets; stateless: I == 0)."""
+    metric/cost wiring works there, and the pool-side invariant holds
+    (I <= ConnReset + ConnExpired)."""
     query = "SELECT sum(v) FROM t_pc"
     report = []
     results = {}
-    for mode, live, sched in MODES:
+    for mode, use_long_conn in MODES:
         for state in ("cold", "warm"):
             if state == "warm":
                 _drop_pc()
-                _measure(query, live, pc=True, sched=sched)  # prime, then measure the warm cache
-                samples = [_measure(query, live, pc=True, sched=sched) for _ in range(SAMPLES)]
+                _measure(query, use_long_conn, pc=True)  # prime, then measure the warm cache
+                samples = [_measure(query, use_long_conn, pc=True) for _ in range(SAMPLES)]
             else:
                 samples = []
                 for _ in range(SAMPLES):
                     _drop_pc()
-                    samples.append(_measure(query, live, pc=True, sched=sched))
+                    samples.append(_measure(query, use_long_conn, pc=True))
             st = _stats(samples)
             cost_per_mib = sum(_cost_per_mib(s) for s in samples) / len(samples)
             line = (
@@ -431,14 +401,9 @@ def test_page_cache_path(started_cluster):
             # the main matrix - see the comment there). The server's modeled cost event
             # must equal the formula recomputed from the raw counters.
             for s in samples:
-                if live:
-                    assert s["ConnReset"] <= s["I"] <= s["ConnReset"] + s["ConnExpired"], (
-                        f"pc/{state}/live: executor I={s['I']} outside "
-                        f"[ConnReset={s['ConnReset']}, +ConnExpired={s['ConnReset'] + s['ConnExpired']}]")
-                else:
-                    assert s["I"] <= s["ConnReset"] + s["ConnExpired"], (
-                        f"pc/{state}/stateless: executor I={s['I']} exceeds "
-                        f"ConnReset+ConnExpired={s['ConnReset'] + s['ConnExpired']}")
+                assert s["I"] <= s["ConnReset"] + s["ConnExpired"], (
+                    f"pc/{state}/{mode}: executor I={s['I']} exceeds "
+                    f"ConnReset+ConnExpired={s['ConnReset'] + s['ConnExpired']}")
                 assert abs(_cost_ms(s) - _formula_cost_ms(s)) <= max(2.0, 0.005 * _formula_cost_ms(s)), (
                     f"pc/{state}/{mode}: cost event {_cost_ms(s):.1f}ms != formula {_formula_cost_ms(s):.1f}ms")
 
@@ -488,13 +453,13 @@ def test_recompute_baseline(started_cluster):
         pytest.skip("manual: set RECOMPUTE_METRIC_BASELINE=1 to regenerate the BASELINE dict")
 
     lines = ["BASELINE = {"]
-    for mode, live, sched in MODES:
+    for mode, use_long_conn in MODES:
         for name, query in LOADS.items():
             for state in ("cold", "fragmented"):
-                samples = _collect_samples(query, live, state, sched)
+                samples = _collect_samples(query, use_long_conn, state)
                 margin = RECOMPUTE_MARGIN[state]
                 cells = [("R", [s["R"] for s in samples], 0, margin)]
-                if live:  # stateless I is always 0 and gated by a separate invariant
+                if use_long_conn:  # stateless I is gated by the pool-side invariant, not a band
                     cells.append(("I", [s["I"] for s in samples], 0, margin))
                 # Over-read bytes swing widely run-to-run (read-ahead alignment / task split),
                 # more than a request count, so give O extra margin like cost/MiB below.

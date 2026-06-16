@@ -191,6 +191,11 @@ void ReadPipeline::needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
     prefetch_pool = std::move(pool);
 }
 
+void ReadPipeline::needCacheFillerPool(std::shared_ptr<PrefetchThreadPool> pool)
+{
+    cache_filler_pool = std::move(pool);
+}
+
 void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
 {
     long_connection_limit = std::move(limit);
@@ -225,16 +230,18 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// encrypted bytes to the caller.
         if (gather || memory_cache || !filesystem_caches.empty()
             || async_prefetch || !decryption_stages.empty() || distributed_cache
-            || prefetch_pool || long_connection_limit)
+            || prefetch_pool || cache_filler_pool || long_connection_limit)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage: "
                 "gather={}, memory_cache={}, filesystem_caches={}, async_prefetch={}, "
-                "decryption_stages={}, distributed_cache={}, prefetch_pool={}, long_connection_limit={}",
+                "decryption_stages={}, distributed_cache={}, prefetch_pool={}, "
+                "cache_filler_pool={}, long_connection_limit={}",
                 gather, memory_cache.has_value(), filesystem_caches.size(),
                 async_prefetch.has_value(), decryption_stages.size(),
                 distributed_cache.has_value(),
-                static_cast<bool>(prefetch_pool), static_cast<bool>(long_connection_limit));
+                static_cast<bool>(prefetch_pool), static_cast<bool>(cache_filler_pool),
+                static_cast<bool>(long_connection_limit));
         }
         const auto & custom = std::get<CustomSource>(source->source);
         return custom.creator(
@@ -440,8 +447,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     executor_options.log_file_path = std::move(log_file_path);
     executor_options.max_tail_for_drain = settings.reader_executor_max_tail_for_drain;
     executor_options.prefetch_pool = prefetch_pool;
+    executor_options.cache_filler_pool = cache_filler_pool;
     executor_options.long_connection_limit = long_connection_limit;
-    executor_options.schedule_driven = settings.reader_executor_schedule_driven;
     if (settings.enable_reader_executor_log)
     {
         if (auto global = Context::getGlobalContextInstance())

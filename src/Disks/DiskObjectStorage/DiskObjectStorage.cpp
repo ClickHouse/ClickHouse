@@ -883,7 +883,10 @@ void DiskObjectStorage::prepareRead(
         /// buffer limit (connection reuse) is independent of prefetch.
         if (read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
             && read_settings.remote_fs_settings.prefetch)
+        {
             pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
+            pipeline.needCacheFillerPool(global_context->getReaderExecutorCacheFillerPool());
+        }
         /// Without a buffer limit the executor takes the stateless (one-shot per
         /// window) path; `reader_executor_use_long_connections=0` selects it.
         if (read_settings.reader_executor_use_long_connections)

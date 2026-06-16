@@ -1291,7 +1291,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         /// of the executor scheduling background reads.
         if (effective_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
             && effective_read_settings.remote_fs_settings.prefetch)
+        {
             pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
+            pipeline.needCacheFillerPool(context_->getReaderExecutorCacheFillerPool());
+        }
         /// Without a buffer limit the executor takes the stateless (one-shot per
         /// window) path; `reader_executor_use_long_connections=0` selects it. Gate
         /// it like `DiskObjectStorage::prepareRead` so the setting is honored on the

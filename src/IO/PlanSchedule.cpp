@@ -76,9 +76,12 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange 
     return mergeSorted(std::move(parts));
 }
 
-/// Connections = fill-closure pieces, merged across a resident hole no larger
-/// than `min_bytes_for_seek` (bridged: the hole is over-read on the open GET
-/// rather than reopening). A wider hole splits the connections.
+/// Connections = fill-closure pieces, grouped across a resident hole no larger than
+/// `min_bytes_for_seek` into one retrieve (so a held source connection can span the
+/// hole). Whether the hole is actually over-read on the open GET or instead reopened /
+/// filled down from a faster tier is decided later, per source read, by `mergeRanges`
+/// and `LongConnection::canContinue` (which bridge STRICTLY below the bound). A wider
+/// hole splits the connections outright.
 VectorWithMemoryTracking<ByteRange> connections(
     const VectorWithMemoryTracking<ByteRange> & fill, size_t min_bytes_for_seek)
 {
