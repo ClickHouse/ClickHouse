@@ -54,3 +54,10 @@ CREATE TABLE t_bad (a UInt32) ENGINE = MergeTree ORDER BY a;
 ALTER TABLE t_bad MODIFY ENGINE = Log; -- { serverError UNKNOWN_STORAGE }
 ALTER TABLE t_bad MODIFY ENGINE = CollapsingMergeTree(missing); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP TABLE t_bad;
+
+-- Old-syntax tables keep the key/granularity as positional engine arguments. Rewriting the engine
+-- clause would drop them and leave an unloadable CREATE query, so MODIFY ENGINE rejects them.
+SET allow_deprecated_syntax_for_merge_tree = 1;
+CREATE TABLE t_old (d Date, k UInt32, v UInt32) ENGINE = MergeTree(d, k, 8192);
+ALTER TABLE t_old MODIFY ENGINE = ReplacingMergeTree(v); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_old;

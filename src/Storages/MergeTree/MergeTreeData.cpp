@@ -1982,9 +1982,10 @@ void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY ENGINE expects an engine function AST");
 
     /// Validate the target against the metadata that this same ALTER produced (so a column added in
-    /// the same statement, before MODIFY ENGINE, is visible). The new merge semantics are already
-    /// persisted into the table's CREATE query by alterTable(); they take effect when the storage
-    /// object is next constructed from that metadata.
+    /// the same statement, before MODIFY ENGINE, is visible). The caller runs this before persisting
+    /// the rewritten CREATE query, so a rejection here never leaves an invalid engine clause on disk.
+    /// The new merge semantics take effect when the storage object is next constructed from the
+    /// persisted metadata.
     ///
     /// We intentionally do NOT mutate the live `merging_params` here. It is read lock-free from many
     /// hot paths (query planning, background merges/mutations), often bound by const reference for the
@@ -4516,6 +4517,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (supportsReplication())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "ALTER TABLE ... MODIFY ENGINE is not supported for Replicated*MergeTree tables yet");
+
+        /// Old-syntax tables (e.g. `MergeTree(date, key, 8192)`) keep the partition/sampling/sorting key
+        /// and granularity as positional arguments inside the engine clause. MODIFY ENGINE replaces the
+        /// whole engine function, which would drop those positional arguments and leave an unloadable
+        /// CREATE query. Reject them, as MODIFY ORDER BY / TTL / SAMPLE BY do below.
+        if (!is_custom_partitioned)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ALTER TABLE ... MODIFY ENGINE is not supported for tables created with the old syntax");
 
         const auto * engine_ast = command.engine->as<ASTFunction>();
         if (!engine_ast)

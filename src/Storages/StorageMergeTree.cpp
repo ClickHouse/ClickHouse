@@ -518,6 +518,14 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
+            /// ALTER TABLE ... MODIFY ENGINE: validate the new merge semantics before persisting the
+            /// rewritten CREATE query. applyEngineModification re-checks the candidate MergingParams and
+            /// can throw; running it before alterTable() guarantees a rejection never leaves an invalid
+            /// engine clause on disk. The change takes effect when the storage is next loaded (the live
+            /// merging_params swap is deferred; see applyEngineModification).
+            if (new_metadata.new_engine)
+                applyEngineModification(new_metadata.new_engine, new_metadata, local_context);
+
             try
             {
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -534,12 +542,6 @@ void StorageMergeTree::alter(
                 auto parts_lock = lockParts();
                 resetSerializationHints(parts_lock);
             }
-
-            /// ALTER TABLE ... MODIFY ENGINE: swap the live MergingParams. The new CREATE query (with
-            /// the new ENGINE clause) is already persisted by alterTable above, so on the next load the
-            /// table will come up with these MergingParams. Apply the same change to the running storage.
-            if (new_metadata.new_engine)
-                applyEngineModification(new_metadata.new_engine, new_metadata, local_context);
 
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
