@@ -15,8 +15,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Processors/Formats/IRowInputFormat.h>
-
 
 namespace DB
 {
@@ -288,28 +286,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             {
                 if (const_value.getType() == Field::Types::String)
                 {
-                    try
-                    {
-                        const_value = convertFieldToType(const_value, *column_type);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (!isParseError(e.code()))
-                            throw;
-
-                        /// The string value is not valid for the column type (e.g. unknown enum element).
-                        /// For equality, the condition can never match, so selectivity is 0.
-                        /// For other operators, fall back to default unknown selectivity.
-                        LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
-                            "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
-                            getCurrentExceptionMessage(false));
-                        if (func_name == "equals")
-                        {
-                            out.function = RPNElement::ALWAYS_FALSE;
-                            return true;
-                        }
-                        return false;
-                    }
+                    const_value = convertFieldToType(const_value, *column_type);
                     if (const_value.isNull())
                         return false;
                 }
@@ -335,11 +312,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                 }
             }
-
-            /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
-            if (is_in_operator && const_value.getType() != Field::Types::Tuple)
-                const_value = Tuple{const_value};
-
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;

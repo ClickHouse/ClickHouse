@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/h3Common.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>

@@ -285,7 +285,6 @@ static ThrottlerPtr getThrottler(const ContextPtr & context)
     if (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes])
     {
         throttler = std::make_shared<Throttler>(
-            "network_cluster_query",
             settings[Setting::max_network_bandwidth],
             settings[Setting::max_network_bytes],
             "Limit for bytes to send or receive over network exceeded.",

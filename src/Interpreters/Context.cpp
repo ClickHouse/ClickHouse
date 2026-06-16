@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
+#include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
@@ -270,7 +271,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
@@ -291,6 +291,8 @@ namespace Setting
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
     extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_request_header_size;
+    extern const SettingsSeconds http_headers_read_timeout;
     extern const SettingsUInt64 http_max_tries;
     extern const SettingsUInt64 http_max_uri_size;
     extern const SettingsSeconds http_receive_timeout;
@@ -549,6 +551,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
+    mutable bool index_uncompressed_cache_enabled TSA_GUARDED_BY(mutex) = false;      /// Whether index_uncompressed_cache should be used.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
     mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
@@ -885,7 +888,16 @@ struct ContextSharedPart : boost::noncopyable
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
 
+        /// We need to make sure no dictionary queries are concurrent with the further shutdown logic
+        /// because it sets various fields to null and those fields are unconditionally dereferenced by queries.
+        /// So we need to:
+        /// (1) Disable future dictionary queries.
+        /// (2) Make sure all the currently running dictionary queries are killed.
+        /// (3) Join the dictionary queries' threads.
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
+        process_list.killAllQueries();
+        SHUTDOWN(log, "dictionaries loader threads", external_dictionaries_loader, joinLoadingThreads());
+
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
 
@@ -1131,31 +1143,31 @@ struct ContextSharedPart : boost::noncopyable
     void configureServerWideThrottling()
     {
         if (auto bandwidth = server_settings[ServerSetting::max_replicated_fetches_network_bandwidth_for_server])
-            replicated_fetches_throttler = std::make_shared<Throttler>("replicated_fetches_server", bandwidth);
+            replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_replicated_sends_network_bandwidth_for_server])
-            replicated_sends_throttler = std::make_shared<Throttler>("replicated_sends_server", bandwidth);
+            replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
-            remote_read_throttler = std::make_shared<Throttler>("remote_read_server", bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            remote_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
-            remote_write_throttler = std::make_shared<Throttler>("remote_write_server", bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>("local_read_server", bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
-            local_write_throttler = std::make_shared<Throttler>("local_write_server", bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+            local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
-            backups_server_throttler = std::make_shared<Throttler>("backups_server", bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
+            backups_server_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
-            mutations_throttler = std::make_shared<Throttler>("mutations_server", bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
+            mutations_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
-            merges_throttler = std::make_shared<Throttler>("merges_server", bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
+            merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
     }
 };
 
@@ -1227,6 +1239,7 @@ ContextData::ContextData(const ContextData &o) :
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
+    is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -1517,11 +1530,6 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
                 "The number of active parts ({}) exceeds the warning limit of {}.",
                 active_parts, shared->max_part_num_to_warn.load());
     }
-    if ((*settings)[Setting::ast_fuzzer_runs] > 0)
-        common_warnings[Context::WarningType::AST_FUZZER_IS_ENABLED] = PreformattedMessage::create(
-            "The server-side AST fuzzer is enabled (`ast_fuzzer_runs` = {}). This is intended for testing only and is not suitable for production.",
-            (*settings)[Setting::ast_fuzzer_runs].value);
-
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
 
@@ -4032,6 +4040,7 @@ void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
     shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::IndexUncompressedCacheBytes, CurrentMetrics::IndexUncompressedCacheCells, max_size_in_bytes, size_ratio);
+    shared->index_uncompressed_cache_enabled = shared->index_uncompressed_cache->maxSizeInBytes() != 0;
 }
 
 void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -4043,11 +4052,14 @@ void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::Abstra
 
     size_t max_size_in_bytes = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
     shared->index_uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->index_uncompressed_cache_enabled = shared->index_uncompressed_cache->maxSizeInBytes() != 0;
 }
 
-UncompressedCachePtr Context::getIndexUncompressedCache() const
+UncompressedCachePtr Context::getIndexUncompressedCache(bool only_if_enabled) const
 {
     SharedLockGuard lock(shared->mutex);
+    if (only_if_enabled && !shared->index_uncompressed_cache_enabled)
+        return nullptr;
     return shared->index_uncompressed_cache;
 }
 
@@ -4677,11 +4689,15 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
         throttler = shared->remote_read_throttler;
     }
 
+    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
+    if (auto process_list_element = getProcessListElementSafe())
+        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>("remote_read_query", bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
         throttler = remote_read_query_throttler;
     }
     return throttler;
@@ -4695,11 +4711,15 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
         throttler = shared->remote_write_throttler;
     }
 
+    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
+    if (auto process_list_element = getProcessListElementSafe())
+        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>("remote_write_query", bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
         throttler = remote_write_query_throttler;
     }
     return throttler;
@@ -4717,7 +4737,7 @@ ThrottlerPtr Context::getLocalReadThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>("local_read_query", bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -4735,7 +4755,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>("local_write_query", bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -4748,7 +4768,7 @@ ThrottlerPtr Context::getBackupsThrottler() const
     {
         std::lock_guard lock(mutex);
          if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>("backups_query", bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
+            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
         throttler = backups_query_throttler;
     }
     return throttler;
@@ -4780,7 +4800,7 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->remote_read_throttler)
-            shared->remote_read_throttler = std::make_shared<Throttler>("remote_read_server", read_bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
     }
 
     if (shared->remote_read_throttler)
@@ -4790,7 +4810,7 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->remote_write_throttler)
-            shared->remote_write_throttler = std::make_shared<Throttler>("remote_write_server", write_bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
     }
 
     if (shared->remote_write_throttler)
@@ -4803,7 +4823,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>("local_read_server", read_bandwidth);
+            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
     }
 
     if (shared->local_read_throttler)
@@ -4813,7 +4833,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_write_throttler)
-            shared->local_write_throttler = std::make_shared<Throttler>("local_write_server", write_bandwidth);
+            shared->local_write_throttler = std::make_shared<Throttler>(write_bandwidth);
     }
 
     if (shared->local_write_throttler)
@@ -5091,7 +5111,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        bool is_standalone_app = config.getBool("keeper_server.standalone_keeper", getApplicationType() == ApplicationType::KEEPER);
+        bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
         if (start_async)
         {
             assert(!is_standalone_app);
@@ -6774,12 +6794,6 @@ void Context::resetInputCallbacks()
         input_blocks_reader = {};
 }
 
-void Context::clearTableFunctionResults()
-{
-    std::lock_guard lock(table_function_results_mutex);
-    table_function_results.clear();
-}
-
 
 void Context::setClientInfo(const ClientInfo & client_info_)
 {
@@ -7679,6 +7693,16 @@ uint64_t HTTPContext::getMaxFieldNameSize() const
 uint64_t HTTPContext::getMaxFieldValueSize() const
 {
     return context->getSettingsRef()[Setting::http_max_field_value_size];
+}
+
+uint64_t HTTPContext::getMaxRequestHeaderSize() const
+{
+    return context->getSettingsRef()[Setting::http_max_request_header_size];
+}
+
+Poco::Timespan HTTPContext::getHeadersReadTimeout() const
+{
+    return context->getSettingsRef()[Setting::http_headers_read_timeout];
 }
 
 Poco::Timespan HTTPContext::getReceiveTimeout() const

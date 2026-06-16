@@ -11,15 +11,9 @@
 
 #endif
 
-
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-
-#include <filesystem>
-#include <variant>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -113,7 +107,10 @@ using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
 
 using Azure::Storage::Blobs::ListBlobsOptions;
 using Azure::Storage::Blobs::ListBlobsPagedResponse;
+using Azure::Storage::Blobs::BlobContainerBatch;
 using BlobContainerPropertiesRespones = Azure::Response<Azure::Storage::Blobs::Models::BlobContainerProperties>;
+using BlobBatchResultResponse = Azure::Response<Azure::Storage::Blobs::Models::SubmitBlobBatchResult>;
+using DeleteBlobResultDeferredResponse = Azure::Storage::DeferredResponse<Azure::Storage::Blobs::Models::DeleteBlobResult>;
 
 /// A wrapper for ContainerClient that correctly handles the prefix of blobs.
 /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
@@ -127,6 +124,10 @@ public:
     BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
     BlobContainerPropertiesRespones GetProperties() const;
     ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+
+    BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
+    String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;

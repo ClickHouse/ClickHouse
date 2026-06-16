@@ -7,7 +7,7 @@
 #include <functional>
 #include <limits>
 #include <string>
-
+#include <span>
 
 namespace DB
 {
@@ -34,6 +34,7 @@ struct StoredObject
 
 using StoredObjects = std::vector<StoredObject>;
 using StoredObjectSet = std::unordered_set<StoredObject>;
+using StoredObjectsSpan = std::span<const StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
 Strings collectRemotePaths(const StoredObjects & objects);

@@ -17,6 +17,8 @@ ORDER BY
     __table1.payload ASC
 ComplexKeyHashed
 1	a	x
+ComplexKeyHashed, opt off
+1	a	x
 ComplexHashedArray - plan
 SELECT
     __table1.k1 AS k1,
@@ -35,6 +37,8 @@ ORDER BY
     __table1.k2 ASC,
     __table1.payload ASC
 ComplexHashedArray
+1	a	x
+ComplexHashedArray, opt off
 1	a	x
 ComplexKeySparseHashed - plan
 SELECT
@@ -55,6 +59,8 @@ ORDER BY
     __table1.payload ASC
 ComplexKeySparseHashed
 1	a	x
+ComplexKeySparseHashed, opt off
+1	a	x
 Flat - plan
 SELECT
     __table1.id AS id,
@@ -69,6 +75,10 @@ ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 Flat
+1	u
+1	x
+3	z
+Flat, opt off
 1	u
 1	x
 3	z
@@ -89,6 +99,10 @@ Hashed
 1	u
 1	x
 3	z
+Hashed, opt off
+1	u
+1	x
+3	z
 HashedArray - plan
 SELECT
     __table1.id AS id,
@@ -106,6 +120,10 @@ HashedArray
 1	u
 1	x
 3	z
+HashedArray, opt off
+1	u
+1	x
+3	z
 SparseHashed - plan
 SELECT
     __table1.id AS id,
@@ -120,6 +138,10 @@ ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 SparseHashed
+1	u
+1	x
+3	z
+SparseHashed, opt off
 1	u
 1	x
 3	z

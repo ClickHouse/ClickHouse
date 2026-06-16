@@ -90,8 +90,8 @@ MergeTreeReadTask::MergeTreeReadTask(
         {
             chassert(updater);
             const auto & part_columns = info->data_part->getColumns();
-            auto column_sizes = info->data_part->getColumnSizes();
-            updater->recordInputColumns(columns, part_columns, *column_sizes, read_bytes, should_continue_sampling);
+            const auto & column_sizes = info->data_part->getColumnSizes();
+            updater->recordInputColumns(columns, part_columns, column_sizes, read_bytes, should_continue_sampling);
         };
     }
 }
@@ -440,6 +440,13 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
+{
+    /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
+    /// reader chain and is able to skip whole marks via `canSkipMark`.
+    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
 }
 
 }

@@ -546,7 +546,7 @@ void Client::connect()
 
             if (max_client_network_bandwidth)
             {
-                ThrottlerPtr throttler = std::make_shared<Throttler>("client_network", max_client_network_bandwidth, 0, "");
+                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
                 connection->setThrottler(throttler);
             }
 

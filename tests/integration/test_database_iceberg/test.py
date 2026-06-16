@@ -37,6 +37,8 @@ from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
+BASE_URL_LOCAL = "http://localhost:8182/v1"
+BASE_URL_LOCAL_RAW = "http://localhost:8182"
 
 CATALOG_NAME = "demo"
 
@@ -73,9 +75,8 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_namespaces(started_cluster):
-    base_url_local = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1"
-    response = requests.get(f"{base_url_local}/namespaces")
+def list_namespaces():
+    response = requests.get(f"{BASE_URL_LOCAL}/namespaces")
     if response.status_code == 200:
         return response.json()
     else:
@@ -83,11 +84,10 @@ def list_namespaces(started_cluster):
 
 
 def load_catalog_impl(started_cluster):
-    base_url_local_raw = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}"
     return load_catalog(
         CATALOG_NAME,
         **{
-            "uri": base_url_local_raw,
+            "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
@@ -146,7 +146,6 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
     assert "HIDDEN" in show_result
-
 
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
@@ -234,7 +233,7 @@ def test_list_tables(started_cluster):
         catalog.create_namespace(namespace)
 
     found = False
-    for namespace_list in list_namespaces(started_cluster)["namespaces"]:
+    for namespace_list in list_namespaces()["namespaces"]:
         if root_namespace == namespace_list[0]:
             found = True
             break
@@ -385,7 +384,7 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
 
@@ -788,3 +787,22 @@ def test_gcs(started_cluster):
             """
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

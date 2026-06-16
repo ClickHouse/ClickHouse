@@ -300,7 +300,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -577,7 +577,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
@@ -725,6 +725,14 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t chars_begin = offsetAt(begin);
+    size_t chars_end = offsetAt(end);
+    hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
+    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

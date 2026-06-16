@@ -10,7 +10,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 
-#include <Interpreters/SystemLogFlushPolicy.h>
 #include <boost/noncopyable.hpp>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
@@ -187,7 +186,6 @@ class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, 
 public:
     using Self = SystemLog;
     using Base = SystemLogBase<LogElement>;
-    using Element = LogElement;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -213,14 +211,7 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() const { return table_id; }
-
-    ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
-
-    void setManualFlushTargetIndex(ISystemLog::Index target_index) override
-    {
-        flush_policy->prepareManualFlush(target_index);
-    }
+    const StorageID & getTableID() { return table_id; }
 
 protected:
     LoggerPtr log;
@@ -236,8 +227,7 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
-    String create_query;
+    const String create_query;
     String old_create_query;
     bool is_prepared = false;
 

@@ -223,6 +223,10 @@
     M(MergesThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_merges_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(MutationsThrottlerBytes, "Bytes passed through 'max_mutations_bandwidth_for_server' throttler.", ValueType::Bytes) \
     M(MutationsThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_mutations_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    M(UserThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_user' throttler.", ValueType::Bytes) \
+    M(UserThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_user' throttling.", ValueType::Microseconds) \
+    M(AllUsersThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_all_users' throttler.", ValueType::Bytes) \
+    M(AllUsersThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_all_users' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
@@ -254,6 +258,8 @@
     M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
     M(PatchesAcquireLockTries, "Total number of tries to acquire lock for executing lightweight updates", ValueType::Number) \
     M(PatchesAcquireLockMicroseconds, "Total number of microseconds spent to acquire lock for executing lightweight updates", ValueType::Number) \
+    \
+    M(DiskObjectStorageWaitBlobRemovalMicroseconds, "Time spent waiting for pending blob removal after committing metadata transaction", ValueType::Microseconds) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
@@ -418,7 +424,6 @@
     M(MergeWrittenRows, "Number of rows written during the merge.", ValueType::Number) \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
     M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges", ValueType::Milliseconds) \
-    M(MergeCommitMilliseconds, "Total time spent for committing merge results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
@@ -448,7 +453,6 @@
     M(MutationAffectedRowsUpperBound, "The upper bound of number of rows that were affected by mutation (e.g. number of rows that satisfy the predicate of UPDATE or DELETE mutation). The actual number may be slightly less", ValueType::Number) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
     M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.", ValueType::Milliseconds) \
-    M(MutationCommitMilliseconds, "Total time spent for committing mutation results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
     M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created", ValueType::Number) \
     M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations", ValueType::Microseconds) \
@@ -1399,9 +1403,9 @@ namespace ProfileEvents
 constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
-static Counter global_counters_array[END] {};
-/// Initialize global counters statically
-Counters global_counters(global_counters_array);
+static constinit Counter global_counters_array[END] {};
+/// Constant-initialized so it is ready before any dynamic initializer can allocate memory.
+constinit Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 

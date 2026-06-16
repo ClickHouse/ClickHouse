@@ -118,7 +118,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     {
         auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
         for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(storage_id, table_id);
+            all_startup_dependencies.addDependency(table_id, storage_id);
     }
     for (const auto & table_id : mv_from_dependencies.getTables())
     {

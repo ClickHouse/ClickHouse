@@ -967,3 +967,69 @@ def test_finished_download_time(cluster):
     assert len(elapsed_time) > 0
     assert int(elapsed_time) > 1
     assert int(elapsed_time) < 5
+
+
+@pytest.mark.parametrize("cache_policy", ["lru", "slru"])
+def test_concurrent_eviction(cluster, cache_policy):
+    """Stress-test concurrent eviction in filesystem cache with multiple readers."""
+    import threading
+
+    node = cluster.instances["node"]
+    cache_name = f"bench_small_{cache_policy}_{uuid.uuid4().hex[:8]}"
+    table_name = f"bench_eviction_{uuid.uuid4().hex[:8]}"
+    try:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name} SYNC;
+            CREATE TABLE {table_name} (key UInt32, value String)
+            ENGINE = MergeTree() ORDER BY key
+            SETTINGS disk = disk(
+                type = cache,
+                name = '{cache_name}',
+                path = '{cache_name}/',
+                max_size = '1Mi',
+                max_file_segment_size = 32768,
+                boundary_alignment = 32768,
+                cache_policy = '{cache_policy}',
+                disk = 'hdd_blob'
+            );
+            INSERT INTO {table_name} SELECT number, randomString(100) FROM numbers(100000);
+            """
+        )
+
+        test_start = node.query("SELECT now()").strip()
+
+        stop_event = threading.Event()
+
+        def drop_cache_loop():
+            while not stop_event.is_set():
+                node.query(f"SYSTEM CLEAR FILESYSTEM CACHE '{cache_name}'")
+
+        drop_thread = threading.Thread(target=drop_cache_loop, daemon=True)
+        drop_thread.start()
+
+        try:
+            node.exec_in_container(
+                [
+                    "/usr/bin/clickhouse",
+                    "benchmark",
+                    "--iterations",
+                    "200",
+                    "--concurrency",
+                    "100",
+                    "--query",
+                    f"SELECT count() FROM {table_name} WHERE key < (randConstant() % 100000) OR key > (randConstant() % 100000) FORMAT Null",
+                ]
+            )
+        finally:
+            stop_event.set()
+            drop_thread.join()
+
+        errors = int(
+            node.query(
+                f"SELECT count() FROM system.errors WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
+            ).strip()
+        )
+        assert errors == 0, f"LOGICAL_ERROR occurred on {node.name}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
