@@ -311,6 +311,9 @@ void optimizeTreeSecondPass(
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
+    /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
+    /// alone (with make_distributed_plan = 0) keeps the normal single-node optimizer.
+    const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
@@ -353,7 +356,7 @@ void optimizeTreeSecondPass(
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
 
-                if (optimization_settings.aggregation_in_order && !optimization_settings.enable_cascades_optimizer)
+                if (optimization_settings.aggregation_in_order && !cascades_active)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
@@ -406,10 +409,10 @@ void optimizeTreeSecondPass(
             /// Skip when Cascades is enabled: it treats sorting as a physical property and
             /// strips SortingStep::Full, which this heuristic would otherwise rewrite to
             /// FinishSorting first.
-            if (optimization_settings.read_in_order && !optimization_settings.enable_cascades_optimizer)
+            if (optimization_settings.read_in_order && !cascades_active)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.distinct_in_order && !optimization_settings.enable_cascades_optimizer)
+            if (optimization_settings.distinct_in_order && !cascades_active)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)
