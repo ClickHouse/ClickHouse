@@ -127,6 +127,12 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         if (required_properties.distribution.is_replicated)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot enforce replicated distribution with specific columns");
 
+        /// Shuffling a replicated source hashes every node's full copy, multiplying the output by
+        /// the replica count. Do not emit this invalid plan; the keyed requirement is satisfied
+        /// from a non-replicated implementation of the same group instead.
+        if (expression->properties.distribution.is_replicated && expression->properties.distribution.node_count > 1)
+            return result;
+
         Names shuffle_columns;
         for (const auto & distribution_column : required_properties.distribution.columns)
         {
