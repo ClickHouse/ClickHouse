@@ -529,8 +529,11 @@ def rewrite_arrayjoin_to_array_join(sql):
         result.append(sql[i:len(new_prefix)])
         if wrap_in_subquery:
             # FROM arrayJoin(expr) AS alias -> FROM (SELECT arrayJoin(expr) AS alias)
-            # Wrap in a subquery since arrayJoin is not a table function.
-            result.append(f" (SELECT arrayJoin({expr}) AS {col_name}) AS _aj")
+            # Wrap in a subquery since arrayJoin is not a table function. The
+            # `FROM` keyword was dropped together with the rest of `new_prefix`,
+            # so it has to be re-emitted here; otherwise the result is the
+            # invalid `SELECT ... (SELECT arrayJoin(expr) AS alias) AS _aj`.
+            result.append(f"FROM (SELECT arrayJoin({expr}) AS {col_name}) AS _aj")
         else:
             result.append(f"\n{join_type} {expr} AS {col_name}")
         sql = rest

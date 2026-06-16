@@ -103,6 +103,30 @@ class TestArrayJoinKeyword(unittest.TestCase):
         self.assertEqual(rewrite_query(sql), sql)
 
 
+class TestArrayJoinFromPosition(unittest.TestCase):
+    # `arrayJoin`/`UNNEST` directly in `FROM` position is wrapped in a subquery,
+    # since neither is a table function. The `FROM` keyword must be re-emitted in
+    # the replacement — dropping it produces invalid `SELECT ... (SELECT ...)`.
+    def test_unnest_in_from_position_wrapped_in_subquery(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM UNNEST(arr) AS u(x)"),
+            "SELECT * FROM (SELECT arrayJoin(arr) AS x) AS _aj",
+        )
+
+    def test_array_join_in_from_position_wrapped_in_subquery(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM arrayJoin(arr) AS a"),
+            "SELECT * FROM (SELECT arrayJoin(arr) AS a) AS _aj",
+        )
+
+    def test_unnest_in_from_position_with_function_operand(self):
+        # The operand keeps its nested parentheses after the function rewrites.
+        self.assertEqual(
+            rewrite_query("SELECT x FROM UNNEST(string_to_array(tags, ',')) AS u(tag)"),
+            "SELECT x FROM (SELECT arrayJoin(splitByString(',', assumeNotNull(tags))) AS tag) AS _aj",
+        )
+
+
 class TestAnyArrayRewrite(unittest.TestCase):
     def test_simple_identifier(self):
         self.assertEqual(
