@@ -14,3 +14,17 @@
 4
 --- table function: exact match on backslash
 5
+--- engine: IN with special-character strings
+2	it\'s
+3	a\tb
+5	back\\slash
+--- engine: NOT IN with special-character strings
+1
+--- table function: IN with special-character strings
+2	it\'s
+3	a\tb
+5	back\\slash
+--- engine: NUL byte in predicate is evaluated by ClickHouse, not pushed down
+0
+--- engine: NUL byte in predicate with strict pushdown is rejected
+rejected

@@ -57,3 +57,23 @@ ${CLICKHOUSE_CLIENT} --query="SELECT id FROM sqlite('${DB_PATH}', 't') WHERE val
 
 echo "--- table function: exact match on backslash"
 ${CLICKHOUSE_CLIENT} --query="SELECT id FROM sqlite('${DB_PATH}', 't') WHERE val = 'back\\\\slash' ORDER BY id"
+
+# IN / NOT IN lists are kept as a single ASTLiteral(Tuple); their nested string elements must be
+# escaped for SQLite too, otherwise the backslash escaping reintroduces the syntax errors / wrong
+# results this PR fixes.
+echo "--- engine: IN with special-character strings"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM test_04141_engine WHERE val IN ('it''s', 'a\tb', 'back\\\\slash') ORDER BY id"
+
+echo "--- engine: NOT IN with special-character strings"
+${CLICKHOUSE_CLIENT} --query="SELECT id FROM test_04141_engine WHERE val NOT IN ('it''s', 'a\tb', 'a\nb', 'back\\\\slash') ORDER BY id"
+
+echo "--- table function: IN with special-character strings"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', 't') WHERE val IN ('it''s', 'a\tb', 'back\\\\slash') ORDER BY id"
+
+# A NUL byte cannot be represented in a SQLite string literal, so the predicate must not be pushed
+# down: ClickHouse evaluates it (no match here, no error) instead of silently returning wrong rows.
+echo "--- engine: NUL byte in predicate is evaluated by ClickHouse, not pushed down"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_04141_engine WHERE val = 'a\0b'"
+
+echo "--- engine: NUL byte in predicate with strict pushdown is rejected"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_04141_engine WHERE val = 'a\0b' SETTINGS external_table_strict_query = 1" >/dev/null 2>&1 && echo "UNEXPECTED_SUCCESS" || echo "rejected"

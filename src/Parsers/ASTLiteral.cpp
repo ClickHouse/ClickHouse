@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     const char * prefix = "Literal_";
@@ -156,6 +161,10 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
+/// Like FieldVisitorToString, but strings are escaped with SQLite rules (writeQuotedStringSQLite).
+/// Container literals (Array/Tuple/Map) are handled explicitly so that the visitor recurses into
+/// itself: nested strings (e.g. the elements of an `IN` tuple) are escaped for SQLite too, instead
+/// of falling back to the default backslash escaping of the embedded FieldVisitorToString.
 class FieldVisitorToStringSQLite : public StaticVisitor<String>
 {
 public:
@@ -166,11 +175,78 @@ private:
     FieldVisitorToString visitor;
 };
 
+/// Forward declarations of the explicit specializations so that the container overloads below can
+/// recurse into each other (e.g. a Tuple element that is itself a String or a nested Tuple)
+/// regardless of definition order.
+template<> String FieldVisitorToStringSQLite::operator() (const String & x) const;
+template<> String FieldVisitorToStringSQLite::operator() (const Array & x) const;
+template<> String FieldVisitorToStringSQLite::operator() (const Tuple & x) const;
+template<> String FieldVisitorToStringSQLite::operator() (const Map & x) const;
+
 template<>
 String FieldVisitorToStringSQLite::operator() (const String & x) const
 {
+    /// A NUL byte cannot be represented in a SQLite string literal (see writeQuotedStringSQLite).
+    /// Predicates with such literals are normally not pushed down (isCompatible rejects them), so
+    /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
+    /// than silently produce wrong results.
+    if (x.find('\0') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot push down a predicate to SQLite: a string literal contains a NUL byte, "
+            "which cannot be represented in a SQLite string literal");
+
     WriteBufferFromOwnString wb;
     writeQuotedStringSQLite(x, wb);
+    return wb.str();
+}
+
+template<>
+String FieldVisitorToStringSQLite::operator() (const Array & x) const
+{
+    WriteBufferFromOwnString wb;
+    wb << '[';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+    return wb.str();
+}
+
+template<>
+String FieldVisitorToStringSQLite::operator() (const Tuple & x) const
+{
+    WriteBufferFromOwnString wb;
+    /// For single-element tuples we must use the explicit tuple() function,
+    /// or they will be parsed back as plain literals.
+    if (x.size() > 1)
+        wb << '(';
+    else
+        wb << "tuple(";
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+    return wb.str();
+}
+
+template<>
+String FieldVisitorToStringSQLite::operator() (const Map & x) const
+{
+    WriteBufferFromOwnString wb;
+    wb << '[';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
     return wb.str();
 }
 

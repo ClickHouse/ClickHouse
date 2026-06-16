@@ -572,10 +572,12 @@ inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
 
 /// SQLite string literals: only ' must be escaped as ''; all other bytes (including backslash,
 /// newline, tab) are embedded literally.
-/// NUL bytes (\0) cannot be embedded literally: sqlite3GetToken's CC_QUOTE loop terminates on
-/// c==0 even inside a string literal, returning TK_ILLEGAL and causing an SQL error. We emit
-/// the two-char sequence \0 instead, which means predicates on NUL-containing strings will
-/// silently return no rows. NUL in string predicates is therefore unsupported.
+/// NUL bytes (\0) cannot be represented in a SQLite string literal at all: sqlite3GetToken's
+/// CC_QUOTE loop terminates on c==0 even inside a string literal, returning TK_ILLEGAL. There is
+/// no escape sequence for it, so predicates whose string literals contain NUL must not be pushed
+/// down. This is enforced upstream: transformQueryForExternalDatabase's isCompatible rejects such
+/// literals (so they are evaluated by ClickHouse instead), and FieldVisitorToStringSQLite fails
+/// explicitly if one is ever formatted. Hence this function never receives a NUL byte.
 inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
 {
     writeChar('\'', buf);
@@ -583,12 +585,6 @@ inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
     {
         if (c == '\'')
             writeChar('\'', buf);
-        else if (c == '\0')
-        {
-            writeChar('\\', buf);
-            writeChar('0', buf);
-            continue;
-        }
         writeChar(c, buf);
     }
     writeChar('\'', buf);
