@@ -46,7 +46,7 @@ public:
 
     void addFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
     {
-        addFilters(buildFiltersFromConfig(config, prefix));
+        addFilters(extractHTTPRequestFiltersFromConfig(config, prefix));
     }
 
     void attachStrictPath(const String & strict_path)

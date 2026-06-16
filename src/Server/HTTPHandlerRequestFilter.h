@@ -2,18 +2,27 @@
 
 #include <Server/HTTP/HTTPServerRequest.h>
 
+#include <Core/Names.h>
+#include <base/types.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <functional>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+
+namespace re2 { class RE2; }
 
 namespace DB
 {
 
 /// A request filter checks whether an HTTP request matches a configured rule.
 using HTTPRequestFilter = std::function<bool(const HTTPServerRequest &)>;
+
+using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
 /// How a filter matches the configured value against the request.
 enum class HTTPRequestFilterMatchType
@@ -53,6 +62,23 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
 /// `url_prefix`, `full_url`, `methods`, `headers`, `empty_query_string`, ...), one filter per sub-tag. The
 /// `handler` sub-tag is ignored. A request matches the rule only if every returned filter matches. Throws if
 /// an unknown sub-tag is encountered.
-std::vector<HTTPRequestFilter> buildFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+
+/// Contains regular expressions configured for a rule's URL and headers with named capturing groups.
+struct HTTPHandlerRegexpsWithNamedGroups
+{
+    /// Non-null if the rule's URL path is matched by a regular expression
+    /// with at least one referenced named capturing group.
+    /// Null if the rule's URL is a plain URL (an exact-match string).
+    CompiledRegexPtr url_regex;
+
+    /// Maps a header name to the regular expression configured for that header.
+    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
+
+    /// Extracts the regular expressions configured under `config_prefix`,
+    /// keeping only those that have a named capturing group present in `group_names`.
+    static HTTPHandlerRegexpsWithNamedGroups fromConfig(
+        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const NameSet & group_names);
+};
 
 }

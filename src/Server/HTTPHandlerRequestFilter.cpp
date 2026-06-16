@@ -32,8 +32,6 @@ namespace ErrorCodes
 namespace
 {
 
-using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
-
 /// A parsed filter expression.
 struct FilterExpression
 {
@@ -93,6 +91,14 @@ CompiledRegexPtr compileRegex(const std::string & regex)
     return compiled_regex;
 }
 
+/// Whether `compiled_regex` has at least one named capturing group whose name is in `group_names`.
+bool hasAnyOfCapturingGroups(const CompiledRegexPtr & compiled_regex, const NameSet & group_names)
+{
+    const auto & actual_groups = compiled_regex->NamedCapturingGroups();
+    return std::any_of(actual_groups.begin(), actual_groups.end(),
+        [&](const auto & group) { return group_names.contains(group.first); });
+}
+
 FilterExpression getExpression(const std::string & expression, HTTPRequestFilterMatchType match_type, bool ignore_query_string)
 {
     if (match_type == HTTPRequestFilterMatchType::Prefix)
@@ -111,7 +117,10 @@ FilterExpression getExpression(const std::string & expression, HTTPRequestFilter
         return {.value = expression, .regex = compileRegex(expression), .ignore_query_string = ignore_query_string};
 
     if (startsWith(expression, "regex:"))
-        return {.value = expression, .regex = compileRegex(expression.substr(strlen("regex:"))), .ignore_query_string = ignore_query_string};
+    {
+        auto regex = expression.substr(strlen("regex:"));
+        return {.value = regex, .regex = compileRegex(regex), .ignore_query_string = ignore_query_string};
+    }
 
     return {.value = expression, .ignore_query_string = ignore_query_string};
 }
@@ -187,7 +196,7 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
     };
 }
 
-std::vector<HTTPRequestFilter> buildFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::vector<HTTPRequestFilter> filters;
 
@@ -230,6 +239,58 @@ std::vector<HTTPRequestFilter> buildFiltersFromConfig(const Poco::Util::Abstract
     }
 
     return filters;
+}
+
+HTTPHandlerRegexpsWithNamedGroups HTTPHandlerRegexpsWithNamedGroups::fromConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const NameSet & group_names)
+{
+    HTTPHandlerRegexpsWithNamedGroups result;
+
+    /// The URL is a regular expression when configured via the dedicated `url_regex` tag,
+    /// or via `url` carrying the obsolete "regex:" marker.
+    CompiledRegexPtr url_regex;
+    if (config.has(config_prefix + ".url_regex"))
+    {
+        url_regex = compileRegex(config.getString(config_prefix + ".url_regex"));
+    }
+    else if (config.has(config_prefix + ".url"))
+    {
+        const auto url = config.getString(config_prefix + ".url");
+        if (startsWith(url, "regex:"))
+            url_regex = compileRegex(url.substr(strlen("regex:")));
+    }
+
+    if (url_regex && hasAnyOfCapturingGroups(url_regex, group_names))
+        result.url_regex = url_regex;
+
+    /// Headers configured as regular expressions: `headers` entries carrying the "regex:" marker, and
+    /// `headers_regex` entries (whose value is the regular expression itself).
+    const auto collect_header_regexes = [&](const std::string & headers_key, bool has_regex_marker)
+    {
+        Poco::Util::AbstractConfiguration::Keys header_names;
+        config.keys(config_prefix + "." + headers_key, header_names);
+
+        for (const auto & header_name : header_names)
+        {
+            auto expression = config.getString(config_prefix + "." + headers_key + "." + header_name);
+
+            if (has_regex_marker)
+            {
+                if (!startsWith(expression, "regex:"))
+                    continue;
+                expression = expression.substr(strlen("regex:"));
+            }
+
+            auto regex = compileRegex(expression);
+            if (hasAnyOfCapturingGroups(regex, group_names))
+                result.headers_name_with_regex.emplace(header_name, regex);
+        }
+    };
+
+    collect_header_regexes("headers", /* has_regex_marker= */ true);
+    collect_header_regexes("headers_regex", /* has_regex_marker= */ false);
+
+    return result;
 }
 
 }
