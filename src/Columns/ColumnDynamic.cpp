@@ -1535,6 +1535,12 @@ void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map
 
 void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
+    if (offset + null_map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match {} of size {}",
+            null_map.size(), offset, getName(), size());
+
     variant_column_ptr->applyNegatedNullMap(null_map, offset);
 }
 

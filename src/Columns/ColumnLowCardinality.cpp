@@ -688,6 +688,12 @@ void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offse
     if (!nestedIsNullable())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply a null map to {} with a non-nullable dictionary", getName());
 
+    if (offset + map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match {} of size {}",
+            map.size(), offset, getName(), size());
+
     idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
 }
 

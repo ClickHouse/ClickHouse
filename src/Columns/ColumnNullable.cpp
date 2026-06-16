@@ -902,11 +902,11 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
 {
     NullMap & arr = getNullMapData();
 
-    if (offset + map.size() > arr.size())
+    if (offset + map.size() != arr.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Null map range [{}, {}) is out of bounds for ColumnNullable of size {}",
-            offset, offset + map.size(), arr.size());
+            "Null map of size {} at offset {} does not match ColumnNullable of size {}",
+            map.size(), offset, arr.size());
 
     for (size_t i = 0, size = map.size(); i < size; ++i)
         arr[offset + i] |= negative ^ map[i];
