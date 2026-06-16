@@ -18,6 +18,9 @@ SET max_rows_to_group_by = 0;
 -- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
 -- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
 SET query_plan_optimize_join_order_randomize = 0;
+-- A randomized limit of 0 disables join-order optimization, which re-plans the correlated
+-- EXISTS as a result-stream join and flips the broadcast join swap. Keep it enabled.
+SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
