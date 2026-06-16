@@ -707,18 +707,25 @@ def test_optimize_manifest_files_dropped_partition_source_column_schema_header(
     TABLE_NAME = "test_optimize_manifest_droppedcol_schema_" + storage_type + "_" + get_uuid_str()
 
     # spec 0: partitioned by identity(region). 'region' is both a partition source and a column.
+    # `commit.manifest-merge.enabled = false` is essential: with Iceberg's default manifest merging
+    # every spec-0 append would be folded back into a single spec-0 manifest, so the current
+    # snapshot would carry only one manifest per spec (here 2 total). That is at or below the
+    # compaction threshold below, and even past it `writeConsolidatedManifestFile` would find the
+    # manifests already optimal (one per partition). Disabling the merge keeps each append as its
+    # own manifest, so spec 0 actually accumulates more manifests than partition groups.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (id long, data string, region string) USING iceberg
         PARTITIONED BY (region)
-        TBLPROPERTIES ('format-version' = '2')
+        TBLPROPERTIES ('format-version' = '2', 'commit.manifest-merge.enabled' = 'false')
         """
     )
-    # Three separate inserts under spec 0 over the same two partitions (us, eu). Each Spark append
-    # writes one manifest, so spec 0 ends up with more manifests (3) than it has unique partition
-    # groups (2). This is what makes a manifest-only rewrite actually consolidate — otherwise
-    # `writeConsolidatedManifestFile` finds the manifests already optimal (one per partition) and
-    # writes nothing, leaving no compacted manifest to inspect the `schema` header of.
+    # Three separate inserts under spec 0 over the same two partitions (us, eu). With manifest
+    # merging disabled each Spark append writes one manifest, so spec 0 ends up with more manifests
+    # (3) than it has unique partition groups (2). This is what makes a manifest-only rewrite
+    # actually consolidate — otherwise `writeConsolidatedManifestFile` finds the manifests already
+    # optimal (one per partition) and writes nothing, leaving no compacted manifest to inspect the
+    # `schema` header of.
     spark.sql(
         f"INSERT INTO {TABLE_NAME} VALUES "
         f"(0, 'a', 'us'), (1, 'b', 'us'), (2, 'c', 'eu'), (3, 'd', 'eu')"
