@@ -12,6 +12,9 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
+-- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
+-- aggregations local.  Pin it to 0 so distributed two-phase aggregation is exercised.
+SET max_rows_to_group_by = 0;
 -- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
 -- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
 SET query_plan_optimize_join_order_randomize = 0;

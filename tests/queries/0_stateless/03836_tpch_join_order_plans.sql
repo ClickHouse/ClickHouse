@@ -83,6 +83,9 @@ SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
 SET distributed_plan_execute_locally = 1;
 SET enable_cascades_optimizer = 1;
+-- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
+-- aggregations local.  Pin it to 0 so distributed two-phase aggregation is exercised.
+SET max_rows_to_group_by = 0;
 SET rewrite_in_to_join = 1;
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET allow_experimental_correlated_subqueries = 1;
