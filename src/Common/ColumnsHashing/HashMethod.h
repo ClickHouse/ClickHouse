@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <bit>
 #include <Columns/ColumnFixedString.h>
@@ -240,7 +241,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
-    WeakHash32 hashes{0};
+    PaddedPODArray<UInt32> hashes;
 
     /// Hashing strategy:
     /// - Empty string (len == 0):
@@ -277,7 +278,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
-        auto & data = hashes.getData();
+        auto & data = hashes;
         size_t rows = column_string.size();
         data.resize_exact(rows);
         for (size_t i = 0; i < rows; ++i)
@@ -336,13 +337,13 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         {
             return ArenaPackedStringHolder{
                 PackedStringRef::build(
-                    reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes.getData()[row]),
+                    reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes[row]),
                 pool};
         }
         else
         {
             return PackedStringRef::build(
-                reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes.getData()[row]);
+                reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes[row]);
         }
     }
 
