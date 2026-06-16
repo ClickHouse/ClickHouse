@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -1964,23 +1965,21 @@ static std::optional<UInt64> estimatePlanOutputRows(const QueryPlan::Node * node
         return {};
     }
 
-    /// ExpressionStep maps rows 1:1, so it preserves the child's output cardinality.
-    if (dynamic_cast<const ExpressionStep *>(step))
-        return node->children.size() == 1 ? estimatePlanOutputRows(node->children.front()) : std::nullopt;
-
-    /// LIMIT caps the output at `limit` rows (after skipping `offset`), regardless of the input,
-    /// so it yields a hard upper bound even when the child is unknown. WITH TIES can exceed the
-    /// limit, so it is not a bound.
+    /// LIMIT only caps a known child estimate at `limit` rows (after `offset`); it never raises it.
+    /// With an unknown child it yields no bound (the child may emit fewer than `limit` rows, e.g.
+    /// a single aggregated row), and WITH TIES can exceed the limit, so both stay unknown.
     if (const auto * limit_step = dynamic_cast<const LimitStep *>(step))
     {
         if (node->children.size() != 1 || limit_step->withTies())
             return {};
 
-        UInt64 limit = limit_step->getLimit();
+        auto child_rows = estimatePlanOutputRows(node->children.front());
+        if (!child_rows)
+            return {};
+
         UInt64 offset = limit_step->getOffset();
-        if (auto child_rows = estimatePlanOutputRows(node->children.front()))
-            return std::min(*child_rows > offset ? *child_rows - offset : 0, limit);
-        return limit;
+        UInt64 after_offset = *child_rows > offset ? *child_rows - offset : 0;
+        return std::min(after_offset, static_cast<UInt64>(limit_step->getLimit()));
     }
 
     /// UNION ALL sums its inputs.
@@ -1997,8 +1996,18 @@ static std::optional<UInt64> estimatePlanOutputRows(const QueryPlan::Node * node
         return sum;
     }
 
-    /// Any other step (Filter, Aggregating, Limit, Distinct, Sorting, Join, ArrayJoin, ...) may
-    /// change the row count, so the leaf sizes no longer bound the output.
+    /// Other single-input transforms preserve the child's row count only if their traits say so
+    /// (a plain projection or sort does; arrayJoin, FILTER, DISTINCT, aggregation do not). Relying
+    /// on the trait avoids mis-treating, e.g., an ExpressionStep that contains arrayJoin.
+    if (const auto * transforming = dynamic_cast<const ITransformingStep *>(step))
+    {
+        if (node->children.size() == 1 && transforming->getTransformTraits().preserves_number_of_rows)
+            return estimatePlanOutputRows(node->children.front());
+        return {};
+    }
+
+    /// Any other step (joins, set operations, ...) may change the row count, so the leaf sizes no
+    /// longer bound the output.
     return {};
 }
 
