@@ -2220,7 +2220,14 @@ void registerStorageRemote(StorageFactory & factory)
         /// `merge(...)` was dropped), which would make a valid persisted table impossible to load.
         /// The inference still runs unconditionally when the structure was omitted, because then it
         /// is the only source of the table's columns.
-        const bool loading_from_metadata = isLoadingFromExistingMetadata(args.mode);
+        ///
+        /// `isLoadingFromExistingMetadata` covers server startup (`FORCE_ATTACH`) and the legacy
+        /// `force_restore_data` flag (`FORCE_RESTORE`). A normal backup `RESTORE` reaches here with
+        /// `args.mode == SECONDARY_CREATE` and `args.is_restore_from_backup`, so it must be guarded
+        /// explicitly as well: the restored definition was already validated when the table was
+        /// originally created, and its source table-function targets may legitimately be absent in
+        /// the restore environment.
+        const bool loading_from_metadata = isLoadingFromExistingMetadata(args.mode) || args.is_restore_from_backup;
 
         ColumnsDescription columns = args.columns;
         if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr && !loading_from_metadata))
