@@ -45,9 +45,10 @@ bool MessageReader::readNextMessage(Message & out)
     int32_t metadata_length = readInt32LE(in);
     if (metadata_length == IPC_CONTINUATION_TOKEN)
     {
-        /// End-of-stream is encoded as the continuation token followed by a zero length.
-        if (in.eof())
-            return false;
+        /// Modern framing is the continuation token followed by the real metadata length; end of stream
+        /// is the token followed by a zero length. The token alone (EOF right after it) is a truncated
+        /// stream, so always read the next int32 and let `readStrict` report `CANNOT_READ_ALL_DATA` if it
+        /// is missing, rather than accepting the truncated input as a clean end of stream.
         metadata_length = readInt32LE(in);
     }
 
