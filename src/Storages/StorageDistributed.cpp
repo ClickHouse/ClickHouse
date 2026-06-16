@@ -2211,8 +2211,19 @@ void registerStorageRemote(StorageFactory & factory)
         /// access to the function's underlying tables. For a local shard,
         /// `getStructureOfRemoteTableInShard` runs the table function through
         /// `getActualTableStructureWithAccess`, which performs exactly that check.
+        ///
+        /// These access checks validate the user-supplied definition and must run only when it is
+        /// first introduced (`CREATE`, or a user `ATTACH` query that carries a full definition).
+        /// When the table is loaded from already-validated metadata (server startup or `RESTORE`),
+        /// re-running them is unnecessary and harmful: analyzing the table-function target can throw
+        /// if its underlying tables have changed since creation (e.g. the table matched by
+        /// `merge(...)` was dropped), which would make a valid persisted table impossible to load.
+        /// The inference still runs unconditionally when the structure was omitted, because then it
+        /// is the only source of the table's columns.
+        const bool loading_from_metadata = isLoadingFromExistingMetadata(args.mode);
+
         ColumnsDescription columns = args.columns;
-        if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr))
+        if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr && !loading_from_metadata))
         {
             ColumnsDescription inferred = getStructureOfRemoteTable(
                 *parsed.cluster,
@@ -2232,7 +2243,7 @@ void registerStorageRemote(StorageFactory & factory)
         /// (`system.one`), so checking it would be both wrong and a spurious rejection of harmless
         /// targets like `numbers(...)`; the equivalent validation is performed above by analyzing the
         /// function itself.
-        if (has_local_shard && !parsed.remote_table_function_ptr)
+        if (has_local_shard && !parsed.remote_table_function_ptr && !loading_from_metadata)
         {
             args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
             args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
