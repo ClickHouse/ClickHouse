@@ -2403,7 +2403,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
 {
     if (!status.ok())
-        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}'", format_name, column_name);
+        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
 static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(const std::shared_ptr<arrow::DataType> & type)
@@ -2511,12 +2511,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -2644,12 +2640,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {
