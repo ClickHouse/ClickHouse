@@ -797,6 +797,13 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     if (group_by_all && groupBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "group_by_all cannot be set together with a GROUP BY list during AST JSON deserialization");
 
+    /// `recursive_with` is set by the parser only after parsing `WITH`, so it always has a `with` list.
+    /// `formatImpl` emits `recursive_with` only inside the `with()` branch, but analysis trusts the flag
+    /// regardless (e.g. `AddDefaultDatabaseVisitor` does `select.with()->children` when it is set), so a
+    /// flag without a `with` child would reach a null dereference. Reject it.
+    if (recursive_with && !with())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "recursive_with requires a WITH clause during AST JSON deserialization");
+
     /// `group_by_with_grouping_sets` is produced only by `GROUP BY GROUPING SETS (...)`, where
     /// `ParserGroupingSetsExpressionListElements` wraps every grouping set as a nested `ASTExpressionList`.
     /// The analyzer relies on that shape (`group_asts[i]->as<const ASTExpressionList>()->children`), so

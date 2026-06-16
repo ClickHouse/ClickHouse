@@ -28,6 +28,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a LIMIT 1 
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v SQL SECURITY DEFINER AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW v REFRESH DEPENDS ON src ENGINE = Memory AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR OFFSET 30 MINUTE ENGINE = Memory AS SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('WITH RECURSIVE x AS (SELECT 1) SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a CROSS JOIN b'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a NATURAL LEFT JOIN b'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a LEFT SEMI JOIN b ON a.x = b.y'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -151,3 +155,20 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE MATERIALIZED VIEW v 
 -- never `all` together with a value/id (`formatImpl` would emit `ALL` and silently drop the value).
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Partition","all":true,"value":{"type":"Literal","value":{"field_type":"UInt64","value":5}}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `recursive_with` is set by the parser only after parsing `WITH`; analysis trusts the flag regardless
+-- (`AddDefaultDatabaseVisitor` does `select.with()->children` when set), so a flag without a `with`
+-- child is parser-impossible and would reach a null dereference.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1'), '"type":"SelectQuery",', '"type":"SelectQuery","recursive_with":true,')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTTableJoin`: `ParserTablesInSelectQuery` parses `ON`/`USING` only for non-CROSS/comma/PASTE joins,
+-- never for `NATURAL` joins (columns are derived), takes no strictness for CROSS/PASTE, and allows
+-- SEMI/ANTI only for LEFT/RIGHT. A `clickhouse_json` payload that violates these would, e.g., format as
+-- `CROSS JOIN ... ON ...` while the analyzer silently drops the predicate.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN b ON a.x = b.y'), '"kind":"INNER"', '"kind":"CROSS"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN b ON a.x = b.y'), '"kind":"INNER"', '"kind":"INNER","is_natural":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a LEFT SEMI JOIN b ON a.x = b.y'), '"kind":"LEFT"', '"kind":"INNER"')); -- { serverError BAD_ARGUMENTS }

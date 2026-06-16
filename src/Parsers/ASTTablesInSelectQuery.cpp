@@ -606,6 +606,36 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
     if (using_expression_list && on_expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTTableJoin must not have both 'using_expression_list' and 'on_expression' during AST JSON deserialization");
+
+    /// Mirror the parser-impossible join shapes that `ParserTablesInSelectQuery` rejects, so malformed
+    /// `clickhouse_json` cannot build a join the analyzer would mis-handle (e.g. a `CROSS JOIN ... ON ...`
+    /// whose predicate `QueryTreeBuilder` silently drops when it builds a `CrossJoinNode`):
+    const bool has_predicate = using_expression_list || on_expression;
+    const bool predicate_disallowed_kind = kind == JoinKind::Cross || kind == JoinKind::Comma || kind == JoinKind::Paste;
+    /// `ON`/`USING` are parsed only for non-`CROSS`/non-comma/non-`PASTE` joins.
+    if (has_predicate && predicate_disallowed_kind)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CROSS, comma and PASTE joins cannot have an 'on_expression'/'using_expression_list' during AST JSON deserialization");
+    /// `NATURAL JOIN` derives its columns automatically; the parser never attaches an explicit predicate.
+    if (has_predicate && is_natural)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "NATURAL JOIN cannot have an 'on_expression'/'using_expression_list' during AST JSON deserialization");
+    /// `CROSS`/`PASTE` joins take no strictness modifier.
+    if (strictness != JoinStrictness::Unspecified && (kind == JoinKind::Cross || kind == JoinKind::Paste))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CROSS and PASTE joins cannot have a strictness modifier during AST JSON deserialization");
+    /// `SEMI`/`ANTI` are only valid for `LEFT`/`RIGHT` joins.
+    if ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+        && kind != JoinKind::Left && kind != JoinKind::Right)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SEMI and ANTI strictness is only valid for LEFT/RIGHT joins during AST JSON deserialization");
+    /// `NATURAL JOIN` cannot be combined with a strictness modifier or with `CROSS`/`PASTE`.
+    if (is_natural && strictness != JoinStrictness::Unspecified)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "NATURAL JOIN cannot be combined with a strictness modifier during AST JSON deserialization");
+    if (is_natural && (kind == JoinKind::Cross || kind == JoinKind::Paste))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "NATURAL JOIN cannot be used with CROSS or PASTE join during AST JSON deserialization");
 }
 
 void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
