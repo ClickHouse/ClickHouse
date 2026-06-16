@@ -11768,7 +11768,7 @@ void StorageReplicatedMergeTree::attachRestoredParts(
         /* majority_quorum */ false, getContext(), /* is_attach */ true, /* allow_attach_while_readonly */ false, zookeeper_retries_info);
 
     for (auto part : parts)
-        sink->writeExistingPart(part);
+        sink->writeExistingPart(part, /* deduplicate_part */ false);
 }
 
 }

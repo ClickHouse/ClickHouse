@@ -80,8 +80,9 @@ public:
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
-    /// For ATTACHing existing data on filesystem.
-    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    /// For `ATTACH`ing existing data on filesystem. `RESTORE` uses `deduplicate_part = false`
+    /// to preserve duplicate parts from backup.
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true);
 
 protected:
     virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
