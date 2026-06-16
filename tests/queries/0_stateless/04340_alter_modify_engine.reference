@@ -4,3 +4,4 @@ replacing final	2
 summing	1	30
 summing	2	100
 collapsing	CollapsingMergeTree
+tuple-key replacing	ReplacingMergeTree

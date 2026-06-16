@@ -1554,6 +1554,15 @@ static void checkTupleElementAggregationConstraints(const StorageInMemoryMetadat
     }
 }
 
+void MergeTreeData::MergingParams::setAllowTupleElementAggregationFromSettings(const MergeTreeSettings & settings)
+{
+    /// Only Summing / Aggregating / Coalescing understand the flag; for other modes it is forced off so
+    /// the default can be flipped on without affecting them. Keep this in sync with registerStorageMergeTree.
+    allow_tuple_element_aggregation
+        = (mode == MergingParams::Summing || mode == MergingParams::Aggregating || mode == MergingParams::Coalescing)
+        && settings[MergeTreeSetting::allow_tuple_element_aggregation];
+}
+
 void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
@@ -1995,6 +2004,10 @@ void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const
     /// turning `merging_params` into a MultiVersion value or recreating the storage object; that is a
     /// separate change. For now the persisted change applies on the next table load.
     MergingParams new_params = MergingParams::parseFromEngineAST(engine_func->name, engine_func->arguments, local_context);
+    /// parseFromEngineAST has no settings, so it leaves allow_tuple_element_aggregation off. Derive it
+    /// from the (already changed, see StorageMergeTree::alter) settings so `check` enforces the same tuple
+    /// constraints the reload path does. getSettings() here reflects a MODIFY SETTING in the same ALTER.
+    new_params.setAllowTupleElementAggregationFromSettings(*getSettings());
     new_params.check(*getSettings(), new_metadata);
 
     LOG_INFO(log, "MODIFY ENGINE: merge semantics will change from {} to {} on next table load",
@@ -4556,7 +4569,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         const SettingsChanges * setting_changes_for_check = metadata_for_check.settings_changes
             ? &metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes
             : nullptr;
-        new_merging_params.check(*getSettings(setting_changes_for_check), metadata_for_check);
+        auto settings_for_check = getSettings(setting_changes_for_check);
+        /// parseFromEngineAST leaves allow_tuple_element_aggregation off; derive it from the final settings
+        /// (with any in-flight MODIFY SETTING applied) so this check gates the tuple constraints exactly as
+        /// the reload path will -- otherwise a Summing/Aggregating/Coalescing target with a Nullable Tuple
+        /// column would pass here and only fail on the next ATTACH.
+        new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
+        new_merging_params.check(*settings_for_check, metadata_for_check);
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.

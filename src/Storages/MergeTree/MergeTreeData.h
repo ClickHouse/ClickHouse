@@ -471,6 +471,12 @@ public:
         /// For Summing, Coalescing and Aggregating modes.
         bool allow_tuple_element_aggregation = false;
 
+        /// Derive `allow_tuple_element_aggregation` from the table's MergeTree settings, applying the
+        /// same engine-mode gating as table construction (the flag only affects Summing / Aggregating /
+        /// Coalescing; forced off otherwise). parseFromEngineAST has no settings and leaves the field at
+        /// its default, so ALTER ... MODIFY ENGINE must call this before `check` to match the reload path.
+        void setAllowTupleElementAggregationFromSettings(const MergeTreeSettings & settings);
+
         /// Check that needed columns are present and have correct types.
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
