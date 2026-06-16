@@ -305,6 +305,22 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: `text_index_dictionary_block_size`, `text_index_dictionary_block_frontcoding_compression`, `text_index_posting_list_block_size`, and `text_index_posting_list_codec`.
+They apply to every text index of the table that does not specify the parameter explicitly.
+An argument given in the index definition takes precedence over the table setting, for example:
+
+```sql
+CREATE TABLE table(
+    s String,
+    -- This index uses 'bitpacking', overriding the table-level default below:
+    INDEX idx_a s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'),
+    -- This index inherits 'none' from the table setting:
+    INDEX idx_b lower(s) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS text_index_posting_list_codec = 'none';
+```
 </details>
 
 *Index granularity.*

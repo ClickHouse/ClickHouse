@@ -1742,6 +1742,8 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index, const MergeTr
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
+    /// The parameters below can be set in the index definition or via the `text_index_*` table settings.
+    /// A value from the index definition wins; otherwise the table setting is used.
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
 
