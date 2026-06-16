@@ -35,7 +35,7 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
     /// NOTE: This can be done only if progress callback already set, since
     /// otherwise total_rows_approx will lost.
     size_t rows_approx = 0;
-    if (progress_callback && (rows_approx = total_rows_approx.exchange(0)) != 0)
+    if (progress_callback && (rows_approx = total_rows_approx.exchange(0, std::memory_order_relaxed)) != 0)
     {
         Progress total_rows_progress = {0, 0, rows_approx};
 
@@ -52,7 +52,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
             return false;
     }
 
-    Progress value {read_rows, read_bytes, total_rows_approx.exchange(0), total_bytes.exchange(0)};
+    Progress value {read_rows, read_bytes, total_rows_approx.exchange(0, std::memory_order_relaxed), total_bytes.exchange(0, std::memory_order_relaxed)};
 
     if (progress_callback)
         progress_callback(value);

@@ -45,7 +45,7 @@ class BucketCountQuantile
         while (right_border - left_border > 1)
         {
             chassert(node < 4 * buckets_count);
-            buckets[node].fetch_add(delta);
+            buckets[node].fetch_add(delta, std::memory_order_relaxed);
 
             const int64_t middle = (left_border + right_border) / 2;
             if (bucket_number < middle)
@@ -61,7 +61,7 @@ class BucketCountQuantile
         }
 
         chassert(node < 4 * buckets_count);
-        buckets[node].fetch_add(delta);
+        buckets[node].fetch_add(delta, std::memory_order_relaxed);
     }
 
     int64_t findQuantileBucket(int64_t need_to_observe) noexcept
@@ -75,7 +75,7 @@ class BucketCountQuantile
             chassert(2 * node + 2 < 4 * buckets_count);
 
             const int64_t middle = (left_border + right_border) / 2;
-            const int64_t left_subtree_count = buckets[2 * node + 1].load();
+            const int64_t left_subtree_count = buckets[2 * node + 1].load(std::memory_order_relaxed);
 
             if (left_subtree_count >= need_to_observe)
             {
@@ -103,27 +103,27 @@ public:
         , buckets(std::make_unique<std::atomic<int64_t>[]>(4 * buckets_count))
     {
         for (int64_t i = 0; i < 4 * buckets_count; ++i)
-            buckets[i].store(0);
+            buckets[i].store(0, std::memory_order_relaxed);
     }
 
     void increment(int64_t value) noexcept
     {
         const int64_t bucket_number = getBucketNumber(value);
         updateBucketPath(bucket_number, /*delta=*/1);
-        global_count.fetch_add(1);
+        global_count.fetch_add(1, std::memory_order_relaxed);
     }
 
     void decrement(int64_t value) noexcept
     {
         const int64_t bucket_number = getBucketNumber(value);
         updateBucketPath(bucket_number, /*delta=*/-1);
-        global_count.fetch_sub(1);
+        global_count.fetch_sub(1, std::memory_order_relaxed);
     }
 
     int64_t quantile(double request) noexcept
     {
         chassert(0 <= request && request <= 1);
-        const int64_t global = global_count.load();
+        const int64_t global = global_count.load(std::memory_order_relaxed);
         if (global == 0)
             return 0;
 
@@ -218,10 +218,10 @@ void GlobalQuantile::updateBuckets(std::optional<CurrentMetrics::Value> prev_val
     if (new_value.has_value())
         buckets->increment(new_value.value());
 
-    if (!update->exchange(true))
+    if (!update->exchange(true, std::memory_order_relaxed))
     {
         CurrentMetrics::set(destination_metric, buckets->quantile(quantile));
-        update->store(false);
+        update->store(false, std::memory_order_relaxed);
     }
 }
 
@@ -234,12 +234,12 @@ GlobalQuantile::GlobalQuantile(CurrentMetrics::Metric destination_metric_) noexc
 
 GlobalQuantile::~GlobalQuantile() noexcept
 {
-    updateBuckets(/*prev_value=*/accounted_value.load(), /*new_value=*/std::nullopt);
+    updateBuckets(/*prev_value=*/accounted_value.load(std::memory_order_relaxed), /*new_value=*/std::nullopt);
 }
 
 void GlobalQuantile::set(CurrentMetrics::Value value) noexcept
 {
-    CurrentMetrics::Value prev_value = accounted_value.exchange(value);
+    CurrentMetrics::Value prev_value = accounted_value.exchange(value, std::memory_order_relaxed);
     updateBuckets(/*prev_value=*/prev_value, /*new_value=*/value);
 }
 

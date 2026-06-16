@@ -92,7 +92,7 @@ struct PushingAsyncPipelineExecutor::Data
 
     void rethrowExceptionIfHas()
     {
-        if (has_exception.exchange(false))
+        if (has_exception.exchange(false, std::memory_order_acq_rel))
             std::rethrow_exception(exception);
     }
 };
@@ -109,13 +109,13 @@ static void threadFunction(
     catch (...)
     {
         data.exception = std::current_exception();
-        data.has_exception = true;
+        data.has_exception.store(true, std::memory_order_release);
     }
 
     if (data.source)
         data.source->finish();
 
-    data.is_finished = true;
+    data.is_finished.store(true, std::memory_order_release);
     data.finish_event.set();
 }
 

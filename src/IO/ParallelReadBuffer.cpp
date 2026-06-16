@@ -234,7 +234,7 @@ bool ParallelReadBuffer::nextImpl()
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
     SCOPE_EXIT({
-        if (active_working_readers.fetch_sub(1) == 1)
+        if (active_working_readers.fetch_sub(1, std::memory_order_acq_rel) == 1)
             active_working_readers.notify_all();
     });
 
@@ -285,11 +285,11 @@ void ParallelReadBuffer::finishAndWait()
 {
     emergency_stop = true;
 
-    size_t active_readers = active_working_readers.load();
+    size_t active_readers = active_working_readers.load(std::memory_order_acquire);
     while (active_readers != 0)
     {
         active_working_readers.wait(active_readers);
-        active_readers = active_working_readers.load();
+        active_readers = active_working_readers.load(std::memory_order_acquire);
     }
 }
 

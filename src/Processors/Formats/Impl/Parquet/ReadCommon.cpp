@@ -31,7 +31,7 @@ void CompletionNotification::wait()
         return; // fast path
     if (n == EMPTY)
     {
-        if (!val.compare_exchange_strong(n, WAITING))
+        if (!val.compare_exchange_strong(n, WAITING, std::memory_order_acquire, std::memory_order_acquire))
         {
             if (n == NOTIFIED)
                 return;
@@ -41,7 +41,7 @@ void CompletionNotification::wait()
     while (true)
     {
         futexWait(&val, WAITING);
-        n = val.load();
+        n = val.load(std::memory_order_acquire);
         if (n == NOTIFIED)
             return;
         chassert(n == WAITING);
@@ -50,7 +50,7 @@ void CompletionNotification::wait()
 
 void CompletionNotification::notify()
 {
-    UInt32 n = val.exchange(NOTIFIED);
+    UInt32 n = val.exchange(NOTIFIED, std::memory_order_release);
     /// If there were no wait() calls before the notify() call, avoid the syscall.
     if (n == WAITING)
         futexWake(&val, INT32_MAX);
@@ -60,7 +60,7 @@ void CompletionNotification::notify()
 
 bool CompletionNotification::check() const
 {
-    return notified.load();
+    return notified.load(std::memory_order_acquire);
 }
 
 void CompletionNotification::wait()
@@ -71,7 +71,7 @@ void CompletionNotification::wait()
 
 void CompletionNotification::notify()
 {
-    if (!notified.exchange(true))
+    if (!notified.exchange(true, std::memory_order_release))
         promise.set_value();
 }
 
