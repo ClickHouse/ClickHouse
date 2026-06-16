@@ -1290,17 +1290,17 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
     }
     else
     {
-        /// Mark deterministic misses (column has no statistics declared on this part) as
-        /// attempted so we don't re-read the same files on every query. Transient errors
-        /// from `loadStatistics` would have thrown, never reaching this point.
+        /// Mark every miss as attempted so we don't re-read the same files on every query.
+        /// Reaching this point means the miss is deterministic: the column has no statistics
+        /// declared on this part, its statistics file is absent, or the file is unreadable
+        /// (corrupted, unsupported version, or a stale type left by an in-progress
+        /// `MODIFY COLUMN`, for which `ColumnStatistics::deserialize` returns a null pointer).
+        /// Transient errors while opening the statistics file propagate out of `loadStatistics`
+        /// and never reach this point, so they stay retryable; a fresh part object (after
+        /// reload or mutation) starts with an empty cache.
         for (const auto & column_name : missing)
-        {
-            if (estimates.contains(column_name))
-                continue;
-            const auto * column_desc = columns_description->tryGet(column_name);
-            if (!column_desc || column_desc->statistics.types_to_desc.empty())
+            if (!estimates.contains(column_name))
                 estimates_attempted_columns.insert(column_name);
-        }
     }
 
     return buildResult(estimates);
