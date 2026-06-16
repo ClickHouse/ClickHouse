@@ -47,7 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_runtime_filter_shared_fixed_hash_table", false, true, "New setting to share the hash join's FixedHashMap as the runtime filter for the probe side, replacing the Set/BloomFilter built upstream by the runtime filter framework."},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
-            {"optimize_topn_aggregation", false, true, "New setting to enable fused TopN aggregation optimization for GROUP BY ... ORDER BY aggregate LIMIT K queries."},
+            {"optimize_topn_aggregation", false, false, "New setting (off by default) to enable fused TopN aggregation optimization for GROUP BY ... ORDER BY aggregate LIMIT K queries."},
             {"topn_aggregation_max_ndv_ratio", 0.5, 0.5, "New setting: cardinality-ratio threshold for the TopN aggregation optimization."},
             {"topn_aggregation_max_limit", 1000, 1000, "New setting: absolute LIMIT cap for the TopN aggregation optimization when GROUP BY statistics are unavailable."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},

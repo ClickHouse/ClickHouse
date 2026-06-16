@@ -12,7 +12,9 @@ namespace DB
 /// When the MergeTree table is physically sorted by the ORDER BY aggregate's
 /// argument, each group's aggregate result is determined by its first occurrence
 /// when reading in order. Aggregation is delegated to the standard Aggregator;
-/// the transform stops after K distinct groups, so only O(K) rows are read.
+/// the transform stops once K distinct groups have been seen, holding O(K) group
+/// states and reading only the rows needed to reach the K-th distinct group
+/// (not necessarily K rows) rather than the whole table.
 class TopNAggregatingStep : public ITransformingStep
 {
 public:

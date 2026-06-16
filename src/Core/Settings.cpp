@@ -4000,15 +4000,19 @@ Possible values:
 - 0 — Sharded aggregation optimization is disabled.
 - 1 — Sharded aggregation optimization is enabled.
 )", 0) \
-    DECLARE(Bool, optimize_topn_aggregation, true, R"(
+    DECLARE(Bool, optimize_topn_aggregation, false, R"(
 Fuses `GROUP BY ... ORDER BY aggregate LIMIT K` into a single pass with early termination
 when the MergeTree table is sorted by the ORDER BY aggregate's argument (e.g. table
 `ORDER BY start_time`, query `ORDER BY max(start_time) DESC`): reading in physical order, each
 group's aggregate is decided by its first row, so the scan stops after K distinct groups.
 
-Applies to min/max/any/argMin/argMax aggregates on the same argument, single-column ORDER BY,
-no OFFSET/WITH TIES/HAVING. Skipped for large LIMIT relative to the GROUP BY cardinality (see
+Applies to a min/max ORDER BY aggregate with any/argMin/argMax companions; every companion except
+`any` must use the same argument as the ORDER BY aggregate (`any` may take any argument). Single-column
+ORDER BY, no OFFSET/WITH TIES/HAVING. Skipped for large LIMIT relative to the GROUP BY cardinality (see
 `topn_aggregation_max_ndv_ratio` / `topn_aggregation_max_limit`) and for nullable / collation-sensitive ORDER BY.
+
+Not supported together with `serialize_query_plan` (parallel replicas): the fused step is not serializable, so
+enabling both on an eligible query raises `NOT_IMPLEMENTED` (same as `optimize_aggregation_in_order`).
 )", 0) \
     DECLARE(Float, topn_aggregation_max_ndv_ratio, 0.5, R"(
 For the `optimize_topn_aggregation` optimization: apply it only when `LIMIT <= ndv * topn_aggregation_max_ndv_ratio`,

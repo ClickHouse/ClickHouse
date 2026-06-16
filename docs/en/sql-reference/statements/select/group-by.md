@@ -370,9 +370,9 @@ The aggregation can be performed more effectively, if a table is sorted by some 
 ### TopN Aggregation Optimization {#topn-aggregation-optimization}
 
 For queries of the form `GROUP BY ... ORDER BY aggregate LIMIT K`, ClickHouse can fuse aggregation, sorting, and limiting into a single optimized pass with early termination.
-This is controlled by the [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) setting (enabled by default).
+This is controlled by the [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) setting (disabled by default; set it to `1` to opt in).
 
-When the MergeTree table is sorted by the ORDER BY aggregate's argument (for example, `ORDER BY max(ts) DESC` on a table with `ORDER BY ts`), the optimizer rewrites eligible queries to use a `TopNAggregating` operator that reads data in key order. Each group's aggregate result is determined by its first occurrence, so the scan terminates early after `K` distinct groups instead of reading the entire table. This reduces both I/O and memory to `O(K)`.
+When the MergeTree table is sorted by the ORDER BY aggregate's argument (for example, `ORDER BY max(ts) DESC` on a table with `ORDER BY ts`), the optimizer rewrites eligible queries to use a `TopNAggregating` operator that reads data in key order. Each group's aggregate result is determined by its first occurrence, so the scan can stop once `K` distinct groups have been seen instead of reading the entire table. Memory stays proportional to `K` (about `K` group states are held); the number of rows read is however many are needed to encounter `K` distinct groups in key order — not necessarily `K` rows — which is why the optimization is gated on cardinality (see below).
 
 **Eligibility requirements:**
 
@@ -388,7 +388,8 @@ When the MergeTree table is sorted by the ORDER BY aggregate's argument (for exa
 
 **Other limitations:**
 
-- Disabled for nullable sorting-key columns, collation-sensitive `ORDER BY`, and reverse-flagged (`DESC`) sorting keys.
+- Disabled for nullable and floating-point sorting-key columns, collation-sensitive `ORDER BY`, and reverse-flagged (`DESC`) sorting keys.
+- Not supported together with `serialize_query_plan` (parallel replicas): the fused step is not serializable, so enabling both on an eligible query raises `NOT_IMPLEMENTED` (same as [optimize_aggregation_in_order](/operations/settings/settings#optimize_aggregation_in_order)).
 
 **Example:**
 
