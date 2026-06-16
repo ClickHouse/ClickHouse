@@ -332,6 +332,11 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         }
         if (frame_begin_type == WindowFrame::BoundaryType::Offset && !frame_begin_offset)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_offset' for Offset frame boundary during AST JSON deserialization");
+        /// The parser attaches an offset expression only for an `Offset` boundary, and `formatImpl` hides
+        /// it for `CURRENT ROW`/`UNBOUNDED`; but `QueryTreeBuilder::buildWindow` resolves the child whenever
+        /// the pointer exists, so a hidden offset on a non-`Offset` boundary is parser-impossible. Reject it.
+        if (frame_begin_type != WindowFrame::BoundaryType::Offset && frame_begin_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_begin_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
 
         frame_begin_preceding = r.getBool("frame_begin_preceding");
 
@@ -345,6 +350,8 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         }
         if (frame_end_type == WindowFrame::BoundaryType::Offset && !frame_end_offset)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_offset' for Offset frame boundary during AST JSON deserialization");
+        if (frame_end_type != WindowFrame::BoundaryType::Offset && frame_end_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_end_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
 
         frame_end_preceding = r.getBool("frame_end_preceding");
     }

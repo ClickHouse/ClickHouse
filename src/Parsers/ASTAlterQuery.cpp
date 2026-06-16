@@ -363,6 +363,21 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::ADD_STATISTICS:
         case ASTAlterCommand::MODIFY_STATISTICS:
             require(statistics_decl, "statistics_decl");
+            /// `ADD`/`MODIFY STATISTICS` are parsed with `ParserStatisticsDeclaration` (a `TYPE` list);
+            /// `AlterCommand::parse` unconditionally calls `ASTStatisticsDeclaration::getTypeNames`, which
+            /// asserts `types != nullptr`. Reject the no-types declaration shape here.
+            if (!statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ADD/MODIFY STATISTICS requires a TYPE list ('statistics_decl' must have 'types') during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::DROP_STATISTICS:
+        case ASTAlterCommand::MATERIALIZE_STATISTICS:
+            require(statistics_decl, "statistics_decl");
+            /// `DROP`/`CLEAR`/`MATERIALIZE STATISTICS` are parsed with `ParserStatisticsDeclarationWithoutTypes`
+            /// (column list only), so a `TYPE` list is parser-impossible here.
+            if (statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DROP/CLEAR/MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
@@ -454,6 +469,21 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             break;
         default:
             break;
+    }
+
+    /// `IN PARTITION` is parser-produced only for the `CLEAR` forms (and the materialize forms), never for
+    /// the metadata-only `DROP COLUMN/INDEX/STATISTICS/PROJECTION` variants. `formatImpl` would emit a
+    /// parser-impossible `DROP ... IN PARTITION`, and `AlterCommand::apply` skips metadata removal whenever
+    /// a partition is present (and `tryConvertToMutationCommand` reparses the formatted text). Reject a
+    /// `partition` on the drop variants (`clear_*` flag false); `CLEAR`/materialize forms keep it.
+    if (partition)
+    {
+        if ((type == ASTAlterCommand::DROP_COLUMN && !clear_column)
+            || (type == ASTAlterCommand::DROP_INDEX && !clear_index)
+            || (type == ASTAlterCommand::DROP_STATISTICS && !clear_statistics)
+            || (type == ASTAlterCommand::DROP_PROJECTION && !clear_projection))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' (IN PARTITION) is only valid for the CLEAR/MATERIALIZE forms, not a metadata DROP, during AST JSON deserialization");
     }
 }
 

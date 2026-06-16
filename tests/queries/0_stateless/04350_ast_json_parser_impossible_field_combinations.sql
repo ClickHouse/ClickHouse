@@ -32,6 +32,11 @@ SELECT formatQueryFromJSON(parseQueryToJSON('WITH RECURSIVE x AS (SELECT 1) SELE
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a CROSS JOIN b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a NATURAL LEFT JOIN b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a LEFT SEMI JOIN b ON a.x = b.y'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t ADD STATISTICS a TYPE tdigest'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS a IN PARTITION 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR COLUMN x IN PARTITION 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY x ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -179,3 +184,28 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a LEFT SEMI J
 -- (e.g. an identifier) formats fine but reaches that downcast as an internal error, so reject it.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"WithElement","name":"x","subquery":{"type":"Identifier","name":"y"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ALTER ... STATISTICS: `ParserAlterCommand` produces a `TYPE` list only for `ADD`/`MODIFY STATISTICS`,
+-- and never for `DROP`/`CLEAR`/`MATERIALIZE STATISTICS` (which carry only column names). `formatImpl`
+-- prints the `TYPE` list for the add/modify forms and omits it otherwise, so an `ADD` without `types`
+-- (formats `ADD STATISTICS a` with no `TYPE`) or a `DROP` carrying `types` is parser-impossible.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ADD STATISTICS a TYPE tdigest'), '"types":{"type":"ExpressionList"', '"renamed":{"type":"ExpressionList"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns":', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"Function","name":"tdigest","no_empty_args":true}]},"columns":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ALTER ... IN PARTITION: `partition` is parser-produced only for the `CLEAR`/`MATERIALIZE` forms of
+-- `DROP COLUMN`/`DROP INDEX`/`DROP STATISTICS`/`DROP PROJECTION` (where the corresponding `clear_*` flag
+-- is set). A plain `DROP COLUMN` carrying a `partition` would format `DROP COLUMN x IN PARTITION p`,
+-- which `ParserAlterCommand` never produces.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR COLUMN x IN PARTITION 1'), '"clear_column":true', '"clear_column":false')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTWindowDefinition`: a frame `*_offset` expression is parser-produced only for an `Offset` boundary
+-- (`<n> PRECEDING`/`<n> FOLLOWING`); `CURRENT ROW` and `UNBOUNDED` boundaries have no offset. `formatImpl`
+-- prints the offset only for `Offset` boundaries, so an offset on a `Current`/`Unbounded` boundary is
+-- parser-impossible and silently dropped on display.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() OVER (ORDER BY x ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)'), '"frame_end_type":"Current"', '"frame_end_type":"Current","frame_end_offset":{"type":"Literal","value":{"field_type":"UInt64","value":1}}')); -- { serverError BAD_ARGUMENTS }
