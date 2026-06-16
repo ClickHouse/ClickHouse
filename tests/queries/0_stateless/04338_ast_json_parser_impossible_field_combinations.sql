@@ -172,3 +172,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1'), '"type":"Select
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN b ON a.x = b.y'), '"kind":"INNER"', '"kind":"CROSS"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN b ON a.x = b.y'), '"kind":"INNER"', '"kind":"INNER","is_natural":true')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a LEFT SEMI JOIN b ON a.x = b.y'), '"kind":"LEFT"', '"kind":"INNER"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTWithElement`: a CTE body is parser-produced as an `ASTSubquery`, and `QueryTreeBuilder` hard-downcasts
+-- it (`with_element->subquery->as<ASTSubquery &>()`). A `subquery` that is some other `ASTWithAlias`
+-- (e.g. an identifier) formats fine but reaches that downcast as an internal error, so reject it.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"WithElement","name":"x","subquery":{"type":"Identifier","name":"y"}}'); -- { serverError BAD_ARGUMENTS }
