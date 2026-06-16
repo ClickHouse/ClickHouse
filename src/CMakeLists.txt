@@ -269,12 +269,30 @@ endif ()
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 # Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
+#
+# The native Arrow IPC reader/writer compiles the Apache Arrow library's own generated FlatBuffers
+# metadata headers (`generated/Message_generated.h`, `Schema_generated.h`, `File_generated.h`). The
+# inline accessor and verifier functions those headers define are emitted as weak symbols, so when
+# alignment sanitization is on our (instrumented) copies can interpose at link time on the Apache
+# Arrow C++ library's own IPC and Flight code paths. Those paths legitimately verify and read
+# FlatBuffers metadata at sub-aligned addresses (e.g. a gRPC-delivered Arrow Flight message), which
+# then aborts under UBSan even though the data is valid — observed as a server crash in the
+# `test_arrowflight_storage` / `test_arrowflight_interface` integration tests. Exclude every
+# translation unit that compiles those headers, so no alignment-instrumented copy of these symbols
+# is left to be selected by the linker.
+#
 # RocksDB EmbeddedRocksDB full scan hits a pointer-overflow when a corrupted slice size
 # causes pointer arithmetic to overflow. Pre-existing bug: https://github.com/ClickHouse/ClickHouse/issues/99862
 if (SANITIZE STREQUAL "address,undefined")
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowColumnToCHColumn.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockOutputFormat.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/MessageReader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/RecordBatchDecoder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/RecordBatchEncoder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowIPC/SchemaConverter.cpp
         PROPERTIES COMPILE_FLAGS "-fno-sanitize=alignment")
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/Storages/RocksDB/StorageEmbeddedRocksDB.cpp
