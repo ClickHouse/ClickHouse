@@ -25,3 +25,12 @@ curl -sS "${CLICKHOUSE_URL}&${SIXEL}&max_memory_usage=1000000000" --data-binary 
 head -c 3 "${OUT}" | od -An -tx1 | tr -d ' \n'
 echo
 rm -f "${OUT}"
+
+# The iTerm and Kitty modes build the whole encoded PNG in a memory-tracked buffer before transmitting it.
+# An incompressible image keeps that buffer about the size of the pixel data, so a tight limit must reject it.
+# 'wait_end_of_query=0' streams the response, so the buffered HTTP response does not mask the encoder's usage.
+ITERM="output_format_image_width=1000000&output_format_image_height=20&output_format_image_terminal_mode=iterm&wait_end_of_query=0"
+echo "iterm tight limit rejected:"
+curl -sS "${CLICKHOUSE_URL}&${ITERM}&max_memory_usage=40000000" \
+    --data-binary "SELECT toUInt8(sipHash64(number) % 256) AS v FROM numbers(20000000) FORMAT PNG" \
+    | grep -oE "MEMORY_LIMIT_EXCEEDED" | head -1
