@@ -231,7 +231,7 @@ struct DecimalArithmeticsImpl
 
 
 template <typename Transform>
-class FunctionsDecimalArithmetics final : public IFunction
+class FunctionsDecimalArithmetics : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;

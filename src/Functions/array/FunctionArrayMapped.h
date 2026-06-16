@@ -59,7 +59,7 @@ namespace ErrorCodes
   * See the example of Impl template parameter in arrayMap.cpp
   */
 template <typename Impl, typename Name, bool IsDeterministic = true>
-class FunctionArrayMapped final : public IFunction
+class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

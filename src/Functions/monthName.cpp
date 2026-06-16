@@ -18,7 +18,7 @@ bool isDateOrDateTime(const IDataType & type)
 
 }
 
-class FunctionMonthName final : public IFunction
+class FunctionMonthName : public IFunction
 {
 public:
     static constexpr auto name = "monthName";

@@ -991,7 +991,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     for (const auto & queue : queues)
     {
         /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
-        /// on of them should not affect others.
+        /// one of them should not affect others.
         /// AMQP::ifempty is not used on purpose.
 
         rabbit_channel->removeQueue(queue, AMQP::ifunused)

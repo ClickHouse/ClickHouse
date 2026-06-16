@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/Metadata.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -8,8 +9,6 @@
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictMicroseconds;
-    extern const Event FilesystemCacheEvictedBytes;
-    extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheFailedEvictionCandidates;
 }
 
@@ -155,8 +154,9 @@ std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
     return "";
 }
 
-EvictionCandidates::EvictionCandidates()
-    : log(getLogger("EvictionCandidates"))
+EvictionCandidates::EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_)
+    : on_evict_callback(std::move(on_evict_callback_))
+    , log(getLogger("EvictionCandidates"))
 {
 }
 
@@ -320,11 +320,20 @@ void EvictionCandidates::evict()
                 ///   it was freed in favour of some reserver, so we can make it visibly
                 ///   free only for that particular reserver.
 
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
-
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
+
+                if (on_evict_callback)
+                {
+                    try
+                    {
+                        on_evict_callback(*segment);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "On-evict callback failed; ignored");
+                    }
+                }
             }
             catch (...)
             {

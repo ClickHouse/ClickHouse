@@ -613,6 +613,13 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         {
             ColumnPtr type_column = flattened_column.types[i]->createColumn();
             flattened_column.types[i]->getDefaultSerialization()->deserializeBinaryBulkWithMultipleStreams(type_column, 0, flattened_limits[i], settings, dynamic_state->flattened_states[i], cache);
+            if (type_column->size() != flattened_limits[i])
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Mismatch in flattened Dynamic column: indexes declare {} rows for type {}, but only {} rows were deserialized",
+                    flattened_limits[i],
+                    flattened_column.types[i]->getName(),
+                    type_column->size());
             flattened_column.columns.emplace_back(std::move(type_column));
         }
 

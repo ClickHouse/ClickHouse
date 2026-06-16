@@ -46,7 +46,7 @@ struct FunctionRunningDifferenceName<false>
   * So, result of function depends on partition of data to columns and on order of data in columns.
   */
 template <bool is_first_line_zero>
-class FunctionRunningDifferenceImpl final : public IFunction
+class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
     /// It is possible to track value from previous columns, to calculate continuously across all columns. Not implemented.

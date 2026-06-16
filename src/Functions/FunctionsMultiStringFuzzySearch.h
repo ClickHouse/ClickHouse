@@ -39,7 +39,7 @@ namespace ErrorCodes
   */
 
 template <typename Impl>
-class FunctionsMultiStringFuzzySearch final : public IFunction
+class FunctionsMultiStringFuzzySearch : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

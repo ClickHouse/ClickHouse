@@ -222,7 +222,7 @@ void NBModelRegistry::load(ContextPtr context)
     }
 }
 
-class FunctionNaiveBayesClassifier final : public IFunction
+class FunctionNaiveBayesClassifier : public IFunction
 {
 private:
     const NBModelRegistry::Models & models;

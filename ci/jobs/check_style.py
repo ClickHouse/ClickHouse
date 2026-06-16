@@ -6,6 +6,7 @@ import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
@@ -228,6 +229,15 @@ def check_broken_links(path, exclude_paths):
 def check_cpp_code():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check_cpp.sh"
+    )
+    if err:
+        out += err
+    return out
+
+
+def check_repo_submodules():
+    res, out, err = Shell.get_res_stdout_stderr(
+        "./ci/jobs/scripts/check_style/check_submodules.sh"
     )
     if err:
         out += err
@@ -564,7 +574,13 @@ if __name__ == "__main__":
             )
         )
     testname = "test_numbers_check"
-    if testpattern.lower() in testname.lower():
+    # Skip on release branches and backport PRs: backports cherry-pick a small
+    # subset of test files, which legitimately leaves large gaps in the numbering.
+    info = Info()
+    release_branch_re = re.compile(r"^\d{2}\.\d+$")
+    branch_to_check = (info.base_branch or info.git_branch or "").removeprefix("release/")
+    is_release_branch = bool(release_branch_re.match(branch_to_check))
+    if testpattern.lower() in testname.lower() and not is_release_branch:
         results.append(
             Result.from_commands_run(
                 name=testname,
@@ -599,6 +615,14 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_cpp_code,
+            )
+        )
+    testname = "submodules"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_repo_submodules,
             )
         )
     testname = "various"

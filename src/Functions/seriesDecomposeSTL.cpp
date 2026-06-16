@@ -24,7 +24,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 // Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-class FunctionSeriesDecomposeSTL final : public IFunction
+class FunctionSeriesDecomposeSTL : public IFunction
 {
 public:
     static constexpr auto name = "seriesDecomposeSTL";

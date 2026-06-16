@@ -137,7 +137,7 @@ Pipe StorageSQLite::read(
 }
 
 
-class SQLiteSink final : public SinkToStorage
+class SQLiteSink : public SinkToStorage
 {
 public:
     explicit SQLiteSink(

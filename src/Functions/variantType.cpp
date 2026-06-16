@@ -22,7 +22,7 @@ namespace
 {
 
 /// Return enum with type name for each row in Variant column.
-class FunctionVariantType final : public IFunction
+class FunctionVariantType : public IFunction
 {
 public:
     static constexpr auto name = "variantType";

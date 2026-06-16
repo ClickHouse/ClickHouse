@@ -29,7 +29,7 @@ namespace
 {
 
 /// Returns all values from a JSON column as an array of strings, in sorted path order.
-class FunctionJSONAllValues final : public IFunction
+class FunctionJSONAllValues : public IFunction
 {
 public:
     static constexpr auto name = "JSONAllValues";

@@ -184,7 +184,7 @@ struct NotImpl
 };
 
 template <typename Impl, typename Name>
-class FunctionAnyArityLogical final : public IFunction
+class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -272,7 +272,7 @@ public:
 
 
 template <template <typename> class Impl, typename Name>
-class FunctionUnaryLogical final : public IFunction
+class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
