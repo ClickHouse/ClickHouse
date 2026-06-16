@@ -12,11 +12,6 @@
 #include <Server/WebTerminalRequestHandler.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControl.h>
-#include <Access/SettingsProfile.h>
-#include <Access/SettingsProfileElement.h>
-#include <Access/User.h>
-#include <Access/Role.h>
 #include <boost/algorithm/string/predicate.hpp>
 #if CLICKHOUSE_CLOUD
 #include <Server/CloudReadinessHandler.h>
@@ -40,70 +35,8 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-namespace Setting
-{
-    extern const SettingsBool http_allow_database_as_path;
-    extern const SettingsBool http_allow_table_as_file;
-    extern const SettingsBool http_allow_filters_as_path;
-}
-
 namespace
 {
-
-bool isHTTPPathFeatureSettingName(const String & name)
-{
-    return name == "http_allow_database_as_path"
-        || name == "http_allow_table_as_file"
-        || name == "http_allow_filters_as_path";
-}
-
-bool isSettingValueTruthy(const Field & value)
-{
-    switch (value.getType())
-    {
-        case Field::Types::UInt64: return value.safeGet<UInt64>() != 0;
-        case Field::Types::Int64: return value.safeGet<Int64>() != 0;
-        case Field::Types::Bool: return value.safeGet<bool>();
-        case Field::Types::Float64: return value.safeGet<Float64>() != 0;
-        case Field::Types::String:
-        {
-            const auto & str = value.safeGet<String>();
-            return !str.empty() && str != "0" && !boost::iequals(str, "false");
-        }
-        default:
-            return false;
-    }
-}
-
-bool elementsEnableHTTPPathFeature(const SettingsProfileElements & elements)
-{
-    for (const auto & element : elements)
-        if (isHTTPPathFeatureSettingName(element.setting_name) && element.value && isSettingValueTruthy(*element.value))
-            return true;
-    return false;
-}
-
-/// Routing happens before authentication, so we cannot consult the connecting user's resolved
-/// profile at this point. To still route requests for users that have a path feature enabled only
-/// in their own profile/user/role (and not in the server's default profile), scan the access
-/// entities. The dynamic handler re-checks the features against the authenticated user, so this is
-/// only a routing-time over-approximation. When the feature is not enabled anywhere we deliberately
-/// do NOT claim the request, so unknown paths keep returning a plain pre-auth 404 (`NotFoundHandler`)
-/// instead of the dynamic handler becoming a catch-all. The cheap default-profile check in the
-/// caller short-circuits this scan for the common case where the feature is enabled server-wide.
-bool anyAccessEntityEnablesHTTPPathFeature(const AccessControl & access_control)
-{
-    for (const auto & id : access_control.findAll<SettingsProfile>())
-        if (auto profile = access_control.tryRead<SettingsProfile>(id); profile && elementsEnableHTTPPathFeature(profile->elements))
-            return true;
-    for (const auto & id : access_control.findAll<User>())
-        if (auto user = access_control.tryRead<User>(id); user && elementsEnableHTTPPathFeature(user->settings))
-            return true;
-    for (const auto & id : access_control.findAll<Role>())
-        if (auto role = access_control.tryRead<Role>(id); role && elementsEnableHTTPPathFeature(role->settings))
-            return true;
-    return false;
-}
 
 class RedirectRequestHandler : public HTTPRequestHandler
 {
@@ -547,8 +480,16 @@ void addDefaultHandlersFactory(
     {
         return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query", std::nullopt, "", path_hints);
     };
+    /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
+    /// default off), evaluated here at routing time — before authentication, where the connecting
+    /// user is unknown. The per-user `http_allow_database_as_path` / `http_allow_table_as_file` /
+    /// `http_allow_filters_as_path` settings then control, after authentication, whether a routed
+    /// path is actually interpreted (see `HTTPHandler::processQuery`). When the server flag is off,
+    /// path requests are not claimed at all, so unknown paths keep returning a plain pre-auth 404
+    /// (`NotFoundHandler`).
+    const bool allow_path_requests = config.getBool("http_allow_path_requests", false);
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
-    query_handler->addFilter([&server](const auto & request)
+    query_handler->addFilter([allow_path_requests](const auto & request)
         {
             const auto & uri = request.getURI();
             const auto & method = request.getMethod();
@@ -568,20 +509,11 @@ void addDefaultHandlersFactory(
             if (!is_get_or_head && !is_post_or_options)
                 return false;
 
-            /// Everything below is the path-as-file extension. Skip it when none of the
-            /// `http_allow_*_as_path`/`as_file` features are enabled, so unknown paths fall through to
-            /// `NotFoundHandler` (HTTP 404) exactly as before this PR. The path features are still
-            /// gated again per-user inside `HTTPHandler::processQuery`; this check is the routing-time
-            /// approximation. We first check the server's default profile (cheap, the common case),
-            /// and only if that is off do we scan access entities, so that the feature being enabled
-            /// for a specific profile/user/role still routes here.
-            const auto & default_settings = server.context()->getSettingsRef();
-            bool path_features_enabled = default_settings[Setting::http_allow_database_as_path]
-                || default_settings[Setting::http_allow_table_as_file]
-                || default_settings[Setting::http_allow_filters_as_path];
-            if (!path_features_enabled)
-                path_features_enabled = anyAccessEntityEnablesHTTPPathFeature(server.context()->getAccessControl());
-            if (!path_features_enabled)
+            /// Everything below is the path-as-file extension. Skip it unless path requests are
+            /// allowed server-wide, so unknown paths fall through to `NotFoundHandler` (HTTP 404)
+            /// exactly as before this PR. (The path features are still gated again per-user inside
+            /// `HTTPHandler::processQuery`; this server-level flag is only the routing-time gate.)
+            if (!allow_path_requests)
                 return false;
 
             /// Skip the path-as-file routing for clients sending an `Authorization` header with a

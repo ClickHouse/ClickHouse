@@ -6391,17 +6391,17 @@ This is an HTTP-interface response-shaping setting: it is consumed before the qu
     DECLARE(Bool, http_allow_database_as_path, false, R"(
 If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
 
-To make the HTTP interface route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all, this feature has to be enabled in the server's default profile (the global server configuration), because the routing decision is made before the request is authenticated and the connecting user's profile is known. Enabling it only for a specific user, role, or profile lets that user use the feature once routed, but unknown paths still return a plain `404` unless some profile enables it server-wide. After routing, the feature is re-checked against the authenticated user's effective settings.
+This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (off by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be enabled selectively per user, role, or profile.
 )", 0) \
     DECLARE(Bool, http_allow_table_as_file, false, R"(
 If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
 
-Like [`http_allow_database_as_path`](#http_allow_database_as_path), enable this in the server's default profile (the global server configuration) for path-style requests to be routed to the query handler — routing happens before authentication.
+Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0) \
     DECLARE(Bool, http_allow_filters_as_path, false, R"(
 If enabled, the HTTP interface recognizes `/name=value/` components in the path (hive partitioning style) and translates them to filters combined with AND. Operators `>`, `<`, `>=`, `<=`, `!=`, `<>` are also recognized.
 
-Like [`http_allow_database_as_path`](#http_allow_database_as_path), enable this in the server's default profile (the global server configuration) for path-style requests to be routed to the query handler — routing happens before authentication.
+Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0) \
     DECLARE(Bool, http_allow_filters_as_unrecognized_url_parameters, false, R"(
 If enabled, any URL parameter not recognized as a known parameter, setting, or `param_*` prefix is treated as a filter expression and combined with AND. Operators `>`, `<`, `>=`, `<=`, `!=`, `<>` are recognized; the value is parsed as a full expression and must contain at least one comparison operator.
