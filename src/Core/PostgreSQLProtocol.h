@@ -519,11 +519,15 @@ public:
         readNullTerminated(auth_method, in);
         Int32 size_sasl_mechanism = 0;
         readBinaryBigEndian(size_sasl_mechanism, in);
-        if (size_sasl_mechanism < 0)
+        /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
+        if (size_sasl_mechanism < -1)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be negative", size_sasl_mechanism);
-        sasl_mechanism.resize(size_sasl_mechanism);
-        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
+        if (size_sasl_mechanism > 0)
+        {
+            sasl_mechanism.resize(size_sasl_mechanism);
+            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        }
     }
 
     MessageType getMessageType() const override
@@ -779,9 +783,16 @@ public:
         {
             Int32 sz_param = 0;
             readBinaryBigEndian(sz_param, in);
-            if (sz_param < 0)
+            /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
+            /// any other negative value is malformed.
+            if (sz_param < -1)
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                                "Wrong parameter length {} in Bind message, it must not be negative", sz_param);
+                                "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
+            if (sz_param == -1)
+            {
+                parameters.emplace_back("NULL");
+                continue;
+            }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
