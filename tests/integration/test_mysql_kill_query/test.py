@@ -249,10 +249,10 @@ SETTINGS max_block_size = 10000"""
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
-    # from preceding tests in this file (test_kill_query and test_cancel_infinite_query
-    # both produce these lines).
-    node1.wait_for_log_line("Get data from database", look_behind_lines=0)
+    # Wait only for "Generate a chunk": it is logged per block (so a single tail is
+    # robust even if the first emission lands before the tail starts) and strictly
+    # after "Get data from database", so one look_behind_lines=0 tail avoids both the
+    # stale-log match and the ordering gap between two independent tails.
     node1.wait_for_log_line("Generate a chunk", look_behind_lines=0)
     time.sleep(2)
 
