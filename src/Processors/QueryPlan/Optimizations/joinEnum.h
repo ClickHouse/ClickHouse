@@ -146,7 +146,7 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & 
 
     initDPTable(consumer.dptable(), query_graph);
 
-    /** The integer `s` induces the current subset `S` via its binary representation. 
+    /** The integer `s` induces the current subset `S` via its binary representation.
     * Taken as bitvectors, integers in the range [1, 2^n - 1] map exactly to all
     * non-empty subsets of {R_0, ..., R_{n-1}}.
     * Iterating in strictly ascending order guarantees a valid sequence for dynamic
