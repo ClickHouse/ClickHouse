@@ -10,3 +10,7 @@ SELECT * FROM s3('http://localhost:11111/test/test', 'key', 'secret', 'token', '
 
 -- 8-arg form: a bool last argument means the 7th is `partition_strategy`, so `(..., 'NONE', 1)` must parse.
 SELECT * FROM s3('http://localhost:11111/test/test', 'key', 'secret', 'token', 'Parquet', 'col1 UInt32', 'NONE', 1) LIMIT 0;
+
+-- 7-arg: uppercase `NONE` is the positional partition strategy, not compression (read failed before the fix).
+INSERT INTO FUNCTION s3('http://localhost:11111/test/04337_none7_' || currentDatabase() || '.csv', 'test', 'testtest', '', 'CSV', 'a UInt32') SELECT 7 SETTINGS s3_truncate_on_insert = 1;
+SELECT * FROM s3('http://localhost:11111/test/04337_none7_' || currentDatabase() || '.csv', 'test', 'testtest', '', 'CSV', 'a UInt32', 'NONE');

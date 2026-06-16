@@ -370,11 +370,13 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
 namespace
 {
 
-/// Disambiguates an ambiguous positional slot (partition strategy vs compression method). Matches a
-/// real strategy case-insensitively (`hive`/`HIVE`), but excludes `NONE` so the valid compression
-/// method `none` keeps mapping to `compression_method` rather than the default strategy.
+/// Whether an ambiguous positional literal is a partition strategy (vs a compression method). Exact enum
+/// spellings (incl. uppercase `NONE`) match for backward compatibility; matching is also case-insensitive
+/// for real strategies (`hive`), but lowercase `none` is left to mean the `compression_method`.
 bool looksLikeExplicitPartitionStrategy(const String & arg)
 {
+    if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(arg))
+        return true;
     const auto strategy = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(arg, magic_enum::case_insensitive);
     return strategy.has_value() && *strategy != PartitionStrategyFactory::StrategyType::NONE;
 }
