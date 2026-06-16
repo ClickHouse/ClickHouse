@@ -36,8 +36,8 @@ struct BackupInfo
     /// Used to serialize the base backup locator into the `.backup` metadata, which must never
     /// contain credentials; on restore they are taken from the restore source locator, from the
     /// `base_backup` setting, or from the server-side configuration.
-    /// The context is used to evaluate non-literal `url` overrides the same way `getNamedCollection`
-    /// does; without a context such overrides are rejected.
+    /// The context is used to evaluate non-literal argument keys and `url` overrides the same way
+    /// `getNamedCollection` does; without a context such expressions are rejected.
     BackupInfo withoutS3Credentials(ContextPtr context = nullptr) const;
 
     /// Gets the named collection specified by id_arg, checks access rights,
