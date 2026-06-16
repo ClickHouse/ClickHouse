@@ -5481,6 +5481,8 @@ Possible values:
     DECLARE(Bool, use_paimon_metadata_files_cache, false, R"(
 If turned on, paimon table function and paimon storage may utilize the paimon metadata files cache.
 
+Paimon table functions evaluate this setting per query, while persistent Paimon table engines latch it at metadata initialization: to change the decision for an already-created table, it must be dropped and recreated.
+
 Possible values:
 
 - 0 - Disabled
