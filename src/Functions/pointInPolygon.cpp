@@ -15,6 +15,8 @@
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocCacheArena.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Core/Defines.h>
@@ -365,6 +367,8 @@ public:
 
                 auto load = [&multi_polygon]
                 {
+                    ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
+
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstMultiPolygonImpl>, multi_polygon);
 
                     ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
@@ -395,6 +399,8 @@ public:
 
                 auto load = [&polygon]
                 {
+                    ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
+
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstPolygonImpl>, polygon);
 
                     ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
