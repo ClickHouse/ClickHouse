@@ -75,7 +75,7 @@ CREATE TABLE table
 (
     key UInt64,
     str String,
-    INDEX text_idx(str) TYPE text(
+    INDEX text_idx str TYPE text(
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
@@ -108,7 +108,7 @@ Alternatively, to add a text index to an existing table:
 
 ```sql title="Query"
 ALTER TABLE table
-    ADD INDEX text_idx(str) TYPE text(
+    ADD INDEX text_idx str TYPE text(
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
@@ -197,22 +197,31 @@ If the text index was build on a column of type `Nullable(T)` or `LowCardinality
 
 Examples:
 
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
 
 Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
 
 Examples:
 
-- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
-- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
-- Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
+- `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
+- `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
+- Not allowed: `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
 
 Using non-deterministic functions is disallowed.
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
+:::note
+Preprocessors are in principle equivalent to wrapping the index column or expression by the preprocessor expression.
+For example, the `lower` preprocessor in `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))` can be emulated by `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha')`.
+The latter form has the disadvantage that the emulated preprocessor is only applied if it matches the filter condition in the WHERE clause.
+For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAllTokens(col, [...])` does not.
+For an optimal user experience, we therefore recommend using preprocessor expressions.
+:::
+
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
+Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
 
@@ -220,7 +229,7 @@ For example,
 CREATE TABLE table
 (
     str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -234,7 +243,7 @@ is equivalent to:
 CREATE TABLE table
 (
     str String,
-    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX idx lower(str) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -309,7 +318,7 @@ Example:
 CREATE TABLE table(
     k UInt64,
     s String,
-    INDEX idx(s) TYPE text(tokenizer = ngrams(2)))
+    INDEX idx s TYPE text(tokenizer = ngrams(2)))
 ENGINE = MergeTree()
 ORDER BY k;
 
@@ -411,6 +420,34 @@ The spaces left and right of `support` make sure that the term can be extracted 
 Fortunately, there is a special case where ClickHouse can leverage the inverted index to speed up LIKE queries significantly.
 
 See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for details.
+
+#### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
+
+[multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny) tests whether any of several regular expressions matches.
+These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
+A granule is read if any needle may be present in it.
+
+For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
+
+As with `LIKE` and `match`, substring and regular-expression search work best with the `ngrams` and `sparseGrams` tokenizers.
+These tokenizers index overlapping character n-grams, so a needle is decomposed into n-grams that are present in the index wherever the needle occurs as a substring, regardless of whether it starts or ends in the middle of a word.
+A needle can therefore be used as-is, as long as it is at least as long as the n-gram size.
+
+Example for the text index with `ngrams` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, ['clickhouse', 'support']);
+```
+
+The `splitByNonAlpha` tokenizer, in contrast, only indexes complete tokens (whole words).
+Because a needle may begin or end in the middle of a word, ClickHouse drops the leading and trailing tokens of each needle, so the index can prune granules only using complete tokens.
+To make substring and regular-expression search use the index with `splitByNonAlpha`, surround each needle with separator characters (such as spaces) so that it forms one or more complete tokens.
+
+Example for the text index with `splitByNonAlpha` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
+```
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
@@ -879,7 +916,7 @@ Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quic
 CREATE TABLE tab (
     id UInt32,
     text String,
-    INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)
+    INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1224,7 +1261,7 @@ We will use `ALTER TABLE` and add a text index on comment column, then materiali
 
 ```sql
 -- Add the index
-ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE hackernews ADD INDEX comment_idx comment TYPE text(tokenizer = splitByNonAlpha);
 
 -- Materialize the index for existing data
 ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;

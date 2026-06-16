@@ -27,7 +27,7 @@ SETTINGS
 
 $CLICKHOUSE_CLIENT -q "
 SELECT database || '.' || name FROM system.tables WHERE database = '${NEW_DB_NAME}' AND engine = 'MergeTree'
-SETTINGS show_data_lake_catalogs_in_system_tables = 1;
+SETTINGS show_remote_databases_in_system_tables = 1;
 "
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_NAME};"
