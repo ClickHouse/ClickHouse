@@ -28,13 +28,12 @@ SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
          serialization_info_version = 'with_types',
          min_bytes_for_wide_part = 0;
 
--- Make sure r2's ZK session is established before the quorum=2 insert; otherwise
--- the freshly-created r2 may not be in r1's active-replicas view yet and the
--- insert fails with `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE` (replicas: only r1).
-SYSTEM SYNC REPLICA t_sparse_seq_consistency_r2;
-
 -- First insert, quorum-confirmed by both replicas: 4000 default zeros + 1000 ones.
-SET insert_quorum = 2, insert_quorum_parallel = 0;
+-- `insert_keeper_fault_injection_probability = 0` (same as other quorum tests,
+-- e.g. 01451): with CI's default 0.01 probability, the precondition check
+-- retries long enough that a parallel sink can race against the first sink's
+-- `/quorum/status` and throw `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`.
+SET insert_quorum = 2, insert_quorum_parallel = 0, insert_keeper_fault_injection_probability = 0;
 INSERT INTO t_sparse_seq_consistency_r1
 SELECT number, if(number < 4000, 0, 1)::UInt32 FROM numbers(5000)
 SETTINGS optimize_on_insert = 0;
@@ -73,13 +72,6 @@ SELECT 'seq1_scan',    count() FROM t_sparse_seq_consistency_r1 WHERE n = 0
              use_sparsity_info_for_pruning = 'off',
              select_sequential_consistency = 1;
 
--- Let r2 catch up to the second insert so the quorum status node clears.
--- Without this the flaky-check rerun would see the unsatisfied-quorum marker
--- in ZK at `/clickhouse/tables/{database}/test_04283/t/quorum/` from this run
--- and the next run's first quorum=2 insert would fail with
--- `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`.
 SYSTEM START FETCHES t_sparse_seq_consistency_r2;
-SYSTEM SYNC REPLICA t_sparse_seq_consistency_r2;
-
 DROP TABLE t_sparse_seq_consistency_r1 SYNC;
 DROP TABLE t_sparse_seq_consistency_r2 SYNC;
