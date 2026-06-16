@@ -99,7 +99,7 @@ TEST(SIEVECache, getOrSet)
     ASSERT_TRUE(*value == 10);
 }
 
-void assertQueue(const std::vector<int> & queue, const std::vector<int> expected_keys)
+static void assertQueue(const std::vector<int> & queue, const std::vector<int> & expected_keys)
 {
     ASSERT_EQ(queue.size(), expected_keys.size());
     std::cerr << "Queue size: " + std::to_string(queue.size()) + "\n";
