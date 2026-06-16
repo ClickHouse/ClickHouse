@@ -555,14 +555,6 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
         return true;
 
-    /// NOTE: short-name binding is intentionally NOT consulted here. This predicate is used
-    /// from `qualifyColumnNodesWithProjectionNames` and from `tryResolveIdentifierFromStorage`'s
-    /// qualifier-stripping logic to decide projection-name qualification — pulling the
-    /// short-name map into it would over-qualify / shift `SELECT *` headers (and similar)
-    /// even for queries that never reference the short name. The actual identifier resolution
-    /// still considers short-name via `tryResolveIdentifierFromTableExpression` /
-    /// `tryResolveIdentifierFromStorage`, gated on `short_name_fallback_enabled`.
-
     if (identifier.getPartsSize() == 1)
         return false;
 
