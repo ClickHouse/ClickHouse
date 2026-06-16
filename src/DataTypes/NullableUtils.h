@@ -36,11 +36,13 @@ bool canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(const DataTy
   */
 DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 
-/** Marks rows of an extracted subcolumn as `NULL` according to the null map of the outer `Nullable`
-  * column, in place: for each `i` in `[0, length)` with `parent_null_map[parent_null_map_offset + i] == 1`,
-  * the row at `column_offset + i` becomes `NULL` in the column's own null representation. The column must be
-  * able to represent `NULL` itself (`ColumnNullable`, `ColumnVariant`, `ColumnDynamic`, or
-  * `ColumnLowCardinality` with a nullable dictionary) and must be exclusively owned by the caller.
+/** This function marks rows of an extracted subcolumn as `NULL` in place, according to the null map of the
+  * outer `Nullable` column. It processes a range of `length` rows, and for each `i` in `[0, length)` it
+  * marks the row `column[column_offset + i]` as `NULL` when `parent_null_map[parent_null_map_offset + i]` is
+  * set. The two offsets are separate because the same range can sit at a different position in the subcolumn
+  * than it does in the parent null map. The column must be able to represent `NULL` itself, so it must be a
+  * `ColumnNullable`, a `ColumnVariant`, a `ColumnDynamic`, or a `ColumnLowCardinality` with a nullable
+  * dictionary, and it must be exclusively owned by the caller.
   */
 void applyParentNullMapToExtractedSubcolumn(
     const MutableColumnPtr & column,

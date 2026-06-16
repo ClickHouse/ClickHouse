@@ -898,15 +898,18 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const NullMap & map)
+void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
 {
     NullMap & arr = getNullMapData();
 
-    if (arr.size() != map.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of ColumnNullable objects");
+    if (offset + map.size() > arr.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map range [{}, {}) is out of bounds for ColumnNullable of size {}",
+            offset, offset + map.size(), arr.size());
 
-    for (size_t i = 0, size = arr.size(); i < size; ++i)
-        arr[i] |= negative ^ map[i];
+    for (size_t i = 0, size = map.size(); i < size; ++i)
+        arr[offset + i] |= negative ^ map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
@@ -919,9 +922,9 @@ void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
     applyNullMapImpl<false>(map.getData());
 }
 
-void ColumnNullable::applyNegatedNullMap(const NullMap & map)
+void ColumnNullable::applyNegatedNullMap(const NullMap & map, size_t offset)
 {
-    applyNullMapImpl<true>(map);
+    applyNullMapImpl<true>(map, offset);
 }
 
 void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)

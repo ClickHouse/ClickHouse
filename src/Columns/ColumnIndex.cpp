@@ -167,19 +167,19 @@ size_t ColumnIndex::getIndexAt(size_t row) const
     return index;
 }
 
-void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value)
+void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset)
 {
-    chassert(mask.size() == size());
+    chassert(offset + mask.size() <= size());
     chassert(value <= getMaxIndexForCurrentType());
 
     auto set_value = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
         auto & data = getIndexesData<CurIndexType>();
         const auto typed_value = static_cast<CurIndexType>(value);
-        for (size_t row = 0, rows = data.size(); row < rows; ++row)
+        for (size_t row = 0, rows = mask.size(); row < rows; ++row)
         {
             if (!mask[row])
-                data[row] = typed_value;
+                data[offset + row] = typed_value;
         }
     };
 

@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
@@ -124,34 +125,38 @@ void applyParentNullMapToExtractedSubcolumn(
 {
     chassert(column_offset + length <= column->size());
 
-    /// The helpers used below require a mask of the full column size. The mask is zero for the rows of
-    /// the applied range that are NULL in the parent and one elsewhere, so rows outside the range are
-    /// left intact.
-    IColumn::Filter keep_mask(column->size(), 1);
+    /// When no row of the range is NULL in the parent, the subcolumn already holds the correct values and
+    /// nothing needs to be marked NULL.
+    if (memoryIsZero(parent_null_map.data(), parent_null_map_offset, parent_null_map_offset + length))
+        return;
+
+    /// Build a keep-mask that covers only the applied range: zero for the rows that are NULL in the parent
+    /// and one elsewhere.
+    IColumn::Filter keep_mask(length);
     for (size_t i = 0; i < length; ++i)
-        keep_mask[column_offset + i] = !parent_null_map[parent_null_map_offset + i];
+        keep_mask[i] = !parent_null_map[parent_null_map_offset + i];
 
     if (auto * nullable = typeid_cast<ColumnNullable *>(column.get()))
     {
-        nullable->applyNegatedNullMap(keep_mask);
+        nullable->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
     if (auto * variant = typeid_cast<ColumnVariant *>(column.get()))
     {
-        variant->applyNegatedNullMap(keep_mask);
+        variant->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
     if (auto * dynamic = typeid_cast<ColumnDynamic *>(column.get()))
     {
-        dynamic->applyNegatedNullMap(keep_mask);
+        dynamic->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
     if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(column.get()))
     {
-        low_cardinality->applyNegatedNullMap(keep_mask);
+        low_cardinality->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 

@@ -1533,9 +1533,9 @@ void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map
     variant_column_ptr->applyNullMap(null_map);
 }
 
-void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
+void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
-    variant_column_ptr->applyNegatedNullMap(null_map);
+    variant_column_ptr->applyNegatedNullMap(null_map, offset);
 }
 
 }
