@@ -285,6 +285,16 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// One predicate leaf may produce several atoms combined by AND (see `RPNBuilder`).
+        /// This flag is set on the second and subsequent atoms of such a group and on the AND
+        /// operators combining them — i.e. on every element that continues the group opened by
+        /// a preceding element (the group's first atom does not have it). The whole group
+        /// corresponds to a single element of the one-element-per-leaf RPN built with an empty
+        /// key (`key_condition_rpn_template`), which is what the skip-index disjunction
+        /// machinery uses for positions (see `KeyCondition::checkInHyperrectangle` and
+        /// `mergePartialResultsForDisjunctions`).
+        bool continues_multi_atom_group = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
@@ -377,6 +387,48 @@ private:
         const NameSet key_subexpr_names;
     };
 
+    /** Atom extraction maps predicates onto key columns in two opposite directions,
+      * and the naming below follows that split.
+      *
+      * The predicate-side functions (`tryMatch...`, `analyzePredicate...`) walk the
+      * predicate expression and ask whether it is a key column, possibly wrapped in a
+      * chain of functions. The discovered chain is a check-time chain: it is stored in
+      * the atom (`RPNElement::monotonic_functions_chain`) and is applied to granule key
+      * ranges during evaluation.
+      *
+      * The key-side functions (`collectKeyWrapping...`) walk the table's key expression
+      * and ask which key columns can be computed from a given predicate column, and
+      * how. The discovered chains and DAGs are build-time recipes: they are applied to
+      * the predicate's constant (or to the set elements) once, during construction, and
+      * they are never stored in atoms. The `transformConstantBy...KeyFunctions` pair is
+      * the predicate-side consumer of these recipes.
+      */
+
+    /// A key-side recipe that describes how the key column `key_column_num` computes
+    /// from a predicate column, as a chain of (possibly curried, see
+    /// `FunctionWithOptionalConstArg`) single-argument functions. The chain is applied
+    /// to the predicate's constant at build time and is never stored in atoms.
+    struct KeyWrappingChain
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        MonotonicFunctionsChain functions_chain;
+    };
+
+    /// The result of pushing the predicate's constant through a key-side recipe.
+    /// The transformed `value` and `type` live in the key space of `key_column_num`
+    /// and compare against that column directly. When the transform is not provably
+    /// injective, the resulting atom only describes a superset of the matching values,
+    /// so it must be relaxed.
+    struct TransformedConstant
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        Field value;
+        DataTypePtr type;
+        bool is_injective = false;
+    };
+
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_key,
@@ -385,7 +437,23 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+    /// The `extractAtoms*` family fills `out` with the atoms of one predicate leaf.
+    /// It produces one atom per key column that the predicate can constrain, so a
+    /// single condition like `ts >= X` may produce atoms for `toYYYYMM(ts)`,
+    /// `toDate(ts)` and `ts` at once. RPNBuilder combines multiple atoms with AND
+    /// (it emits `atom0 atom1 AND atom2 AND ...`). An empty `out` means that the leaf
+    /// could not be analyzed; such a leaf becomes FUNCTION_UNKNOWN.
+    void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
+    void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
+    void extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
+    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, RPN & out);
+    void extractBinaryComparisonAtoms(
+        const RPNBuilderTreeNode & node,
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        const std::string & func_name,
+        bool allow_constant_transformation,
+        RPN & out);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -396,7 +464,7 @@ private:
     ///  and fills chain of possibly-monotonic functions.
     /// If @assume_function_monotonicity = true, assume all deterministic
     /// functions as monotonic, which is useful for partition pruning.
-    bool isKeyPossiblyWrappedByMonotonicFunctions(
+    bool tryMatchKeyColumnThroughMonotonicChain(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -405,7 +473,7 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         bool assume_function_monotonicity = false);
 
-    bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+    bool tryMatchKeyColumnThroughMonotonicChainImpl(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -413,46 +481,60 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool extractMonotonicFunctionsChainFromKey(
+    /// The returned vector contains, for every key column, the chains of
+    /// `always_monotonic`-approved functions through which that key column computes
+    /// from the key subexpression `expr_name`.
+    std::vector<KeyWrappingChain> collectKeyWrappingChains(
         ContextPtr context,
         const String & expr_name,
         const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
+    /// For every key column that is computed from the predicate expression `node` by a
+    /// chain of `allow_key_function`-approved monotonic functions, this function
+    /// applies that chain to the constant once and returns the transformed constant.
+    /// The resulting atoms compare against the key columns directly, but they are
+    /// always relaxed, because monotonicity preserves order rather than exact
+    /// membership.
+    std::vector<TransformedConstant> transformConstantByMonotonicKeyFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        const Field & value,
+        const DataTypePtr & type,
+        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
-    bool extractDeterministicFunctionsDagFromKey(
+    /// This is the same transformation, but through arbitrary deterministic
+    /// key-expression DAGs. It is only valid for equality predicates (see the caller),
+    /// because `x = c` implies `f(x) = f(c)` for any deterministic `f`, while order
+    /// comparisons are not preserved.
+    std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        const Field & value,
+        const DataTypePtr & type) const;
+
+    /// This is a key-side recipe like `KeyWrappingChain`, except that the computation
+    /// is an arbitrary deterministic sub-DAG instead of a chain of single-argument
+    /// functions.
+    struct DeterministicKeyDag
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        DeterministicKeyTransformDag dag;
+    };
+
+    /// The returned vector contains a deterministic sub-DAG for every key column that
+    /// can be computed from `expr_name`.
+    std::vector<DeterministicKeyDag> collectKeyWrappingDags(
         const String & expr_name,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        DeterministicKeyTransformDag & out_functions_chain) const;
-
-    bool canConstantBeWrappedByMonotonicFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
-
-    bool canConstantBeWrappedByDeterministicFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
-        bool & out_is_injective);
+        const BuildInfo & info) const;
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
     /// specifies key column position / type. Besides that it produces the
     /// transformation DAG which should be executed on set elements, to
     /// transform them into key column values.
-    bool canSetValuesBeWrappedByDeterministicFunctions(
+    bool canSetValuesBeWrappedByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -460,19 +542,28 @@ private:
         DeterministicKeyTransformDag & out_transform,
         bool & out_is_injective) const;
 
-    /// If it's possible to make an RPNElement
-    /// that will filter values (possibly tuples) by the content of 'prepared_set',
-    /// do it and return true.
-    bool tryPrepareSetIndexForIn(
+    /// If it's possible to make one or more RPNElements that will filter values (possibly tuples) by a set,
+    /// append them to `out`. (If multiple atoms are produced, RPNBuilder will AND them.)
+    void tryPrepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out);
-    bool tryPrepareSetIndexForHas(
+        RPN & out,
+        bool allow_constant_transformation);
+    void tryPrepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out);
+        RPN & out,
+        bool allow_constant_transformation);
 
-    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+    /// This function maps the predicate expression whose values are tested for set
+    /// membership (the left-hand side of IN, or the element argument of `has`) onto
+    /// key columns. It produces one `KeyTuplePositionMapping` per tuple component that
+    /// reaches a key column, either directly through a monotonic chain or via a
+    /// deterministic set-transforming DAG. `out_relaxed` is set when some mapping goes
+    /// through a non-injective DAG; in that case the set check as a whole only
+    /// describes a superset of the matching values. This is distinct from the
+    /// per-element `RPNElement::relaxed`.
+    void analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
         std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,
