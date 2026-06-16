@@ -34,6 +34,12 @@ public:
     const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
+
+private:
+    /// Serialization kinds of the part being written. Used to build the dictionary-encoded representation
+    /// of columns selected for automatic LowCardinality serialization before they are written, since this
+    /// stream (used by vertical merges and mutations) receives full columns from the pipeline.
+    SerializationInfoByName part_serialization_infos;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;
