@@ -39,6 +39,7 @@ function explain_indexes()
     --parallel_replicas_local_plan=1
     --use_statistics_for_part_pruning=0
     --enable_add_distinct_to_in_subqueries=0  # CI may inject True; adds DISTINCT to IN subqueries, changing the logged query string in query_log
+    --distributed_index_analysis_only_on_coordinator=0  # CI may inject True; keeps analysis only on the coordinator, dropping the per-replica mergeTreeAnalyzeIndexesUUID queries from query_log
   )
 
   local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=0 -q "$@" | {
