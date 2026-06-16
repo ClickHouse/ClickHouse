@@ -5,6 +5,10 @@
 -- ORDER BY / GROUP BY / HAVING on a Distributed table, must not throw
 -- MULTIPLE_EXPRESSIONS_FOR_ALIAS (introduced while fixing #105689 in #106404).
 
+-- The bug lives in the analyzer's buildQueryTreeDistributed; the old analyzer does not
+-- exercise that path and would mask the regression, so force the new analyzer.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS local_alias_dedup;
 DROP TABLE IF EXISTS dist_alias_dedup;
 
