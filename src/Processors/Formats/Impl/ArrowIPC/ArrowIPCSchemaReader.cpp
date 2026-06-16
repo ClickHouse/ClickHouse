@@ -81,8 +81,10 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             const int64_t length = msg.header->header_as_RecordBatch()->length();
             if (length < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", length);
+            /// The loop seeks to each block before reading its metadata, so the body is never needed here.
+            /// Do not read or skip it: that would defeat the metadata-only contract and could fail on a
+            /// corrupt or truncated body even though the footer already provides the row counts.
             total_rows += static_cast<size_t>(length);
-            count_reader.skipBody(msg.body_length);
         }
         num_rows_in_file = total_rows;
     }
