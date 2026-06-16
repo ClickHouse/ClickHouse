@@ -3,9 +3,7 @@
 #include <memory>
 #include <vector>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -64,16 +62,8 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 size_t getMinBytesForPrefetchInJoin()
 {
     /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
-    static const size_t result = []
-    {
-        size_t l2_size = 0;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        return 4 * std::max<size_t>(l2_size, 256 * 1024);
-    }();
+    /// Threshold: 4 * L2 cache size (`getL2CacheSize` defaults to 256 KiB). Cached after first call.
+    static const size_t result = 4 * getL2CacheSize();
     return result;
 }
 
@@ -2499,13 +2489,15 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!probe_fn)
         return;
 
-    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier.
-    for (const auto & [filter_name, descr_build_key] : descriptors)
+    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier. The descriptor's
+    /// first element is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
+    /// filter under and the probe-side `__applyFilter` looks it up by), not the stable display name.
+    for (const auto & [filter_key, descr_build_key] : descriptors)
     {
         if (descr_build_key != build_key_name)
             continue;
 
-        auto existing = lookup->find(filter_name);
+        auto existing = lookup->find(filter_key);
         if (!existing)
             continue;
 
@@ -2525,7 +2517,9 @@ void HashJoin::publishSharedRuntimeFilters()
             existing->getPassRatioThresholdForDisabling(),
             existing->getBlocksToSkipBeforeReenabling(),
             probe_fn);
-        lookup->replace(filter_name, std::move(filter));
+        /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
+        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
+        lookup->replace(filter_key, std::move(filter));
     }
 }
 
