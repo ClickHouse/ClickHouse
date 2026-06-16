@@ -13,4 +13,8 @@ namespace
     }
 }
 
-Int64 staticPageSize = getPageSizeImpl();
+Int64 getPageSize()
+{
+    static const Int64 page_size = getPageSizeImpl();
+    return page_size;
+}
