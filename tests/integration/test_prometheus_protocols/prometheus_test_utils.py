@@ -194,7 +194,7 @@ def get_response_to_http_api_query(host, port, path, query, timestamp=None, para
     if timestamp is not None:
         url += f"&time={timestamp}"
     for name, value in (params or {}).items():
-        url += f"&{name}={urllib.parse.quote_plus(value, safe='')}"
+        url += f"&{urllib.parse.quote_plus(str(name), safe='')}={urllib.parse.quote_plus(str(value), safe='')}"
     return get_response_to_http_api(url)
 
 
@@ -204,7 +204,7 @@ def get_response_to_http_api_range_query(
     escaped_query = urllib.parse.quote_plus(query, safe="")
     url = f"http://{host}:{port}/{path.strip('/')}?query={escaped_query}&start={start_timestamp}&end={end_timestamp}&step={step}"
     for name, value in (params or {}).items():
-        url += f"&{name}={urllib.parse.quote_plus(value, safe='')}"
+        url += f"&{urllib.parse.quote_plus(str(name), safe='')}={urllib.parse.quote_plus(str(value), safe='')}"
     return get_response_to_http_api(url)
 
 
