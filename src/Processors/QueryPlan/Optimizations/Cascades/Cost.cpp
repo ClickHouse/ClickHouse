@@ -14,6 +14,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/types.h>
@@ -140,10 +142,18 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
     else if (dynamic_cast<const LogicalExchangeStep *>(expression_plan_step))
     {
-        auto bytes_per_row = group->statistics->estimated_bytes_per_row;
-        /// Gather/Shuffle/Scatter: each row sent once.
-        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row;
+        const Float64 rows = group->statistics->estimated_row_count;
+        const auto bytes_per_row = group->statistics->estimated_bytes_per_row;
+        /// Each row crosses the network once.
+        total_cost.cost.network += rows * bytes_per_row;
         total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
+        /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
+        /// sends or receives them sequentially; Shuffle (N->N) spreads this across nodes.
+        /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
+        /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
+        if (dynamic_cast<const GatherExchangeStep *>(expression_plan_step)
+            || dynamic_cast<const ScatterExchangeStep *>(expression_plan_step))
+            total_cost.cost.sequential += rows;
     }
     else if (typeid_cast<const SortingStep *>(expression_plan_step))
     {
