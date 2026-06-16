@@ -388,9 +388,11 @@ buildField(
             {
                 const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*t);
                 const int unit = arrowTimeUnitForScale(dt64.getScale());
-                flatbuffers::Offset<flatbuffers::String> tz_off = 0;
-                if (dt64.hasExplicitTimeZone())
-                    tz_off = b.CreateString(dt64.getTimeZone().getTimeZone());
+                /// Always serialize the timezone, matching the Apache Arrow library writer
+                /// (`arrow::timestamp(unit, datetime64_type->getTimeZone().getTimeZone())`): a
+                /// `DateTime64` without an explicit timezone still carries the server/default one, and
+                /// dropping it would emit a timezone-less Arrow `Timestamp` and break writer parity.
+                auto tz_off = b.CreateString(dt64.getTimeZone().getTimeZone());
                 type_type = flatbuf::Type_Timestamp;
                 type_offset = flatbuf::CreateTimestamp(b, static_cast<flatbuf::TimeUnit>(unit), tz_off).Union();
                 break;
@@ -571,6 +573,24 @@ void buildSchemaMessage(
     builder.Finish(message);
 }
 
+namespace
+{
+/// True if a LowCardinality type appears anywhere below the top level of `type` (inside Array, Tuple,
+/// Map, ...). `forEachChild` walks all descendants, and a nested LowCardinality is passed to the
+/// callback as a child; a top-level LowCardinality is never passed to the callback for its own column,
+/// so this returns false for a plain top-level `LowCardinality(...)` (which is handled separately).
+bool hasNestedLowCardinality(const IDataType & type)
+{
+    bool found = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (child.lowCardinality())
+            found = true;
+    });
+    return found;
+}
+}
+
 std::vector<std::optional<OutputDictionary>> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings)
 {
     std::vector<std::optional<OutputDictionary>> result(types.size());
@@ -583,8 +603,21 @@ std::vector<std::optional<OutputDictionary>> assignOutputDictionaries(const Data
 
     int64_t next_id = 0;
     for (size_t i = 0; i < types.size(); ++i)
+    {
         if (types[i]->lowCardinality())
             result[i] = OutputDictionary{next_id++, bit_width, is_signed};
+        else if (hasNestedLowCardinality(*types[i]))
+            /// The native writer only dictionary-encodes top-level LowCardinality columns. A nested one
+            /// (e.g. `Array(LowCardinality(String))`) would otherwise be silently materialized to plain
+            /// values, diverging from the Apache Arrow library writer that emits a nested Arrow
+            /// dictionary. Fail loudly instead of changing the schema behind the user's back.
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The native Arrow writer cannot encode the LowCardinality nested inside a column of type "
+                "'{}' as an Arrow dictionary. Either set output_format_arrow_low_cardinality_as_dictionary=0, "
+                "or set output_format_arrow_use_native_writer=0 to use the Apache Arrow library writer.",
+                types[i]->getName());
+    }
     return result;
 }
 
