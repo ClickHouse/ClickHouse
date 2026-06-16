@@ -565,6 +565,13 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
 
     const int bits = field.dictionary->index_bit_width;
     const bool index_is_signed = field.dictionary->index_is_signed;
+    /// Validate the index width before it is used to size buffers or allocate the output indexes. An
+    /// invalid width such as 7 would make `index_size` zero (so `checkBufferSize` requires no bytes) and
+    /// let a forged huge `FieldNode::length` drive an oversized `ColumnUInt64::create(rows)` before the
+    /// `switch` over `bits` below could report the unsupported width.
+    if (bits != 8 && bits != 16 && bits != 32 && bits != 64)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary index bit width {} is not supported (must be 8, 16, 32, or 64)", bits);
     const size_t index_size = static_cast<size_t>(bits) / 8;
     checkBufferSize(indices_slice, requiredBytes(rows, index_size), "dictionary indices");
 
@@ -820,6 +827,16 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
     /// buffer or drive an oversized allocation.
     if (node.null_count() != 0 && validity.length != 0)
         checkBufferSize(validity, (rows + 7) / 8, "validity");
+
+    /// A non-nullable field must not declare nulls. We build no null map for non-nullable fields (and
+    /// Array/Tuple/Map drop their outer validity), so a non-zero (or unknown, i.e. negative) FieldNode
+    /// null count would otherwise let those null rows be decoded silently as whatever is in the value
+    /// buffer. Reject it before reading values; this also guards the dictionary branch below.
+    if (!field.nullable && node.null_count() != 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC field '{}' is declared non-nullable but its FieldNode reports {} nulls",
+            field.name, node.null_count());
 
     /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch.
     if (field.dictionary)
