@@ -95,7 +95,17 @@ public:
     void insertDefault() override
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(true);
+        /// Keep the nested column and the null map in sync even if appending to the
+        /// null map throws (e.g. on a memory limit).
+        try
+        {
+            getNullMapData().push_back(true);
+        }
+        catch (...)
+        {
+            getNestedColumn().popBack(1);
+            throw;
+        }
     }
 
     void popBack(size_t n) override;
@@ -140,7 +150,7 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     // Special function for nullable minmax index
@@ -257,6 +267,7 @@ private:
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
+ColumnConstPtr makeNullableSafe(const ColumnConstPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 
