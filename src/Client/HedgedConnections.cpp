@@ -1,9 +1,10 @@
 #include <Core/Protocol.h>
 #if defined(OS_LINUX)
 
+#include <cmath>
 #include <Client/HedgedConnections.h>
-#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
@@ -218,9 +219,18 @@ void HedgedConnections::sendQuery(
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
 
-        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
-            modified_settings[Setting::interactive_delay],
-            distributed_fanout * offset_states.size());
+        /// Scale interactive_delay by sqrt(fanout) with jitter, same as in MultiplexedConnections.
+        {
+            size_t total_fanout = distributed_fanout * offset_states.size();
+            if (total_fanout > 1)
+            {
+                UInt64 delay = modified_settings[Setting::interactive_delay];
+                double scale = std::sqrt(static_cast<double>(total_fanout));
+                double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
+                delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
+                modified_settings[Setting::interactive_delay] = delay;
+            }
+        }
 
         if (disable_two_level_aggregation)
         {
@@ -396,7 +406,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd = 0;
+    int event_fd;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -461,7 +471,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event{};
+    epoll_event event;
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);
