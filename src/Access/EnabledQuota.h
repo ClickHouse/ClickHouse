@@ -56,15 +56,23 @@ public:
     /// against the `QUERIES_PER_NORMALIZED_HASH` limit.
     void usedPerNormalizedHash(UInt64 normalized_query_hash) const;
 
-    /// Tracks consumption of a per-query counter (e.g. `QUERIES`, `QUERY_SELECTS`, `ERRORS`)
-    /// against every governing quota. For `NORMALIZED_QUERY_HASH` quotas the consumption is
-    /// accounted against the intervals resolved for `normalized_query_hash`; for all other
-    /// quotas it is accounted against the shared session intervals.
+    /// Tracks consumption of a per-query counter (e.g. `QUERIES`, `QUERY_SELECTS`, `ERRORS`,
+    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
+    /// `NORMALIZED_QUERY_HASH` quotas the consumption is accounted against the intervals resolved
+    /// for `normalized_query_hash`; for all other quotas it is accounted against the shared session
+    /// intervals. For each quota the target intervals are resolved once, so passing several usages
+    /// together is cheaper than calling this function repeatedly.
     void usedForQuery(UInt64 normalized_query_hash, QuotaType quota_type, QuotaValue value, bool check_exceeded = true) const;
+    void usedForQuery(UInt64 normalized_query_hash, const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, bool check_exceeded = true) const;
+    void usedForQuery(UInt64 normalized_query_hash, const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, const std::pair<QuotaType, QuotaValue> & usage3, bool check_exceeded = true) const;
 
     /// Checks if any of the governing quotas is exceeded. If so, throws an exception.
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
+
+    /// Same as `checkExceeded(quota_type)`, but for `NORMALIZED_QUERY_HASH` quotas the check is
+    /// performed against the intervals resolved for `normalized_query_hash`.
+    void checkExceededForQuery(UInt64 normalized_query_hash, QuotaType quota_type) const;
 
     void reset(QuotaType quota_type) const;
 
@@ -143,6 +151,10 @@ private:
     /// Resolves (and caches) the per-hash intervals of `quota` for `normalized_query_hash`.
     /// `quota.interval_resolver` must be set.
     static boost::shared_ptr<const Intervals> resolveIntervalsForHash(const SingleQuota & quota, UInt64 normalized_query_hash);
+
+    /// Resolves the intervals a per-query counter must be accounted against: the per-hash intervals
+    /// for `NORMALIZED_QUERY_HASH` quotas, or the shared session intervals for all other quotas.
+    static boost::shared_ptr<const Intervals> resolveTargetIntervals(const SingleQuota & quota, UInt64 normalized_query_hash);
 
     struct Impl;
 
