@@ -87,10 +87,11 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    /// Rejects rename early, before DatabaseAtomic::renameTable detaches the table and commits
-    /// the ZooKeeper transaction. renameInMemory() runs after that point where throwing breaks
-    /// the DatabaseReplicated metadata digest invariant.
+    /// TimeSeries does not support rename. Both renameTable and renameDatabase must reject it
+    /// before any detach/metadata/catalog mutation, otherwise the throw from renameInMemory()
+    /// runs after the state is half-moved and breaks the DatabaseReplicated digest invariant.
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    bool canBeRenamedInMemory() const override { return false; }
     void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;

@@ -737,13 +737,16 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
     }
 
-    /// Renaming the database renames every table via renameInMemory() below. Some storages reject
-    /// rename only there, after the metadata file has been moved and the catalog updated, leaving
-    /// local state diverged from ZooKeeper (and breaking the DatabaseReplicated digest invariant).
-    /// Reject up front so nothing is mutated when a contained table cannot be renamed. The UUID is
-    /// preserved, matching renameTable(), so UUID-pathed Replicated/KeeperMap tables still pass.
+    /// Reject up front any table that cannot be renamed in place, before the mutations below
+    /// (metadata move, catalog update, renameInMemory) leave local state diverged from ZooKeeper.
+    /// This is an in-place rename, not a move between databases, so checkTableCanBeRenamed() is the
+    /// wrong predicate here: it would also reject tables that rename fine in place (a default
+    /// S3Queue/AzureQueue keeps its database-UUID-based Keeper path across the rename).
     for (auto & table : tables)
-        table.second->checkTableCanBeRenamed({new_name, table.first, table.second->getStorageID().uuid});
+    {
+        if (!table.second->canBeRenamedInMemory())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", table.second->getName());
+    }
 
     try
     {

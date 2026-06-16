@@ -469,6 +469,13 @@ public:
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
+    /// Whether renameInMemory() can change this table's database/table name in place.
+    /// RENAME DATABASE keeps the database object and every table UUID, only the names change,
+    /// so the move-between-databases guard in checkTableCanBeRenamed() does not apply; storages
+    /// that cannot rename at all (renameInMemory() throws) must report false here so the rename
+    /// is rejected before any metadata/catalog mutation.
+    virtual bool canBeRenamedInMemory() const { return true; }
+
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.
