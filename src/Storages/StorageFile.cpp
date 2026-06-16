@@ -222,16 +222,19 @@ void listFilesWithRegexpMatchingImpl(
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
-    /// Allow "**" to match zero directory levels by evaluating the remaining pattern
+    /// Allow `/**` to match zero directory levels by evaluating the remaining pattern
     /// against the current directory.
-    if (recursive && looking_for_directory)
+    /// Important: do it only when the *current* path component is `/**`.
+    /// The `recursive` flag is sticky after the first `/**`, but zero-depth matching must not
+    /// skip other components like `/*` or `/foo`.
+    if (current_glob == "/**" && looking_for_directory)
     {
         listFilesWithRegexpMatchingImpl(
             prefix_without_globs + "/",
             suffix_with_globs.substr(next_slash_after_glob_pos),
             total_bytes_to_read,
             result,
-            recursive,
+            false,
             depth + 1,
             matched_paths);
     }
