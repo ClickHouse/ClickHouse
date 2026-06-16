@@ -9,6 +9,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -18,6 +20,11 @@ namespace Setting
 {
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -246,6 +253,11 @@ public:
         const Settings & settings = context->getSettingsRef();
         max_ast_depth = settings[Setting::max_ast_depth];
         max_ast_elements = settings[Setting::max_ast_elements];
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
+        implicit_select = settings[Setting::implicit_select];
     }
 
     String getName() const override { return name; }
@@ -302,7 +314,7 @@ public:
                 String canonical = buf.str();
 
                 auto original = String(orig_col->getDataAt(i));
-                result->insert(formatWithOriginalWhitespace(canonical, original));
+                result->insert(formatWithOriginalWhitespaceChecked(canonical, original));
             }
             else
             {
@@ -316,9 +328,42 @@ public:
         return result;
     }
 
+    /// Format the AST with the original query's whitespace/comments/keyword casing, but only keep that
+    /// result when it round-trips back to the same canonical AST. The original-text transfer is
+    /// case-insensitive for keyword-shaped `BareWord` tokens, which can wrongly recase a case-sensitive
+    /// identifier spelled like a keyword (e.g. a column named `DATE`, which the canonical formatter prints
+    /// bare as `DATE`). Reparsing the merged text and comparing back to `canonical` catches any such
+    /// semantic divergence; on mismatch (or if the merged text fails to reparse) fall back to canonical.
+    String formatWithOriginalWhitespaceChecked(const String & canonical, const String & original) const
+    {
+        String merged = formatWithOriginalWhitespace(canonical, original);
+        if (merged == canonical)
+            return merged;
+        try
+        {
+            ParserQuery parser(merged.data() + merged.size(), allow_settings_after_format_in_insert, implicit_select);
+            ASTPtr reparsed = parseQuery(parser, merged.data(), merged.data() + merged.size(), "",
+                max_query_size, max_parser_depth, max_parser_backtracks);
+            WriteBufferFromOwnString check_buf;
+            reparsed->format(check_buf, IAST::FormatSettings(/*one_line=*/true));
+            if (check_buf.str() == canonical)
+                return merged;
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Merged text is not reparseable as the same query — fall through to the canonical form.
+        }
+        return canonical;
+    }
+
 private:
     size_t max_ast_depth;
     size_t max_ast_elements;
+    size_t max_query_size;
+    size_t max_parser_depth;
+    size_t max_parser_backtracks;
+    bool allow_settings_after_format_in_insert;
+    bool implicit_select;
 };
 
 }

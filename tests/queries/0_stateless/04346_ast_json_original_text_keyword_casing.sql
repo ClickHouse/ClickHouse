@@ -8,6 +8,13 @@
 -- while the surrounding genuine keywords (`select`/`from`) follow the original casing.
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT Date FROM t'), 'select date from t');
 
+-- An ALL-UPPERCASE keyword-shaped identifier (a column named `DATE`, which the canonical formatter
+-- prints bare as `DATE`, indistinguishable by spelling from the `DATE` keyword) must also keep its AST
+-- casing. Recasing it to the original `date` would not round-trip to the same AST, so the formatter
+-- falls back to the canonical form (genuine keywords uppercased, the identifier preserved) instead of
+-- emitting `date`.
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT DATE FROM t'), 'select date from t');
+
 -- Plain identifier casing is taken from the AST, not the original text.
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'select A from t');
 

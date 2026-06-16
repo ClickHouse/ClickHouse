@@ -1,4 +1,5 @@
 select Date from t
+SELECT DATE FROM t
 select a from t
 select 1
 SeLeCt 1
