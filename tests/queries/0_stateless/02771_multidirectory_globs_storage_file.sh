@@ -29,7 +29,7 @@ mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir3/subdir31/
 echo 'This is file data3' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir3/subdir31/data3.csv
 echo 'This is file data_root' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data_root.csv
 
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/*.csv', CSV) ORDER BY _file;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/*.csv', CSV) ORDER BY _file, _path;"
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/data3.csv', CSV);"
 
 mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/a/
@@ -38,9 +38,9 @@ echo 'This is file data4' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/pa
 echo 'This is file data5' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/b/sub/file.csv
 echo 'This is file data6' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/a/other.csv
 
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/**/file.csv', CSV) ORDER BY _file;"
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/**/*.csv', CSV) ORDER BY _file;"
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/file.csv', CSV) ORDER BY _file;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/**/file.csv', CSV) ORDER BY _file, _path;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/**/*.csv', CSV) ORDER BY _file, _path;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/file.csv', CSV) ORDER BY _file, _path;"
 
 mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/base/foo/x/
 mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/base/a/foo/y/
@@ -52,6 +52,6 @@ echo 'This is file BAD_NO_FOO' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAM
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/base/**/foo/*/file.csv', CSV) ORDER BY 1;"
 
 echo 'This is file data_zip' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/a.zip::file.csv
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/**/a.zip::file.csv', CSV) ORDER BY _file SETTINGS allow_archive_path_syntax = 0;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/**/a.zip::file.csv', CSV) ORDER BY _file, _path SETTINGS allow_archive_path_syntax = 0;"
 
 rm -rf ${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
