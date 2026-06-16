@@ -20,7 +20,7 @@ Contains information about all filesystem cache settings
 - `max_file_segment_size` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum size of a single file segment
 - `boundary_alignment` ([UInt64](/sql-reference/data-types/int-uint)) — File segment alignment
 - `cache_on_write_operations` ([UInt8](/sql-reference/data-types/int-uint)) — Enables write-through cache (cache on INSERT and MERGE)
-- `cache_policy` ([String](/sql-reference/data-types/string)) — Cache eviction policy
+- `cache_policy` ([String](/sql-reference/data-types/string)) — Cache eviction policy (`LRU`, `SLRU` or `SIEVE`)
 - `slru_size_ratio` ([Float64](/sql-reference/data-types/float)) — SLRU cache policy size ratio of protected to probationary elements
 - `background_download_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Number of background download threads. Value 0 disables background download
 - `background_download_queue_size_limit` ([UInt64](/sql-reference/data-types/int-uint)) — Size of background download queue. Value 0 disables background download
