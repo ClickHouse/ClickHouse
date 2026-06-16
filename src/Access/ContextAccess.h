@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
 #include <Parsers/IAST_fwd.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 
 
 namespace Poco { class Logger; }
@@ -152,6 +153,8 @@ private:
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void findRowPoliciesOfInitialUser() const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
+    /// Publishes the current `mutex`-guarded state into `atomic_info` so readers can pick it up lock-free.
+    void publishInfo() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags) const;
@@ -217,6 +220,29 @@ private:
 #endif
     mutable std::shared_ptr<const EnabledQuota> enabled_quota TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledSettings> enabled_settings TSA_GUARDED_BY(mutex);
+
+    /// Immutable snapshot of the state read on the access-check / query-analysis hot path. Writers build
+    /// it from the `mutex`-guarded members above and publish it atomically; readers (`getAccessRights`,
+    /// `tryGetUser`, `getRolesInfo`, ...) load it without `mutex`, so concurrent checks for the same user
+    /// no longer serialize on the per-object lock and are not blocked by a slow update on the access
+    /// notification thread. `enabled_quota` is intentionally excluded: it is built lazily under `mutex`.
+    struct Info
+    {
+        bool initialized = false;
+        bool user_was_dropped = false;
+        UserPtr user;
+        String user_name;
+        std::shared_ptr<const EnabledRolesInfo> roles_info;
+        std::shared_ptr<const AccessRights> access;
+        std::shared_ptr<const AccessRights> access_with_implicit;
+        std::shared_ptr<const EnabledRowPolicies> enabled_row_policies;
+        std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
+#if CLICKHOUSE_CLOUD
+        std::shared_ptr<const EnabledMaskingPolicies> enabled_masking_policies;
+#endif
+        std::shared_ptr<const EnabledSettings> enabled_settings;
+    };
+    mutable boost::atomic_shared_ptr<const Info> atomic_info;
 };
 
 /// This wrapper was added to be able to pass the current context to the access

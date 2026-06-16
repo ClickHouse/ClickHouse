@@ -22,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <boost/smart_ptr/make_shared.hpp>
 #include <unordered_set>
 
 
@@ -322,6 +323,8 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
     : access_control(&access_control_)
     , params(params_)
 {
+    /// So readers never observe a null snapshot before initialize() runs.
+    atomic_info.store(boost::make_shared<Info>());
 }
 
 
@@ -336,6 +339,7 @@ void ContextAccess::initialize()
     {
         access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
         access_with_implicit = access;
+        publishInfo();
         return;
     }
 
@@ -362,6 +366,7 @@ void ContextAccess::initialize()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041, b)");
 
     initialized = true;
+    publishInfo();
 }
 
 
@@ -384,6 +389,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         row_policies_of_initial_user = nullptr;
         enabled_quota = nullptr;
         enabled_settings = nullptr;
+        publishInfo();
         return;
     }
 
@@ -454,6 +460,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
 
     calculateAccessRights();
+    publishInfo();
 }
 
 
@@ -480,6 +487,27 @@ void ContextAccess::calculateAccessRights() const
 void ContextAccess::findRowPoliciesOfInitialUser() const
 {
     row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
+    publishInfo();
+}
+
+
+void ContextAccess::publishInfo() const
+{
+    auto info = boost::make_shared<Info>();
+    info->initialized = initialized.load();
+    info->user_was_dropped = user_was_dropped.load();
+    info->user = user;
+    info->user_name = user_name;
+    info->roles_info = roles_info;
+    info->access = access;
+    info->access_with_implicit = access_with_implicit;
+    info->enabled_row_policies = enabled_row_policies;
+    info->row_policies_of_initial_user = row_policies_of_initial_user;
+#if CLICKHOUSE_CLOUD
+    info->enabled_masking_policies = enabled_masking_policies;
+#endif
+    info->enabled_settings = enabled_settings;
+    atomic_info.store(std::move(info));
 }
 
 
@@ -499,33 +527,31 @@ UserPtr ContextAccess::getUser() const
 
 UserPtr ContextAccess::tryGetUser() const
 {
-    std::lock_guard lock{mutex};
-    return user;
+    return atomic_info.load()->user;
 }
 
 String ContextAccess::getUserName() const
 {
-    std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
+    auto info = atomic_info.load();
+    if (info->initialized && !info->user && !info->user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-    return user_name;
+    return info->user_name;
 }
 
 std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 {
-    std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
+    auto info = atomic_info.load();
+    if (info->initialized && !info->user && !info->user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-    if (roles_info)
-        return roles_info;
+    if (info->roles_info)
+        return info->roles_info;
     static const auto no_roles = std::make_shared<EnabledRolesInfo>();
     return no_roles;
 }
 #if CLICKHOUSE_CLOUD
 std::shared_ptr<const EnabledMaskingPolicies> ContextAccess::getEnabledMaskingPolicies() const
 {
-    std::lock_guard lock{mutex};
-    return enabled_masking_policies;
+    return atomic_info.load()->enabled_masking_policies;
 }
 #endif
 
@@ -534,21 +560,21 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
     RowPolicyFilterPtr filter;
 
     {
-        std::lock_guard lock{mutex};
+        auto info = atomic_info.load();
 
-        if (initialized && !user && !user_was_dropped)
+        if (info->initialized && !info->user && !info->user_was_dropped)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
 
-        if (enabled_row_policies)
-            filter = enabled_row_policies->getFilter(database, table_name, filter_type);
+        if (info->enabled_row_policies)
+            filter = info->enabled_row_policies->getFilter(database, table_name, filter_type);
 
-        if (row_policies_of_initial_user)
+        if (info->row_policies_of_initial_user)
         {
             /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
             /// TODO: we need a better solution here. It seems we should pass the initial row policy
             /// because a shard is allowed to not have the initial user or it might be another user
             /// with the same name.
-            filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+            filter = info->row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
         }
     }
 
@@ -614,13 +640,13 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
-    std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
+    auto info = atomic_info.load();
+    if (info->initialized && !info->user && !info->user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-    if (enabled_settings)
+    if (info->enabled_settings)
     {
-        if (auto info = enabled_settings->getInfo())
-            return info->settings;
+        if (auto settings_info = info->enabled_settings->getInfo())
+            return settings_info->settings;
     }
     return {};
 }
@@ -628,11 +654,11 @@ SettingsChanges ContextAccess::getDefaultSettings() const
 
 std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
 {
-    std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
+    auto info = atomic_info.load();
+    if (info->initialized && !info->user && !info->user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-    if (enabled_settings)
-        return enabled_settings->getInfo();
+    if (info->enabled_settings)
+        return info->enabled_settings->getInfo();
     static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*access_control);
     return everything_by_default;
 }
@@ -640,11 +666,11 @@ std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo
 
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 {
-    std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
+    auto info = atomic_info.load();
+    if (info->initialized && !info->user && !info->user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-    if (access)
-        return access;
+    if (info->access)
+        return info->access;
     static const auto nothing_granted = std::make_shared<AccessRights>();
     return nothing_granted;
 }
@@ -652,11 +678,11 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit() const
 {
-    std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
+    auto info = atomic_info.load();
+    if (info->initialized && !info->user && !info->user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-    if (access_with_implicit)
-        return access_with_implicit;
+    if (info->access_with_implicit)
+        return info->access_with_implicit;
     static const auto nothing_granted = std::make_shared<AccessRights>();
     return nothing_granted;
 }
