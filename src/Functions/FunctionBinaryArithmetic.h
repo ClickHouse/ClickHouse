@@ -3279,12 +3279,14 @@ public:
                     bool is_constant_positive = accurateLess(Field(0), constant);
 
                     auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                    auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+                    auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
 
-                    // See `intDivRangeCrossesSignedWrap`. An unbounded range over an unsigned domain
-                    // always contains the discontinuity, so it is never always-monotonic; report
+                    // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
+                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
+                    // computes through floating point and never wraps. An unbounded range over an unsigned
+                    // domain always contains the discontinuity, so it is never always-monotonic; report
                     // monotonicity only when an endpoint keeps the range on one side of it.
-                    if (name_view == "intDiv" && isUInt(arg_type) && isInt(ret_type))
+                    if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                     {
                         if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
                             return {false, true, false, false};
@@ -3425,20 +3427,23 @@ public:
                 bool is_constant_positive = accurateLess(Field(0), constant);
 
                 auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+                auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
 
-                // `intDiv(unsigned, signed-const)` is a step function (see `intDivRangeCrossesSignedWrap`):
-                // a range crossing the discontinuity is non-monotonic, so reject it (no pruning); a range
-                // on one side is monotonic on that range but not always-monotonic.
-                if (name_view == "intDiv" && isUInt(arg_type) && isInt(ret_type))
+                // `intDiv(unsigned, signed-integer-const)` is a step function (see
+                // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
+                // so reject it (no pruning); a range on one side is monotonic on that range but not
+                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
+                // divisor computes through floating point and never wraps.
+                if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                 {
                     if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
 
-                // `divide` is floating-point (saturates, order-preserving) and `intDiv` with an unsigned
-                // result never wraps, so both are always monotonic.
+                // `divide` is floating-point (saturates, order-preserving), `intDiv` by a Float divisor
+                // computes through floating point, and `intDiv` with an unsigned result never wraps, so
+                // all are always monotonic.
                 return {true, is_constant_positive, true, is_strict};
             }
         }

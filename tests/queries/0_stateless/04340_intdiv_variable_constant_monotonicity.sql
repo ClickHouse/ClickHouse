@@ -61,3 +61,20 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, 10) IN (0))
      = (SELECT countIf(intDiv(a, 10) IN (0)) FROM t_intdiv_mono);
 
 DROP TABLE t_intdiv_mono;
+
+-- A Float divisor must NOT be treated as wrapping: intDiv(UInt64, 10.0) gets an Int64 result type
+-- (Float64 is signed), but DivideIntegralImpl computes it through floating point, so there is no
+-- discontinuity at 2^63 and the function stays monotonic over the whole UInt64 domain. The guard must
+-- gate on the divisor being a signed integer, not on the signed result type, otherwise it falsely
+-- disables key/read-in-order pruning here. The first query asserts the index count matches ground truth;
+-- the second asserts read-in-order still keeps intDiv in the prefix sort (prints 1 when monotonic).
+CREATE TABLE t_intdiv_mono (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192;
+INSERT INTO t_intdiv_mono SELECT number FROM numbers(1000);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, 10.0) IN (5))
+     = (SELECT countIf(intDiv(a, 10.0) IN (5)) FROM t_intdiv_mono);
+SELECT countSubstrings(arrayStringConcat(groupArray(explain), '\n'), 'Prefix sort description: intDiv')
+       FROM (EXPLAIN actions = 1 SELECT a FROM t_intdiv_mono ORDER BY intDiv(a, 10.0)
+             SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+       WHERE explain LIKE '%Prefix sort description%';
+
+DROP TABLE t_intdiv_mono;
