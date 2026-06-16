@@ -135,7 +135,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
@@ -310,6 +310,13 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
+
+    /// Stop assignees before derived member destruction in case shutdown did
+    /// not (flushAndPrepareForShutdown early-returns on flush_called).
+    /// finish is idempotent.
+    background_operations_assignee.finish();
+    background_streaming_assignee.finish();
+    background_moves_assignee.finish();
 }
 
 void StorageMergeTree::read(
@@ -2635,7 +2642,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
@@ -2803,7 +2810,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -3146,9 +3153,9 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
 void StorageMergeTree::assertNotReadonly() const
 {
     if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
     if ((*getSettings())[MergeTreeSetting::table_readonly])
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
