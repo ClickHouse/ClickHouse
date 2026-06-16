@@ -238,6 +238,19 @@ inline bool checkString(const String & s, ReadBuffer & buf)
     return checkString(s.c_str(), buf);
 }
 
+/// Like checkString(), but does not consume any bytes on mismatch
+inline bool peekString(const char * s, ReadBuffer & buf)
+{
+    size_t offset = 0;
+    for (const char * p = s; *p; ++p, ++offset)
+    {
+        if (offset >= buf.available() || buf.position()[offset] != *p)
+            return false;
+    }
+    buf.position() += offset;
+    return true;
+}
+
 bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
 inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
 {
