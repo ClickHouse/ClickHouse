@@ -682,11 +682,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
          || (scope.context->getSettingsRef()[Setting::make_distributed_plan]
              && scope.context->getSettingsRef()[Setting::enable_cascades_optimizer])))
     {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
         const bool is_function_not_in = function_name == "notIn";
 
         auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
@@ -719,6 +714,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
                 /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
