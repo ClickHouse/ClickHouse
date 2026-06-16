@@ -8,6 +8,7 @@
 #include <memory>
 
 #include <Common/TargetSpecific.h>
+#include <Common/isValidUTF8.h>
 
 
 #ifdef __AVX2__
@@ -466,12 +467,17 @@ class UTF8CaseInsensitiveStringSearcher final
 {
 private:
 #if USE_MULTITARGET_CODE
-    const bool use_v4 = isArchSupported(TargetArch::x86_64_v4);
+    /// StringZilla's UTF-8 routines (`sz_utf8_case_insensitive_find` / `sz_utf8_case_insensitive_order`)
+    /// are undefined on invalid UTF-8, but these functions must tolerate an invalid UTF-8 needle and
+    /// treat it as non-matching. The Default (AVX2) searcher honors that contract, so fall back to it
+    /// whenever the needle is not valid UTF-8.
+    const bool use_v4;
     std::unique_ptr<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl> impl_v4;
     std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
 
 public:
     UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
+        : use_v4(isArchSupported(TargetArch::x86_64_v4) && UTF8::isValidUTF8(needle_, needle_size))
     {
         if (use_v4)
             impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
