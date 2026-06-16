@@ -325,6 +325,17 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
 
 void BackgroundSchedulePool::spawnThreadLocked()
 {
+    /// `emplace_back` may reallocate `threads`. If that reallocation throws (e.g. out of memory)
+    /// after the joinable `ThreadFromGlobalPoolNoTracingContextPropagation` temporary has been
+    /// constructed — and so the worker thread already started — unwinding destroys that still
+    /// joinable temporary, which calls `std::abort`. This would turn a recoverable allocation
+    /// failure (e.g. during the best-effort cap increase in `increaseThreadsCount`) into a server
+    /// crash. Reserve capacity up front so the `emplace_back` below cannot reallocate while a
+    /// joinable temporary is alive; a throwing `reserve` here runs before any thread is started and
+    /// propagates safely (the move constructor used during reallocation is `noexcept`).
+    if (threads.size() == threads.capacity())
+        threads.reserve(threads.size() < max_size ? max_size : threads.size() + 1);
+
     threads.emplace_back(ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); }));
 }
 
