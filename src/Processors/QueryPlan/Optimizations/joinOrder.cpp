@@ -723,8 +723,8 @@ static bool connects(const JoinActionRef * predicate, const BitSet & left, const
     return (participating & left) && (participating & right);
 }
 
-template <typename DPTable, std::unsigned_integral TUint>
-std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUint & S) const
+template <typename DPTable, std::unsigned_integral TUInt>
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
 {
     auto entry = dptable[S];
     if (!entry.left && !entry.right)
