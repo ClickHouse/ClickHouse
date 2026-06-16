@@ -837,6 +837,9 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// per-leaf parallel-replicas activation accordingly.
 bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings)
 {
+    if (!join_tree_node)
+        return false;
+
     if (join_tree_node->as<CrossJoinNode>())
         return false;
 
@@ -1319,7 +1322,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && parent_join_tree
                         && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
