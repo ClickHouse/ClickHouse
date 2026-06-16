@@ -813,14 +813,22 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
                     "GROUP BY GROUPING SETS elements must be expression lists during AST JSON deserialization");
     }
 
-    /// `LIMIT BY ALL` and an explicit `LIMIT BY` list are mutually exclusive for the same reason.
-    if (limit_by_all && limitBy())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_by_all cannot be set together with a LIMIT BY list during AST JSON deserialization");
+    /// `LIMIT BY ALL` is parser-produced with an *empty* `limit_by` `ASTExpressionList` (which
+    /// `writeJSON` serializes), so reading the writer's own output must keep working — only a
+    /// *non-empty* explicit `LIMIT BY` list is mutually exclusive with `LIMIT BY ALL`.
+    if (limit_by_all && limitBy() && !limitBy()->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_by_all cannot be set together with a non-empty LIMIT BY list during AST JSON deserialization");
 
     /// `WITH TIES` is a modifier of `LIMIT length`; `formatImpl` only emits it inside the
     /// `LIMIT length` branch, so it is meaningless without a LIMIT length child.
     if (limit_with_ties && !limitLength())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires a LIMIT length clause during AST JSON deserialization");
+
+    /// `ParserSelectQuery` rejects `LIMIT ... WITH TIES` without an `ORDER BY` clause, and
+    /// `InterpreterSelectQuery` otherwise hits a `LOGICAL_ERROR` (`LIMIT WITH TIES without ORDER BY`).
+    /// Reject the parser-impossible shape at the JSON boundary.
+    if (limit_with_ties && !orderBy())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
 }
 
 }

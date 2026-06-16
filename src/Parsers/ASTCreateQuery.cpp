@@ -616,7 +616,16 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     child = r.readChildOfType<ASTSQLSecurity>("sql_security");
     if (child)
+    {
+        /// `formatImpl` emits `sql_security` only for view shapes (`supportSQLSecurity()`), but
+        /// `InterpreterCreateQuery::createTable` runs `processSQLSecurityOption` for any non-null
+        /// `sql_security`. Reject it on non-view shapes (e.g. a plain `CREATE TABLE`) so the formatted
+        /// SQL cannot hide a definer clause that execution still enforces.
+        if (!supportSQLSecurity())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`sql_security` is only valid for VIEW / MATERIALIZED VIEW during AST JSON deserialization");
         set(sql_security, child);
+    }
 
     child = r.readChildOfType<ASTTableOverrideList>("table_overrides");
     if (child)

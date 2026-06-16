@@ -23,6 +23,9 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v DEFINER = CURRENT_USE
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v DEFINER = u SQL SECURITY DEFINER AS SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x REMOVE TTL'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x UInt16 FIRST'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t LIMIT 1 BY ALL'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a LIMIT 1 WITH TIES'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v SQL SECURITY DEFINER AS SELECT 1'));
 
 -- ---------------------------------------------------------------------------
 -- CHECK TABLE: `partition` and `part_name` are mutually exclusive (the parser produces either
@@ -107,3 +110,28 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE VIEW v DEFINER = u S
 -- setting reset the formatted SQL hides. `first`/`column` (AFTER) are valid only for the plain form.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x REMOVE TTL'), '"remove_property":"TTL"', '"remove_property":"TTL","first":true')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ALTER ADD INDEX: the parser produces either `FIRST` or `AFTER <index>`, never both. `formatImpl`
+-- prints only `FIRST`, but `AlterCommand::apply` lets `after_index_name` override the `first`
+-- position, so a payload with both would format as `ADD INDEX ... FIRST` while inserting after another.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ADD INDEX idx a TYPE minmax AFTER b'), '"index":{', '"first":true,"index":{')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `LIMIT BY ALL` is parser-produced with an empty `limit_by` list (so it must round-trip), but a
+-- *non-empty* explicit `LIMIT BY` list alongside `LIMIT BY ALL` is parser-impossible.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t LIMIT 1 BY b'), '"limit_by":', '"limit_by_all":true,"limit_by":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `LIMIT ... WITH TIES` requires an `ORDER BY` clause: `ParserSelectQuery` rejects it otherwise, and
+-- `InterpreterSelectQuery` hits a `LOGICAL_ERROR` (`LIMIT WITH TIES without ORDER BY`).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a LIMIT 1 WITH TIES'), '"order_by":', '"unused_order_by":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `sql_security` is valid only for view shapes (`supportSQLSecurity()`). `formatImpl` hides it on a
+-- plain `CREATE TABLE`, but `InterpreterCreateQuery::createTable` still runs `processSQLSecurityOption`.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8) ENGINE = Memory'), '"attach":false', '"sql_security":{"type":"SQLSecurity","security_type":1,"is_definer_current_user":true},"attach":false')); -- { serverError BAD_ARGUMENTS }
