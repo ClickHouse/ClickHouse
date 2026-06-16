@@ -961,7 +961,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::writeSnapshotBufferToFile(nu
 }
 
 template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const
 {
     if (auto it = existing_snapshots.find(up_to_log_idx); it != existing_snapshots.end())
     {
@@ -973,13 +973,27 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
             it->second->disk->getName());
         return it->second;
     }
+    return nullptr;
+}
 
-    auto snapshot_file_info = writeSnapshotBufferToFile(buffer, up_to_log_idx);
-    auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, snapshot_file_info);
-    if (published_snapshot_file_info != snapshot_file_info)
-        retireUnpublishedSnapshotFile(snapshot_file_info);
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::publishAndRunMaintenance(uint64_t up_to_log_idx, SnapshotFileInfoPtr written)
+{
+    auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, written);
+    if (published_snapshot_file_info != written)
+        retireUnpublishedSnapshotFile(written);
     runMaintenanceInline(up_to_log_idx);
     return published_snapshot_file_info;
+}
+
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+{
+    if (auto existing = tryReuseRegisteredSnapshot(up_to_log_idx))
+        return existing;
+
+    auto snapshot_file_info = writeSnapshotBufferToFile(buffer, up_to_log_idx);
+    return publishAndRunMaintenance(up_to_log_idx, snapshot_file_info);
 }
 
 template<typename Storage>
@@ -1036,11 +1050,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
     }
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx);
-    auto published_snapshot_file_info = publishSnapshotFile(ctx.log_idx, snapshot_file_info);
-    if (published_snapshot_file_info != snapshot_file_info)
-        retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(ctx.log_idx);
-    return published_snapshot_file_info;
+    return publishAndRunMaintenance(ctx.log_idx, snapshot_file_info);
 }
 
 template<typename Storage>
@@ -1362,23 +1372,11 @@ template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot)
 {
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
-    if (auto it = existing_snapshots.find(up_to_log_idx); it != existing_snapshots.end())
-    {
-        LOG_INFO(
-            log,
-            "Snapshot with log index {} is already registered at path {} on disk {}, reusing existing metadata without rewriting it",
-            up_to_log_idx,
-            it->second->path,
-            it->second->disk->getName());
-        return it->second;
-    }
+    if (auto existing = tryReuseRegisteredSnapshot(up_to_log_idx))
+        return existing;
 
     auto snapshot_file_info = writeSnapshotFile(snapshot);
-    auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, snapshot_file_info);
-    if (published_snapshot_file_info != snapshot_file_info)
-        retireUnpublishedSnapshotFile(snapshot_file_info);
-    runMaintenanceInline(up_to_log_idx);
-    return published_snapshot_file_info;
+    return publishAndRunMaintenance(up_to_log_idx, snapshot_file_info);
 }
 
 template<typename Storage>
@@ -1500,7 +1498,7 @@ bool KeeperSnapshotManager<Storage>::moveSnapshotCandidate(
     }
 
     if (!metadata_published)
-        cleanupCopiedMoveTarget(candidate); /// removeFileIfExists + catch/log — harmless if the copy never completed
+        cleanupCopiedMoveTarget(candidate); /// harmless if the copy never completed
     return metadata_published;
 }
 

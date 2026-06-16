@@ -224,6 +224,18 @@ public:
     SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot<Storage> & snapshot);
     SnapshotFileInfoPtr writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
+    /// Reuse shortcut for the write-from-scratch paths: if a snapshot for `up_to_log_idx` is
+    /// already registered, log and return its metadata (state-equivalent in Raft) so the caller
+    /// can return early without rewriting the file. Returns nullptr when nothing is registered.
+    SnapshotFileInfoPtr tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const;
+
+    /// Publish/retire/maintenance tail shared by the write-from-scratch and receive paths:
+    /// publish `written`, retire it if a state-equivalent entry won the race, run inline
+    /// maintenance, and return the published metadata. Confined to the manager write paths;
+    /// `KeeperStateMachine::publishWrittenSnapshot` owns its own retire/maintenance and must keep
+    /// calling the bare `publishSnapshotFile`.
+    SnapshotFileInfoPtr publishAndRunMaintenance(uint64_t up_to_log_idx, SnapshotFileInfoPtr written);
+
     /// Metadata-only; call under `IKeeperStateMachine::snapshots_lock` in runtime paths.
     /// Insert-or-reuse: returns the already-registered entry for the same log index if any
     /// (state-equivalent in Raft); the caller retires its own file when it loses.

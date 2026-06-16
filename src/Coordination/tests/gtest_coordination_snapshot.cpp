@@ -277,11 +277,11 @@ std::vector<std::string> snapshotFilesForIdx(const std::string & dir, uint64_t i
     for (const auto & entry : fs::directory_iterator(dir))
     {
         std::string name = entry.path().filename().string();
-        if (name.starts_with("tmp_"))
+        if (name.starts_with(DB::tmp_keeper_file_prefix))
         {
             if (!include_tmp_markers)
                 continue;
-            name = name.substr(strlen("tmp_"));
+            name = name.substr(DB::tmp_keeper_file_prefix.size());
         }
         if (!name.starts_with("snapshot_"))
             continue;

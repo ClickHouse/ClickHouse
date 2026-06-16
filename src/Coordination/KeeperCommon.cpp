@@ -39,8 +39,7 @@ uint64_t getSnapshotPathUpToLogIdx(const std::string & snapshot_path)
 std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path)
 {
     const uint64_t up_to_log_idx = getSnapshotPathUpToLogIdx(snapshot_path);
-    const std::string filename = fs::path(snapshot_path).filename().string();
-    return fmt::format("snapshot_{}.bin{}", up_to_log_idx, filename.ends_with(".zstd") ? ".zstd" : "");
+    return fmt::format("snapshot_{}.bin{}", up_to_log_idx, snapshot_path.ends_with(".zstd") ? ".zstd" : "");
 }
 
 void moveFileBetweenDisks(
