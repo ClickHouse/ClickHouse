@@ -156,6 +156,11 @@ bool matchPlan(QueryPlan::Node & node, PlanMatch & match)
     const auto & params = aggregating_step->getParams();
     if (params.overflow_row || params.max_rows_to_group_by != 0)
         return false;
+    /// An aggregate projection can flip the step into merge-state mode (input is AggregateFunction
+    /// state columns, aggregates_positions unpopulated). The TopN transform only ever calls
+    /// Aggregator::executeOnBlock, never mergeOnBlock, so it cannot consume state columns — bail out.
+    if (params.only_merge)
+        return false;
     if (params.keys.empty() || params.aggregates.empty())
         return false;
 
