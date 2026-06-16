@@ -36,6 +36,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -60,6 +61,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
+    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
 
@@ -834,6 +836,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
+
+    /// Propagate the background schedule pool task's query_id (e.g. `BgSchPool::<uuid>`) to the
+    /// insert into dependent tables. Without this, the insert pipeline runs with an empty query_id,
+    /// so the parts it writes are recorded with an empty query_id in `system.part_log` and the
+    /// part-writing messages in `system.text_log` cannot be correlated with the streaming task.
+    if (auto query_id = CurrentThread::getQueryId(); !query_id.empty())
+        queue_context->setCurrentQueryId(String(query_id));
 
     size_t min_insert_block_size_rows = 0;
     size_t min_insert_block_size_bytes = 0;
@@ -1827,18 +1836,23 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
+                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
                 if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, event);
+                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(processed_node_path, nullptr, event);
+                zk->existsWatch(
+                    processed_node_path, nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(failed_node_path, nullptr, event);
+            zk->existsWatch(
+                failed_node_path, nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
         });
 
         std::string failure_message;
