@@ -83,8 +83,8 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
 
     WriteBufferFromOwnString wbuf;
     SerializedSetsRegistry registry;
-    registry.skip_cache_key = true;
-    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
+    registry.for_cache_key = true;
+    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .for_cache_key = true};
 
     writeStringBinary(transform.getSerializationName(), wbuf);
     if (transform.isSerializable())

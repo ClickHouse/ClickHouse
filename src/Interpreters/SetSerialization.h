@@ -21,7 +21,7 @@ struct SerializedSetsRegistry
     /// (i.e. `Node::is_runtime_filter_id`): its value is a volatile per-plan-build rendezvous key,
     /// not a stable key component. Every other constant's value is kept.
     /// The output is hash-only and never deserialized, so omitting it is safe.
-    bool skip_cache_key = false;
+    bool for_cache_key = false;
 };
 
 class ColumnSet;

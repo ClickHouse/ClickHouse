@@ -21,7 +21,7 @@ struct IQueryPlanStep::Serialization
     // This breaks matching by hash.
     bool skip_final_flag = false;
     // The same situation as above.
-    bool skip_cache_key = false;
+    bool for_cache_key = false;
 };
 
 struct SerializedSetsRegistry;
