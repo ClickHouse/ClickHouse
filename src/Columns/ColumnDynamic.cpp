@@ -364,8 +364,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
             variant_col.deserializeBinaryIntoVariant(it->second, getVariantSerialization(type, type_name), buf, getFormatSettings());
-        /// Try to add it as a regular variant. We must not leave a type both in the shared variant and
-        /// as a regular variant (see deserializeAndInsertFromArena which follows the same logic).
+        /// Try to add a new variant if there are available slots.
         else if (addNewVariant(type, type_name))
             variant_col.deserializeBinaryIntoVariant(variant_info.variant_name_to_discriminator[type_name], getVariantSerialization(type, type_name), buf, getFormatSettings());
         /// Otherwise just insert it into our shared variant.
@@ -452,27 +451,6 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
         const auto & src_offsets = src_variant_column.getOffsets();
         const auto & src_shared_variant = assert_cast<const ColumnString &>(src_variant_column.getVariantByLocalDiscriminator(src_shared_variant_local_discr));
 
-        /// Some rows from the src shared variant may carry a type that is not a regular variant here yet.
-        /// Promote such types to regular variants up front while we still have room, otherwise the loop
-        /// below would copy them into our shared variant even though they can later become a regular
-        /// variant, leaving the type in both storages (see deserializeAndInsertFromArena which follows the
-        /// same logic). This must happen before caching the destination column references below, because
-        /// addNewVariant reallocates them.
-        for (size_t i = 0; i != length && canAddNewVariant(); ++i)
-        {
-            if (src_local_discriminators[start + i] != src_shared_variant_local_discr)
-                continue;
-            ReadBufferFromMemory type_buf(src_shared_variant.getDataAt(src_offsets[start + i]));
-            auto promoted_type = decodeDataType(type_buf);
-            auto promoted_type_name = promoted_type->getName();
-            if (!variant_info.variant_name_to_discriminator.contains(promoted_type_name))
-                addNewVariant(promoted_type, promoted_type_name);
-        }
-
-        /// addNewVariant above reassigns global discriminators (DataTypeVariant sorts its nested types),
-        /// so the shared variant discriminator captured before the promotion pass may now be stale.
-        shared_variant_discr = getSharedVariantDiscriminator();
-
         auto & local_discriminators = variant_col.getLocalDiscriminators();
         auto & offsets = variant_col.getOffsets();
         const auto shared_variant_local_discr = variant_col.localDiscriminatorByGlobal(shared_variant_discr);
@@ -495,6 +473,16 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                     getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
                     /// Local discriminators were already filled in ColumnVariant::insertRangeFrom and this row should contain
                     /// shared_variant_local_discr. Change it to local discriminator of the found variant and update offsets.
+                    local_discriminators[prev_size + i] = local_discr;
+                    offsets[prev_size + i] = variant.size() - 1;
+                }
+                /// Try to add a new variant if there are available slots. addNewVariant only reassigns global
+                /// discriminators, so shared_variant_local_discr and the cached references stay valid.
+                else if (addNewVariant(type, type_name))
+                {
+                    auto local_discr = variant_col.localDiscriminatorByGlobal(variant_info.variant_name_to_discriminator[type_name]);
+                    auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
+                    getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
                     local_discriminators[prev_size + i] = local_discr;
                     offsets[prev_size + i] = variant.size() - 1;
                 }
@@ -687,8 +675,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
             getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
             variant_col.insertManyIntoVariantFrom(it->second, *tmp_column, 0, length);
         }
-        /// Try to add it as a regular variant. We must not leave a type both in the shared variant and
-        /// as a regular variant (see deserializeAndInsertFromArena which follows the same logic).
+        /// Try to add a new variant if there are available slots.
         else if (addNewVariant(type, type_name))
         {
             auto tmp_column = type->createColumn();
