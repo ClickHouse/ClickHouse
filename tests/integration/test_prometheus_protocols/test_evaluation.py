@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -179,6 +181,17 @@ def send_test_data():
                     500: 0.5,
                     600: 1,
                     700: 2,
+                },
+            ),
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "special_l", "case": "nan"},
+                {
+                    100: math.nan,
                 },
             ),
         ]
@@ -437,7 +450,12 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
+    )
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -446,9 +464,14 @@ def do_query_test(
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 def do_query_test_expect_error(
@@ -482,8 +505,13 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert (
-        execute_range_query_in_prometheus(query, start_time, end_time, step) == result
+    actual_prometheus_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
     )
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
@@ -497,9 +525,14 @@ def do_range_query_test(
         query, start_time, end_time, step
     )
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 # Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
@@ -521,6 +554,29 @@ def do_clickhouse_only_query_test(
     assert http_api_response_close_to(
         actual_result_from_http_api, result, eps=eps
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
+    assert expected_cherror in execute_query_in_clickhouse_sql(
+        query, timestamp, expect_error=True
+    )
+    assert expected_cherror in execute_query_in_clickhouse_http_api(
+        query, timestamp, expect_error=True
+    )
+
+
+def test_native_promql_error_paths():
+    do_clickhouse_only_query_test_expect_error(
+        "sort(test)",
+        130,
+        "Function sort is not implemented",
+    )
+
+    do_clickhouse_only_query_test_expect_error(
+        "day_of_week(test, test)",
+        130,
+        "Function 'day_of_week' expects 1 arguments, but was called with 2 arguments",
+    )
 
 
 def test_up():
@@ -647,6 +703,35 @@ def test_instant_selectors():
     )
 
 
+def test_timestamp_modifier_fixed_evaluation_time():
+    do_query_test(
+        "test @ 130",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "3"]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "1970-01-01 00:04:10.000",
+                "3",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ 130)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
+            ]
+        ],
+    )
+
+
 def test_function_over_time():
     do_query_test(
         "last_over_time(test[45s])[120s:15s]",
@@ -743,6 +828,215 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',1),('1970-01-01 00:03:30.000',3)]",
             ]
         ],
+    )
+
+
+def test_absent_functions():
+    # Behavior: Prometheus returns empty output when the argument vector has any sample.
+    do_query_test(
+        "absent(foo)",
+        130,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: regular NaN samples count as present for absence functions.
+    do_query_test(
+        'absent(special_l{case="nan"})',
+        100,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: Prometheus returns one `{}` sample with value 1 when the argument vector is empty.
+    do_query_test(
+        "absent(no_such_metric)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus synthesizes labels from exact equality matchers on direct selectors.
+    do_query_test(
+        'absent(no_such_metric{shape="circle", job="api"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api", "shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('job','api'),('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: `offset` changes selector timing but Prometheus still synthesizes absent labels from the wrapped selector.
+    do_query_test(
+        'absent(no_such_metric{job="api"} offset 5m)',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: `@` fixes selector timing but Prometheus still synthesizes absent labels from the wrapped selector.
+    do_query_test(
+        'absent(no_such_metric{job="api"} @ 130)',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: `__name__` never appears in absent-function output labels.
+    do_query_test(
+        'absent({__name__="ignored", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus absent label synthesis is order-dependent; a later exact
+    # equality matcher can contribute a label if earlier matchers for that label were non-equality.
+    do_clickhouse_only_query_test(
+        'absent(no_such_metric{shape!="square", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_clickhouse_only_query_test(
+        'absent(no_such_metric{shape=~"square", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus absent label synthesis deletes a label after duplicate or mixed matchers
+    # that follow the first exact equality matcher.
+    do_query_test(
+        'absent(no_such_metric{shape="circle", shape!="square"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(no_such_metric{shape="circle", shape="circle"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(no_such_metric{shape="circle", shape="square"})',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus synthesizes no labels for non-selector absent arguments even
+    # when selectors appear inside the expression.
+    do_query_test(
+        'absent(sum(no_such_metric{shape="circle"}))',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'absent(no_such_metric{shape="circle"} + 1)',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: Prometheus preprocessing unwraps parentheses around function arguments
+    # before absent label synthesis.
+    do_query_test(
+        'absent((no_such_metric{shape="circle"}))',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [130, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_query_test(
+        'sum(absent(foo{shape="hexagon"}))',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [130, "1"]}]}',
+        [["[]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    do_range_query_test(
+        'absent(foo{shape="hexagon"})',
+        110,
+        130,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "hexagon"}, "values": [[110, "1"], [120, "1"], [130, "1"]]}]}',
+        [
+            [
+                "[('shape','hexagon')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus returns empty output when any sample exists in the selected range.
+    do_query_test(
+        "absent_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: regular NaN samples count as present for absence functions.
+    do_query_test(
+        'absent_over_time(special_l{case="nan"}[10s])',
+        100,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: Prometheus synthesizes labels from direct matrix selectors when the range has no samples.
+    do_query_test(
+        'absent_over_time(no_such_metric{shape="circle"}[45s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [210, "1"]}]}',
+        [["[('shape','circle')]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # Behavior: Prometheus synthesizes labels from matrix selectors wrapped in `@`.
+    do_query_test(
+        'absent_over_time(no_such_metric{job="api"}[45s] @ 210)',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [210, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # Behavior: Prometheus absent_over_time label synthesis follows the same order-dependent matcher rules.
+    do_clickhouse_only_query_test(
+        'absent_over_time(no_such_metric{job!="missing", job="api"}[20s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [210, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    do_query_test(
+        'absent_over_time(no_such_metric{job="api", job!="missing"}[20s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # Behavior: Prometheus synthesizes `{}` for non-selector matrix expressions.
+    do_query_test(
+        'absent_over_time(rate(no_such_metric[5m])[5m:])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # Behavior: Prometheus emits absent samples only at grid steps whose range window is empty;
+    # it does not emit 0 for present windows.
+    do_range_query_test(
+        "absent_over_time(test[5s])",
+        110,
+        130,
+        5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[115, "1"], [125, "1"]]}]}',
+        [["[]", "[('1970-01-01 00:01:55.000',1),('1970-01-01 00:02:05.000',1)]"]],
     )
 
 

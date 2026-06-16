@@ -100,6 +100,25 @@ def test_error_while_parsing():
     assert "while parsing PromQL query" in error_message
 
 
+# Behavior: the Prometheus HTTP API rejects malformed matcher regexes during
+# parsing and returns a Prometheus-style error envelope.
+def test_error_while_parsing_invalid_matcher_regex():
+    response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        'demo_memory_usage_bytes{instance=~"(.*"}',
+        150,
+    )
+    error_message = extract_error_from_http_api_response(response)
+    assert "while parsing PromQL query" in error_message
+    assert (
+        "invalid regular expression" in error_message
+        or "error parsing regexp" in error_message
+        or "missing closing" in error_message
+    )
+
+
 # Checks the case when an exception appears before any block has been written to the response buffer.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
 def test_error_before_first_block():
