@@ -14,6 +14,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -21,6 +22,7 @@
 #include <IO/Progress.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -46,6 +48,7 @@
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/Stopwatch.h>
@@ -132,6 +135,7 @@ namespace ServerSetting
 namespace FailPoints
 {
 extern const char parallel_replicas_reading_response_timeout[];
+extern const char tcp_handler_fail_connection_setup[];
 }
 }
 
@@ -151,6 +155,7 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
+    extern const Event FileProgressCallbackInvocations;
 }
 
 namespace DB::ErrorCodes
@@ -268,7 +273,8 @@ struct TurnOffBoolSettingTemporary
     }
 };
 
-Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+Block convertColumnsToBLOBs(
+    const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings, bool remove_low_cardinality)
 {
     if (block.empty() || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
@@ -283,7 +289,16 @@ Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt
     {
         ColumnWithTypeAndName column = elem;
         if (!elem.column->isConst() && !isTuple(elem.type->getTypeId()))
+        {
+            /// NativeWriter will announce LowCardinality-stripped types on the wire,
+            /// so the blob must contain data serialized with the stripped type as well.
+            if (remove_low_cardinality)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+                column.type = recursiveRemoveLowCardinality(column.type);
+            }
             column.column = ColumnBLOB::create(column, codec, client_revision, format_settings);
+        }
         res.insert(std::move(column));
     }
     return res;
@@ -347,30 +362,51 @@ void TCPHandler::runImpl()
 {
     DB::setThreadName(ThreadName::TCP_HANDLER);
 
-    extractConnectionSettingsFromContext(server.context());
-
-    socket().setReceiveTimeout(receive_timeout);
-    socket().setSendTimeout(send_timeout);
-    socket().setNoDelay(true);
-
-    in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
-
-    /// Limit the total wall-clock time for the handshake phase to prevent
-    /// slowloris-style attacks from holding a thread indefinitely.
-    UInt64 handshake_timeout_ms = server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds];
-    in->setHandshakeTimeout(handshake_timeout_ms);
-
-    /// Support for PROXY protocol
-    if (parse_proxy_protocol && !receiveProxyHeader())
-        return;
-
-    if (in->eof())
+    try
     {
-        LOG_INFO(log, "Client has not sent any data.");
+        extractConnectionSettingsFromContext(server.context());
+
+        socket().setReceiveTimeout(receive_timeout);
+        socket().setSendTimeout(send_timeout);
+        socket().setNoDelay(true);
+
+        in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
+
+        /// Simulates a connection setup failure: for example, the buffer allocation
+        /// above fails when the server memory limit is reached.
+        fiu_do_on(FailPoints::tcp_handler_fail_connection_setup, {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                "Fail point {} is triggered", FailPoints::tcp_handler_fail_connection_setup);
+        });
+
+        /// Limit the total wall-clock time for the handshake phase to prevent
+        /// slowloris-style attacks from holding a thread indefinitely.
+        UInt64 handshake_timeout_ms = server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds];
+        in->setHandshakeTimeout(handshake_timeout_ms);
+
+        /// Support for PROXY protocol
+        if (parse_proxy_protocol && !receiveProxyHeader())
+            return;
+
+        if (in->eof())
+        {
+            LOG_INFO(log, "Client has not sent any data.");
+            return;
+        }
+
+        out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
+    }
+    catch (const Exception & e)
+    {
+        /// The allocation of the connection buffers can fail when the server memory limit
+        /// is reached. If the exception is left to propagate, the socket is closed with the
+        /// client's 'Hello' packet still unread, which makes the kernel send RST, and the
+        /// client observes 'Connection reset by peer' without any explanation. Send the
+        /// exception into the socket directly instead.
+        tryLogCurrentException(log, "Cannot initialize connection");
+        trySendExceptionWithoutConnectionBuffers(e);
         return;
     }
-
-    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
 
     /// User will be authenticated here. It will also set settings from user profile into connection_context.
     try
@@ -800,11 +836,13 @@ void TCPHandler::runImpl()
             query_state->query_context->setBlockMarshallingCallback(
                 [this, &query_state](const Block & block)
                 {
+                    const auto & query_settings = query_state->query_context->getSettingsRef();
                     return convertColumnsToBLOBs(
                         block,
-                        getCompressionCodec(query_state->query_context->getSettingsRef(), query_state->compression),
+                        getCompressionCodec(query_settings, query_state->compression),
                         client_tcp_protocol_version,
-                        getFormatSettings(query_state->query_context));
+                        getFormatSettings(query_state->query_context),
+                        !query_settings[Setting::low_cardinality_allow_in_native_format]);
                 });
 
             query_state->query_context->setInteractiveCancelCallback(
@@ -2272,7 +2310,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (part_uuids_to_ignore.has_value())
         state->part_uuids_to_ignore = std::move(part_uuids_to_ignore);
 
-    readStringBinary(state->query_id, *in);
+    readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 
     /// In interserver mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
@@ -2384,7 +2422,12 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        std::string data(salt);
+        /// `StringWithMemoryTracking` so the duplicate of the (potentially
+        /// large) query body that the hash needs goes through the throwing
+        /// memory-tracker path. With a plain `std::string` the append below
+        /// would allocate through `allocNoThrow` and could push the server
+        /// past `max_server_memory_usage` without throwing.
+        StringWithMemoryTracking data(salt);
         // For backward compatibility
         if (nonce.has_value())
             data += std::to_string(nonce.value());
@@ -2468,6 +2511,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             auto current_state = state_wptr.lock();
             if (!current_state)
                 return;
+            ProfileEvents::increment(ProfileEvents::FileProgressCallbackInvocations);
             this->updateProgress(*current_state, Progress(value));
         });
 
@@ -2477,11 +2521,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             auto current_state = state_wptr.lock();
             if (!current_state)
                 return block;
+            const auto & query_settings = current_state->query_context->getSettingsRef();
             return convertColumnsToBLOBs(
                 block,
-                getCompressionCodec(current_state->query_context->getSettingsRef(), current_state->compression),
+                getCompressionCodec(query_settings, current_state->compression),
                 client_tcp_protocol_version,
-                getFormatSettings(current_state->query_context));
+                getFormatSettings(current_state->query_context),
+                !query_settings[Setting::low_cardinality_allow_in_native_format]);
         });
 
     ///
@@ -2990,6 +3036,70 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 
     out->finishChunk();
     out->next();
+}
+
+
+void TCPHandler::trySendExceptionWithoutConnectionBuffers(const Exception & e)
+{
+    try
+    {
+        /// The connection failed to initialize most likely because the server memory limit
+        /// is reached. In this state every tracked allocation throws, so the error handling
+        /// path must be exempt from the memory limit: it allocates a small bounded amount
+        /// (the strings of the exception message).
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+        /// The client has not received 'Hello' yet, so the communication is not chunked,
+        /// and the client is able to receive an exception packet instead of the 'Hello'
+        /// response (this is also how authentication errors are delivered). The stack
+        /// trace is not sent: it is of little use, while it noticeably grows the packet.
+        char stack_memory[4096];
+        WriteBufferFromPocoSocket socket_out(socket(), sizeof(stack_memory), stack_memory);
+        writeVarUInt(Protocol::Server::Exception, socket_out);
+        writeException(e, socket_out, false /*with_stack_trace*/);
+        socket_out.finalize();
+
+        /// The client's 'Hello' packet is still unread in the socket receive queue.
+        /// Closing the socket with pending unread data makes the kernel send RST,
+        /// which can discard the exception packet written above before the client
+        /// reads it. Read the pending data out, so the connection is terminated
+        /// gracefully with FIN. There is no need to wait for more data: the client
+        /// sends 'Hello' in a single packet before reading the response.
+        /// The amount of drained data is limited in case the client keeps sending:
+        /// such a connection is closed with RST, and that is fine.
+        ssize_t max_bytes_to_drain = 65536;
+        if (socket().secure())
+        {
+            /// For secure sockets available is `SSL_pending`, which only reports decrypted
+            /// data buffered inside OpenSSL and misses the data in the socket receive queue,
+            /// so the readiness of the underlying fd is polled instead. receiveBytes can
+            /// block on a partially received TLS record, so the receive timeout is limited.
+            socket().setReceiveTimeout(Poco::Timespan(0, 100'000 /*microseconds*/));
+            while (max_bytes_to_drain > 0 && socket().poll(Poco::Timespan(), Poco::Net::Socket::SELECT_READ))
+            {
+                int bytes_received = socket().receiveBytes(stack_memory, sizeof(stack_memory));
+                if (bytes_received <= 0)
+                    break;
+                max_bytes_to_drain -= bytes_received;
+            }
+        }
+        else
+        {
+            /// For plain sockets available reflects the socket receive queue,
+            /// and receiveBytes never blocks.
+            while (max_bytes_to_drain > 0 && socket().available() > 0)
+            {
+                int bytes_received = socket().receiveBytes(stack_memory, sizeof(stack_memory));
+                if (bytes_received <= 0)
+                    break;
+                max_bytes_to_drain -= bytes_received;
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot send exception to client");
+    }
 }
 
 
