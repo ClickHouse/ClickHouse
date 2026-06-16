@@ -183,3 +183,45 @@ TEST(ColumnString, InsertRangeFromDecreasingOffsetsThrows)
         ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
     }
 }
+
+/// Build a ColumnString whose offsets dip in the middle: an intermediate offset is smaller than the
+/// one before it, while the final offset still matches `chars.size()`. Unlike the decreasing-endpoint
+/// case, here offsetAt(start + length) stays a valid, in-bounds end offset, so the endpoint guard alone
+/// would not notice the corruption.
+static ColumnString::MutablePtr makeStringColumnWithDippingOffset()
+{
+    auto column = ColumnString::create();
+    column->insertData("aaaa", 4);
+    column->insertData("bbbb", 4);
+    column->insertData("cccc", 4);
+
+    /// offsets == [4, 8, 12], chars.size() == 12. Drop the middle offset below the first one, giving
+    /// offsets [4, 2, 12]: offsetAt(1) == 4, offsetAt(3) == 12 (both within chars), but the copied
+    /// offset offsets[1] == 2 < 4 dips in between.
+    auto & offsets = column->getOffsets();
+    offsets[1] = 2;
+
+    return column;
+}
+
+/// An intermediate copied offset decreases (offsets[1] == 2 < nested_offset == 4) while the end offset
+/// offsetAt(start + length) == 12 is still within chars.size() == 12, so the endpoint guard passes.
+/// The rewrite loop would then compute offsets[1] - nested_offset == 2 - 4 and underflow, storing a
+/// huge destination offset and leaving the result internally inconsistent. Validating every copied
+/// offset for monotonicity catches it. Range [1, 3) copies offsets[1] == 2 then offsets[2] == 12.
+TEST(ColumnString, InsertRangeFromDippingIntermediateOffsetThrows)
+{
+    auto source = makeStringColumnWithDippingOffset();
+    auto destination = ColumnString::create();
+
+    try
+    {
+        destination->insertRangeFrom(*source, 1, 2);
+        FAIL() << "insertRangeFrom did not detect a dipping intermediate source offset";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
