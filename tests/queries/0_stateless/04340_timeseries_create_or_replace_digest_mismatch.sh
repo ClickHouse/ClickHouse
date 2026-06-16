@@ -3,16 +3,6 @@
 # Tag no-parallel: enables a REGULAR failpoint that affects the whole server process.
 # Tag no-replicated-database: the test creates its own Replicated database and the
 #                             failpoint is enabled only on one server node.
-# Regression test for: CREATE OR REPLACE / RENAME of a TimeSeries table inside a
-# Replicated database left the outer table detached from the in-memory tables map
-# while it remained in ZooKeeper and in tables_metadata_digest, causing a
-# "Digest does not match" LOGICAL_ERROR (server abort) on the next DDL.
-#
-# StorageTimeSeries does not support rename. It used to reject the rename inside
-# renameInMemory(), which runs after DatabaseAtomic::renameTable() has already
-# detached the table and committed the ZooKeeper transaction, breaking the digest
-# invariant. The fix rejects the rename early in checkTableCanBeRenamed(), before
-# anything is detached or committed.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,16 +20,25 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_tim
     -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
 # CREATE OR REPLACE renames a temporary table onto the target name; TimeSeries does
-# not support rename, so the statement must be rejected. Before the fix the rejection
-# came too late and left the outer table detached without adjusting the digest.
+# not support rename, so the statement must be rejected.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table=1 \
     -q "CREATE OR REPLACE TABLE ${DB}.ts ENGINE = TimeSeries" 2>&1 \
     | grep -o "Renaming is not supported by storage TimeSeries yet" | head -1
 
-# A plain RENAME must be rejected the same way.
+# A plain RENAME TABLE must be rejected the same way.
 ${CLICKHOUSE_CLIENT} \
     -q "RENAME TABLE ${DB}.ts TO ${DB}.ts2" 2>&1 \
     | grep -o "Renaming is not supported by storage TimeSeries yet" | head -1
+
+# RENAME DATABASE must also be rejected before any metadata/catalog mutation.
+${CLICKHOUSE_CLIENT} \
+    -q "RENAME DATABASE ${DB} TO ${DB}_renamed" 2>&1 \
+    | grep -o "Renaming is not supported by storage TimeSeries yet" | head -1
+
+# The original database must still exist under its old name (RENAME DATABASE must not
+# have half-applied: catalog/metadata must not diverge from ZooKeeper).
+${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DB}"
+${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DB}_renamed"
 
 # The outer table must still be present after the rejected operations.
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
@@ -49,15 +48,14 @@ ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 # there; the subsequent DDL succeeds regardless.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT database_replicated_force_metadata_digest_check"
 
-# WITHOUT the fix (debug/sanitizer builds): the digest is inconsistent and this DDL
-# aborts the server with "Digest does not match".
-# WITH the fix: the rename was rejected cleanly, the digest is consistent, DDL succeeds.
+# The regression contract: with the forced digest check on, the next DDL must SUCCEED.
+# Before the fix the digest was inconsistent and this aborted the server with
+# "Digest does not match"; assert success directly so a crash, lost connection, or any
+# other failure fails the test instead of being masked.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none \
-    -q "CREATE TABLE ${DB}.probe (id UInt64) ENGINE = ReplicatedMergeTree ORDER BY id" 2>&1 \
-    | grep -o "LOGICAL_ERROR" | head -1
+    -q "CREATE TABLE ${DB}.probe (id UInt64) ENGINE = ReplicatedMergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.probe"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT database_replicated_force_metadata_digest_check"
-
-echo "OK"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB} SYNC" 2>/dev/null || true

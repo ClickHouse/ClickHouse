@@ -737,6 +737,13 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
     }
 
+    /// Renaming the database renames every table via renameInMemory() below. Some storages reject
+    /// rename only there, after the metadata file has been moved and the catalog updated, leaving
+    /// local state diverged from ZooKeeper (and breaking the DatabaseReplicated digest invariant).
+    /// Reject up front so nothing is mutated when a contained table cannot be renamed. The UUID is
+    /// preserved, matching renameTable(), so UUID-pathed Replicated/KeeperMap tables still pass.
+    for (auto & table : tables)
+        table.second->checkTableCanBeRenamed({new_name, table.first, table.second->getStorageID().uuid});
 
     try
     {
