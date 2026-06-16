@@ -396,11 +396,10 @@ def test_replicated_table_restore_keeps_duplicate_parts():
     node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
 
+    expected = node1.query("SELECT count(), sum(sipHash64(*)) FROM tbl")
     for instance in [node1, node2]:
         assert instance.query("SELECT count() FROM tbl2") == "2\n"
-        assert instance.query("SELECT count(), sum(sipHash64(*)) FROM tbl") == instance.query(
-            "SELECT count(), sum(sipHash64(*)) FROM tbl2"
-        )
+        assert instance.query("SELECT count(), sum(sipHash64(*)) FROM tbl2") == expected
 
 
 def test_replicated_table_with_not_synced_insert():
