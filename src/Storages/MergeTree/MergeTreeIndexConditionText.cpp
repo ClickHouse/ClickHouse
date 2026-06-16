@@ -942,6 +942,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+        /// Unlike hasToken, hasTokenOrNull is never rewritten on the direct-read / row-scan path, so the
+        /// pre/postprocessor is not applied to its row-level needle. Using the index here (where
+        /// stringToTokens does apply them, e.g. mapping a dropped token to the empty sentinel that prunes
+        /// every granule) would disagree with the row-level result. Bail out so the index is not used for
+        /// hasTokenOrNull when a pre/postprocessor is configured; the plain index path is unaffected.
+        if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
+            return false;
+
         /// stringToTokens applies both preprocessor and postprocessor.
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())

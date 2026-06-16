@@ -202,3 +202,7 @@ Baz	3
 0
 1
 0
+19. hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).
+1
+1
+0

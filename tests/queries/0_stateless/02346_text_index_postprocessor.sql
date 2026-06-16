@@ -840,4 +840,24 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS que
 
 DROP TABLE tab;
 
+SELECT '32. hasTokenOrNull with a postprocessor: the index must not be used (row-level is not postprocessed).';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'the quick'), (2, 'foo bar');
+
+-- 'the' is dropped by the postprocessor in the index, but hasTokenOrNull is not rewritten on the
+-- row-scan path, so it still searches the literal token and must find it in row 1 (not pruned to 0).
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'the');   -- 1
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'quick'); -- 1
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');   -- 0
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;
