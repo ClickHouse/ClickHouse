@@ -127,7 +127,7 @@ public:
             {
                 auto new_pair = std::make_shared<KVPair>();
                 new_pair->key = iter->key().ToStringView();
-                new_pair->value.decodeFromString(iter->value().ToStringView());
+                new_pair->value.decodeFromString(iter->value().ToString());
                 pair = new_pair;
             }
             else
