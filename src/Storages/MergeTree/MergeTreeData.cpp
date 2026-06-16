@@ -4592,10 +4592,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (c.type != AlterCommand::MODIFY_ENGINE)
                 c.apply(metadata_for_check, local_context);
         }
-        const SettingsChanges * setting_changes_for_check = metadata_for_check.settings_changes
-            ? &metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes
-            : nullptr;
-        auto settings_for_check = getSettings(setting_changes_for_check);
+        /// Build the candidate settings the same way changeSettings (and the next table load) do: start
+        /// from defaults and apply the final settings_changes. Building them as "current settings + the
+        /// changes" would be wrong for RESET SETTING -- a reset drops the setting from settings_changes,
+        /// so a delta on top of the current settings keeps the old value, while reload reverts it to the
+        /// default. Using defaults here keeps this check in agreement with the reload path.
+        auto settings_for_check = getDefaultSettings();
+        if (metadata_for_check.settings_changes)
+            settings_for_check->applyChanges(metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes);
 
         for (const auto & engine : engines_to_validate)
         {
