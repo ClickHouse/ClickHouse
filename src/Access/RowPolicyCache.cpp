@@ -7,6 +7,8 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
@@ -190,6 +192,8 @@ void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 void RowPolicyCache::mixFilters()
 {
     /// `mutex` is already locked.
+    Stopwatch watch;
+    size_t mixed_sets = 0;
     for (auto i = enabled_row_policies.begin(), e = enabled_row_policies.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -198,9 +202,17 @@ void RowPolicyCache::mixFilters()
         else
         {
             mixFiltersFor(*elem);
+            ++mixed_sets;
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    /// O(enabled sets * policies), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_WARNING(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", mixed_sets, all_policies.size(), elapsed_ms);
+    else
+        LOG_DEBUG(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", mixed_sets, all_policies.size(), elapsed_ms);
 }
 
 

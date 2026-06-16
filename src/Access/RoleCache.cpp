@@ -4,6 +4,9 @@
 #include <Access/AccessControl.h>
 #include <boost/container/flat_set.hpp>
 #include <base/FnTraits.h>
+#include <Common/Logger.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -102,12 +105,15 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
 {
     /// `mutex` is already locked.
 
+    Stopwatch watch;
+    size_t recalculated_sets = 0;
     for (auto i = enabled_roles_by_params.begin(), e = enabled_roles_by_params.end(); i != e;)
     {
         auto & item = i->second;
         if (auto enabled_roles = item.enabled_roles.lock())
         {
             collectEnabledRoles(*enabled_roles, item.subscriptions_on_roles, notifications);
+            ++recalculated_sets;
             ++i;
         }
         else
@@ -115,6 +121,13 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
             i = enabled_roles_by_params.erase(i);
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    /// O(enabled sets * roles), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_WARNING(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", recalculated_sets, elapsed_ms);
+    else
+        LOG_DEBUG(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", recalculated_sets, elapsed_ms);
 }
 
 

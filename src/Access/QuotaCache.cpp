@@ -4,6 +4,9 @@
 #include <Access/QuotaUsage.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -331,6 +334,8 @@ void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
 
+    Stopwatch watch;
+    size_t rechosen_sets = 0;
     for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -339,9 +344,17 @@ void QuotaCache::chooseQuotaToConsume()
         else
         {
             chooseQuotaToConsumeFor(*elem, true);
+            ++rechosen_sets;
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    /// O(enabled sets * quotas), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_WARNING(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", rechosen_sets, all_quotas.size(), elapsed_ms);
+    else
+        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", rechosen_sets, all_quotas.size(), elapsed_ms);
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
