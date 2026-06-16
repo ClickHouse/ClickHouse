@@ -2,6 +2,7 @@ SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
+SET materialize_statistics_on_insert = 1; -- materialize the auto-created column statistics so estimates are precise (no `no_statistics~` label)
 
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;

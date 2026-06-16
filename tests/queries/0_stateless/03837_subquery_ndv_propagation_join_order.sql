@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS test_partners;
 DROP TABLE IF EXISTS test_region_subsidies;
 DROP TABLE IF EXISTS test_product_catalog;
 
+SET materialize_statistics_on_insert = 1;
+
 CREATE TABLE test_sales (
     sale_id UInt64,
     product_id UInt64 STATISTICS(uniq),
@@ -47,12 +49,6 @@ INSERT INTO test_region_subsidies
 INSERT INTO test_product_catalog
     SELECT number + 1, concat('catalog_', toString(number))
     FROM numbers(300);
-
--- Merge parts to materialize column statistics
-OPTIMIZE TABLE test_sales FINAL;
-OPTIMIZE TABLE test_partners FINAL;
-OPTIMIZE TABLE test_region_subsidies FINAL;
-OPTIMIZE TABLE test_product_catalog FINAL;
 
 SET enable_analyzer = 1;
 SET allow_statistic_optimize = 1;
