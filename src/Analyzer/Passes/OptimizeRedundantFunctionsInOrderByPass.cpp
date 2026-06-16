@@ -85,7 +85,7 @@ public:
     }
 
 private:
-    QueryTreeNodePtrWithGlobalHashSet existing_keys;
+    QueryTreeNodePtrWithLocalHashSet existing_keys;
 
     bool isRedundantExpression(QueryTreeNodePtr function)
     {

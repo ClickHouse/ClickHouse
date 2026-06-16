@@ -73,14 +73,14 @@ public:
 
         if (filter_lhs_argument_node_type == QueryTreeNodeType::COLUMN &&
             filter_rhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
-            filter_lhs_argument_node->isEqualGlobal(*lambda_argument_column_node))
+            filter_lhs_argument_node->isEqualLocal(*lambda_argument_column_node))
         {
             /// Rewrite arrayExists(x -> x = elem, arr) -> has(arr, elem)
             has_constant_element_argument = filter_rhs_argument_node;
         }
         else if (filter_lhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
             filter_rhs_argument_node_type == QueryTreeNodeType::COLUMN &&
-            filter_rhs_argument_node->isEqualGlobal(*lambda_argument_column_node))
+            filter_rhs_argument_node->isEqualLocal(*lambda_argument_column_node))
         {
             /// Rewrite arrayExists(x -> elem = x, arr) -> has(arr, elem)
             has_constant_element_argument = filter_lhs_argument_node;

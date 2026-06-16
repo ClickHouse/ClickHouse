@@ -72,7 +72,7 @@ public:
 
         QueryTreeNodes unique_elems;
 
-        QueryTreeNodePtrWithGlobalHashMap<Array> node_to_patterns;
+        QueryTreeNodePtrWithLocalHashMap<Array> node_to_patterns;
         FunctionNodes match_functions;
 
         for (auto & argument : function_node->getArguments())

@@ -89,7 +89,7 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
             {
                 auto nullable_arg = convertJoinedColumnTypeToNullIfNeeded(
                     arg, arg->getResultType(), join_kind, resolved_side, scope);
-                if (nullable_arg && !nullable_arg->isEqualGlobal(*arg))
+                if (nullable_arg && !nullable_arg->isEqualLocal(*arg))
                 {
                     arg = nullable_arg;
                     any_changed = true;
@@ -124,7 +124,7 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
             if (!resolved_expression->getResultType()->equals(*result_type))
                 resolved_expression = buildCastFunction(resolved_expression, result_type, scope.context, true);
         }
-        if (!nullable_resolved_identifier->isEqualGlobal(*resolved_identifier))
+        if (!nullable_resolved_identifier->isEqualLocal(*resolved_identifier))
             scope.join_columns_with_changed_types[nullable_resolved_identifier] = resolved_identifier;
         return nullable_resolved_identifier;
     }
@@ -1258,7 +1258,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             return;
 
         const auto & using_column_list = using_column_node_it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>();
-        auto matches_using_column = [&](const auto & node) { return node->isEqualGlobal(*resolved_identifier_candidate); };
+        auto matches_using_column = [&](const auto & node) { return node->isEqualLocal(*resolved_identifier_candidate); };
         if (std::ranges::none_of(using_column_list.getNodes(), matches_using_column))
             return;
 
@@ -1284,7 +1284,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
             resolve_result = std::move(resolved_column_clone);
 
-            if (!resolve_result->isEqualGlobal(*using_column_node_it->second))
+            if (!resolve_result->isEqualLocal(*using_column_node_it->second))
                 current_scope.join_columns_with_changed_types[resolve_result] = using_column_node_it->second;
         }
     };
@@ -1451,7 +1451,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     }
 
     const auto & argument_nodes = resolved_function->getArguments().getNodes();
-    if (argument_nodes.size() != 2 && !array_join_parent_column->isEqualGlobal(*argument_nodes.at(0)))
+    if (argument_nodes.size() != 2 && !array_join_parent_column->isEqualLocal(*argument_nodes.at(0)))
         return {};
 
     const auto * second_argument = argument_nodes.at(1)->as<ConstantNode>();
@@ -1491,7 +1491,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpr
         {
             for (size_t i = 1; i < nested_function_arguments_size; ++i)
             {
-                if (!nested_function_arguments[i]->isEqualGlobal(*resolved_expression))
+                if (!nested_function_arguments[i]->isEqualLocal(*resolved_expression))
                     continue;
 
                 auto array_join_column = std::make_shared<ColumnNode>(
@@ -1536,7 +1536,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
         if (array_join_resolved_expression)
             break;
 
-        if (array_join_column_inner_expression->isEqualGlobal(*resolved_expression))
+        if (array_join_column_inner_expression->isEqualLocal(*resolved_expression))
         {
             array_join_resolved_expression = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
                 array_join_column_expression_typed.getColumnSource());
