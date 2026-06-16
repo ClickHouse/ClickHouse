@@ -370,7 +370,7 @@ public:
     const UInt8 * search(const UInt8 * haystack, const UInt8 * haystack_end) const;
 };
 
-} // namespace TargetSpecific::Default
+}
 
 /// AVX2-based implementation for x86_64_v3 CPUs (32-byte vectors instead of 16).
 /// Uses DECLARE macro since the class has no #ifdef - AVX2 intrinsics are guaranteed by the target attribute.
