@@ -921,6 +921,16 @@ def test_use_extended_date_and_time_types_setting(started_cluster):
         instance, "SELECT count() FROM test_database.test_date_types", "2"
     )
 
+    # Verify the replicated values, not just the row count. MaterializedPostgreSQLConsumer
+    # catches conversion failures and still inserts the row with default values, so a broken
+    # WAL decoder for the narrowed Date/DateTime or array types would pass a count-only check.
+    assert (
+        "2020-01-01\t2020-01-01 01:02:03\t['2020-01-01']\t['2020-01-01 01:02:03']"
+        == instance.query(
+            "SELECT d, t, arr_d, arr_t FROM test_database.test_date_types WHERE key = 2"
+        ).strip()
+    )
+
     pg_manager.drop_materialized_db()
     cursor.execute("DROP TABLE IF EXISTS test_date_types")
 
