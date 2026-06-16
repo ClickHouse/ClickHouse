@@ -126,6 +126,17 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             || join_kind == JoinKind::Cross
             || join_kind == JoinKind::Comma);
 
+    /// A partitioned (shuffle) join output is only guaranteed to be distributed on a side that
+    /// is always present. Outer joins emit unmatched rows whose null/default-extended key on the
+    /// non-preserved side does not equal the preserved key, so only the preserved side(s) may be
+    /// advertised as the output distribution. FULL preserves neither side, so its shuffle output
+    /// has no usable key distribution. The inputs are still shuffled by the join keys regardless,
+    /// so matching rows co-locate.
+    const bool left_preserved = join_kind == JoinKind::Inner || join_kind == JoinKind::Left
+        || join_kind == JoinKind::Cross || join_kind == JoinKind::Comma;
+    const bool right_preserved = join_kind == JoinKind::Inner || join_kind == JoinKind::Right
+        || join_kind == JoinKind::Cross || join_kind == JoinKind::Comma;
+
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
@@ -173,13 +184,23 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             {
                 left_dist.columns.push_back({key.left});
                 right_dist.columns.push_back({key.right});
-                output_dist.columns.push_back({key.left, key.right});
                 if (needs_hash_cast)
                 {
                     const String & type_name = hash_type_for(key);
                     left_dist.hash_type_names.push_back(type_name);
                     right_dist.hash_type_names.push_back(type_name);
-                    output_dist.hash_type_names.push_back(type_name);
+                }
+                /// Advertise the output partitioning only on the preserved side(s).
+                NameSet output_key;
+                if (left_preserved)
+                    output_key.insert(key.left);
+                if (right_preserved)
+                    output_key.insert(key.right);
+                if (!output_key.empty())
+                {
+                    output_dist.columns.push_back(std::move(output_key));
+                    if (needs_hash_cast)
+                        output_dist.hash_type_names.push_back(hash_type_for(key));
                 }
             };
             auto clear_keys = [&]()
@@ -264,13 +285,22 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
                 DistributionDescription single_output_dist;
                 single_output_dist.node_count = candidate_node_count;
-                single_output_dist.columns.push_back({key.left, key.right});
+                NameSet single_output_key;
+                if (left_preserved)
+                    single_output_key.insert(key.left);
+                if (right_preserved)
+                    single_output_key.insert(key.right);
 
                 if (!key.hash_type_name.empty())
                 {
                     single_left_dist.hash_type_names.push_back(key.hash_type_name);
                     single_right_dist.hash_type_names.push_back(key.hash_type_name);
-                    single_output_dist.hash_type_names.push_back(key.hash_type_name);
+                }
+                if (!single_output_key.empty())
+                {
+                    single_output_dist.columns.push_back(std::move(single_output_key));
+                    if (!key.hash_type_name.empty())
+                        single_output_dist.hash_type_names.push_back(key.hash_type_name);
                 }
 
                 GroupExpressionPtr single_key_join = std::make_shared<GroupExpression>(*expression);
