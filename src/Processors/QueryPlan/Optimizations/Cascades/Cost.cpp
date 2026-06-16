@@ -187,21 +187,8 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         Float64 parallelism)
 {
     const bool is_broadcast = dynamic_cast<const BroadcastJoinStrategy *>(strategy) != nullptr;
-    const bool is_merge_join = dynamic_cast<const LocalMergeJoinStrategy *>(strategy) != nullptr
-        || dynamic_cast<const ShuffleMergeJoinStrategy *>(strategy) != nullptr;
 
     ExpressionCost join_cost;
-
-    if (is_merge_join)
-    {
-        /// Linear scan, no hash table. Merge cursor is single-threaded.
-        join_cost.cost.work = (left_statistics.estimated_row_count
-                               + right_statistics.estimated_row_count
-                               + this_step_statistics.estimated_row_count) / parallelism;
-        join_cost.cost.sequential = (left_statistics.estimated_row_count
-                                     + right_statistics.estimated_row_count) / parallelism;
-        return join_cost;
-    }
 
     /// Hash join: left probe + right build (2x) + output.
     join_cost.cost.work = (left_statistics.estimated_row_count

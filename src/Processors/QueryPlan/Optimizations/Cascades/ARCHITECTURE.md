@@ -253,8 +253,6 @@ A Pareto frontier is maintained: when a new implementation is added, dominated e
 
 **Implementation rules** (generate physical expressions with properties):
 - `HashJoinImplementation` — creates local, broadcast, and shuffle hash join strategies
-- `MergeJoinImplementation` — creates local and shuffle merge join strategies requiring
-  sorted inputs; composes with `SortedReadImplementation` to avoid hash tables
 - `AggregationImplementation` — creates local, shuffle, partial, and streaming
   aggregation strategies (streaming requires sorted input by GROUP BY keys)
 - `ParallelReadImplementation` — parallel N-way read, plus sorted-read variant
