@@ -5269,11 +5269,11 @@ If non-zero, skip fetching iceberg metadata from remote catalog if there is a ca
     DECLARE(UInt64, iceberg_metadata_files_parallel_loading_threads, 8, R"(
 Number of threads used to fetch Iceberg manifest files in parallel during query planning.
 
-When greater than 1, manifest files listed in the manifest list are fetched concurrently from object storage, reducing cold-cache query latency proportionally to the number of manifests. Each thread calls `getManifestFile` which is backed by `IcebergMetadataFilesCache` with singleflight protection, so concurrent requests for the same key do not cause duplicate S3 fetches.
+When greater than 1, manifest files listed in the manifest list are fetched concurrently from object storage, reducing cold-cache query latency proportionally to the number of manifests. Each call to `getManifestFile` is backed by `IcebergMetadataFilesCache` with singleflight protection, so concurrent requests for the same key do not cause duplicate S3 fetches. The value is clamped to the range [1, 64]: values above 64 are treated as 64.
 
 Setting this to 1 disables parallel fetching and restores fully sequential behavior, which is useful for debugging or reproducing exact serial timing.
 
-Valid range: 1–64.
+Valid range: 1–64 (enforced; values above 64 are clamped to 64).
 )", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <future>
 #include <memory>
+#include <semaphore>
 #include <optional>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -54,6 +55,7 @@
 #include <Interpreters/IcebergMetadataLog.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -62,7 +64,9 @@ extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
-extern const Event IcebergManifestFilesParallelFetchMicroseconds;
+extern const Event IcebergManifestFilesParallelFetchWaitMicroseconds;
+extern const Event IcebergManifestFileFetchTaskMicroseconds;
+extern const Event IcebergManifestFilesParallelFetched;
 };
 
 
@@ -170,6 +174,15 @@ void SingleThreadIcebergKeysIterator::initParallelPrefetch()
     /// with non-noexcept move + no copy would cause a compile error on some STL versions.
     prefetch_entries.reserve(n);
 
+    /// Limit how many getManifestFile calls run simultaneously to parallel_loading_threads.
+    /// Note: all N tasks are submitted to the shared IO pool up front, and every task beyond
+    /// the cap blocks on acquire(). So whenever N > parallel_loading_threads (i.e. routinely,
+    /// e.g. 30 manifests with threads=8 parks 22 tasks) we park shared IO-pool threads on the
+    /// semaphore, not just at very large N. TODO: a consumer-driven sliding window (submitting
+    /// at most K tasks and submitting the next as each future is consumed) avoids parking the
+    /// shared pool; the semaphore is the simpler fix for now.
+    auto sem = std::make_shared<std::counting_semaphore<64>>(parallel_loading_threads);
+
     /// Submit one getManifestFile task per matching manifest, in manifest_list order.
     /// CacheBase::getOrSet has singleflight protection — concurrent callers for the same
     /// key serialize on a per-key token mutex, so we don't cause N duplicate S3 GETs.
@@ -194,11 +207,17 @@ void SingleThreadIcebergKeysIterator::initParallelPrefetch()
              log_cap = this->log,
              filename = entry.manifest_file_path,
              bytes_size = entry.manifest_file_byte_size,
-             thread_group_cap = thread_group]() mutable
+             thread_group_cap = thread_group,
+             sem_cap = sem]() mutable
             {
+                /// Acquire the slot before attaching to the query's thread group, so a task
+                /// parked waiting for a slot does not attribute its idle wait to the group.
+                sem_cap->acquire();
+                SCOPE_EXIT({ sem_cap->release(); });
                 DB::ThreadGroupSwitcher switcher(thread_group_cap, DB::ThreadName::ICEBERG_MANIFEST_FETCH);
                 try
                 {
+                    ProfileEventTimeIncrement<Microseconds> task_watch(ProfileEvents::IcebergManifestFileFetchTaskMicroseconds);
                     auto result = Iceberg::getManifestFile(
                         object_storage_cap,
                         persistent_components_cap,
@@ -261,13 +280,14 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_idx];
 
             /// Block until the prefetch task delivers this manifest (or rethrows on error).
-            /// ProfileEvent accumulates the total wall-clock wait across all futures; on a
-            /// warm cache this is near-zero, on a cold cache it reflects parallelism savings.
+            /// On a cold cache with real parallelism, WaitMicros << TaskMicros (summed);
+            /// if fetches ran serially the two would be equal.
             ManifestFileCacheableInfo cacheable_part = [&]
             {
-                ProfileEventTimeIncrement<Microseconds> wait_watch(ProfileEvents::IcebergManifestFilesParallelFetchMicroseconds);
+                ProfileEventTimeIncrement<Microseconds> wait_watch(ProfileEvents::IcebergManifestFilesParallelFetchWaitMicroseconds);
                 return fut.get();
             }();
+            ProfileEvents::increment(ProfileEvents::IcebergManifestFilesParallelFetched);
 
             current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                 cacheable_part.deserializer,
@@ -350,7 +370,9 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
     , parallel_loading_threads(
-          local_context_ ? local_context_->getSettingsRef()[Setting::iceberg_metadata_files_parallel_loading_threads].value : 1)
+          std::clamp<UInt64>(
+              local_context_ ? local_context_->getSettingsRef()[Setting::iceberg_metadata_files_parallel_loading_threads].value : 1ULL,
+              1ULL, 64ULL))
 {
 }
 
