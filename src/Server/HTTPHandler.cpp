@@ -938,14 +938,24 @@ void HTTPHandler::processQuery(
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
     /// Capture data needed for Content-Disposition computation from the surrounding scope. The
-    /// filename comes from the URL path component verbatim (preserving the case the user wrote, e.g.
-    /// `hits.CSV.gz`); when the path did not name a table it is empty and a `result.<format>.<compression>`
-    /// fallback is built below. If the response is compressed via the `compression` setting but the
-    /// path filename does not already carry that extension (e.g. `/hits.CSV?compression=gz`), the
-    /// compression extension is appended so the filename matches the bytes actually sent.
+    /// filename normally comes from the URL path component verbatim (preserving the case the user
+    /// wrote, e.g. `hits.CSV.gz`); when the path did not name a table it is empty and a
+    /// `result.<format>.<compression>` fallback is built below.
+    ///
+    /// An explicit output-format override (`output_format` / `format`) changes the bytes, so the
+    /// path's format extension would be wrong (e.g. `/hits.CSV?output_format=Native` sends `Native`).
+    /// In that case rebuild the filename from the path table name plus the override format (which
+    /// carries the user's casing — the path-derived format goes to `default_format`, not these). The
+    /// `compression` setting is handled similarly: if the response is compressed but the path
+    /// filename does not already carry that extension (`/hits.CSV?compression=gz`), it is appended.
     String disposition_filename = path_info.filename_for_disposition;
+    String disposition_base = path_info.table;
     String disposition_compression = settings[Setting::compression];
-    auto set_query_result = [&response, this, disposition_filename, disposition_compression]
+    String disposition_format_override = !settings[Setting::output_format].value.empty()
+        ? settings[Setting::output_format].value
+        : settings[Setting::format].value;
+    auto set_query_result
+        = [&response, this, disposition_filename, disposition_base, disposition_compression, disposition_format_override]
         (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
@@ -971,8 +981,29 @@ void HTTPHandler::processQuery(
         bool response_is_compressed = !disposition_compression.empty();
         if (response_is_binary || response_is_compressed)
         {
-            String filename = disposition_filename;
-            if (filename.empty())
+            String filename;
+            if (!disposition_format_override.empty())
+            {
+                /// An explicit `output_format` / `format` override supersedes the path's format
+                /// extension; rebuild from the path table name (or `result`) + the override format.
+                filename = (disposition_base.empty() ? "result" : disposition_base) + "." + disposition_format_override;
+                if (response_is_compressed)
+                    filename += "." + disposition_compression;
+            }
+            else if (!disposition_filename.empty())
+            {
+                filename = disposition_filename;
+                /// The response is compressed (e.g. via `?compression=gz`); make sure the path-derived
+                /// filename ends with the effective compression extension instead of advertising bytes
+                /// it does not carry.
+                if (response_is_compressed)
+                {
+                    const String compression_suffix = "." + disposition_compression;
+                    if (!filename.ends_with(compression_suffix))
+                        filename += compression_suffix;
+                }
+            }
+            else
             {
                 /// No filename from the URL path: build `result.<format>[.<compression>]`.
                 filename = "result";
@@ -986,15 +1017,6 @@ void HTTPHandler::processQuery(
                     filename += ".";
                     filename += disposition_compression;
                 }
-            }
-            else if (response_is_compressed)
-            {
-                /// The response is compressed (e.g. via `?compression=gz`); make sure the path-derived
-                /// filename ends with the effective compression extension instead of advertising bytes
-                /// it does not carry.
-                const String compression_suffix = "." + disposition_compression;
-                if (!filename.ends_with(compression_suffix))
-                    filename += compression_suffix;
             }
             /// Sanitize filename: strip control and quote characters to avoid header injection.
             String safe;
