@@ -314,6 +314,13 @@ Test output:
         _pr = pr_num if pr_num is not None else pr_number
         _sha = sha if sha is not None else head_sha
 
+        if UserPrompt.assume_yes:
+            print(
+                "WARNING: infrastructure issues require manual classification - "
+                "cannot create in non-interactive (--yes) mode, skipping"
+            )
+            return ""
+
         print(CreateIssue.repr_result(result))
 
         failure_reason = UserPrompt.get_string(
@@ -610,13 +617,56 @@ class CommitStatusCheck:
         return Result.from_file("/tmp/result_sync_pr.json")
 
     @staticmethod
-    def detect_pr_repo(pr_number) -> Optional[str]:
-        """Find which repo a PR number belongs to: public first, then private."""
+    def find_pr_states(pr_number) -> dict:
+        """Map each repo (public, private) that has this PR number to its state.
+
+        PR numbers are repo-local, so the same number can exist in both repos.
+        State is one of OPEN/CLOSED/MERGED; repos without the PR are omitted.
+        """
+        states = {}
         for repo in (PUBLIC_REPO, SYNC_REPO):
-            if Shell.check(
-                f"gh pr view {pr_number} --json number --repo {repo} > /dev/null 2>&1"
-            ):
-                return repo
+            raw = Shell.get_output(
+                f"gh pr view {pr_number} --json state --jq '.state' --repo {repo} 2>/dev/null"
+            )
+            if raw and raw.strip():
+                states[repo] = raw.strip()
+        return states
+
+    @staticmethod
+    def resolve_pr_repo(pr_number, repo_override=None) -> Optional[str]:
+        """Pick the repo to operate on for a PR number.
+
+        Honors an explicit override; otherwise prefers the repo where the PR is
+        open. Returns None when the number is open in both repos (ambiguous) or
+        does not exist in either.
+        """
+        states = CommitStatusCheck.find_pr_states(pr_number)
+        if repo_override:
+            if repo_override not in states:
+                print(f"ERROR: PR #{pr_number} not found in {repo_override}")
+                return None
+            return repo_override
+        if not states:
+            print(
+                f"ERROR: PR #{pr_number} not found in {PUBLIC_REPO} or {SYNC_REPO}"
+            )
+            return None
+        open_repos = [r for r, s in states.items() if s == "OPEN"]
+        if len(open_repos) > 1:
+            print(
+                f"ERROR: PR #{pr_number} is open in both {PUBLIC_REPO} and "
+                f"{SYNC_REPO}. Disambiguate with --repo public|private."
+            )
+            return None
+        if len(open_repos) == 1:
+            return open_repos[0]
+        # Not open anywhere: fall back to the sole repo that has it, else fail.
+        if len(states) == 1:
+            return next(iter(states))
+        print(
+            f"ERROR: PR #{pr_number} exists in both {PUBLIC_REPO} and {SYNC_REPO} "
+            f"but is open in neither. Disambiguate with --repo public|private."
+        )
         return None
 
 
@@ -854,10 +904,17 @@ def main():
         action="store_true",
         help="Answer all prompts automatically (non-interactive)",
     )
+    parser.add_argument(
+        "--repo",
+        choices=["public", "private"],
+        help="Repo the PR number belongs to. Required to disambiguate when the "
+        "same number exists in both repos; auto-detected otherwise.",
+    )
     args = parser.parse_args()
     create_infrastructure_issue = args.create_infrastructure_issue
     ci_only = args.ci_only
     UserPrompt.assume_yes = args.yes
+    repo_override = {"public": PUBLIC_REPO, "private": SYNC_REPO}.get(args.repo)
 
     # Check gh CLI version
     gh_version_output = Shell.get_output("gh --version")
@@ -922,11 +979,8 @@ def main():
     repo = PUBLIC_REPO
 
     if not is_master_commit:
-        repo = CommitStatusCheck.detect_pr_repo(pr_number)
+        repo = CommitStatusCheck.resolve_pr_repo(pr_number, repo_override)
         if not repo:
-            print(
-                f"ERROR: PR #{pr_number} not found in {PUBLIC_REPO} or {SYNC_REPO}"
-            )
             sys.exit(1)
         if repo != PUBLIC_REPO and not CommitStatusCheck.ensure_s3_proxy_reachable():
             print(f"Cannot fetch results for private PR #{pr_number} - aborting")
@@ -1106,7 +1160,10 @@ def main():
         else:
             sys.exit(0)
 
-    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha, repo=repo)
+    # `CH Inc sync` only flows from public to private, so it exists only on
+    # public PRs.
+    if repo == PUBLIC_REPO:
+        CommitStatusCheck.process_sync_status(sync_status, sha=head_sha, repo=repo)
     CommitStatusCheck.process_mergeable_check_status(
         mergeable_check_status, sha=head_sha, repo=repo
     )
