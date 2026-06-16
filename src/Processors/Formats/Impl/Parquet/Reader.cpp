@@ -555,7 +555,13 @@ void Reader::initializePrefetches()
             }
 
             /// Bloom filter.
+            /// `PrimitiveColumnInfo::use_bloom_filter` only means "we hashed the query constants for
+            /// this column"; it is also set for dictionary filtering, even when bloom filter push-down
+            /// is disabled. So we must re-check the setting here, otherwise a row group that is not
+            /// dictionary-filter eligible but has a bloom filter would use it despite the user
+            /// disabling `input_format_parquet_bloom_filter_push_down`.
             if (!column.use_dictionary_filter &&
+                options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
             {
