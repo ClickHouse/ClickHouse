@@ -98,7 +98,6 @@ concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type,
   * A value larger than the entire cache capacity is still returned to the query,
   * it is just not retained in the cache.
   */
-
 template <typename PolygonImpl, typename MultiPolygonImpl>
 struct PreprocessedPolygonWeightFunction
 {
