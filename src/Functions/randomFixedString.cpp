@@ -25,15 +25,11 @@ namespace
 {
 
 /* Generate random fixed string with fully random bytes (including zero). */
-class FunctionRandomFixedString : public IFunction
+template <typename RandImpl>
+class FunctionRandomFixedStringImpl : public IFunction
 {
 public:
     static constexpr auto name = "randomFixedString";
-
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionRandomFixedString>();
-    }
 
     String getName() const override { return name; }
 
@@ -45,7 +41,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isNativeUInt(arguments[0].type))
+        if (!isUInt(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
 
         if (!arguments[0].column || !isColumnConst(*arguments[0].column))
@@ -68,7 +64,7 @@ public:
         if (input_rows_count == 0)
             return col_to;
 
-        size_t total_size = 0;
+        size_t total_size;
         if (common::mulOverflow(input_rows_count, n, total_size))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
@@ -78,6 +74,34 @@ public:
 
         return col_to;
     }
+};
+
+class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
+{
+public:
+    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomFixedStringImpl<TargetSpecific::AVX2::RandImpl>>();
+    #endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionRandomFixedString>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 }
@@ -102,7 +126,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomFixedString>(documentation);
 }

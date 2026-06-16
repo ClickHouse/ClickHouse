@@ -76,8 +76,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    auto thread_name_str = toString(thread_name);
-    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
+    columns[i++]->insertData(thread_name.data(), thread_name.size());
     columns[i++]->insert(thread_id);
 
     columns[i++]->insert(level);

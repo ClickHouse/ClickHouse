@@ -5,7 +5,6 @@ sidebar_label: 'IPv6'
 sidebar_position: 30
 slug: /sql-reference/data-types/ipv6
 title: 'IPv6'
-doc_type: 'reference'
 ---
 
 ## IPv6 {#ipv6}
