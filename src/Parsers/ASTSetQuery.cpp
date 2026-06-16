@@ -1,6 +1,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
@@ -325,6 +326,9 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'query_parameters' is not an array during AST JSON deserialization");
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
+            /// `query_parameters` is a non-AST array; count each pair against `max_ast_elements` so a
+            /// tiny-AST payload cannot carry millions of parameters and allocate/format them unbounded.
+            countJSONDeserializationElement();
             auto param_obj = arr->getObject(i);
             if (!param_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'query_parameters' array during AST JSON deserialization", i);

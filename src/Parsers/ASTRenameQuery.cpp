@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
@@ -41,6 +42,9 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
     {
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
+            /// Each rename element is a non-AST struct; count it against `max_ast_elements` so a
+            /// tiny-AST payload cannot carry millions of elements and allocate/format them unbounded.
+            countJSONDeserializationElement();
             auto elem_obj = arr->getObject(i);
             if (!elem_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);

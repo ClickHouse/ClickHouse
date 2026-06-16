@@ -42,6 +42,18 @@ SELECT formatQueryFromJSON(parseQueryToJSON('RESTORE DATABASE db EXCEPT TABLES d
 -- Reset to default.
 SET max_ast_elements = 50000;
 
+-- The same `max_ast_elements` guard must bound the remaining non-AST object/string arrays in
+-- `formatQueryFromJSON` input: `SetQuery.query_parameters`, `RenameQuery.elements`, and
+-- `SystemQuery.tables`. Construct each from a tiny parsed query (so the parser-side check passes) and
+-- inflate just the non-AST array to 200 entries; deserialization must reject it as `TOO_BIG_AST`.
+SET max_ast_elements = 100;
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SET param_a = 1'), '"query_parameters":[{"name":"a","value":"1"}]', '"query_parameters":[' || repeat('{"name":"a","value":"1"},', 199) || '{"name":"a","value":"1"}]')); -- { serverError TOO_BIG_AST }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('RENAME TABLE a TO b'), '"elements":[{"from_database":"","from_table":"a","to_database":"","to_table":"b","if_exists":false,"from_table_ast":{"type":"Identifier","name":"a"},"to_table_ast":{"type":"Identifier","name":"b"}}]', '"elements":[' || repeat('{"from_database":"","from_table":"a","to_database":"","to_table":"b","if_exists":false},', 199) || '{"from_database":"","from_table":"a","to_database":"","to_table":"b","if_exists":false}]')); -- { serverError TOO_BIG_AST }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SYSTEM FLUSH LOGS query_log'), '"tables":[{"database":"","table":"query_log"}]', '"tables":[' || repeat('{"database":"","table":"query_log"},', 199) || '{"database":"","table":"query_log"}]')); -- { serverError TOO_BIG_AST }
+
+-- Reset to default.
+SET max_ast_elements = 50000;
+
 -- Malformed JSON should produce a clear error.
 SELECT formatQueryFromJSON('not json'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{}'); -- { serverError BAD_ARGUMENTS }

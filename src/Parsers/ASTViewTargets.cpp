@@ -1,6 +1,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -349,6 +350,8 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         return;
     for (unsigned int i = 0; i < arr->size(); ++i)
     {
+        /// Each view target is a non-AST struct; count it against `max_ast_elements`.
+        countJSONDeserializationElement();
         auto target_obj = arr->getObject(i);
         if (!target_obj)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'targets' array during AST JSON deserialization", i);

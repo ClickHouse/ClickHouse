@@ -2,6 +2,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -937,6 +938,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tables' is not a JSON array");
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
+            /// `tables` is a non-AST array; count each entry against `max_ast_elements`.
+            countJSONDeserializationElement();
             auto t_obj = arr->getObject(i);
             if (!t_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'tables' array during AST JSON deserialization", i);
@@ -1003,6 +1006,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_types' is not a JSON array");
             for (unsigned int i = 0; i < arr->size(); ++i)
             {
+                /// Non-AST array: count each entry against `max_ast_elements`.
+                countJSONDeserializationElement();
                 Int64 v = arr->getElement<Poco::Int64>(i);
                 auto opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(v));
                 if (!opt || static_cast<Int64>(*opt) != v)
@@ -1016,7 +1021,11 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             if (!arr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_custom_names' is not a JSON array");
             for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Non-AST array: count each entry against `max_ast_elements`.
+                countJSONDeserializationElement();
                 server_type.exclude_custom_names.insert(arr->getElement<String>(i));
+            }
         }
     }
     cluster = r.getString("cluster");
