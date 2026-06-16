@@ -9,19 +9,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db="rdb_${CLICKHOUSE_DATABASE}"
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${db} SYNC"
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${db} ENGINE = Replicated('/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rdb', 's1', 'r1')"
+# --distributed_ddl_output_mode=none: suppress the per-replica DDL status rows so only the
+# count() results reach stdout.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "DROP DATABASE IF EXISTS ${db} SYNC"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE DATABASE ${db} ENGINE = Replicated('/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rdb', 's1', 'r1')"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 --query "CREATE TABLE ${db}.ts ENGINE = TimeSeries"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table 1 --query "CREATE TABLE ${db}.ts ENGINE = TimeSeries"
 
 # Outer TimeSeries table + 3 inner tables (metrics, samples, tags).
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}'"
 
-# Before the fix this DROP succeeds for the outer table but the background dropTableFinally
-# task retries the inner-table drop forever, so the inner tables are never removed.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ${db}.ts SYNC"
+# Before the fix the background dropTableFinally task retried the inner-table drop forever,
+# leaking the inner tables (and DROP ... SYNC hung).
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "DROP TABLE ${db}.ts SYNC"
 
-# All tables (outer + inner) must be gone. Without the fix the 3 inner tables leak.
+# All tables (outer + inner) must be gone.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}'"
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${db} SYNC"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "DROP DATABASE ${db} SYNC"
