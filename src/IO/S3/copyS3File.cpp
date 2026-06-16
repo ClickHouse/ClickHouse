@@ -127,7 +127,6 @@ namespace
         struct UploadedPartResult
         {
             String tag;
-            String checksum;
         };
 
         size_t num_parts;
@@ -431,7 +430,7 @@ namespace
                 part_tag = std::move(result.tag);
                 if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::None)
                 {
-                    part_checksum = checksum.empty() ? std::move(result.checksum) : std::move(checksum);
+                    part_checksum = std::move(checksum);
                     if (part_checksum.empty())
                         throw Exception(ErrorCodes::S3_ERROR, "Missing checksum for part #{} of multipart upload", task.part_number);
                 }
@@ -648,7 +647,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return {outcome.GetResult().GetETag(), {}};
+            return {outcome.GetResult().GetETag()};
         }
     };
 
@@ -865,7 +864,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return {outcome.GetResult().GetCopyPartResult().GetETag(), {}};
+            return {outcome.GetResult().GetCopyPartResult().GetETag()};
         }
     };
 }
