@@ -28,6 +28,8 @@ OptimizationRulePtr createTwoPhaseAggregationTransformation();
 OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation();
+OptimizationRulePtr createSortImplementation();
+OptimizationRulePtr createTwoStageTopN();
 OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionPassthrough();
 OptimizationRulePtr createDistributionEnforcer();
@@ -49,6 +51,8 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t clu
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
     addRule(createReplicatedReadImplementation());
+    addRule(createSortImplementation());
+    addRule(createTwoStageTopN());
     addEnforcerRule(createDistributionEnforcer());
     addEnforcerRule(createSortingEnforcer());
 }

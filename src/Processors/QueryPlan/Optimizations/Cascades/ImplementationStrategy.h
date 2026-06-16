@@ -54,6 +54,15 @@ struct PartialAggregationStrategy final : IAggregationStrategy
     String getName() const override { return "PartialAggregation"; }
 };
 
+/// --- Top-N (sort + limit) strategies ---
+
+/// Marks the per-shard bounded sort that `TwoStageTopN` creates, so the transformation
+/// does not split it again.
+struct PartialTopNStrategy final : IImplementationStrategy
+{
+    String getName() const override { return "PartialTopN"; }
+};
+
 /// --- Read strategies ---
 
 struct ParallelReadStrategy final : IReadStrategy

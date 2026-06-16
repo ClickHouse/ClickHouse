@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -33,6 +34,9 @@ public:
         if (typeid_cast<const AggregatingStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
+            return false;
+        /// A top-N sort (Full sort with a limit) is handled by `SortImplementation`.
+        if (const auto * sorting_step = typeid_cast<const SortingStep *>(step); sorting_step && sorting_step->getLimit() > 0)
             return false;
         /// Distribution-passthrough steps handled by `DistributionPassthrough`.
         if (typeid_cast<const ExpressionStep *>(step) != nullptr
