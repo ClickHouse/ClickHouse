@@ -44,3 +44,6 @@ DROP TABLE t_99495;
 -- reaches LimitTransform at the WITH TIES boundary. No table / read-in-order pipeline here,
 -- so only the LimitTransform `rows > 0` guard protects it. Found by the AST fuzzer.
 SELECT DISTINCT a AS b, '[a-z]', 100 AS a ORDER BY 1 DESC NULLS FIRST WITH FILL STALENESS -1 LIMIT 1 WITH TIES;
+
+-- Same empty-chunk boundary in the sibling FractionalLimitTransform (fractional LIMIT ... WITH TIES).
+SELECT DISTINCT a AS b, '[a-z]', 100 AS a ORDER BY 1 DESC NULLS FIRST WITH FILL STALENESS -1 LIMIT 0.5 WITH TIES;
