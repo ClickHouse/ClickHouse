@@ -12,7 +12,7 @@
 
 #include <thread>
 
-#include <signal.h>
+#include <csignal>
 #include <Common/ErrnoException.h>
 
 namespace DB
