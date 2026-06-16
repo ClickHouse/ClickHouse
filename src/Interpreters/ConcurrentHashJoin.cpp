@@ -280,17 +280,24 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         /// rehashes during the build. Skipped when statistics already provide a good hint (then the
         /// streaming build + `reserveSpaceInHashMaps` is used), for `any_take_last_row`, and for
         /// single-level maps (FixedHashMap is already exact-size and never rehashes). Size limits
-        /// (`max_rows_in_join` / `max_bytes_in_join`) do not disable the deferral: they are enforced
-        /// at buffering time against the same global totals the streaming build checks (see
-        /// `addBlockToJoin`); this matters because common configurations set benign limits (e.g. the
-        /// CI test profile sets both to 10G). Coexists with a wrapping `SpillingHashJoin`: the spill
-        /// threshold checks consult `getProjectedTotalByteCount` (buffered blocks plus the projected
-        /// size of the maps the replay would build), so the wrapper switches to `GraceHashJoin`
-        /// before a replay that would overshoot the cap, and on a spill the buffers are handed over
-        /// (see `releaseSlotBlocks`) without building the in-memory map.
+        /// (`max_rows_in_join` / `max_bytes_in_join`) do not disable the deferral under `throw`: the
+        /// buffering-time count over-counts duplicates (it sees source rows, not distinct-key cells)
+        /// and the buffering-time projection omits the `BuildRefList` arena nodes, so the limits are
+        /// re-checked exactly against the real maps in `onBuildPhaseFinish` after the replay (see
+        /// `deferred_limits_check_requested`). This matters because common configurations set benign
+        /// limits (e.g. the CI test profile sets both to 10G). `break` mode is the exception: it
+        /// truncates the build when a limit is hit, which cannot be reproduced after a full replay,
+        /// so the deferral is disabled for it and the streaming build enforces it instead.
+        /// Coexists with a wrapping `SpillingHashJoin`: the spill threshold checks consult
+        /// `getProjectedTotalByteCount` (buffered blocks plus the projected size of the maps the
+        /// replay would build), so the wrapper switches to `GraceHashJoin` before a replay that
+        /// would overshoot the cap, and on a spill the buffers are handed over (see
+        /// `releaseSlotBlocks`) without building the in-memory map.
+        const auto & size_limits = table_join->sizeLimits();
         deferred_build = !any_take_last_row
             && hash_joins[0]->data->twoLevelMapIsUsed()
-            && !getSizeHint(stats_collecting_params).has_value();
+            && !getSizeHint(stats_collecting_params).has_value()
+            && !(size_limits.hasLimits() && size_limits.overflow_mode == OverflowMode::BREAK);
 
         /// String-key maps copy every key into the arena at insert time; for the spill projection
         /// those bytes are tracked at buffering time (other key types live in the cells, whose size
@@ -392,15 +399,17 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
         }
 
-        /// The same global enforcement as the streaming build below, with the projected bytes of the
-        /// not-yet-built maps standing in for the map bytes of `getTotalByteCount`: the row count is
-        /// exact during buffering, and the projection sizes the would-be hash-table buffers the same
-        /// way the replay will reserve them, so `throw` fires before the replay allocates them and
-        /// `break` stops the build at the same point as the streaming path. The replay then inserts
-        /// with `check_limits = false`: the limits were already enforced here.
+        /// Size limits cannot be enforced here the way the streaming build does: `getTotalRowCount`
+        /// would count the buffered *source* rows (the streaming build checks distinct-key map cells,
+        /// so duplicates would over-count and reject queries the streaming path accepts), and
+        /// `getProjectedTotalByteCount` omits the `BuildRefList` arena nodes (so `max_bytes_in_join`
+        /// would be under-counted). Record that the caller wants the limits enforced and re-check the
+        /// real maps after the replay in `onBuildPhaseFinish`. `break` never reaches here (the
+        /// deferral is disabled for it in the constructor); the replay itself inserts with
+        /// `check_limits = false`. The spill threshold is handled separately by the wrapping
+        /// `SpillingHashJoin` via `getProjectedTotalByteCount`.
         if (check_limits && table_join->sizeLimits().hasLimits())
-            return table_join->sizeLimits().check(
-                getTotalRowCount(), getProjectedTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+            deferred_limits_check_requested.store(true, std::memory_order_relaxed);
         return true;
     }
 
@@ -611,16 +620,32 @@ size_t ConcurrentHashJoin::getProjectedTotalByteCount() const
 
     /// Project the memory the replay of the deferred build would allocate on top of the current
     /// footprint: the hash-table buffers for all buffered rows and the arena copies of string keys.
-    /// `BuildRefList` nodes for duplicate keys (64 bytes per key with more than one row, ~10 bytes
-    /// per row for extreme duplication) are not projected; the `threshold / 2` headroom of the
-    /// callers covers them. Zero rows are buffered on the non-deferred path, so this method then
-    /// degenerates to `getTotalByteCount` exactly.
+    /// `BuildRefList` nodes for duplicate keys (64 bytes per key with more than one row, up to ~32
+    /// bytes per row when most keys have exactly two rows) are not projected, because their exact
+    /// size needs the distinct-key count, which is unknown until the replay. The callers keep a
+    /// `threshold / 2` margin for them: the pre-insert check (`addBlockToJoin`) and the terminal
+    /// check (`SpillingHashJoin::onBuildPhaseFinish`, gated on `hasPendingDeferredBuild`) both trip
+    /// at half of `max_bytes_before_external_join`. Zero rows are buffered on the non-deferred path,
+    /// so this method then degenerates to `getTotalByteCount` exactly.
     if (total_buffered_rows > 0)
     {
         res += projectedTwoLevelMapBytes(*hash_joins[0]->data, total_buffered_rows);
         res += buffered_key_bytes.load(std::memory_order_relaxed);
     }
     return res;
+}
+
+bool ConcurrentHashJoin::hasPendingDeferredBuild() const
+{
+    if (!deferred_build)
+        return false;
+    for (const auto & hash_join : hash_joins)
+    {
+        std::lock_guard lock(hash_join->mutex);
+        if (hash_join->buffered_rows > 0)
+            return true;
+    }
+    return false;
 }
 
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
@@ -993,6 +1018,17 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 });
         }
         pool->wait();
+
+        /// Enforce `max_rows_in_join` / `max_bytes_in_join` against the real maps now that the
+        /// deferred build is materialized (and before the bucket merge below, while each slot still
+        /// owns its own map and arena). `getTotalRowCount` counts distinct-key cells - the same
+        /// contract as the streaming build, not the buffered source-row count - and `getTotalByteCount`
+        /// includes the `BuildRefList` arena nodes, so this is exact where the buffering-time check in
+        /// `addBlockToJoin` could not be. Only `throw` reaches here (the deferral is disabled for
+        /// `break` in the constructor), so the check raises on overflow.
+        if (deferred_limits_check_requested.load(std::memory_order_relaxed))
+            table_join->sizeLimits().check(
+                getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
 
     if (hash_joins[0]->data->twoLevelMapIsUsed())

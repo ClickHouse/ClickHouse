@@ -1,6 +1,9 @@
 -- The deferred exact-size parallel_hash build must engage when max_rows_in_join / max_bytes_in_join
--- are set (the CI default profile sets both to 10G) and must enforce them during buffering the same
--- way the streaming build does: `throw` aborts the query, `break` stops filling the right side.
+-- are set (the CI default profile sets both to 10G) and must enforce them with the same contract as
+-- the streaming build: the limit is checked against the distinct-key map cells (not the buffered
+-- source rows) and the real byte count (which includes the BuildRefList arena nodes), enforced after
+-- the replay against the real maps. `throw` aborts the query; `break` cannot be honored after a full
+-- replay, so the deferral is disabled for it and the streaming build stops filling the right side.
 
 SET collect_hash_table_stats_during_joins = 0; -- no size hint => the deferred build path
 SET max_bytes_before_external_join = 0;
@@ -29,8 +32,26 @@ FROM t_probe_lim l INNER JOIN t_build_lim r ON l.k = r.k
 SETTINGS join_algorithm = 'parallel_hash', max_rows_in_join = 1000000000, max_bytes_in_join = 1000000000,
          log_comment = '04335_parallel_hash_deferred_build_size_limits';
 
--- Limits the build side cannot satisfy: the deferred build must fail the query in `throw` mode
--- (the row check sees the exact buffered row count, the byte check the projected footprint).
+-- Duplicate-heavy build: `max_rows_in_join` is checked against distinct-key cells, not source rows.
+-- 10 distinct keys with 5000 rows each give 50000 source rows but only 10 hash-map cells, so a
+-- `max_rows_in_join` of 1000 (far above the 10 cells, far below the 50000 source rows) must NOT
+-- reject the join. Both algorithms must succeed and agree; before the fix the deferred build threw
+-- here because the buffering-time check saw the buffered source-row count.
+DROP TABLE IF EXISTS t_dup_lim;
+CREATE TABLE t_dup_lim (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY ();
+INSERT INTO t_dup_lim SELECT number % 10, number FROM numbers(50000);
+
+SELECT 'dup_rows_below_cells_limit', count(), sum(cityHash64(l.k, r.v))
+FROM (SELECT number AS k FROM numbers(10)) l ALL INNER JOIN t_dup_lim r ON l.k = r.k
+SETTINGS join_algorithm = 'hash', max_rows_in_join = 1000, join_overflow_mode = 'throw';
+
+SELECT 'dup_rows_below_cells_limit', count(), sum(cityHash64(l.k, r.v))
+FROM (SELECT number AS k FROM numbers(10)) l ALL INNER JOIN t_dup_lim r ON l.k = r.k
+SETTINGS join_algorithm = 'parallel_hash', max_rows_in_join = 1000, join_overflow_mode = 'throw';
+
+-- Limits the build side cannot satisfy: 200000 distinct keys far exceed these limits, so the deferred
+-- build must fail the query in `throw` mode. Enforced after the replay against the real map cells and
+-- the real byte count (which includes the BuildRefList arena nodes).
 SELECT count()
 FROM t_probe_lim l INNER JOIN t_build_lim r ON l.k = r.k
 SETTINGS join_algorithm = 'parallel_hash', join_overflow_mode = 'throw', max_rows_in_join = 1000; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
@@ -39,8 +60,9 @@ SELECT count()
 FROM t_probe_lim l INNER JOIN t_build_lim r ON l.k = r.k
 SETTINGS join_algorithm = 'parallel_hash', join_overflow_mode = 'throw', max_bytes_in_join = 1024; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
--- `break` must stop filling the right side without an error. The number of joined rows depends on
--- how many blocks were in flight when the limit tripped, so only the success is checked.
+-- `break` cannot be reproduced after a full deferred replay, so the deferral is disabled for it and
+-- the streaming build stops filling the right side without an error. The number of joined rows depends
+-- on how many blocks were in flight when the limit tripped, so only the success is checked.
 SELECT 'break_succeeds', count() >= 0
 FROM t_probe_lim l INNER JOIN t_build_lim r ON l.k = r.k
 SETTINGS join_algorithm = 'parallel_hash', join_overflow_mode = 'break', max_rows_in_join = 1000;
@@ -61,3 +83,4 @@ WHERE current_database = currentDatabase()
 
 DROP TABLE t_build_lim;
 DROP TABLE t_probe_lim;
+DROP TABLE t_dup_lim;

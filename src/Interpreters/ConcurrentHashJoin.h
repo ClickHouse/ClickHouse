@@ -75,6 +75,11 @@ public:
     /// left. Equals `getTotalByteCount` when nothing is buffered (non-deferred builds).
     size_t getProjectedTotalByteCount() const;
 
+    /// True while a deferred build is still parked in the buffers (blocks not yet replayed). The
+    /// wrapping `SpillingHashJoin` uses this to know that `getProjectedTotalByteCount` is an estimate
+    /// that omits the `BuildRefList` arena nodes, so its terminal spill check must keep a margin.
+    bool hasPendingDeferredBuild() const;
+
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
@@ -147,8 +152,15 @@ private:
 
     /// When true, slots buffer their right blocks during the build phase and the hash maps are filled
     /// at `onBuildPhaseFinish` after being reserved to the exact row count (no rehash during build).
-    /// Enabled only when there is no statistics-driven preallocation to fall back on (see the ctor).
+    /// Enabled only when there is no statistics-driven preallocation to fall back on (see the ctor),
+    /// and never under `join_overflow_mode = 'break'` (which cannot be honored after a full replay).
     bool deferred_build = false;
+
+    /// Set when a deferred build buffered a block with `check_limits` and active size limits. The
+    /// limits cannot be enforced at buffering time (the distinct-key count and `BuildRefList` arena
+    /// bytes are unknown until the replay), so they are re-checked against the real maps in
+    /// `onBuildPhaseFinish`. Only `throw` reaches this path; `break` disables the deferral.
+    std::atomic<bool> deferred_limits_check_requested = false;
 
     /// Deferred build with a string-key map: the replay will copy every key into the arena, so the
     /// key bytes of the buffered blocks are tracked here (accumulated once per source block, before

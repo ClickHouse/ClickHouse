@@ -1,4 +1,6 @@
 inner_with_limits	200000	1157219331769384577
 inner_with_limits	200000	1157219331769384577
+dup_rows_below_cells_limit	50000	205184320418795363
+dup_rows_below_cells_limit	50000	205184320418795363
 break_succeeds	1
 deferred build engaged with limits	1	1
