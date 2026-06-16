@@ -81,6 +81,10 @@ public:
     /// Return false if at least one underlying database is not external, otherwise return true
     bool isExternal() const override;
 
+    /// A server-side (read-only) Overlay is reported as a remote database; the `clickhouse-local`
+    /// (non-read-only) Overlay is not. See the definition for the rationale.
+    bool isRemoteDatabase() const override;
+
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
     void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;

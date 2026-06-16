@@ -1,0 +1,14 @@
+A read-only Overlay is hidden from system.tables by default (no implicit remote call)
+0
+... but it is visible with show_remote_databases_in_system_tables = 1
+1
+An Overlay over an unreachable remote source is also skipped by default (returns quickly, count 0)
+0
+SHOW TABLES on the facade still lists everything
+t
+A direct query through the facade works
+2
+system.databases lists the facade regardless of the setting
+1
+clickhouse-local: its default Overlay database is NOT remote, so its tables show in system.tables
+1

@@ -1,6 +1,0 @@
-Overlay over a remote source is rejected (remote listed first)
-BAD_ARGUMENTS
-Overlay over a remote source is rejected (remote listed second)
-BAD_ARGUMENTS
-Overlay over only local sources is accepted
-CREATE: allowed

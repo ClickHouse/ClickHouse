@@ -508,6 +508,26 @@ bool DatabaseOverlay::isExternal() const
     return true;
 }
 
+bool DatabaseOverlay::isRemoteDatabase() const
+{
+    /// A server-side (read-only) `Overlay` is reported as remote so that it is excluded from the
+    /// default catalog enumeration `getDatabases({.with_remote_databases = false})` used by
+    /// `system.tables`, `system.columns` and the asynchronous metrics. Otherwise, because the facade
+    /// is a local object that walks all of its underlying databases in `getTablesIterator`, an
+    /// `Overlay` over a remote source (`MySQL`/`PostgreSQL`/`DataLake`) would let those consumers
+    /// reach the remote service and issue implicit calls (e.g. query `INFORMATION_SCHEMA`) even when
+    /// `show_remote_databases_in_system_tables` is disabled. Explicit `SHOW TABLES` and direct
+    /// queries through the facade still work, and `system.databases` still lists it.
+    ///
+    /// We answer from the `readonly` flag rather than by resolving sources: it is constant per
+    /// instance (so it does not depend on the order in which databases are loaded at startup) and it
+    /// touches no other database (so it is safe to call from `DatabaseCatalog::attachDatabase`, which
+    /// holds `databases_mutex`). The `clickhouse-local` (non-read-only) `Overlay`, which owns its
+    /// underlying databases and acts as the default database, stays non-remote so that its tables
+    /// keep showing up in `system.tables`.
+    return readonly;
+}
+
 void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
 {
     if (readonly)
@@ -815,31 +835,11 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
         for (const auto & source_name : sources)
         {
-            if (validate_sources_exist)
-            {
-                auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
-                if (!source_db)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "{} database requires existing underlying database '{}', but it was not found",
-                        engine_name, source_name);
-
-                /// A server-side `Overlay` is enumerated as a regular (non-remote) database by
-                /// `system.tables`, `system.columns` and the asynchronous metrics. Those consumers
-                /// intentionally skip remote databases (`MySQL`/`PostgreSQL`/`DataLake`) unless
-                /// `show_remote_databases_in_system_tables` is enabled, because enumerating them can
-                /// issue implicit calls to the remote service. A remote source reached through the
-                /// `Overlay` facade would bypass that protection (the facade is not itself remote and
-                /// stays in `databases_without_remote`), so reject remote sources up front. This
-                /// keeps the contract simple: an `Overlay` over a remote database is never persisted,
-                /// hence the lazy `ATTACH` path on startup never has to deal with one.
-                if (source_db->isRemoteDatabase())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "{} database cannot use remote database '{}' as a source: enumerating it through "
-                        "the Overlay facade would bypass the protection against implicit remote calls",
-                        engine_name, source_name);
-            }
+            if (validate_sources_exist && !DatabaseCatalog::instance().tryGetDatabase(source_name))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} database requires existing underlying database '{}', but it was not found",
+                    engine_name, source_name);
             overlay->registerNextDatabaseByName(source_name);
         }
 
