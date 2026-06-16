@@ -890,22 +890,6 @@ bool hasDummyInside(const ColumnConstPtr & col)
     return col && col->getDataColumn().isDummy();
 }
 
-/// same scalar can show up as different ColumnConst objects after merge
-bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
-{
-    if (a.get() == b.get())
-        return true;
-    if (!a || !b)
-        return false;
-    if (hasDummyInside(a) || hasDummyInside(b))
-        return false;
-    const IColumn & a_inner = a->getDataColumn();
-    const IColumn & b_inner = b->getDataColumn();
-    if (typeid(a_inner) != typeid(b_inner))
-        return false;
-    return a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) == 0;
-}
-
 bool isConstant(const ActionsDAG::Node & n)
 {
     return n.column && !hasDummyInside(n.column);
@@ -975,25 +959,27 @@ private:
 struct ConstantKey
 {
     const ActionsDAG::Node * sample;
+    UInt128 digest;
+
+    explicit ConstantKey(const ActionsDAG::Node * n) : sample(n)
+    {
+        SipHash h;
+        n->result_type->updateHash(h);
+        n->column->updateHashWithValue(0, h);
+        digest = h.get128();
+    }
 };
 
 struct ConstantKeyHash
 {
-    size_t operator()(const ConstantKey & k) const
-    {
-        SipHash h;
-        k.sample->result_type->updateHash(h);
-        k.sample->column->updateHashWithValue(0, h);
-        return h.get64();
-    }
+    size_t operator()(const ConstantKey & k) const { return k.digest.items[0]; }
 };
 
 struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        return a.sample->result_type->equals(*b.sample->result_type)
-            && constColumnsEqual(a.sample->column, b.sample->column);
+        return a.digest == b.digest;
     }
 };
 
