@@ -11,3 +11,6 @@ SELECT count() FROM (SELECT '{"a":"hello"}'::JSON AS k) AS t1 JOIN (SELECT '{"a"
 
 -- Multiple paths.
 SELECT count() FROM (SELECT '{"a":1,"b":"x"}'::JSON AS k) AS t1 JOIN (SELECT '{"a":1,"b":"x"}'::JSON AS k) AS t2 USING (k);
+
+-- Tuple(JSON) join key.
+SELECT count() FROM (SELECT tuple('{"a":1}'::JSON) AS k) AS t1 JOIN (SELECT tuple('{"a":1}'::JSON) AS k) AS t2 USING (k);
