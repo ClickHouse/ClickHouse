@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-/// Check that the byte range [offset, offset + length) fits within a region of `total` bytes.
+/// Whether [offset, offset + length) is within `total` bytes, computed so it can't overflow.
 static bool rangeWithin(uint64_t offset, uint64_t length, uint64_t total)
 {
     return offset <= total && length <= total - offset;
@@ -75,9 +75,7 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
     section_names = reinterpret_cast<const char *>(mapped + section_names_offset);
     section_names_size = section_names_table_size;
 
-    /// The ELF spec guarantees that a string table's last byte is a NUL. Verify it once here so
-    /// that name() can return a C string for any in-bounds offset without scanning for a
-    /// terminator on every call: a NUL at the end bounds any forward scan to within the table.
+    /// Require the trailing NUL (guaranteed by the ELF spec) so name() can return C strings without re-scanning.
     if (section_names_size == 0 || section_names[section_names_size - 1] != '\0')
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' has a section names string table that is not zero-terminated", path);
 
@@ -168,7 +166,6 @@ String Elf::getBuildID() const
 
         if (phdr.type == ProgramHeaderType::NOTE)
         {
-            /// `offset` and `filesz` come straight from the file and are not validated elsewhere.
             if (!rangeWithin(phdr.offset, phdr.filesz, elf_size))
                 continue;
             return getBuildID(mapped + phdr.offset, phdr.filesz);
@@ -184,7 +181,6 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 
     while (nhdr_pos < nhdr_end)
     {
-        /// There must be room for the note header itself.
         if (static_cast<size_t>(nhdr_end - nhdr_pos) < sizeof(ElfNameHeader))
             break;
 
@@ -221,8 +217,7 @@ const char * Elf::Section::name() const
     if (!elf.section_names)
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section names are not initialized");
 
-    /// The offset must point inside the table; init() verified the table ends with a NUL, so any
-    /// forward scan from an in-bounds offset (e.g. strcmp) stays within the mapped file.
+    /// init() verified the table ends with a NUL, so a forward scan from any in-bounds offset stays in-bounds.
     if (header.name >= elf.section_names_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section name offset is out of bounds");
 

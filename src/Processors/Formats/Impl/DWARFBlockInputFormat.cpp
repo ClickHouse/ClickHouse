@@ -787,9 +787,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 break;
             case COL_DECL_FILE:
             {
-                /// A unit may have no DW_AT_stmt_list (no .debug_line filename table), in which case
-                /// filename_table is null and all indexes are 0. Provide a minimal dictionary so we
-                /// don't construct a LowCardinality column with a null dictionary.
+                /// A unit without DW_AT_stmt_list has no filename table; use a minimal dictionary instead of null.
                 ColumnPtr filename_table = unit.filename_table;
                 if (filename_table == nullptr)
                 {
@@ -919,10 +917,13 @@ void DWARFBlockInputFormat::parseRanges(
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: rnglists_base {}, idx {} vs {}", unit.rnglists_base, offset, section_size);
             uint64_t lists_offset = unit.rnglists_base + offset * entry_size;
 
-            offset = 0;
-            memcpy(&offset, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
+            uint64_t list_entry = 0;
+            memcpy(&list_entry, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
 
-            offset += unit.rnglists_base;
+            /// The offset read from the table is untrusted; the subtraction also stops rnglists_base + list_entry from wrapping.
+            if (list_entry > section_size - unit.rnglists_base)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx points out of bounds: rnglists_base {}, entry {} vs {}", unit.rnglists_base, list_entry, section_size);
+            offset = unit.rnglists_base + list_entry;
         }
 
         llvm::DWARFDebugRnglist list;
