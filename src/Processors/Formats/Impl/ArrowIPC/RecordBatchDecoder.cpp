@@ -1170,6 +1170,14 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
                 ErrorCodes::INCORRECT_DATA, "Arrow IPC buffer has an invalid uncompressed length prefix {}", uncompressed_length);
 
         const size_t out_len = uncompressed_length < 0 ? static_cast<size_t>(length - 8) : static_cast<size_t>(uncompressed_length);
+        /// A compressed (non-raw) buffer with no payload (length == 8, i.e. only the length prefix) cannot
+        /// produce output. Reject a positive declared uncompressed length here, otherwise its `out_len`
+        /// bytes would be allocated in `decompressed_body` but never written by any decompression job, and
+        /// `buffer_slices` would later expose those uninitialized bytes as decoded Arrow data.
+        if (uncompressed_length >= 0 && length == 8 && out_len > 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC compressed buffer declares {} uncompressed bytes but carries no payload", out_len);
         if (out_len > std::numeric_limits<size_t>::max() - pos)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         placements[i] = {pos, out_len, src + 8, static_cast<size_t>(length - 8), uncompressed_length < 0};
