@@ -1,5 +1,9 @@
 SET dialect='clickhouse';
 
+-- Force a single thread so the Memory-engine read order is deterministic:
+-- the `find` queries below translate to `SELECT`s without an `ORDER BY`.
+SET max_threads = 1;
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (
