@@ -871,6 +871,8 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
+    static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
+    static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
 
     ContextPtr context;
 
@@ -2726,6 +2728,26 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return col_res;
     }
 
+    /// Decides whether a division-or-null operation must return NULL for the given operands.
+    /// The null condition has to match exactly when the underlying operation would raise an FPE:
+    ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
+    ///    overflow is a valid floating-point result, not an FPE);
+    ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed
+    ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
+    ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
+    ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): division by zero and signed `INT_MIN / -1`
+    ///    on the raw operands, matching `ModuloImpl::apply`.
+    template <typename A, typename B>
+    static bool divisionOrNullLeadsToNull(A a, B b)
+    {
+        if constexpr (is_div_floating_or_null)
+            return b == 0;
+        else if constexpr (is_int_div_or_null)
+            return integerDivisionLeadsToFPE(a, b);
+        else
+            return divisionLeadsToFPE(a, b);
+    }
+
     template <typename A, typename B>
     ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
     {
@@ -2836,7 +2858,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     {
                         if (result_nullmap)
                             result_nullmap->resize_fill(col_left_const->size(),
-                                divisionLeadsToFPE(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
+                                divisionOrNullLeadsToNull(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
                     }
 
                     return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
@@ -2881,12 +2903,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 {
                     if (result_nullmap)
                     {
-                        result_nullmap->resize_fill(col_left_size, 0);
+                        result_nullmap->resize_fill(col_left_size, false);
                         for (size_t i = 0; i < col_left_size; ++i)
                         {
                             auto a = col_left ? col_left->getData()[i] : col_left_const->template getValue<T0>();
                             auto b = col_right ? col_right->getData()[i] : col_right_const->template getValue<T1>();
-                            (*result_nullmap)[i] = divisionLeadsToFPE(a, b);
+                            (*result_nullmap)[i] = divisionOrNullLeadsToNull(a, b);
                         }
                     }
                 }
@@ -3005,7 +3027,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap, &fpe_nullmap);
 
                 /// merge null maps
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
                 auto & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = fpe_nullmap[i] || left_argument.column->isNullAt(i) || right_argument.column->isNullAt(i);
