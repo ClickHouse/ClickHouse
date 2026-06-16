@@ -815,11 +815,31 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
         for (const auto & source_name : sources)
         {
-            if (validate_sources_exist && !DatabaseCatalog::instance().tryGetDatabase(source_name))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "{} database requires existing underlying database '{}', but it was not found",
-                    engine_name, source_name);
+            if (validate_sources_exist)
+            {
+                auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
+                if (!source_db)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} database requires existing underlying database '{}', but it was not found",
+                        engine_name, source_name);
+
+                /// A server-side `Overlay` is enumerated as a regular (non-remote) database by
+                /// `system.tables`, `system.columns` and the asynchronous metrics. Those consumers
+                /// intentionally skip remote databases (`MySQL`/`PostgreSQL`/`DataLake`) unless
+                /// `show_remote_databases_in_system_tables` is enabled, because enumerating them can
+                /// issue implicit calls to the remote service. A remote source reached through the
+                /// `Overlay` facade would bypass that protection (the facade is not itself remote and
+                /// stays in `databases_without_remote`), so reject remote sources up front. This
+                /// keeps the contract simple: an `Overlay` over a remote database is never persisted,
+                /// hence the lazy `ATTACH` path on startup never has to deal with one.
+                if (source_db->isRemoteDatabase())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} database cannot use remote database '{}' as a source: enumerating it through "
+                        "the Overlay facade would bypass the protection against implicit remote calls",
+                        engine_name, source_name);
+            }
             overlay->registerNextDatabaseByName(source_name);
         }
 
