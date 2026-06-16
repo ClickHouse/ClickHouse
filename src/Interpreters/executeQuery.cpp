@@ -1409,42 +1409,11 @@ static void wrapNestedConstructionSettings(
     if (!ast)
         return;
 
-    /// `ASTInsertQuery` stores its source `SELECT` both as the `select` member and in `children`.
-    /// Recurse into the member (rather than the generic `children` loop) and keep the matching
-    /// `children` entry in sync, so a rewrite of the source query is reflected where
-    /// `InterpreterInsertQuery` reads it (`query.select`).
-    if (auto * insert_query = ast->as<ASTInsertQuery>())
-    {
-        if (insert_query->select)
-        {
-            ASTPtr old_select = insert_query->select;
-            wrapNestedConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
-            if (insert_query->select != old_select)
-                for (auto & child : insert_query->children)
-                    if (child == old_select)
-                    {
-                        child = insert_query->select;
-                        break;
-                    }
-        }
+    /// Construction settings shape a query's result; `INSERT … SELECT`, `CREATE … AS SELECT` and
+    /// similar queries do not return a result, so the settings are irrelevant to them and to their
+    /// source `SELECT`. Stop here so neither the source query nor any subquery inside it is wrapped.
+    if (ast->as<ASTInsertQuery>() || ast->as<ASTCreateQuery>())
         return;
-    }
-
-    /// `ASTCreateQuery::select` is a raw pointer that is also a child; recurse into it via the child
-    /// and re-sync the raw pointer (see `applyQueryConstructionSettings`).
-    if (auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-    {
-        for (auto & child : create_query->children)
-        {
-            if (child.get() == create_query->select)
-            {
-                wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
-                create_query->select = child->as<ASTSelectWithUnionQuery>();
-                break;
-            }
-        }
-        return;
-    }
 
     /// Bottom-up: handle inner-most subqueries before their parents.
     for (auto & child : ast->children)
@@ -1483,41 +1452,11 @@ static void wrapPerArmConstructionSettings(
     if (!ast)
         return;
 
-    /// `ASTInsertQuery` stores its source `SELECT` both as the `select` member and in `children`;
-    /// recurse into the member and keep the `children` entry in sync (see
+    /// Construction settings shape a query's result; they are irrelevant for `INSERT … SELECT`,
+    /// `CREATE … AS SELECT` and similar non-result queries, so stop here (see
     /// `wrapNestedConstructionSettings`).
-    if (auto * insert_query = ast->as<ASTInsertQuery>())
-    {
-        if (insert_query->select)
-        {
-            ASTPtr old_select = insert_query->select;
-            wrapPerArmConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
-            if (insert_query->select != old_select)
-                for (auto & child : insert_query->children)
-                    if (child == old_select)
-                    {
-                        child = insert_query->select;
-                        break;
-                    }
-        }
+    if (ast->as<ASTInsertQuery>() || ast->as<ASTCreateQuery>())
         return;
-    }
-
-    /// `ASTCreateQuery::select` is a raw pointer that is also a child; recurse into it via the child
-    /// and re-sync the raw pointer (see `applyQueryConstructionSettings`).
-    if (auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-    {
-        for (auto & child : create_query->children)
-        {
-            if (child.get() == create_query->select)
-            {
-                wrapPerArmConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
-                create_query->select = child->as<ASTSelectWithUnionQuery>();
-                break;
-            }
-        }
-        return;
-    }
 
     /// Bottom-up: handle inner-most unions before their parents.
     for (auto & child : ast->children)
@@ -1587,50 +1526,11 @@ static void applyQueryConstructionSettings(
     size_t max_parser_depth,
     size_t max_parser_backtracks)
 {
-    /// `INSERT … SETTINGS … SELECT …` carries the `SETTINGS` clause on the `ASTInsertQuery`, and its
-    /// source query is a plain `SELECT` / `UNION` with no `SETTINGS` of its own. Apply the
-    /// construction settings to that source `SELECT` so they shape the inserted rows (e.g.
-    /// `INSERT INTO t SETTINGS limit = 2 SELECT …` inserts at most two rows), instead of being
-    /// silently ignored because the top-level AST is not a `SELECT` / `UNION`.
-    if (auto * insert_query = ast->as<ASTInsertQuery>())
-    {
-        if (insert_query->select)
-        {
-            /// `select` is stored both as the `select` member and in `children` (see
-            /// `ParserInsertQuery`). The wrapping reassigns the member, so keep the matching
-            /// `children` entry in sync — otherwise later visitors that recurse `children`
-            /// (e.g. `NormalizeSelectWithUnionQueryVisitor`) would process the stale, unwrapped node.
-            ASTPtr old_select = insert_query->select;
-            applyQueryConstructionSettings(insert_query->select, context, max_query_size, max_parser_depth, max_parser_backtracks);
-            if (insert_query->select != old_select)
-                for (auto & child : insert_query->children)
-                    if (child == old_select)
-                    {
-                        child = insert_query->select;
-                        break;
-                    }
-        }
-        return;
-    }
-
-    /// `CREATE TABLE … AS SELECT …` / `CREATE [MATERIALIZED] VIEW … AS SELECT …` store the source
-    /// query in `ASTCreateQuery::select` (a raw pointer that is also tracked in `children`). Apply the
-    /// construction settings to it so e.g. `CREATE TABLE t ENGINE = Memory AS SELECT … SETTINGS limit
-    /// = 2` inserts at most two rows, keeping the raw `select` pointer in sync with the (possibly
-    /// replaced) child that `InterpreterCreateQuery` later reads.
-    if (auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-    {
-        for (auto & child : create_query->children)
-        {
-            if (child.get() == create_query->select)
-            {
-                applyQueryConstructionSettings(child, context, max_query_size, max_parser_depth, max_parser_backtracks);
-                create_query->select = child->as<ASTSelectWithUnionQuery>();
-                break;
-            }
-        }
-        return;
-    }
+    /// The construction settings shape a query's *result*. `INSERT … SELECT`, `CREATE … AS SELECT`
+    /// and similar queries do not return a result to the client — their `SELECT` feeds the inserted /
+    /// created table — so the construction settings are irrelevant to them and intentionally left
+    /// unapplied here (and the nested wrappers stop at those query kinds). Only the result-producing
+    /// `SELECT` / `UNION` (and, below, the query explained by `EXPLAIN`) is wrapped.
 
     /// `EXPLAIN <query> SETTINGS …` carries the construction settings on the `ASTExplainQuery`; the
     /// explained query is what actually runs. Apply the construction settings to it so the explained

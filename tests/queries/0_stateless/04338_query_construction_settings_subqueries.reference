@@ -8,8 +8,8 @@
 3
 -- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)
 3
--- INSERT ... SETTINGS limit ... SELECT caps the inserted rows
-2
+-- construction settings are result modifiers, so they are IGNORED for INSERT ... SELECT (count = 10, not 2)
+10
 -- filter in a subquery SETTINGS filters that subquery (numbers 6..9 -> 4)
 4
 -- select in a subquery SETTINGS projects that subquery
@@ -28,5 +28,5 @@ FROM
     FROM numbers(10)
 )
 WHERE greater(number, 5)
--- CREATE ... AS SELECT ... SETTINGS limit caps the rows inserted into the new table
-3
+-- construction settings are likewise IGNORED for CREATE ... AS SELECT (count = 10, not 3)
+10
