@@ -6,7 +6,6 @@
 #include <Common/SLRUCachePolicy.h>
 #include <Common/SIEVECachePolicy.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -76,8 +75,6 @@ public:
         {
             cache_policy_name = DEFAULT_CACHE_POLICY;
         }
-
-        LOG_TRACE(getLogger("CacheBase"), "Using cache policy: {}", cache_policy_name);
 
         if (cache_policy_name == "LRU")
         {
