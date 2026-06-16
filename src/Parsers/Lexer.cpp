@@ -116,7 +116,7 @@ Token quotedHexOrBinString(const char *& pos, const char * const token_begin, co
 Token Lexer::nextToken()
 {
     Token res = nextTokenImpl();
-    if (begin && max_query_size && res.end > begin + max_query_size)
+    if (max_query_size && res.end > begin + max_query_size)
         res.type = TokenType::ErrorMaxQuerySizeExceeded;
     if (res.isSignificant())
         prev_significant_token_type = res.type;
@@ -587,8 +587,6 @@ const char * getErrorTokenDescription(TokenType type)
 }
 
 #else
-
-#include <Parsers/clickhouse_lexer.h>
 
 extern "C"
 {
