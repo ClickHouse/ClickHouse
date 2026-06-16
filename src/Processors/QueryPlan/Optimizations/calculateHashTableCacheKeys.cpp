@@ -269,21 +269,23 @@ void calculateHashTableCacheKeys(
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
                 mixed->getActionsDAG().updateHash(frame.hash);
-            /// Mix in the join's output columns (name and type). The join produces its `required_output`
-            /// columns directly, so two joins over the same inputs/keys that project different columns
-            /// have different output headers and therefore different `output_bytes` when the join result
-            /// reaches the matched node - they must not share a statistics cache entry. The type alone is
-            /// not enough: two same-type columns of different byte size (e.g. a short vs a long `String`)
-            /// would still collide, so the column name (a stable per-column identity) is mixed in too.
-            /// The single-replica and parallel-replicas plan builds analyze the same query, so they
-            /// assign the same output identities; if they ever diverged, the join would simply fail to
-            /// match and Auto-PR would be skipped (fail-safe), never reuse the wrong estimate. This is
+            /// Mix in the join's output column TYPES. The join produces its `required_output` columns
+            /// directly, so two joins over the same inputs/keys that project a different number/types of
+            /// columns have different output headers and different `output_bytes` when the join result
+            /// reaches the matched node - they must not share a statistics cache entry. This is
             /// orientation-invariant, so it stays outside the RIGHT->LEFT remap above.
+            ///
+            /// We hash types only, NOT the column names. Names would distinguish two same-type columns
+            /// of different byte size (a short vs a long `String`) - but the JoinStep output names are
+            /// branch-local and need not be identical in the single-replica plan and the generated
+            /// parallel-replicas LOCAL plan: the latter is built from the shard-rewritten query tree and
+            /// only normalized by a `Convert distributed names` step that `findTopNodeOfReplicasPlan`
+            /// skips before hashing. Hashing names would risk the JoinStep failing to match and Auto-PR
+            /// silently never running for an otherwise-supported shape - strictly worse than the
+            /// same-type collision, which only yields a slightly-off estimate. So per the best-effort
+            /// policy above we keep matching robust and accept that residual collision.
             for (const auto & column : *join_step->getOutputHeader())
-            {
-                frame.hash.update(column.name);
                 frame.hash.update(column.type->getName());
-            }
             /// Result-affecting `JoinSettings` (e.g. `join_any_take_last_row`, which picks a different
             /// right-side row for ANY joins) are NOT mixed in: they are baked into the `IJoin` algorithm
             /// and the physical `JoinStep` no longer carries `JoinSettings`. This is the best-effort

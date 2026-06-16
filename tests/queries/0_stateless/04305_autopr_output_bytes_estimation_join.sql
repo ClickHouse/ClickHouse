@@ -1,15 +1,3 @@
--- Output-byte autopr statistics for queries where a JOIN is the top of the replicas plan.
--- A plain `SELECT <col> FROM a JOIN b` (no aggregation/expression above the join) leaves the
--- physical `JoinStep` as the instrumented top-of-replicas node, exercising
--- `JoinStep::supportsDataflowStatisticsCollection` and the `RuntimeDataflowStatisticsCollector`
--- wired into `JoinStep::updatePipeline`. Without that, a join-topped plan is rejected in
--- `findCorrespondingNodeInSingleNodePlan`, nothing is instrumented, and
--- `RuntimeDataflowStatisticsOutputBytes` stays 0 -- which this test flags as a failure.
---
--- Self-contained (no stateful dataset): the data is deterministic, so the output-byte estimate is
--- reproducible and is validated against hard-coded baselines within a generous factor (as in
--- 03634_autopr_output_bytes_estimation).
-
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 SET parallel_replicas_prefer_local_join=1;
