@@ -7,6 +7,7 @@ import time
 import pymysql
 from helpers.config_cluster import mysql_pass
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -194,6 +195,7 @@ SETTINGS max_block_size = 10000""",
 
 def test_cancel_infinite_query(setup_infinite_query):
     _, cluster = setup_infinite_query
+    query_id = str(uuid.uuid4())
 
     def execute_query():
         query = f"""SELECT * FROM mysql(
@@ -206,15 +208,23 @@ def test_cancel_infinite_query(setup_infinite_query):
             [
                 "bash",
                 "-c",
-                f"""/usr/bin/clickhouse client --query "{query}" """,
+                f"""/usr/bin/clickhouse client --query_id "{query_id}" --query "{query}" """,
             ]
         )
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
-    # from preceding tests in this file (test_kill_query also produces this line).
-    node1.wait_for_log_line("Get data from database", look_behind_lines=0)
+    # Wait for the query to start by polling system.processes for its unique query_id.
+    # Robust against log timing: a one-shot log line can be written before a
+    # look_behind_lines=0 tail is installed, turning the stale-log flake into a
+    # missed-line timeout.
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+        retry_count=60,
+        sleep_time=0.5,
+    )
     time.sleep(2)
 
     node1.stop_clickhouse_client()
