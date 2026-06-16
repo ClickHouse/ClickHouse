@@ -225,7 +225,7 @@ struct InjectionModel
 static String readRequestBody(std::istream & body)
 {
     std::stringstream data;
-    std::array<char, 4096> buffer;
+    std::array<char, 4096> buffer{};
     for (;;)
     {
         body.read(buffer.data(), buffer.size());
