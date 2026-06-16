@@ -23,6 +23,8 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -1939,6 +1941,33 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
+/// Rough estimate of a subplan's output row count from its leaf sources, used only to pre-size
+/// the INTERSECT/EXCEPT ALL counting map. Overestimates when the subplan aggregates or joins;
+/// that only over-reserves memory, so it is corrected at runtime by the observed distinct ratio.
+static size_t estimateQueryPlanOutputRows(const QueryPlan & plan)
+{
+    const auto * root = plan.getRootNode();
+    if (!root)
+        return 0;
+
+    size_t rows = 0;
+    std::vector<const QueryPlan::Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * read_merge_tree = dynamic_cast<const ReadFromMergeTree *>(node->step.get()))
+            rows += read_merge_tree->getSelectedRows();
+        else if (const auto * read_numbers = dynamic_cast<const ReadFromSystemNumbersStep *>(node->step.get()))
+            rows += read_numbers->getEstimatedRowsCount().value_or(0);
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return rows;
+}
+
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2015,8 +2044,11 @@ void Planner::buildPlanForUnionNode()
         else if (union_mode == SelectUnionMode::EXCEPT_DISTINCT)
             intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT_DISTINCT;
 
-        auto union_step
-            = std::make_unique<IntersectOrExceptStep>(std::move(query_plans_headers), intersect_or_except_operator, max_threads);
+        /// The transform accumulates the last (right) operand, so pre-size its counting map from that plan.
+        size_t right_rows_estimate = query_plans.empty() ? 0 : estimateQueryPlanOutputRows(*query_plans.back());
+
+        auto union_step = std::make_unique<IntersectOrExceptStep>(
+            std::move(query_plans_headers), intersect_or_except_operator, max_threads, right_rows_estimate);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
 

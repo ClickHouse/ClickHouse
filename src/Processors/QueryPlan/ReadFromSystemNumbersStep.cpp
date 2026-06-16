@@ -458,6 +458,19 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
+std::optional<UInt64> ReadFromSystemNumbersStep::getEstimatedRowsCount() const
+{
+    const auto & numbers_storage = storage->as<StorageSystemNumbers &>();
+    if (!numbers_storage.limit.has_value())
+        return {};
+
+    UInt128 step = numbers_storage.step ? numbers_storage.step : 1;
+    UInt128 count = (*numbers_storage.limit + step - 1) / step;
+    if (count > std::numeric_limits<UInt64>::max())
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(count);
+}
+
 Pipe ReadFromSystemNumbersStep::makePipe()
 {
     auto & numbers_storage = storage->as<StorageSystemNumbers &>();

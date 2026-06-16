@@ -30,9 +30,10 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
 }
 
 IntersectOrExceptStep::IntersectOrExceptStep(
-    SharedHeaders input_headers_, Operator operator_, size_t max_threads_)
+    SharedHeaders input_headers_, Operator operator_, size_t max_threads_, size_t right_rows_estimate_)
     : current_operator(operator_)
     , max_threads(max_threads_)
+    , right_rows_estimate(right_rows_estimate_)
 {
     updateInputHeaders(std::move(input_headers_));
 }
@@ -81,7 +82,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
     }
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
-    auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
+    auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator, right_rows_estimate);
     processors.push_back(transform);
     pipeline->addTransform(std::move(transform));
 

@@ -233,6 +233,11 @@ struct ClearableSet
       */
 };
 
+/// INTERSECT/EXCEPT ALL inputs are rarely tiny, and the default 256-cell start forces several
+/// resizes just to absorb the first block. Start the counting tables larger (2^14 = 16384 cells).
+static constexpr size_t COUNTING_SET_INITIAL_SIZE_DEGREE = 14;
+using CountingSetGrower = HashTableGrowerWithPrecalculation<COUNTING_SET_INITIAL_SIZE_DEGREE>;
+
 /// Like NonClearableSet, but each distinct key carries a UInt64 occurrence count
 /// (a multiset). Used by INTERSECT ALL / EXCEPT ALL. `use_cache` is disabled so that
 /// `emplaceKey(...).getMapped()` returns a reference to the table slot (the consecutive-keys
@@ -244,16 +249,16 @@ struct CountingSet
     std::unique_ptr<SetMethodOneNumber<UInt8,  FixedHashMap<UInt8,  Count>, false, Count>>  key8;
     std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashMap<UInt16, Count>, false, Count>>  key16;
 
-    std::unique_ptr<SetMethodOneNumber<UInt32, HashMap<UInt32, Count, HashCRC32<UInt32>>, false, Count>> key32;
-    std::unique_ptr<SetMethodOneNumber<UInt64, HashMap<UInt64, Count, HashCRC32<UInt64>>, false, Count>> key64;
-    std::unique_ptr<SetMethodString<HashMapWithSavedHash<std::string_view, Count>, Count>>        key_string;
-    std::unique_ptr<SetMethodFixedString<HashMapWithSavedHash<std::string_view, Count>, Count>>   key_fixed_string;
-    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, false, Count, false>>  keys128;
-    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, false, Count, false>>  keys256;
-    std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>, Count, false>>   hashed;
+    std::unique_ptr<SetMethodOneNumber<UInt32, HashMap<UInt32, Count, HashCRC32<UInt32>, CountingSetGrower>, false, Count>> key32;
+    std::unique_ptr<SetMethodOneNumber<UInt64, HashMap<UInt64, Count, HashCRC32<UInt64>, CountingSetGrower>, false, Count>> key64;
+    std::unique_ptr<SetMethodString<HashMapWithSavedHash<std::string_view, Count, DefaultHash<std::string_view>, CountingSetGrower>, Count>>        key_string;
+    std::unique_ptr<SetMethodFixedString<HashMapWithSavedHash<std::string_view, Count, DefaultHash<std::string_view>, CountingSetGrower>, Count>>   key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32, CountingSetGrower>, false, Count, false>>  keys128;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32, CountingSetGrower>, false, Count, false>>  keys256;
+    std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash, CountingSetGrower>, Count, false>>   hashed;
 
-    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true, Count, false>>   nullable_keys128;
-    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true, Count, false>>   nullable_keys256;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32, CountingSetGrower>, true, Count, false>>   nullable_keys128;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32, CountingSetGrower>, true, Count, false>>   nullable_keys256;
 };
 
 template <typename Variant>

@@ -1,13 +1,15 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Common/MemoryTrackerUtils.h>
 
 namespace DB
 {
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
-IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
+IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_, size_t right_rows_estimate_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
+    , right_rows_estimate(right_rows_estimate_)
 {
 }
 
@@ -155,6 +157,63 @@ void IntersectOrExceptTransform::addToCounts(
 
 
 template <typename Method>
+void IntersectOrExceptTransform::reserveCounts(Method & method, size_t target)
+{
+    if constexpr (requires { method.data.reserve(target); })
+        method.data.reserve(target);
+}
+
+
+void IntersectOrExceptTransform::reserveCountsFromEstimate(size_t rows_in_first_chunk)
+{
+    counts_reserved = true;
+
+    if (right_rows_estimate == 0 || rows_in_first_chunk == 0 || !counts_data)
+        return;
+
+    auto & variants = *counts_data;
+    size_t distinct_so_far = variants.getTotalRowCount();
+    if (distinct_so_far == 0)
+        return;
+
+    /// Scale the right-side row estimate by the distinct ratio seen in the first chunk.
+    double distinct_ratio = static_cast<double>(distinct_so_far) / static_cast<double>(rows_in_first_chunk);
+    size_t target = static_cast<size_t>(distinct_ratio * static_cast<double>(right_rows_estimate));
+
+    /// Cap the speculative reservation to a fraction of the *remaining* memory budget, so a wrong
+    /// (over-)estimate can never turn a query that would otherwise fit into MEMORY_LIMIT_EXCEEDED.
+    /// 1/4 leaves headroom for the rest of the query and for the old+new buffers of a later resize
+    /// (~3x the reserve) should the estimate undershoot. bytes_per_key comes from the first chunk's
+    /// table and includes the load-factor overhead.
+    if (auto hard_limit = getCurrentQueryHardLimit())
+    {
+        Int64 available = static_cast<Int64>(*hard_limit) - getCurrentQueryMemoryUsage();
+        if (available <= 0)
+            return;
+
+        size_t bytes_per_key = std::max<size_t>(1, variants.getTotalByteCount() / distinct_so_far);
+        size_t budget_keys = (static_cast<size_t>(available) / 4) / bytes_per_key;
+        target = std::min(target, budget_keys);
+    }
+
+    if (target <= distinct_so_far)
+        return;
+
+    switch (variants.type)
+    {
+        case CountingSetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        reserveCounts(*variants.NAME, target); \
+        break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+}
+
+
+template <typename Method>
 size_t IntersectOrExceptTransform::filterWithCounts(
     Method & method, const ColumnRawPtrs & columns, IColumn::Filter & filter, size_t rows, CountingSetVariants & variants) const
 {
@@ -249,6 +308,10 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
             APPLY_FOR_SET_VARIANTS(M)
 #undef M
         }
+
+        if (!counts_reserved)
+            reserveCountsFromEstimate(num_rows);
+
         return;
     }
 
