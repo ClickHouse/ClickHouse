@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Core/Block.h>
 #include <Core/Joins.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -46,26 +47,45 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     return hash.get64();
 }
 
+/// Two headers have the same byte layout when they carry the same column types in the same order.
+/// Names are intentionally ignored: a pure rename (e.g. `__table1.a` -> `a`) does not change the
+/// number of output bytes, so a rename-only step stays transparent and the single-replica and
+/// parallel-replicas plan builds still match. Only a change in the set/types of output columns
+/// changes `output_bytes`.
+bool sameByteLayout(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (lhs.getByPosition(i).type->getName() != rhs.getByPosition(i).type->getName())
+            return false;
+    return true;
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
-    // The purpose of `HashTablesStatistics` is to provide cardinality estimations.
-    // Steps that preserve the number of input rows do not affect cardinality, so we can skip them.
-    if (!transform.getTransformTraits().preserves_number_of_rows)
-    {
-        WriteBufferFromOwnString wbuf;
-        SerializedSetsRegistry registry;
-        registry.skip_cache_key = true;
-        IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
+    /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
+    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
+    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
+    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
+    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
+    /// rename-only step keeps the same byte layout and stays transparent.
+    if (transform.getTransformTraits().preserves_number_of_rows
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+        return 0;
 
-        writeStringBinary(transform.getSerializationName(), wbuf);
-        if (transform.isSerializable())
-            transform.serialize(ctx);
+    WriteBufferFromOwnString wbuf;
+    SerializedSetsRegistry registry;
+    registry.skip_cache_key = true;
+    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
 
-        SipHash hash;
-        hash.update(wbuf.str());
-        return hash.get64();
-    }
-    return 0;
+    writeStringBinary(transform.getSerializationName(), wbuf);
+    if (transform.isSerializable())
+        transform.serialize(ctx);
+
+    SipHash hash;
+    hash.update(wbuf.str());
+    return hash.get64();
 }
 
 }
