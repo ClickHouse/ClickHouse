@@ -219,7 +219,7 @@ public:
                 /// Full decode (data and the TTL fields), matching find() and the iterator.
                 /// A manual partial decode here would drop destroy_time/ttl and silently
                 /// hand back non-TTL nodes (e.g. to recursive remove).
-                node.decodeFromString(iter->value().ToString());
+                node.decodeFromString(iter->value().ToStringView());
             }
             else if (read_meta)
             {

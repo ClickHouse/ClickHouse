@@ -637,6 +637,12 @@ public:
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
+    // createNode and removeNode mutate ttl_paths (guarded by storage_mutex). They are part of the
+    // commit path, which is reached through the dual-mode process/processImpl templates: the same
+    // instantiation serves local reads under a shared lock and writes under an exclusive lock, so a
+    // single TSA_REQUIRES/TSA_REQUIRES_SHARED contract cannot describe it. That is why the whole
+    // storage_mutex-protected core (including all container access) is left unanalyzed; we follow the
+    // same convention here. The lock is always held exclusively when these run (see commit callers).
     bool
     createNode(
         const std::string & path,
