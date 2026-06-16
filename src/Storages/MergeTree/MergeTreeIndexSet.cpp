@@ -182,7 +182,9 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto column = block_for_reading.getByPosition(i).column;
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
+        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
+        auto & column = block_for_reading.getByPosition(i).column;
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
