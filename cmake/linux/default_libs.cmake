@@ -21,7 +21,7 @@ if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -lc")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()

@@ -37,4 +37,6 @@
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
     <remap_executable replace="replace">true</remap_executable>
+    <mlock_executable>1</mlock_executable>
+    <mlock_executable_min_total_memory_amount_bytes>0</mlock_executable_min_total_memory_amount_bytes>
 </clickhouse>

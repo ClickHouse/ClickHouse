@@ -5,6 +5,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/SymbolIndex.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
@@ -1422,6 +1423,9 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Initialize SymbolIndex explicitly.
+    DB::SymbolIndex::instance();
 
     try
     {

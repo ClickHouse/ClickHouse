@@ -1,6 +1,6 @@
 #include <Common/remapExecutable.h>
 
-#if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG)
+#if 0
 
 #include <cstring>
 #include <unistd.h>

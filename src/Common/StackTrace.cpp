@@ -73,6 +73,25 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+const void * StackTrace::getPhysicalAddress(const void * virtual_addr)
+{
+#if defined(__ELF__)
+    /// Subtract the load base of the object the address falls into, turning a
+    /// runtime (ASLR-randomized under PIE) virtual address into a stable file
+    /// offset that `addr2line -e clickhouse <hex>` can resolve directly. Works
+    /// on every ELF target for which SymbolIndex is built, including FreeBSD
+    /// (dl_iterate_phdr is available in FreeBSD's libc as FBSD_1.0). If the
+    /// object cannot be identified at runtime, fall back to the raw address.
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    const auto * object = symbol_index.findObject(virtual_addr);
+    uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+    return reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
+#else
+    /// On macOS, SymbolIndex stores absolute virtual addresses, so no conversion is needed.
+    return virtual_addr;
+#endif
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
