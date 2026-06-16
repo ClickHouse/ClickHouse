@@ -214,6 +214,7 @@ public:
 
             NullableElements,
             NullMap,
+            NullMapHidden,
             SparseNullMap,
 
             TupleElement,
