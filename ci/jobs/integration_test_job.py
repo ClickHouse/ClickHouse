@@ -528,10 +528,23 @@ def tail(filepath: str, buff_len: int = 1024) -> List[str]:
 
 def run_pytest_and_collect_results(
     command: str, env: str, report_name: str, timeout: int = None
-) -> Result:
+) -> Tuple[Result, bool]:
     """
-    Does xdist timeout check.
+    Runs a pytest command and reports whether the run was cut short by a timeout.
+
+    Returns `(test_result, timed_out)`. `timed_out` is True when the run did not finish
+    on its own but was stopped by either:
+      - the graceful xdist `--session-timeout` (pytest interrupts itself and writes the
+        `xdist.dsession.Interrupted: session-timeout:` marker to the log), or
+      - the hard subprocess backstop (`Shell.run` `SIGTERM`s/`SIGKILL`s pytest after
+        `timeout` seconds, e.g. when a test hangs past the session-timeout).
+
+    Callers use `timed_out` to tell an empty result set caused by expected time-budget
+    exhaustion (best effort, may be downgraded to `SKIPPED`) apart from one caused by a
+    real pytest/harness failure (no timeout - must stay `ERROR`).
     """
+
+    run_sw = Utils.Stopwatch()
 
     test_result = Result.from_pytest_run(
         command=command,
@@ -543,9 +556,11 @@ def run_pytest_and_collect_results(
         timeout=timeout,
     )
 
+    timed_out = False
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
+        timed_out = True
         test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
@@ -555,7 +570,36 @@ def run_pytest_and_collect_results(
                 info=test_result.info,
             )
         )
-    return test_result
+    elif timeout is not None and run_sw.duration >= timeout:
+        # The graceful session-timeout marker is absent but the run still reached the
+        # hard subprocess `timeout`: `Shell.run` killed pytest before it could finish
+        # (a normal run returns well under `timeout`). Treat this as a timeout so an
+        # empty result is reported as best-effort rather than as a harness failure.
+        timed_out = True
+
+    return test_result, timed_out
+
+
+def is_empty_best_effort_skip(
+    is_flaky_check: bool,
+    is_targeted_check: bool,
+    has_results: bool,
+    timed_out: bool,
+) -> bool:
+    """
+    Decide whether a flaky/targeted check that produced no test results should be
+    reported as `SKIPPED` (best effort) instead of falling through to `create_from`'s
+    default `ERROR`.
+
+    Only the expected timeout path is downgraded: a flaky/targeted run whose time budget
+    was exhausted (graceful xdist session-timeout or the hard subprocess backstop) before
+    any test produced a result is best-effort `SKIPPED`. When no timeout was observed, an
+    empty result means pytest failed to produce any output for some other reason (it
+    crashed before writing the jsonl report, or exited with a plugin/internal error and no
+    test rows). That is a real harness failure and must stay `ERROR`, so this returns
+    False.
+    """
+    return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
 def main():
@@ -898,6 +942,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    # Set when a pytest run was cut short by a timeout (graceful session-timeout or the
+    # hard subprocess backstop). Used below to keep an empty flaky/targeted result a
+    # best-effort SKIPPED only when a timeout actually exhausted the budget.
+    timed_out = False
     session_timeout_parallel = 3600 * 2
     session_timeout_sequential = 3600
 
@@ -962,12 +1010,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
-        test_result_parallel = run_pytest_and_collect_results(
+        test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
             command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
         )
+        timed_out = timed_out or parallel_timed_out
         test_results.extend(test_result_parallel.results)
         _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
@@ -1003,12 +1052,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 iter_session_timeout_sequential = min(
                     session_timeout_sequential, flaky_check_remaining_s
                 )
-            test_result_sequential = run_pytest_and_collect_results(
+            test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
             )
+            timed_out = timed_out or sequential_timed_out
             test_results.extend(test_result_sequential.results)
             _mark_infrastructure_errors(test_result_sequential.results)
             failed_test_cases.extend(
@@ -1052,7 +1102,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_test_results = []
 
                 if parallel_test_modules:
-                    bt_result_parallel = run_pytest_and_collect_results(
+                    bt_result_parallel, _ = run_pytest_and_collect_results(
                         command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
@@ -1068,7 +1118,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-                    bt_result_sequential = run_pytest_and_collect_results(
+                    bt_result_sequential, _ = run_pytest_and_collect_results(
                         command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
@@ -1125,7 +1175,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        test_result_retries = run_pytest_and_collect_results(
+        test_result_retries, _ = run_pytest_and_collect_results(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
@@ -1196,25 +1246,31 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
         )
 
-    # If the flaky-check time budget was exhausted before any test produced a result (e.g.
-    # a single very slow or hanging module consumed the whole `FLAKY_CHECK_TIME_LIMIT`),
-    # report SKIPPED rather than letting `create_from` default an empty result set to ERROR,
-    # which would block the PR.
-    #
-    # Restricted to `is_flaky_check` on purpose. Targeted checks do not use
-    # `FLAKY_CHECK_TIME_LIMIT`, and their legitimate empty cases (no failed tests to rerun,
-    # all targets stale) already early-exit as SKIPPED above. So an empty result set reaching
-    # this point on a targeted check means `pytest` was launched but written no JSONL entries
-    # (it was killed before producing any) - that is exactly the targeted-check failure signal
-    # we must surface, so it stays ERROR.
-    empty_best_effort = is_flaky_check and not test_results
+    # If a timeout exhausted the time budget before any test produced a result (e.g. a
+    # single very slow or hanging module consumed the whole budget), report SKIPPED rather
+    # than letting `create_from` default an empty result set to ERROR, which would block
+    # the PR. Crucially, this best-effort downgrade applies *only* when a timeout was
+    # actually observed: an empty result without a timeout means pytest failed to produce
+    # any output for some other reason (crashed before writing the jsonl report, plugin or
+    # internal error, ...), which is a real harness failure and must stay ERROR.
+    empty_best_effort = is_empty_best_effort_skip(
+        is_flaky_check, is_targeted_check, bool(test_results), timed_out
+    )
+    empty_harness_failure = (
+        (is_flaky_check or is_targeted_check) and not test_results and not timed_out
+    )
     R = Result.create_from(
         results=test_results,
         status=Result.Status.SKIPPED if empty_best_effort else "",
         info=(
             "No test results collected within the flaky-check time budget (best effort)"
             if empty_best_effort
-            else ""
+            else (
+                "No test results collected and no timeout was observed - reporting the "
+                "empty pytest run as a harness ERROR"
+                if empty_harness_failure
+                else ""
+            )
         ),
         stopwatch=sw,
         files=attached_files,
