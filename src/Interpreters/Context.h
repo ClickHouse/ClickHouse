@@ -660,6 +660,14 @@ public:
 
     void resetSharedContext();
 
+    /// Returns the global configuration, or nullptr after resetSharedContext()
+    /// (late shutdown), when the global Context object may still be reachable
+    /// via getGlobalContextInstance() while its shared part is already
+    /// destroyed. The check and the config copy happen under one lock, and the
+    /// returned pointer keeps the configuration alive afterwards - unlike
+    /// getConfigRef, this cannot race with the shutdown thread.
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> tryGetConfig() const;
+
 protected:
     using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;
