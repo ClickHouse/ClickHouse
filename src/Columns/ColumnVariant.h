@@ -345,8 +345,8 @@ public:
     /// Replace corresponding discriminators with NULL_DISCRIMINATOR
     /// and filter out rows in variants if needed.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    /// When `offset` is given, only the rows in `[offset, offset + null_map.size())` are affected and `null_map`
-    /// covers just that range; otherwise it must cover the whole column.
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
     void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.

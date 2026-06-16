@@ -1783,7 +1783,14 @@ ColumnPtr ColumnVariant::createNullMap() const
 template <bool inverted>
 void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
-    chassert(offset + null_map.size() == size());
+    if (offset + null_map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Applying a null map to a Variant column is only supported for a suffix range, but offset {} plus "
+            "null map size {} does not reach the column size {}",
+            offset,
+            null_map.size(),
+            size());
 
     if (offset != 0)
     {
