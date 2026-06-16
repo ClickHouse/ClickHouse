@@ -5,12 +5,12 @@ create table t_temp (
 )
 engine = MergeTree
 order by a
-TTL timestamp + INTERVAL 2 SECOND WHERE a in (select number from system.numbers limit 10_000);
+TTL timestamp + INTERVAL 2 SECOND WHERE a in (select number from system.numbers limit 1_000);
 
 select sleep(1);
-insert into t_temp select rand(), now() from system.numbers limit 100_000;
+insert into t_temp select rand(), now() from system.numbers limit 5_000;
 select sleep(1);
-insert into t_temp select rand(), now() from system.numbers limit 100_000;
+insert into t_temp select rand(), now() from system.numbers limit 5_000;
 select sleep(1);
 optimize table t_temp final;
 

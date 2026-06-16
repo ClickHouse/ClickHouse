@@ -81,7 +81,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 
 Tuple elements can be referred to by name or by index:
 
-```sql
+```sql title="Query"
 CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
 INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
 
@@ -89,9 +89,7 @@ SELECT a.s FROM named_tuples; -- by name
 SELECT a.2 FROM named_tuples; -- by index
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a.s─┐
 │ y   │
 │ x   │

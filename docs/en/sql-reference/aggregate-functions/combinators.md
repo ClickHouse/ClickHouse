@@ -81,15 +81,11 @@ The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─toTypeName(c)────────────────────────┬─c─┐
 │ SimpleAggregateFunction(any, UInt64) │ 0 │
 └──────────────────────────────────────┴───┘
@@ -154,15 +150,11 @@ Type depends on the aggregate function used.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avg(number)─┬─avgOrDefault(number)─┐
 │         nan │                    0 │
 └─────────────┴──────────────────────┘
@@ -170,9 +162,7 @@ Result:
 
 Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avgOrDefaultIf(x, x > 10)
 FROM
 (
@@ -180,9 +170,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avgOrDefaultIf(x, greater(x, 10))─┐
 │                              0.00 │
 └───────────────────────────────────┘
@@ -217,15 +205,11 @@ Type: `Nullable(aggregate function return type)`.
 
 Add `-orNull` to the end of aggregate function.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
 │              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
 └───────────────────┴───────────────────────────────┘
@@ -233,9 +217,7 @@ Result:
 
 Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)
 FROM
 (
@@ -243,9 +225,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avgOrNullIf(x, greater(x, 10))─┐
 │                           ᴺᵁᴸᴸ │
 └────────────────────────────────┘

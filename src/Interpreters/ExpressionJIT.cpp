@@ -25,10 +25,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static CHJIT & getJITInstance()
+namespace
 {
-    static CHJIT jit;
-    return jit;
+    std::mutex expression_jit_mutex;
+    /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
+    std::shared_ptr<CHJIT> expression_jit_instance;
+}
+
+static std::shared_ptr<CHJIT> getJITInstancePtr()
+{
+    std::lock_guard lock(expression_jit_mutex);
+    if (!expression_jit_instance)
+        expression_jit_instance = std::make_shared<CHJIT>();
+    return expression_jit_instance;
+}
+
+void resetExpressionJITInstance()
+{
+    std::lock_guard lock(expression_jit_mutex);
+    expression_jit_instance.reset();
 }
 
 static LoggerPtr getLogger()
@@ -40,17 +55,29 @@ class CompiledFunctionHolder : public CompiledExpressionCacheEntry
 {
 public:
 
-    explicit CompiledFunctionHolder(CompiledFunction compiled_function_)
+    explicit CompiledFunctionHolder(CompiledFunction compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_function(compiled_function_)
+        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledFunctionHolder() override
     {
-        getJITInstance().deleteCompiledModule(compiled_function.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
+            jit_owner->deleteCompiledModule(compiled_function.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledFunction compiled_function;
+
+private:
+    std::shared_ptr<CHJIT> jit_owner;
 };
 
 class LLVMExecutableFunction : public IExecutableFunction
@@ -290,8 +317,9 @@ static FunctionBasePtr compile(
         auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
             LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
-            auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
-            return std::make_shared<CompiledFunctionHolder>(compiled_function);
+            auto jit_owner = getJITInstancePtr();
+            auto compiled_function = compileFunction(*jit_owner, *llvm_function);
+            return std::make_shared<CompiledFunctionHolder>(compiled_function, std::move(jit_owner));
         });
 
         std::shared_ptr<CompiledFunctionHolder> compiled_function_holder = std::static_pointer_cast<CompiledFunctionHolder>(compiled_function_cache_entry);
@@ -299,8 +327,9 @@ static FunctionBasePtr compile(
     }
     else
     {
-        auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
-        auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function);
+        auto jit_owner = getJITInstancePtr();
+        auto compiled_function = compileFunction(*jit_owner, *llvm_function);
+        auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function, std::move(jit_owner));
 
         llvm_function->setCompiledFunction(std::move(compiled_function_holder));
     }
@@ -310,7 +339,7 @@ static FunctionBasePtr compile(
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
+    return node.column && canBeNativeType(*node.result_type);
 }
 
 static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
@@ -434,9 +463,7 @@ static CompileDAG getCompilableDAG(
             }
 
             bool skip_compile = std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end();
-            if (skip_compile
-                && (!child->column || !isColumnConst(*child->column)
-                    || dynamic_cast<const ColumnConst *>(child->column.get())->getField().isNull()))
+            if (skip_compile && (!child->column || child->column->onlyNull()))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Only constant nodes with non-null value could skip compilation");
 
             stack.emplace(Frame{.node = child, .skip_compile = skip_compile});

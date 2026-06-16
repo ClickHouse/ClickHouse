@@ -62,6 +62,7 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Parquet
@@ -393,7 +394,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimeUnit unit;
             const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
             UInt32 scale = dt.getScale();
-            UInt32 converted_scale;
+            UInt32 converted_scale = 0;
             if (scale <= 3)
             {
                 converted = parq::ConvertedType::TIMESTAMP_MILLIS;
@@ -526,9 +527,26 @@ void prepareColumnNullable(
     }
 }
 
+std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const String & prefix)
+{
+    if (!column_field_ids)
+        return std::nullopt;
+
+    std::unordered_map<String, Int64> result;
+    const String prefix_dot = prefix + ".";
+    for (const auto & [key, value] : *column_field_ids)
+    {
+        if (key.starts_with(prefix_dot))
+            result[key.substr(prefix_dot.size())] = value;
+    }
+    return result.empty() ? std::nullopt : std::make_optional(std::move(result));
+}
+
 void prepareColumnTuple(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
@@ -544,11 +562,18 @@ void prepareColumnTuple(
     tuple_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
     tuple_schema.__set_name(name);
     tuple_schema.__set_num_children(static_cast<Int32>(num_elements));
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            tuple_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
 
     size_t child_states_begin = states.size();
 
+    auto sub_field_ids = buildSubFieldIds(column_field_ids, name);
     for (size_t i = 0; i < num_elements; ++i)
-        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, std::nullopt);
+        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, sub_field_ids);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
@@ -560,7 +585,7 @@ void prepareColumnTuple(
 
 void prepareColumnArray(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
 {
     const auto * column_array = assert_cast<const ColumnArray *>(column.get());
     ColumnPtr nested_column = column_array->getDataPtr();
@@ -586,6 +611,12 @@ void prepareColumnArray(
     list_schema.__set_converted_type(parq::ConvertedType::LIST);
     list_schema.__isset.logicalType = true;
     list_schema.logicalType.__set_LIST({});
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            list_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
 
     item_schema.__set_repetition_type(parq::FieldRepetitionType::REPEATED);
     item_schema.__set_name("list");
@@ -595,7 +626,7 @@ void prepareColumnArray(
     size_t child_states_begin = states.size();
 
     /// Recurse.
-    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, std::nullopt);
+    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, buildSubFieldIds(column_field_ids, name));
 
     /// Update repetition+definition levels and fully-qualified column names (x -> myarray.list.x).
     for (size_t i = child_states_begin; i < states.size(); ++i)
@@ -609,7 +640,7 @@ void prepareColumnArray(
 
 void prepareColumnMap(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
 {
     const auto * column_map = assert_cast<const ColumnMap *>(column.get());
     const auto * column_array = &column_map->getNestedColumn();
@@ -617,7 +648,6 @@ void prepareColumnMap(
     ColumnPtr column_tuple = column_array->getDataPtr();
 
     const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(map_type->getKeyValueTypes(), Strings{"key", "value"});
 
     /// Map is an array of tuples
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps
@@ -634,21 +664,99 @@ void prepareColumnMap(
     map_schema.__set_converted_type(parq::ConvertedType::MAP);
     map_schema.__set_logicalType({});
     map_schema.logicalType.__set_MAP({});
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            map_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
 
-    size_t tuple_schema_idx = schemas.size();
+    auto & kv_schema = schemas.emplace_back();
+    kv_schema.__set_repetition_type(parq::FieldRepetitionType::REPEATED);
+    kv_schema.__set_name("key_value");
+    kv_schema.__set_num_children(2);
+    kv_schema.__set_converted_type(parq::ConvertedType::MAP_KEY_VALUE);
+
     size_t child_states_begin = states.size();
-
-    prepareColumnTuple(column_tuple, tuple_type, "key_value", options, states, schemas);
-
-    schemas[tuple_schema_idx].__set_repetition_type(parq::FieldRepetitionType::REPEATED);
-    schemas[tuple_schema_idx].__set_converted_type(parq::ConvertedType::MAP_KEY_VALUE);
+    auto child_field_ids = buildSubFieldIds(column_field_ids, name);
+    const auto * column_tuple_typed = assert_cast<const ColumnTuple *>(column_tuple.get());
+    prepareColumnRecursive(column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids);
+    prepareColumnRecursive(column_tuple_typed->getColumnPtr(1), map_type->getValueType(), "value", options, states, schemas, child_field_ids);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
         Strings & path = states[i].column_chunk.meta_data.path_in_schema;
+        path.insert(path.begin(), "key_value");
         path.insert(path.begin(), name);
 
         updateRepDefLevelsForArray(states[i], offsets);
+    }
+}
+
+/// Look up a leaf column's field id. Tolerates a missing name (returns nullopt) the same
+/// way the composite tuple/array/map branches do: a nested sub-map built by buildSubFieldIds()
+/// may legitimately omit some leaves. Must NOT use unordered_map::at(), which throws
+/// std::out_of_range (not a DB::Exception) and escalates to a fatal abort.
+std::optional<Int64> lookupLeafFieldId(
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const String & name)
+{
+    if (!column_field_ids)
+        return std::nullopt;
+    auto it = column_field_ids->find(name);
+    if (it == column_field_ids->end())
+        return std::nullopt;
+    return it->second;
+}
+
+void validateIcebergFieldIds(
+    const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids)
+{
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id sits on
+    /// the inner type and the path is unchanged. Strip them and keep the same path, mirroring
+    /// prepareColumnNullable/the LowCardinality branch of prepareColumnRecursive.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
+            return;
+        default:
+            break;
+    }
+
+    if (!field_ids.contains(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+            path);
+
+    /// Recurse into composites, building the same dotted paths that buildSubFieldIds() and the
+    /// composite branches use, so every nested logical field is validated against the latest schema.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            size_t num_elements = tuple.getElements().size();
+            for (size_t i = 0; i < num_elements; ++i)
+                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
+            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
+            break;
+        }
+        default:
+            break;
     }
 }
 
@@ -663,9 +771,9 @@ void prepareColumnRecursive(
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas); break;
-        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas); break;
-        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas); break;
+        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids); break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
@@ -674,11 +782,11 @@ void prepareColumnRecursive(
                     column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
+                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
+            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
             break;
     }
 }
@@ -693,12 +801,20 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
     root.__set_num_children(static_cast<Int32>(sample.columns()));
 
     for (const auto & c : sample)
+    {
+        /// The field-id map is supplied only on the Iceberg write path. Validate the whole nested
+        /// tree (not just top-level names): every logical field must have a field id, else the block
+        /// and the sink's latest schema disagree and the footer would silently mismatch its manifest.
+        if (column_field_ids)
+            validateIcebergFieldIds(c.type, c.name, *column_field_ids);
+
         prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
+    }
 
     return schema;
 }
 
-void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
+static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;

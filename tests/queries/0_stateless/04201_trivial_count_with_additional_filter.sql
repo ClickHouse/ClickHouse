@@ -22,18 +22,24 @@ INSERT INTO t_trivial_count_filter SELECT number FROM numbers(100);
 
 SET enable_analyzer = 1;
 SET optimize_trivial_count_query = 1;
+SET max_threads = 1;
+SET optimize_use_implicit_projections = 0;
+SET optimize_use_projections = 0;
 
 -- Baseline: no filter at all, trivial-count fires.
 SELECT 'baseline';
 SELECT explain FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
 WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%'
-   OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%';
+   OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%'
+   OR explain LIKE '%Resize%' OR explain LIKE '%Filter%'
+;
 
 -- Filter targets THIS table: trivial-count is disabled.
 SELECT 'filtered_this_table';
 SELECT explain FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
 WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%'
    OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%'
+   OR explain LIKE '%Resize%' OR explain LIKE '%Filter%'
 SETTINGS additional_table_filters = {'t_trivial_count_filter': 'id < 5'};
 
 -- Filter targets a DIFFERENT table only: trivial-count must still fire.
@@ -43,6 +49,7 @@ SELECT 'filter_other_table';
 SELECT explain FROM (EXPLAIN PIPELINE SELECT count() FROM t_trivial_count_filter)
 WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%'
    OR explain LIKE '%SourceFromSingleChunk%' OR explain LIKE '%MergeTreeSelect%'
+   OR explain LIKE '%Resize%' OR explain LIKE '%Filter%'
 SETTINGS additional_table_filters = {'some_other_table': 'id < 5'};
 
 DROP TABLE t_trivial_count_filter;
