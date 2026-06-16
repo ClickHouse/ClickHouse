@@ -76,24 +76,26 @@ CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc
 -- The stored default is `aiEmbed(doc)`; no collection is captured.
 ```
 
-A `DEFAULT` column is evaluated at `INSERT`, so `ai_function_credentials` must be set in the inserting session or query:
+A `DEFAULT` column is evaluated at `INSERT`, so `allow_experimental_ai_functions` and `ai_function_credentials` must both be set in the inserting session or query:
 
 ```sql
+SET allow_experimental_ai_functions = 1;
 SET ai_function_credentials = 'my_ai_credentials';
 INSERT INTO t (id, doc) VALUES (1, 'hello');
 ```
 
-To make such tables insertable without setting `ai_function_credentials` per session, set it in a [settings profile](/operations/settings/settings-profiles):
+To make such tables insertable without setting these per session, set both in a [settings profile](/operations/settings/settings-profiles):
 
 ```xml
 <profiles>
     <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
         <ai_function_credentials>my_ai_credentials</ai_function_credentials>
     </default>
 </profiles>
 ```
 
-A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set `ai_function_credentials` in a settings profile for mutation-driven recomputation to succeed; otherwise it raises an exception.
+A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set both `allow_experimental_ai_functions` and `ai_function_credentials` in a settings profile for mutation-driven recomputation to succeed; otherwise it raises an exception.
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
