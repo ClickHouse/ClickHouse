@@ -71,15 +71,18 @@ String sanitizeTextForAI(std::string_view input)
 
 FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
 {
-    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
+    const auto & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
+
+    credentials_collection_name = settings[Setting::ai_function_credentials];
 }
 
-FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context)
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const String & collection_name)
 {
     AINamedCollectionConfig config;
-    config.collection_name = context->getSettingsRef()[Setting::ai_function_credentials];
+    config.collection_name = collection_name;
 
     if (config.collection_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -119,7 +122,7 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
 
 FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig() const
 {
-    auto base = resolveAINamedCollection(getContext());
+    auto base = resolveAINamedCollection(getContext(), credentials_collection_name);
 
     ResolvedConfig config;
     config.provider = std::move(base.provider);

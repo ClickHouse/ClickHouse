@@ -40,6 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
+    extern const SettingsString ai_function_credentials;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -71,9 +72,12 @@ public:
 
     explicit FunctionAiEmbed(ContextPtr context_) : context(context_)
     {
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
+        const auto & settings = getContext()->getSettingsRef();
+        if (!settings[Setting::allow_experimental_ai_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
+
+        credentials_collection_name = settings[Setting::ai_function_credentials];
     }
 
     String getName() const override { return name; }
@@ -110,7 +114,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext());
+        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), credentials_collection_name);
 
         UInt64 dimensions = 0;
         if (arguments.size() > 1)
@@ -291,6 +295,9 @@ private:
 
     ContextPtr context;
     ContextPtr getContext() const { return context; }
+
+    /// Value of the `ai_function_credentials` setting, read once at construction (it is constant for the query).
+    String credentials_collection_name;
 };
 
 }
