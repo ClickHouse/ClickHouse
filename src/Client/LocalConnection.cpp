@@ -21,6 +21,7 @@
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
@@ -263,7 +264,20 @@ void LocalConnection::sendQuery(
                 throw Exception(ErrorCodes::SYNTAX_ERROR,
                     "Max query size exceeded (can be increased with the `max_query_size` setting)");
 
-            parsed_query = IAST::createFromJSON(String(begin, end),
+            /// Strip an optional trailing `;` delimiter (and surrounding whitespace) so a single
+            /// statement like `<json>;` parses, mirroring the SQL path and the server `executeQuery`
+            /// clickhouse_json branch (`Poco::JSON::Parser` rejects a trailing `;` as excess input).
+            const char * json_end = end;
+            while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                --json_end;
+            if (json_end > begin && json_end[-1] == ';')
+            {
+                --json_end;
+                while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+            }
+
+            parsed_query = IAST::createFromJSON(String(begin, json_end),
                 settings[Setting::max_ast_depth],
                 settings[Setting::max_ast_elements]);
 

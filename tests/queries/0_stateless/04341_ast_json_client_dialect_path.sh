@@ -14,6 +14,10 @@ JSON=$(${CLICKHOUSE_CLIENT} -q "SELECT parseQueryToJSON('SELECT 42 AS answer') F
 # 1. A single JSON AST executes through the client.
 ${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json -q "$JSON"
 
+# 1b. A lone JSON AST with a trailing `;` delimiter is accepted (the SQL path and the server
+#     clickhouse_json branch both consume the delimiter), not rejected as malformed JSON.
+${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json -q "$JSON;"
+
 # 2. Two JSON ASTs separated by `;` both execute in multiquery mode (the delimiter is accepted).
 ${CLICKHOUSE_CLIENT} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json --multiquery -q "$JSON ; $JSON"
 

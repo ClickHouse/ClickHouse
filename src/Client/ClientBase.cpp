@@ -578,6 +578,21 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                     }
                 }
             }
+            else
+            {
+                /// Single-statement mode: the balanced-object scanner above does not run, so a trailing
+                /// `;` delimiter would otherwise reach `Poco::JSON::Parser` and be rejected as excess
+                /// input. Strip one optional trailing `;` (and surrounding whitespace) before parsing,
+                /// mirroring the SQL path and the server `executeQuery` clickhouse_json branch.
+                while (json_end > pos && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > pos && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > pos && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+            }
 
             /// In multiquery mode `max_length` is 0 above, so the early guard is skipped even
             /// though this branch scans and deserializes the JSON client-side. Enforce
