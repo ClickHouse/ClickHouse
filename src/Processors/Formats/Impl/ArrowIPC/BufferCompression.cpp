@@ -117,21 +117,33 @@ void Decompressor::decompress(
     auto * dctx = static_cast<LZ4F_dctx *>(lz4_ctx);
     LZ4F_resetDecompressionContext(dctx);
 
+    /// Decompress until LZ4F_decompress reports the frame is complete (`ret == 0`). Do not stop merely
+    /// because the destination is full: the frame's end marker / checksum and any trailing bytes must
+    /// still be consumed, otherwise a truncated or malformed compressed buffer that happens to expand to
+    /// `uncompressed_size` bytes would be silently accepted.
     size_t dst_pos = 0;
     size_t src_pos = 0;
-    while (src_pos < compressed_size && dst_pos < uncompressed_size)
+    size_t ret = 0;
+    bool started = false;
+    while (!started || ret != 0)
     {
-        size_t dst_remaining = uncompressed_size - dst_pos;
-        size_t src_remaining = compressed_size - src_pos;
-        const size_t ret = LZ4F_decompress(dctx, dst + dst_pos, &dst_remaining, compressed + src_pos, &src_remaining, nullptr);
-        dst_pos += dst_remaining;
-        src_pos += src_remaining;
+        size_t dst_written = uncompressed_size - dst_pos;
+        size_t src_consumed = compressed_size - src_pos;
+        ret = LZ4F_decompress(dctx, dst + dst_pos, &dst_written, compressed + src_pos, &src_consumed, nullptr);
         if (LZ4F_isError(ret))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "LZ4 frame decompression failed: {}", LZ4F_getErrorName(ret));
-        if (ret == 0)
+        dst_pos += dst_written;
+        src_pos += src_consumed;
+        started = true;
+        /// No forward progress while the frame is still open means the input is truncated:
+        /// LZ4F_decompress wants more input but we have given it everything. Stop to avoid spinning.
+        if (ret != 0 && dst_written == 0 && src_consumed == 0)
             break;
     }
 
+    if (ret != 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "LZ4 frame was not fully decoded: the compressed Arrow buffer is truncated or malformed");
     if (dst_pos != uncompressed_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "LZ4 produced {} bytes, expected {}", dst_pos, uncompressed_size);
 }
