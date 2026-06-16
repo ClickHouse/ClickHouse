@@ -28,6 +28,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
+    extern const SettingsString input_format;
+    extern const SettingsString format;
 }
 
 namespace
@@ -180,6 +182,14 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        /// Let `input_format` / `format` override the FORMAT used for `input()` schema inference too
+        /// (mirrors `getSourceFromASTInsertQuery`, which resolves the reader format the same way).
+        /// This runs after the INSERT's own `SETTINGS` clause is applied, so a
+        /// `SETTINGS input_format = ...` on the INSERT is taken into account.
+        if (const auto & s = context_->getSettingsRef(); !s[Setting::input_format].value.empty())
+            context_->setInsertFormat(s[Setting::input_format]);
+        else if (!s[Setting::format].value.empty())
+            context_->setInsertFormat(s[Setting::format]);
     }
     else if (const auto * backup_query = ast->as<ASTBackupQuery>())
     {

@@ -39,6 +39,8 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsDialect dialect;
+    extern const SettingsString input_format;
+    extern const SettingsString format;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -286,6 +288,14 @@ void LocalConnection::sendQuery(
             if (!insert->format.empty())
                 current_format = insert->format;
         }
+
+        /// `input_format` / `format` settings override the FORMAT for input (mirrors
+        /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
+        /// `SETTINGS input_format = ...` take effect on the `clickhouse-local` `input()` path.
+        if (!settings[Setting::input_format].value.empty())
+            current_format = settings[Setting::input_format];
+        else if (!settings[Setting::format].value.empty())
+            current_format = settings[Setting::format];
 
         chassert(in, "ReadBuffer should be initialized");
 

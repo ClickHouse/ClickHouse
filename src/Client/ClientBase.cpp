@@ -128,6 +128,10 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsBool send_table_structure_on_insert_with_inline_data;
     extern const SettingsDialect dialect;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
+    extern const SettingsString input_format;
+    extern const SettingsString default_format;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -743,6 +747,7 @@ try
         select_into_file = false;
         select_into_file_and_stdout = false;
         String current_format = default_output_format;
+        bool has_format_clause = false;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -805,6 +810,7 @@ try
             }
             if (query_with_output->format_ast != nullptr)
             {
+                has_format_clause = true;
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
@@ -820,6 +826,21 @@ try
                 if (format_name)
                     current_format = *format_name;
             }
+        }
+
+        /// Mirror the server-side output-format precedence (`resolveOutputFormatName`): an explicit
+        /// `output_format` / `format` setting wins over the query `FORMAT` clause, and a
+        /// `default_format` setting is the fallback when the query has neither a `FORMAT` clause nor
+        /// an override. Without this, these settings (set via an in-query `SETTINGS` clause) were
+        /// ignored by the native client, which formatted from its own `default_output_format`.
+        {
+            const auto & format_settings_ref = client_context->getSettingsRef();
+            if (!format_settings_ref[Setting::output_format].value.empty())
+                current_format = format_settings_ref[Setting::output_format];
+            else if (!format_settings_ref[Setting::format].value.empty())
+                current_format = format_settings_ref[Setting::format];
+            else if (!has_format_clause && !format_settings_ref[Setting::default_format].value.empty())
+                current_format = format_settings_ref[Setting::default_format];
         }
 
         if (has_vertical_output_suffix)
@@ -2115,6 +2136,12 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         String current_format = parsed_insert_query->format;
         if (current_format.empty())
             current_format = FormatFactory::instance().getFormatFromFileName(in_file);
+        /// `input_format` / `format` settings override the FORMAT for input (mirrors
+        /// `getSourceFromASTInsertQuery`).
+        if (const auto & s = client_context->getSettingsRef(); !s[Setting::input_format].value.empty())
+            current_format = s[Setting::input_format];
+        else if (!s[Setting::format].value.empty())
+            current_format = s[Setting::format];
 
         /// Create temporary storage file, to support globs and parallel reading
         /// StorageFile doesn't support ephemeral/materialized/alias columns.
@@ -2231,6 +2258,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     }
 
     const Settings & settings = client_context->getSettingsRef();
+
+    /// `input_format` / `format` settings override the FORMAT for input (mirrors
+    /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
+    /// `SETTINGS input_format = ...` take effect on the native client's INSERT-with-data path.
+    if (!settings[Setting::input_format].value.empty())
+        current_format = settings[Setting::input_format];
+    else if (!settings[Setting::format].value.empty())
+        current_format = settings[Setting::format];
 
     /// Setting value from cmd arg overrides one from config.
     size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size].changed
@@ -3589,7 +3624,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        ("format,f", po::value<std::string>(), "Default input and output format. In clickhouse-client only the default output format.")
+        ("format,f", po::value<std::string>(), "Default input and output format (maps to the generic `format` setting). Use --input-format / --output-format to set only one direction.")
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
