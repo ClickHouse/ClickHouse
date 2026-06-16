@@ -180,7 +180,9 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
         tierEntry(CacheTier::PageCache, {{3, 2}}, {{5, 3}}, /*head*/1, /*tail*/2),  // whole-block
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}, /*head*/6),     // incremental
     });
-    auto s = describe(g, {4, 4});  // request [4,8)
+    // min_bytes_for_seek=4 so the 2-wide page hit [3,5) is bridged (over-read on the open GET),
+    // NOT filled down - one Remote retrieve covers the whole fetch.
+    auto s = describeSeek(g, {4, 4}, /*min_bytes_for_seek=*/4);  // request [4,8)
 
     ASSERT_EQ(s.retrieves.size(), 1u);  // no promote ([4,5) is fastest-tier resident)
     const auto & r = s.retrieves[0];
@@ -208,7 +210,8 @@ TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
         tierEntry(CacheTier::PageCache, {{3, 2}}, {{0, 1}, {5, 3}}, /*head*/1, /*tail*/2),
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}, /*head*/6),
     });
-    auto s = describe(g, {4, 4});  // request [4,8)
+    // min_bytes_for_seek=4 so the 2-wide page hit [3,5) is bridged (over-read), one Remote retrieve.
+    auto s = describeSeek(g, {4, 4}, /*min_bytes_for_seek=*/4);  // request [4,8)
 
     ASSERT_EQ(s.retrieves.size(), 1u);
     const auto & r = s.retrieves[0];
@@ -219,24 +222,27 @@ TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
 
 /// A small resident hole between two gaps is bridged into one connection; a
 /// larger hole splits into two.
-TEST(PlanScheduleRetrieves, BridgeVersusSplit)
+/// The schedule does NOT group gaps into connections - it lists each cache-cell-aligned gap as
+/// its own Remote retrieve, regardless of `min_bytes_for_seek`. Whether one source connection
+/// spans the resident hole between them (bridge) or reopens at it (split) is a RUNTIME decision
+/// (`LongConnection::canContinue` / `scheduleLookaheadReach`), invisible to the schedule.
+TEST(PlanScheduleRetrieves, PerGapRetrievesNotGrouped)
 {
     auto g = geometry(0, 12, {
         tierEntry(CacheTier::PageCache, {{4, 4}}, {}),                 // resident [4,8)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 4}, {8, 4}}),   // miss [0,4),[8,12), head=1
     });
-    // hole [4,8) is 4 wide
-    auto bridged = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/4);
-    ASSERT_EQ(bridged.retrieves.size(), 1u) << "hole <= seek bound -> bridged";
-    EXPECT_EQ(bridged.retrieves[0].range.offset, 0u);
-    EXPECT_EQ(bridged.retrieves[0].range.size, 12u);
-
-    auto split = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/2);
-    ASSERT_EQ(split.retrieves.size(), 2u) << "hole > seek bound -> split";
-    EXPECT_EQ(split.retrieves[0].range.offset, 0u);
-    EXPECT_EQ(split.retrieves[0].range.size, 4u);
-    EXPECT_EQ(split.retrieves[1].range.offset, 8u);
-    EXPECT_EQ(split.retrieves[1].range.size, 4u);
+    // The resident hole [4,8) is 4 wide; narrow bound or wide, the schedule emits one per gap.
+    for (size_t min_bytes_for_seek : {2u, 4u, 8u})
+    {
+        auto s = describeSeek(g, {0, 12}, min_bytes_for_seek);
+        ASSERT_EQ(s.retrieves.size(), 2u)
+            << "one Remote retrieve per gap, never grouped (min_bytes_for_seek=" << min_bytes_for_seek << ")";
+        EXPECT_EQ(s.retrieves[0].range.offset, 0u);
+        EXPECT_EQ(s.retrieves[0].range.size, 4u);
+        EXPECT_EQ(s.retrieves[1].range.offset, 8u);
+        EXPECT_EQ(s.retrieves[1].range.size, 4u);
+    }
 }
 
 /// One fs segment filled by two split connections: the later one appends after

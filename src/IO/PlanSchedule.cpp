@@ -76,26 +76,6 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange 
     return mergeSorted(std::move(parts));
 }
 
-/// Connections = fill-closure pieces, grouped across a resident hole no larger than
-/// `min_bytes_for_seek` into one retrieve (so a held source connection can span the
-/// hole). Whether the hole is actually over-read on the open GET or instead reopened /
-/// filled down from a faster tier is decided later, per source read, by `mergeRanges`
-/// and `LongConnection::canContinue` (which bridge STRICTLY below the bound). A wider
-/// hole splits the connections outright.
-VectorWithMemoryTracking<ByteRange> connections(
-    const VectorWithMemoryTracking<ByteRange> & fill, size_t min_bytes_for_seek)
-{
-    VectorWithMemoryTracking<ByteRange> conns;
-    for (const auto & piece : fill)
-    {
-        if (!conns.empty() && piece.offset - conns.back().end() <= min_bytes_for_seek)
-            conns.back().size = piece.end() - conns.back().offset;  /// bridge the hole
-        else
-            conns.push_back(piece);
-    }
-    return conns;
-}
-
 /// The cells connection `conn` populates. A cell holding USER bytes is filled in
 /// every tier that misses it (promotion of the request up the chain); a slack-
 /// only cell is filled ONLY in the tier that owns it - the coarsest-alignment
@@ -213,14 +193,18 @@ PlanSchedule buildSchedule(
         }
     }
 
-    /// --- retrieves: one Remote per connection, plus HandedRope promotes ---
-    for (const auto & conn : connections(fill, min_bytes_for_seek))
+    /// --- retrieves: one Remote per fill-closure GAP (pure coverage), plus HandedRope promotes ---
+    /// The schedule does NOT group gaps into connections - it lists each cache-cell-aligned gap as
+    /// its own job. The runtime decides how many source connections span them (a held connection
+    /// bridges a small cached hole or reopens at a wide one - see ReaderExecutor's
+    /// `scheduleLookaheadReach` / `canContinue`); the schedule only says WHAT to read.
+    for (const auto & f : fill)
     {
         PlanSchedule::Retrieve r;
-        r.range = conn;
+        r.range = f;
         r.source = PlanSchedule::Source::Remote;
-        r.into = writeTargetsFor(geometry, conn, request);
-        r.retain_for_serve = request.size && overlaps(conn, request);
+        r.into = writeTargetsFor(geometry, f, request);
+        r.retain_for_serve = request.size && overlaps(f, request);
         sched.retrieves.push_back(std::move(r));
     }
 
@@ -243,15 +227,12 @@ PlanSchedule buildSchedule(
             sched.retrieves.push_back(std::move(promote));
     }
 
-    /// A lower-tier fill cell that spans a resident run held by a FASTER tier,
-    /// where that run is NOT covered by any Remote connection (a split gap, too
-    /// wide to bridge), is filled across the run from the upper cache rather
-    /// than over-read from remote - so the append-only lower segment completes
-    /// without re-fetching bytes a faster tier already has. A run a connection
-    /// DOES cover (a bridged small hole) stays a remote over-read: reopening for
-    /// it would cost more than the wasted bytes. Collect the unique lower cells
-    /// from the Remote retrieves first (a spanning cell appears in both
-    /// connections' `into`).
+    /// A lower-tier fill cell that spans a resident run held by a FASTER tier is filled across the
+    /// run from the upper cache (`UpperCacheRead`) rather than over-read from remote - so the
+    /// append-only lower segment completes without re-fetching bytes a faster tier already has -
+    /// UNLESS the run is a small hole the runtime bridges on the open GET (strictly narrower than
+    /// `min_bytes_for_seek`), which stays a remote over-read because reopening for it would cost
+    /// more than the wasted bytes. Collect the unique lower cells from the Remote retrieves first.
     VectorWithMemoryTracking<PlanSchedule::WriteTarget> lower_cells;
     for (const auto & r : sched.retrieves)
     {
@@ -267,12 +248,26 @@ PlanSchedule buildSchedule(
                 lower_cells.push_back(wt);
         }
     }
-    const auto covered_by_remote = [&](ByteRange sub)
+    /// Whether the runtime connection skips (over-reads on the open GET) the resident region
+    /// containing `sub`, rather than filling it down: true iff that contiguous resident region is
+    /// strictly narrower than `min_bytes_for_seek` - the `LongConnection::canContinue` rule. The
+    /// region end is the first gap at/after `sub`; the start is walked back over the contiguous
+    /// resident ranges (a wide cached run that splits the fetch is NOT bridged -> UpperCacheRead).
+    const auto bridged = [&](ByteRange sub)
     {
-        for (const auto & r : sched.retrieves)
-            if (r.source == PlanSchedule::Source::Remote && contains(r.range, sub))
-                return true;
-        return false;
+        const size_t region_end = geometry.nextGapStart(sub.offset);
+        size_t region_start = sub.offset;
+        for (bool extended = true; extended; )
+        {
+            extended = false;
+            for (const auto & tr : sched.ranges)
+                if (tr.resident && tr.range.offset < region_start && tr.range.end() >= region_start)
+                {
+                    region_start = tr.range.offset;
+                    extended = true;
+                }
+        }
+        return region_end > region_start && region_end - region_start < min_bytes_for_seek;
     };
     for (const auto & cell : lower_cells)
         for (const auto & rr : sched.ranges)
@@ -284,8 +279,8 @@ PlanSchedule buildSchedule(
             if (lo >= hi)
                 continue;
             const ByteRange sub{lo, hi - lo};
-            if (covered_by_remote(sub))
-                continue;  /// bridged into a connection -> stays a remote over-read
+            if (bridged(sub))
+                continue;  /// bridged on the open GET -> stays a remote over-read
             PlanSchedule::Retrieve up;
             up.range = sub;
             up.source = PlanSchedule::Source::UpperCacheRead;
