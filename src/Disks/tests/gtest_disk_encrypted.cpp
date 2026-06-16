@@ -527,6 +527,20 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsSameDelegateAndDefaultPath)
     EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
 }
 
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSameAbsolutePath)
+{
+    auto nested_local_disk = std::make_shared<DiskLocal>("nested_local_disk", getDirectory() + "data/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "nested_local_disk", "encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/encrypted/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"nested_local_disk", nested_local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
+}
+
 TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
 {
     auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");

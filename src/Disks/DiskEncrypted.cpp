@@ -211,6 +211,7 @@ namespace
         if (!out_path.empty() && (out_path.back() != '/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
 
+        const String disk_absolute_path = out_disk->getPath() + out_path;
         for (const auto & [name, disk] : map)
         {
             /// The map contains this disk itself while applying settings on configuration reload.
@@ -218,8 +219,12 @@ namespace
                 continue;
 
             auto * encrypted_disk = typeid_cast<DiskEncrypted *>(disk.get());
-            if (encrypted_disk && encrypted_disk->hasSameDelegateAndPath(out_disk, out_path))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path '{}' is conflicted with other encrypted disk '{}'", quoteString(out_path), encrypted_disk->getName());
+            if (encrypted_disk && encrypted_disk->getPath() == disk_absolute_path)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disk path '{}' is conflicted with other encrypted disk '{}'",
+                    quoteString(disk_absolute_path),
+                    encrypted_disk->getName());
         }
     }
 
