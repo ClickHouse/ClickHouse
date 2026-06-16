@@ -5979,6 +5979,16 @@ Replaces injective functions by it's arguments in GROUP BY section
     DECLARE(Bool, optimize_group_by_function_keys, true, R"(
 Eliminates functions of other keys in GROUP BY section
 )", 0) \
+    DECLARE(Bool, optimize_limit_by_function_keys, true, R"(
+Eliminates functions of other keys in LIMIT BY section.
+
+Example: `LIMIT 5 BY x, f(x)` becomes `LIMIT 5 BY x`.
+)", 0) \
+    DECLARE(Bool, optimize_injective_functions_in_limit_by, true, R"(
+Replaces injective functions by their arguments in LIMIT BY section.
+
+Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
+)", 0) \
     DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
 Optimize GROUP BY when all keys in block are constant
 )", 0) \
@@ -8131,7 +8141,7 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
+    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
