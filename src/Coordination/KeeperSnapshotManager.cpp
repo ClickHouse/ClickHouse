@@ -11,8 +11,8 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Core/UUID.h>
 #include <Core/Field.h>
+#include <Common/thread_local_rng.h>
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
@@ -57,10 +57,11 @@ namespace
     {
         /// Unique-from-birth names make collisions between a local create, a receive and
         /// stale-file cleanup impossible, so publication needs no rename and no coordination.
-        /// Full UUID is required: `writeFile` truncates an existing file (WriteMode::Rewrite),
-        /// so a suffix collision would silently rewrite published bytes.
-        auto uuid = formatUUID(UUIDHelpers::generateV4());
-        auto base = fmt::format("snapshot_{}_{}.bin", up_to_log_idx, std::string_view(uuid.data(), uuid.size()));
+        /// A random suffix is required because `writeFile` truncates an existing file
+        /// (WriteMode::Rewrite), so a name collision would silently rewrite published bytes.
+        /// 64 random bits is a large margin over the real collision space (a handful of files
+        /// per index); kept hex so the index stays the second `_`-separated token.
+        auto base = fmt::format("snapshot_{}_{:016x}.bin", up_to_log_idx, thread_local_rng());
         if (compress_zstd)
             base += ".zstd";
         return base;
