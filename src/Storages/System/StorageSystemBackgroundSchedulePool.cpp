@@ -14,14 +14,14 @@ ColumnsDescription StorageSystemBackgroundSchedulePool::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"pool", std::make_shared<DataTypeString>(), "Pool name."},
+        {"pool", std::make_shared<DataTypeString>(), "Pool name. Possible values: `schedule` — general purpose schedule pool, `buffer_flush` — pool for flushing Buffer table data, `distributed` — pool for distributed table operations, `message_broker` — pool for message broker operations."},
         {"database", std::make_shared<DataTypeString>(), "Database name."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"table_uuid", std::make_shared<DataTypeUUID>(), "Table UUID."},
-        {"query_id", std::make_shared<DataTypeString>(), "Query ID (if executing now)."},
+        {"query_id", std::make_shared<DataTypeString>(), "Query ID (if executing now). Note: this is not a real query, but a randomly generated ID for matching logs in `system.text_log`."},
         {"elapsed_ms", std::make_shared<DataTypeUInt64>(), "Task execution time (if executing now)."},
         {"log_name", std::make_shared<DataTypeString>(), "Log name for the task."},
-        {"deactivated", std::make_shared<DataTypeUInt8>(), "Whether the task is deactivated (always false, since deactivated tasks removed from the pool)."},
+        {"deactivated", std::make_shared<DataTypeUInt8>(), "Whether the task is deactivated (always false, since deactivated tasks are removed from the pool)."},
         {"scheduled", std::make_shared<DataTypeUInt8>(), "Whether the task is scheduled for execution."},
         {"delayed", std::make_shared<DataTypeUInt8>(), "Whether the task is scheduled with delay."},
         {"executing", std::make_shared<DataTypeUInt8>(), "Whether the task is currently executing."},

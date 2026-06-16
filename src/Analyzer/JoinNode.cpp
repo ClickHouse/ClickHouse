@@ -119,6 +119,7 @@ ASTPtr JoinNode::toASTTableJoin() const
     join_ast->locality = locality;
     join_ast->strictness = strictness;
     join_ast->kind = kind;
+    join_ast->is_natural = is_natural && !hasJoinExpression();
 
     if (children[join_expression_child_index])
     {
@@ -166,7 +167,8 @@ bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
-        is_using_join_expression == rhs_typed.is_using_join_expression;
+        is_using_join_expression == rhs_typed.is_using_join_expression &&
+        is_natural == rhs_typed.is_natural;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -175,13 +177,16 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(strictness);
     state.update(kind);
     state.update(is_using_join_expression);
+    state.update(is_natural);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
-    return std::make_shared<JoinNode>(
+    auto clone = std::make_shared<JoinNode>(
         getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
+    clone->is_natural = is_natural;
+    return clone;
 }
 
 ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const

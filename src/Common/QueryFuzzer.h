@@ -5,15 +5,14 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
+#include <Core/Names.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IAST_fwd.h>
 #include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
 
@@ -21,6 +20,7 @@ namespace DB
 {
 
 class ASTExpressionList;
+class ASTFunction;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -30,7 +30,10 @@ class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
+struct ASTTableJoin;
 struct ASTWindowDefinition;
+
+class SettingsChanges;
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -63,6 +66,10 @@ public:
 
     /// Returns the total number of accumulated AST fragments (column-like + table-like).
     size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
+
+    /// Returns query parameters collected/generated during the last fuzzMain() call.
+    /// Callers should pass these to the execution context via setQueryParameters().
+    const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
 
     void setSeed(const UInt64 new_seed)
     {
@@ -123,11 +130,11 @@ public:
         if (!parsed_query)
             return {};
 
-        const auto & query_ast = *parsed_query->template as<ParsedAST>();
-        if (!query_ast.table)
+        const auto * query_ast = parsed_query->template as<ParsedAST>();
+        if (!query_ast || !query_ast->table)
             return {};
 
-        auto table_name = query_ast.getTable();
+        auto table_name = query_ast->getTable();
         auto it = original_table_name_to_fuzzed.find(table_name);
         if (it == original_table_name_to_fuzzed.end())
             return {};
@@ -138,8 +145,14 @@ public:
             /// Parse query from scratch for each table instead of clone,
             /// to store proper pointers to inlined data,
             /// which are not copied during clone.
-            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
-            query->template as<ParsedAST>()->setTable(fuzzed_name);
+            auto query = tryParseQueryForFuzzedTables<Parser>(full_query);
+            if (!query)
+                continue;
+            auto * fuzzed_ast = query->template as<ParsedAST>();
+            if (!fuzzed_ast)
+                continue;
+            fuzzed_ast->setTable(fuzzed_name);
+            queries.emplace_back(std::move(query));
         }
 
         return queries;
@@ -202,6 +215,11 @@ private:
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
     std::set<IASTHash> created_tables_hashes;
 
+    /// Populated by fuzzMain(): name → string-serialized value for every {name:type} param in the fuzzed query.
+    NameToNameMap last_query_parameters;
+    /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
+    uint32_t param_counter = 0;
+
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
@@ -215,14 +233,18 @@ private:
     void fuzzColumnLikeExpressionList(IAST * ast);
     NullsAction fuzzNullsAction(NullsAction action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
+    void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
+    void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
+    void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
+    void fuzzTableFunctionName(ASTPtr & table_function);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
@@ -239,6 +261,7 @@ private:
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+    String generateParamValue();
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
@@ -247,6 +270,7 @@ private:
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)
     {
+        chassert(!container.empty());
         std::uniform_int_distribution<size_t> d{0, container.size() - 1};
         auto it = container.begin();
         std::advance(it, d(rand));

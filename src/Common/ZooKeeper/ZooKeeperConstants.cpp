@@ -39,6 +39,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::RemoveWatch),
     static_cast<int32_t>(OpNum::SetWatch),
     static_cast<int32_t>(OpNum::SetWatch2),
+    static_cast<int32_t>(OpNum::ListRecursive),
 };
 
 OpNum getOpNum(int32_t raw_op_num)
@@ -83,6 +84,7 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::SetWatch: return "SetWatch";
         case OpNum::SetWatch2: return "SetWatch2";
         case OpNum::TryRemove: return "TryRemove";
+        case OpNum::ListRecursive: return "ListRecursive";
         case OpNum::FilteredListWithStatsAndData: return "FilteredListWithStatsAndData";
     }
 }
@@ -102,6 +104,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::CheckNotExists:
         case OpNum::CheckWatch:
         case OpNum::CheckStat:
+        case OpNum::ListRecursive:
             return "readonly";
 
         case OpNum::Multi:

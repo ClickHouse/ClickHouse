@@ -1755,6 +1755,102 @@ def test_lag_after_recovery(started_cluster):
     )
 
 
+def test_sync_database_replica_strict(started_cluster):
+    # Differential test for SYSTEM SYNC DATABASE REPLICA ... STRICT.
+    #
+    # It pins down two things that a plain (DEFAULT) sync cannot:
+    #
+    #   1. STRICT actually takes effect (the interpreter forwards
+    #      query.sync_replica_mode). We freeze replica2's DDL worker mid-queue
+    #      with the pauseable failpoint and keep the lag *below*
+    #      max_replication_lag_to_enqueue. DEFAULT sync needs the exact snapshot
+    #      processed -> it times out (TIMEOUT_EXCEEDED). STRICT sync only needs
+    #      our_log_ptr + max_replication_lag_to_enqueue >= max_log_ptr -> it
+    #      succeeds. The opposite outcomes under identical conditions can only
+    #      happen if STRICT is honored; if STRICT were ignored it would time out
+    #      exactly like DEFAULT.
+    #
+    #   2. The Keeper-component guard in
+    #      DatabaseReplicated::waitForReplicaToProcessAllEntries. The STRICT path
+    #      reads .../max_log_ptr directly via getZooKeeper()->get on the query
+    #      thread (the DEFAULT path goes through the DDL worker, which sets its
+    #      own component). Integration nodes run with
+    #      enforce_keeper_component_tracking=true, so without the guard that read
+    #      throws LOGICAL_ERROR "Current component is empty" (release) or aborts
+    #      the server (debug). Here STRICT instead succeeds, which only holds
+    #      with the guard in place.
+    main_node.query("drop database if exists strict_sync sync")
+    dummy_node.query("drop database if exists strict_sync sync")
+
+    main_node.query(
+        "create database strict_sync engine=Replicated('/clickhouse/databases/strict_sync', 'shard1', 'replica1')"
+    )
+    # Generous threshold so a small lag stays well within it (became_synced).
+    dummy_node.query(
+        "create database strict_sync engine=Replicated('/clickhouse/databases/strict_sync', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=100"
+    )
+
+    # Make sure replica2 is fully caught up before we freeze it.
+    assert_eq_with_retry(
+        dummy_node,
+        "select replication_lag from system.clusters where name='strict_sync' and database_replica_name='replica2'",
+        "0\n",
+    )
+
+    # Freeze replica2's worker on the next entry it tries to execute, so it
+    # stays a few entries behind max_log_ptr (but within the threshold).
+    dummy_node.query(
+        "system enable failpoint database_replicated_stop_entry_execution"
+    )
+    try:
+        settings = {"distributed_ddl_task_timeout": 0}
+        for i in range(3):
+            main_node.query(
+                f"create table strict_sync.t{i} (n int) engine=Memory",
+                settings=settings,
+            )
+
+        # `receive_timeout` (set server-side via HTTP `params`) is the sync's wait
+        # budget. STRICT checks became_synced before waiting on the worker, so it
+        # returns almost immediately here (lag 3 <= threshold 100); DEFAULT needs
+        # the frozen snapshot fully processed, so it waits out the whole budget and
+        # times out. We drive both over HTTP so the python read timeout (`timeout=`)
+        # is independent of the server-side `receive_timeout`: that lets us assert
+        # the DEFAULT *server-side* TIMEOUT_EXCEEDED with a generous read window
+        # instead of coupling it to the native client's socket timeout, which fires
+        # at the same `receive_timeout` and would make the timeout's origin a flaky
+        # client/server race.
+        sync_params = {"receive_timeout": 3}
+
+        # DEFAULT: needs the frozen snapshot fully processed -> times out.
+        default_error = dummy_node.http_query_and_get_error(
+            "system sync database replica strict_sync",
+            params=sync_params,
+            timeout=60,
+        )
+        assert "TIMEOUT_EXCEEDED" in default_error, default_error
+
+        # STRICT: lag is within max_replication_lag_to_enqueue, so the guarded
+        # getZooKeeper()->get(max_log_ptr) runs and became_synced is true ->
+        # the query succeeds (it would time out like DEFAULT if STRICT were
+        # ignored, and would raise "Current component is empty" / crash without
+        # the guard).
+        dummy_node.http_query(
+            "system sync database replica strict_sync strict",
+            params=sync_params,
+            timeout=60,
+        )
+    finally:
+        dummy_node.query(
+            "system disable failpoint database_replicated_stop_entry_execution"
+        )
+
+    assert dummy_node.query("select 1") == "1\n"
+
+    main_node.query("drop database if exists strict_sync sync")
+    dummy_node.query("drop database if exists strict_sync sync")
+
+
 def test_system_database_replicas_with_ro(started_cluster):
     prefix = generate_random_string()
     database_1 = f"{prefix}_test_system_database_replicas_1"
@@ -2011,6 +2107,35 @@ def test_ignore_cluster_name_setting(started_cluster):
     )
 
     node.query(create_query, settings={"ignore_on_cluster_for_replicated_database": 1})
+
+    # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_alias_with_dropped_target(started_cluster):
+    db_name = "test_alias_dropped"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    main_node.query(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        SET allow_experimental_alias_table_engine = 1;
+        CREATE TABLE {db_name}.base_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+        CREATE TABLE {db_name}.alias_table ENGINE = Alias('{db_name}', 'base_table');
+        DROP TABLE {db_name}.base_table;
+        """
+    )
+
+    dummy_node.query(
+        f"""
+        DROP DATABASE IF EXISTS {db_name} SYNC;
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        SYSTEM SYNC DATABASE REPLICA {db_name};
+        """
+    )
 
     # Cleanup
     for node in [main_node, dummy_node]:

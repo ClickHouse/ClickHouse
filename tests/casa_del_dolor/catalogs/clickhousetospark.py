@@ -227,12 +227,18 @@ class ClickHouseTypeMapper:
 
                 self.increment()
                 if cname:
+                    # Sanitize non-identifier names (e.g. "1" from "`1`") so that
+                    # StructField names are valid SQL identifiers.  Spark's DDL
+                    # serialiser emits struct<1:...> without backticks, which then
+                    # fails to re-parse on Delta write operations.
+                    if not (cname[0].isalpha() or cname[0] == "_"):
+                        cname = f"col_{cname}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem_type, False, mapping
                     )
                     spark_elements.append(f"{cname}: {next_tp}")
                 else:
-                    cname = f"{i + 1}"
+                    cname = f"col{i + 1}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False, mapping
                     )
@@ -485,8 +491,18 @@ class ClickHouseTypeMapper:
         - "name Type"
         - "name Tuple(Type1, Type2)"
         - "name Array(Nested(Type))"
+        - "`quoted_name` Type"  (backtick-quoted identifiers from ClickHouse)
         """
-        # Find the last space that's not inside parentheses
+        # Handle backtick-quoted identifiers at the start (e.g. "`1` Array(Int32)")
+        if element.startswith("`"):
+            end_bt = element.find("`", 1)
+            if end_bt > 0 and end_bt + 1 < len(element) and element[end_bt + 1] == " ":
+                name = element[1:end_bt]
+                elem_type = element[end_bt + 2 :].strip()
+                if name:
+                    return name, elem_type
+
+        # Find the last space that's not inside parentheses or quotes
         depth = 0
         last_space_pos = -1
         in_quotes = False
@@ -494,7 +510,7 @@ class ClickHouseTypeMapper:
 
         for i, char in enumerate(element):
             if not in_quotes:
-                if char in "\"'":
+                if char in "\"'`":
                     in_quotes = True
                     quote_char = char
                 elif char in "(<":
@@ -511,8 +527,8 @@ class ClickHouseTypeMapper:
         if last_space_pos > 0:
             name = element[:last_space_pos].strip()
             elem_type = element[last_space_pos + 1 :].strip()
-            # Validate that name is a valid identifier
-            if name and name[0].isalpha() or name[0] == "_":
+            # Validate that name is a valid identifier (alpha or underscore start)
+            if name and (name[0].isalpha() or name[0] == "_"):
                 return name, elem_type
         return None, element
 
@@ -618,7 +634,7 @@ class ClickHouseTypeMapper:
             num_fields = random.randint(1, 3)
             fields = []
             for i in range(num_fields):
-                field_name = f"`{i}`"
+                field_name = f"col{i}"
                 field_type = self.generate_random_spark_sql_type(
                     max_depth=max_depth,
                     current_depth=current_depth + 1,

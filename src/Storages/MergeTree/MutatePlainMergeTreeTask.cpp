@@ -8,6 +8,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -51,7 +52,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids);
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids, {});
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
@@ -65,7 +66,7 @@ void MutatePlainMergeTreeTask::prepare()
             future_part->parts,
             merge_list_entry.get(),
             std::move(profile_counters_snapshot),
-            mutation_ids);
+            mutation_ids, {});
     };
 
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
@@ -115,6 +116,9 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
+#if CLICKHOUSE_CLOUD
+                data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+#endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 

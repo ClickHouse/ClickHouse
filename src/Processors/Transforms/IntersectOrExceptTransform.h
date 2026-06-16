@@ -3,7 +3,6 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
-#include <Core/ColumnNumbers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 
@@ -13,7 +12,7 @@ namespace DB
 
 class Block;
 
-class IntersectOrExceptTransform : public IProcessor
+class IntersectOrExceptTransform final : public IProcessor
 {
 using Operator = ASTSelectIntersectExceptQuery::Operator;
 
@@ -28,9 +27,15 @@ protected:
     void work() override;
 
 private:
+    enum class Stage
+    {
+        ReadLeftInput,
+        ReadRightInput,
+        ReadRemainingLeftInput,
+    };
+
     Operator current_operator;
 
-    ColumnNumbers key_columns_pos;
     std::optional<SetVariants> data;
     Sizes key_sizes;
 
@@ -39,14 +44,23 @@ private:
 
     Chunk current_input_chunk;
     Chunk current_output_chunk;
+    Chunk left_input_chunk;
 
-    bool finished_second_input = false;
+    Stage stage = Stage::ReadLeftInput;
+    bool has_left_input_chunk = false;
+    bool has_right_input_rows = false;
     bool has_input = false;
 
     bool isAllOperator() const
     {
         return current_operator == Operator::EXCEPT_ALL
             || current_operator == Operator::INTERSECT_ALL;
+    }
+
+    bool isIntersectOperator() const
+    {
+        return current_operator == Operator::INTERSECT_ALL
+            || current_operator == Operator::INTERSECT_DISTINCT;
     }
 
     static UInt128 hashRow(const ColumnRawPtrs & columns, size_t row);

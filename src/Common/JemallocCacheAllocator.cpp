@@ -41,9 +41,12 @@ int arenaFlags(size_t alignment)
     return flags;
 }
 
-int freeFlags()
+int freeFlags(size_t alignment)
 {
-    return MALLOCX_TCACHE_NONE;
+    int flags = MALLOCX_TCACHE_NONE;
+    if (alignment > MALLOC_MIN_ALIGNMENT)
+        flags |= MALLOCX_ALIGN(alignment);
+    return flags;
 }
 
 }
@@ -54,7 +57,7 @@ void * JemallocCacheAllocator::alloc(size_t size, size_t alignment)
     checkSize(size);
     auto trace = CurrentMemoryTracker::alloc(size);
 
-    void * ptr = mallocx(size, arenaFlags(alignment));
+    void * ptr = je_mallocx(size, arenaFlags(alignment));
     if (unlikely(!ptr))
     {
         [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(size);
@@ -65,12 +68,12 @@ void * JemallocCacheAllocator::alloc(size_t size, size_t alignment)
     return ptr;
 }
 
-void JemallocCacheAllocator::free(void * buf, size_t size)
+void JemallocCacheAllocator::free(void * buf, size_t size, size_t alignment)
 {
     try
     {
         checkSize(size);
-        sdallocx(buf, size, freeFlags());
+        je_sdallocx(buf, size, freeFlags(alignment));
         auto trace = CurrentMemoryTracker::free(size);
         trace.onFree(buf, size);
     }
@@ -90,7 +93,7 @@ void * JemallocCacheAllocator::realloc(void * buf, size_t old_size, size_t new_s
 
     auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
 
-    void * new_buf = rallocx(buf, new_size, arenaFlags(alignment));
+    void * new_buf = je_rallocx(buf, new_size, arenaFlags(alignment));
     if (unlikely(!new_buf))
     {
         [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);

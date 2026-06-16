@@ -9,12 +9,26 @@ namespace BuzzHouse
 
 enum class DumpOracleStrategy
 {
-    DUMP_TABLE = 1,
+    REINSERT_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
     BACKUP_RESTORE = 4,
     ALTER_UPDATE = 5,
-    INSERT_COUNT = 6
+    INSERT_COUNT = 6,
+    RENAME_BACK = 7,
+    FREEZE_UNFREEZE = 8,
+    MOVE_PARTITION = 9,
+    REPLACE_PARTITION = 10,
+    ALTER_COLUMN = 11,
+    ALTER_TABLE = 12,
+    TRUNCATE_COUNT = 13
+};
+
+enum class OracleCombination
+{
+    WHERE_ONLY = 0,
+    HAVING_ONLY = 1,
+    WHERE_AND_HAVING = 2
 };
 
 struct MatchHandler
@@ -47,12 +61,13 @@ private:
     uint64_t nrows = 0;
     std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_success = true;
+    OracleCombination oracle_combination = OracleCombination::WHERE_ONLY;
     bool can_test_oracle_result;
     bool can_test_success;
     bool measure_performance;
-    bool compare_explain;
+    bool compare_explain = false;
 
-    std::unordered_set<uint32_t> found_tables;
+    std::unordered_set<String> found_tables;
     DB::Strings nsettings;
 
     void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
@@ -60,6 +75,20 @@ private:
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
+
+    static void reattachSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLBase & obj,
+        SQLObject sobject,
+        std::vector<SQLQuery> & intermediate_queries);
+    static void backupRestoreSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        FuzzConfig & fc,
+        const SQLBase & obj,
+        SQLObject sobject,
+        std::vector<SQLQuery> & intermediate_queries);
 
 public:
     explicit QueryOracle(FuzzConfig & ffc)
@@ -91,12 +120,27 @@ public:
     /// Both queries must return the same value, catching any roundtrip failures.
     void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
 
+    /// ARRAY JOIN oracle: ARRAY JOIN clause vs arrayJoin function.
+    /// Query 1: SELECT s0 FROM <from_clause> ARRAY JOIN expr AS s0 [GROUP BY s0] ORDER BY ALL
+    /// Query 2: SELECT arrayJoin(expr) AS s0 FROM <from_clause> [GROUP BY s0] ORDER BY ALL
+    /// Both must produce identical sorted result sets.
+    void generateArrayJoinOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
     /// COUNT(DISTINCT expr) consistency oracle
     /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>
     /// Query 2: SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub
     /// Both forms must return the same integer (different code paths: uniqExact vs DISTINCT + COUNT).
     void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
+
+    /// Row policy correctness oracle.
+    /// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+    /// Query 1 (sq1):  SELECT count() FROM db.t [FINAL] INTO OUTFILE ...
+    ///                  (FuzzLoop sends "EXECUTE AS buzzhouse_oracle_user" first → policy active)
+    /// Query 2 (sq2):  SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ...
+    ///                  (run as admin after reconnect → explicit WHERE equivalent to policy filter)
+    /// Both counts must be equal.  No setup or teardown needed — the policy already exists.
+    void generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
     void dumpTableContent(
@@ -113,6 +157,18 @@ public:
         SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
+        std::vector<SQLQuery> & intermediate_queries);
+
+    /// Dump and read dictionary/view oracle (REATTACH / BACKUP_RESTORE)
+    void dumpDictionaryContent(
+        RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpObjectIntermediateSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLBase & obj,
+        SQLObject sobject,
+        DumpOracleStrategy strategy,
         std::vector<SQLQuery> & intermediate_queries);
 
     /// Run query with different settings oracle

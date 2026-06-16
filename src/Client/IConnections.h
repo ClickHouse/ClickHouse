@@ -67,6 +67,11 @@ public:
     /// We create a RemoteQueryExecutor for each replica
     virtual void setReplicaInfo(ReplicaInfo value) = 0;
 
+    /// Set the total number of remote connections across all shards in a distributed query.
+    /// Used to scale `interactive_delay` by sqrt(fanout) to reduce progress/profile event traffic.
+    virtual void setDistributedFanout(size_t /*total_connections*/) {}
+
+
     /// Returns the number of replicas.
     virtual size_t size() const = 0;
 

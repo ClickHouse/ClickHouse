@@ -1,0 +1,10 @@
+-- compatibility alone reverts to 0
+0
+-- explicit =1 with compatibility=24.12 (compat first in URL)
+1
+-- explicit =1 with compatibility=24.12 (setting first in URL)
+1
+-- explicit =0 with compatibility=24.12 (not affected by bug)
+0
+-- TCP: explicit =1 with compatibility=24.12
+1

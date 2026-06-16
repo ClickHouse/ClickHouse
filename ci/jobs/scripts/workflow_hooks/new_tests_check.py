@@ -8,7 +8,10 @@ from ci.praktika.info import Info
 def has_new_functional_tests(changed_files):
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        if file.startswith("tests/queries/0_stateless"):
+        # Deleted files are still listed in changed_files; skip them so a PR that
+        # only removes tests does not trigger flaky/bugfix checks that would then
+        # find nothing to run.
+        if file.startswith("tests/queries/0_stateless") and Path(file).is_file():
             return True
     return False
 
@@ -18,8 +21,15 @@ def has_new_integration_tests(changed_files):
         file = file.removeprefix(".").removeprefix("/")
         if (
             file.startswith("tests/integration/test_")
+            # e2e tests (`tests/integration/test_e2e_*`) require external
+            # credentials/backends and are excluded from the default pytest run
+            # via the `e2e` marker, so the flaky/bugfix checks cannot execute
+            # them. Skip them here so a PR that only touches e2e tests does not
+            # trigger a check that would have nothing to run.
+            and not file.startswith("tests/integration/test_e2e_")
             and Path(file).name.startswith("test")
             and file.endswith(".py")
+            and Path(file).is_file()
         ):
             return True
     return False
@@ -28,7 +38,7 @@ def has_new_integration_tests(changed_files):
 def has_new_unit_tests(changed_files):
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        if file.startswith("src") and "/tests/" in file:
+        if file.startswith("src") and "/tests/" in file and Path(file).is_file():
             return True
     return False
 

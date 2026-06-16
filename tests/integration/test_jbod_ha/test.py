@@ -160,13 +160,13 @@ def test_jbod_ha_fetch_partition(start_cluster):
         assert int(node2.query("select count(p) from tbl")) == 10
 
         # Mimic disk recovery, just in case we add more tests later
-        node1.exec_in_container(
+        node2.exec_in_container(
             ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
             privileged=True,
             user="root",
         )
 
-        node1.restart_clickhouse()
+        node2.restart_clickhouse()
 
     finally:
         for node in [node1, node2]:

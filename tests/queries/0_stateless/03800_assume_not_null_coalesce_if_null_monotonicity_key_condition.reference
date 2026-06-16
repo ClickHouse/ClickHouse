@@ -128,7 +128,7 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ts
             Description: minmax GRANULARITY 1
-            Condition: (coalesce(ts, \'0\') in [\'1735689600\', +Inf))
+            Condition: or((ts isNull), (ts in [\'1735689600\', +Inf)))
             Parts: 1/1
             Granules: 5/8
           Ranges: 1
@@ -160,7 +160,7 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ts
             Description: minmax GRANULARITY 1
-            Condition: (ifNull(ts, \'0\') in [\'1735689600\', +Inf))
+            Condition: or((ts isNull), (ts in [\'1735689600\', +Inf)))
             Parts: 1/1
             Granules: 5/8
           Ranges: 1
@@ -222,7 +222,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               ts
-            Condition: (coalesce(ts, \'0\') in (-Inf, \'1735689600\'])
+            Condition: or((ts isNull), (ts in (-Inf, \'1735689600\']))
             Parts: 0/1
             Granules: 0/5
             Search Algorithm: generic exclusion search
@@ -246,7 +246,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               ts
-            Condition: (ifNull(ts, \'0\') in (-Inf, \'1735689600\'])
+            Condition: or((ts isNull), (ts in (-Inf, \'1735689600\']))
             Parts: 0/1
             Granules: 0/5
             Search Algorithm: generic exclusion search
@@ -311,7 +311,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               ts
-            Condition: (coalesce(ts, \'0\') in (-Inf, \'1735689600\'])
+            Condition: or((ts isNull), (ts in (-Inf, \'1735689600\']))
             Parts: 1/1
             Granules: 2/5
             Search Algorithm: generic exclusion search
@@ -336,7 +336,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               ts
-            Condition: (ifNull(ts, \'0\') in (-Inf, \'1735689600\'])
+            Condition: or((ts isNull), (ts in (-Inf, \'1735689600\']))
             Parts: 1/1
             Granules: 2/5
             Search Algorithm: generic exclusion search
@@ -400,7 +400,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               ts
-            Condition: (coalesce(ts, \'0\') in (-Inf, \'1735689600\'])
+            Condition: or((ts isNull), (ts in (-Inf, \'1735689600\']))
             Parts: 1/1
             Granules: 1/5
             Search Algorithm: generic exclusion search
@@ -425,7 +425,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               ts
-            Condition: (ifNull(ts, \'0\') in (-Inf, \'1735689600\'])
+            Condition: or((ts isNull), (ts in (-Inf, \'1735689600\']))
             Parts: 1/1
             Granules: 1/5
             Search Algorithm: generic exclusion search

@@ -4,7 +4,8 @@ import json
 from helpers.iceberg_utils import (
     default_upload_directory,
     get_uuid_str,
-    create_iceberg_table
+    create_iceberg_table,
+    get_creation_expression
 )
 
 
@@ -116,6 +117,57 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY (data, id);"
         )
     )
+
+def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = "demo_event_" + get_uuid_str()
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    spark.sql(
+        f"""
+            CREATE TABLE {table_name}
+            (
+            `#event` STRING NOT NULL ,
+            `#data_lifecycle` STRING NOT NULL,
+            `#time` TIMESTAMP NOT NULL ,
+            `#log_id` STRING NOT NULL ,
+            `#ingest_time` TIMESTAMP )
+            USING iceberg
+            PARTITIONED BY (`#event`, `#time`)
+            TBLPROPERTIES (
+            'identifier-fields' = '[#data_lifecycle,#event,#log_id]',
+            'sort-order' = '#data_lifecycle ASC NULLS FIRST, #event ASC NULLS FIRST, #time ASC NULLS FIRST'
+            )
+        """
+    )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "s3",
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+    )
+
+    table_expr = get_creation_expression("s3", table_name, started_cluster_iceberg_with_spark, table_function=True)
+
+    instance.query(f"SELECT * FROM {table_expr}")
+
+    spark.sql(
+        f"""
+            INSERT INTO {table_name} VALUES
+            ('click', 'active', TIMESTAMP '2024-01-01 00:00:00', 'log1', TIMESTAMP '2024-01-01 00:00:01'),
+            ('view', 'active', TIMESTAMP '2024-01-02 00:00:00', 'log2', NULL)
+        """
+    )
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "s3",
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+    )
+    instance.query(f"SELECT * FROM {table_expr}")
+    spark.sql(f"DROP TABLE {table_name}")
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_read_in_order_with_complex_bucket(started_cluster_iceberg_with_spark,  storage_type):
