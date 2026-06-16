@@ -19,7 +19,6 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
@@ -55,7 +54,7 @@ namespace ErrorCodes
 template <typename T>
 void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    T element;
+    T element{};
     readBinaryLittleEndian<T>(element, in);
     data.emplace_back(std::move(element));
 }
@@ -78,24 +77,30 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
+/// Finalized per-row CRC32C hash of a value of type T (seeded with `WEAK_HASH32_INITIAL_VALUE`).
 template <typename T>
-WeakHash32 ColumnVector<T>::getWeakHash32() const
+static inline UInt32 weakHashValue32(T v) noexcept
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
+    /// `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type; hash its raw bits.
+    if constexpr (std::is_same_v<T, BFloat16>)
+        return static_cast<UInt32>(hashCRC32(v.raw(), WEAK_HASH32_INITIAL_VALUE));
+    else
+        return static_cast<UInt32>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
+}
 
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
-
-    while (begin < end)
-    {
-        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
-    }
-
-    return hash;
+template <typename T>
+void ColumnVector<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
+    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+    if (initial)
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = weakHashValue32(src[i]);
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(weakHashValue32(src[i]), hash_out[i]);
 }
 
 template <typename T>
@@ -245,7 +250,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
@@ -332,11 +337,6 @@ void ColumnVector<T>::compareColumn(
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
-        return;
-    }
-    if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        compareColumnImpl_x86_64_v3<T>(data, value, compare_results, direction, nan_direction_hint);
         return;
     }
 #endif
@@ -597,7 +597,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         if constexpr (std::is_same_v<T, UInt8>)
         {
             /// It's also possible to insert boolean values into UInt8 column.
-            bool boolean_value;
+            bool boolean_value = false;
             if (x.tryGet<bool>(boolean_value))
             {
                 data.push_back(static_cast<T>(boolean_value));
@@ -641,7 +641,7 @@ static inline UInt64 blsr(UInt64 mask)
 
 /// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
 /// Otherwise it returns the special value: 0xFF.
-uint8_t prefixToCopy(UInt64 mask)
+static uint8_t prefixToCopy(UInt64 mask)
 {
     if (mask == 0)
         return 0;
@@ -655,7 +655,7 @@ uint8_t prefixToCopy(UInt64 mask)
     return 0xFF;
 }
 
-uint8_t suffixToCopy(UInt64 mask)
+static uint8_t suffixToCopy(UInt64 mask)
 {
     const auto prefix_to_copy = prefixToCopy(~mask);
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
@@ -961,7 +961,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 namespace
 {
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
 MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
@@ -1030,11 +1030,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
         else
             replicateImpl_x86_64_v4<T, false>(data.data(), size, window_size, offsets, res->getData().data());
-    else if (isArchSupported(TargetArch::x86_64_v3))
-        if (use_window)
-            replicateImpl_x86_64_v3<T, true>(data.data(), size, window_size, offsets, res->getData().data());
-        else
-            replicateImpl_x86_64_v3<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else
 #endif
     {

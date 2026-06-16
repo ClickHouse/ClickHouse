@@ -7,6 +7,7 @@ import time
 import uuid
 from multiprocessing.dummy import Pool
 import pytest
+from minio.deleteobjects import DeleteObject
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
 
@@ -115,6 +116,12 @@ def recreate_minio_bucket(started_cluster, bucket_name):
     minio_client = started_cluster.minio_client
     if minio_client.bucket_exists(bucket_name):
         logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
+        objects = minio_client.list_objects(bucket_name, recursive=True)
+        errors = list(minio_client.remove_objects(
+            bucket_name,
+            [DeleteObject(obj.object_name) for obj in objects],
+        ))
+        assert not errors, f"failed to clear bucket '{bucket_name}': {errors}"
         minio_client.remove_bucket(bucket_name)
     minio_client.make_bucket(bucket_name)
 
@@ -154,6 +161,7 @@ def create_table(
     after_processing="keep",
     move_to_prefix=None,
     move_to_bucket=None,
+    preserve_move_path=False,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -170,6 +178,9 @@ def create_table(
 
     if after_processing == "move":
         assert move_to_prefix or move_to_bucket
+
+        if preserve_move_path:
+            settings["after_processing_move_preserve_path"] = True
 
         if move_to_prefix:
             settings["after_processing_move_prefix"] = move_to_prefix
