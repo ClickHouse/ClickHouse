@@ -1,0 +1,31 @@
+tupleElement only x
+1	Nullable(UInt8)	0
+\N	Nullable(UInt8)	1
+subcolumn n.x
+1	Nullable(UInt8)	0
+\N	Nullable(UInt8)	1
+tupleElement only y
+2	Nullable(UInt8)	0
+\N	Nullable(UInt8)	1
+tupleElement numeric index 2
+2	Nullable(UInt8)	0
+\N	Nullable(UInt8)	1
+both subcolumns
+1	2	Nullable(UInt8)
+\N	\N	Nullable(UInt8)
+create as select stored type
+Nullable(UInt8)
+0
+1
+two nested columns
+1	4	Nullable(UInt8)	Nullable(UInt8)	0
+\N	\N	Nullable(UInt8)	Nullable(UInt8)	1
+select star
+1	2	Nullable(UInt8)
+\N	\N	Nullable(UInt8)
+array_join_use_nulls = 0
+0	UInt8
+1	UInt8
+select star use_nulls=0
+0	0	UInt8
+1	2	UInt8
