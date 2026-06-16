@@ -5,6 +5,9 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -201,6 +204,33 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
     std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
     calculateHashTableCacheKeys(root, cache_keys);
     return cache_keys;
+}
+
+void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+{
+    if (!optimization_settings.collect_hash_table_stats_during_aggregation)
+        return;
+
+    /// Compute every node's bottom-up hash first, then stamp AggregatingStep nodes. The hash is
+    /// computed while all keys are still unset, so it never depends on the key we are about to set.
+    const auto cache_keys = calculateHashTableCacheKeys(root);
+
+    std::vector<QueryPlan::Node *> stack;
+    stack.push_back(&root);
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get()))
+        {
+            if (auto it = cache_keys.find(node); it != cache_keys.end())
+                aggregating_step->setStatsCacheKey(it->second);
+        }
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
 }
 
 }
