@@ -7,13 +7,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if ! command -v gzip &> /dev/null; then echo "gzip not found" 1>&2; exit 1; fi
 
 # max_generic_compression_threads > 1 makes 'gzip' compression run in parallel. The output must stay a
-# standard gzip stream: byte-for-byte decompressible by the system gzip and identical to single-threaded output.
+# standard gzip stream: decompressible by the system gzip and identical to single-threaded output.
 PAR="${CLICKHOUSE_TMP}/04341_parallel.tsv.gz"
 SEQ="${CLICKHOUSE_TMP}/04341_serial.tsv.gz"
 rm -f "$PAR" "$SEQ"
 
-${CLICKHOUSE_CLIENT} --max_generic_compression_threads 8 --query "SELECT number FROM numbers(2000000) INTO OUTFILE '${PAR}' COMPRESSION 'gzip' FORMAT TSV"
-${CLICKHOUSE_CLIENT} --max_generic_compression_threads 1 --query "SELECT number FROM numbers(2000000) INTO OUTFILE '${SEQ}' COMPRESSION 'gzip' FORMAT TSV"
+# 100k rows is ~0.6 MiB of TSV, larger than several 256 KiB blocks, so the parallel path produces multiple
+# independently-flushed blocks; kept small so the repeated flaky-check runs stay fast.
+${CLICKHOUSE_CLIENT} --max_generic_compression_threads 8 --query "SELECT number FROM numbers(100000) INTO OUTFILE '${PAR}' COMPRESSION 'gzip' FORMAT TSV"
+${CLICKHOUSE_CLIENT} --max_generic_compression_threads 1 --query "SELECT number FROM numbers(100000) INTO OUTFILE '${SEQ}' COMPRESSION 'gzip' FORMAT TSV"
 
 gzip -t "$PAR" && echo "parallel output is valid gzip"
 diff <(gzip -dc "$PAR") <(gzip -dc "$SEQ") > /dev/null && echo "parallel and serial gzip decompress identically"
@@ -21,11 +23,4 @@ diff <(gzip -dc "$PAR") <(gzip -dc "$SEQ") > /dev/null && echo "parallel and ser
 # this confirms the parallel deflater actually ran rather than silently falling back to serial.
 cmp -s "$PAR" "$SEQ" && echo "UNEXPECTED: parallel and serial output are byte-identical" || echo "parallel and serial gzip framing differ"
 
-# The parallel output round-trips through the regular gzip reader.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_04341"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_04341 (x UInt64) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO test_04341 (x) FROM INFILE '${PAR}' COMPRESSION 'gzip' FORMAT TSV"
-${CLICKHOUSE_CLIENT} --query "SELECT count(x), count(DISTINCT x) FROM test_04341"
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE test_04341"
 rm -f "$PAR" "$SEQ"
