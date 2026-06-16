@@ -52,6 +52,11 @@ namespace Setting
     extern const SettingsUInt64 s3_upload_part_size_multiply_parts_count_threshold;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+}
+
 namespace ErrorCodes
 {
     extern const int INVALID_SETTING_VALUE;
