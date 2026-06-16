@@ -4,15 +4,16 @@
 -- pipeline, and plan-shape checks for the gates. The cardinality gate reads column uniq
 -- statistics, so keep statistics enabled regardless of any randomized test settings.
 -- no-random-settings: the plan-shape assertions (EXPLAIN ... LIKE '%TopNAggregating%') depend on
--- whether the rewrite fires, which randomized settings (e.g. read-in-order / aggregation plan
--- shape) can suppress; the correctness (optimized == reference) checks are settings-robust.
+-- whether the rewrite fires, which randomized settings can suppress; the correctness
+-- (optimized == reference) checks are settings-robust.
 SET allow_experimental_statistics = 1, allow_statistics_optimize = 1, use_statistics = 1;
 
--- The Mode-1 rewrite is single-node only: under parallel replicas it falls back to the standard
--- pipeline (a documented limitation), so no TopNAggregating step is produced. The stateless-test
--- server profile enables parallel replicas by default, which the `no-parallel-replicas` tag does not
--- reset here; disable it explicitly so the plan-shape assertions below evaluate the single-node plan.
-SET enable_parallel_replicas = 0;
+-- The rewrite is gated off whenever a GROUP BY / sort size limit is set, because the fused path
+-- cannot reproduce the standard pipeline's overflow throw. The stateless-test profile (limits.yaml)
+-- sets max_rows_to_group_by / max_rows_to_sort / max_bytes_to_sort to a high "no-op" value (10G) to
+-- exercise limit-handling code, which trips that gate and suppresses the rewrite. Reset them to 0
+-- (unlimited) so the plan-shape assertions below evaluate the regime where the rewrite applies.
+SET max_rows_to_group_by = 0, max_rows_to_sort = 0, max_bytes_to_sort = 0;
 
 DROP TABLE IF EXISTS t_topn;
 -- ORDER BY start_time makes start_time the first sorting-key column (the ORDER BY aggregate's
