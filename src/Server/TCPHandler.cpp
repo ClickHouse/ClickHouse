@@ -1140,9 +1140,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
             return false;
 
         case Protocol::Client::TablesStatusRequest:
-            if (is_interserver_mode && !is_interserver_authenticated)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "TablesStatusRequest requires interserver authentication");
             processTablesStatusRequest();
             return false;
 
