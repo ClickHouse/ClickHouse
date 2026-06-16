@@ -66,37 +66,15 @@ explain syntax select left_table.id,val_left, val_middle, val_right from left_ta
                                                               inner join right_table on middle_table.id = right_table.id
 ORDER BY left_table.id, val_left, val_middle, val_right;
 SELECT
-    `--left_table.id` AS `left_table.id`,
+    left_table.id,
     val_left,
     val_middle,
     val_right
-FROM
-(
-    SELECT
-        val_left,
-        id AS `--left_table.id`,
-        val_middle,
-        middle_table.id AS `--middle_table.id`
-    FROM left_table
-    FINAL
-    ALL INNER JOIN
-    (
-        SELECT
-            id,
-            val_middle
-        FROM middle_table
-    ) AS middle_table ON `--left_table.id` = `--middle_table.id`
-) AS `--.s`
-ALL INNER JOIN
-(
-    SELECT
-        id,
-        val_right
-    FROM right_table
-    FINAL
-) AS right_table ON `--middle_table.id` = id
+FROM left_table
+ALL INNER JOIN middle_table ON equals(left_table.id, middle_table.id)
+ALL INNER JOIN right_table ON equals(middle_table.id, right_table.id)
 ORDER BY
-    `--left_table.id` ASC,
+    left_table.id ASC,
     val_left ASC,
     val_middle ASC,
     val_right ASC

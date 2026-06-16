@@ -1,6 +1,10 @@
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-fasttest
+-- no-fasttest: Slow test
+-- no sanitizers: too slow sometimes
+
 DROP TABLE IF EXISTS 02581_trips;
 
-CREATE TABLE 02581_trips(id UInt32, id2 UInt32, description String) ENGINE=MergeTree ORDER BY id;
+CREATE TABLE 02581_trips(id UInt32, id2 UInt32, description String) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- Make multiple parts
 INSERT INTO 02581_trips SELECT number, number, '' FROM numbers(10000);

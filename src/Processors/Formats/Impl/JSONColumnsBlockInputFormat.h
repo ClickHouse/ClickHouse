@@ -15,11 +15,14 @@ namespace DB
 class JSONColumnsReader : public JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReader(ReadBuffer & in_);
+    explicit JSONColumnsReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     void readChunkStart() override;
     std::optional<String> readColumnStart() override;
     bool checkChunkEnd() override;
+
+protected:
+    const FormatSettings format_settings;
 };
 
 }

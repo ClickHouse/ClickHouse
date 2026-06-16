@@ -1,15 +1,19 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <city.h>
+#include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <future>
 #include <memory>
 #include <unordered_map>
 #include <vector>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <future>
+#include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/SetKeys.h>
+#include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -18,121 +22,237 @@ class QueryPlan;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
-class InterpreterSelectWithUnionQuery;
+struct SetKeyColumns;
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
+
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+struct Settings;
+
+/// This is a structure for prepared sets cache.
+/// SetPtr can be taken from cache, so we should pass holder for it.
+struct SetAndKey
+{
+    String key;
+    SetPtr set;
+    StoragePtr external_table;
+};
+
+using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
 
 /// Represents a set in a query that might be referenced at analysis time and built later during execution.
 /// Also it can represent a constant set that is ready to use.
 /// At analysis stage the FutureSets are created but not necessarily filled. Then for non-constant sets there
 /// must be an explicit step to build them before they can be used.
-/// FutureSet objects can be stored in PreparedSets and are not intended to be used from multiple threads.
-class FutureSet final
+/// Set may be useful for indexes, in this case special ordered set with stored elements is build inplace.
+class FutureSet
 {
 public:
-    FutureSet() = default;
+    virtual ~FutureSet() = default;
 
-    /// Create FutureSet from an object that will be created in the future.
-    explicit FutureSet(const std::shared_future<SetPtr> & future_set_) : future_set(future_set_) {}
+    /// Returns set if set is ready (created and filled) or nullptr if not.
+    virtual SetPtr get() const = 0;
+    /// Returns set->getElementsTypes(), even if set is not created yet.
+    virtual DataTypes getTypes() const = 0;
+    /// If possible, return set with stored elements useful for PK analysis.
+    virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
-    /// Create FutureSet from a ready set.
-    explicit FutureSet(SetPtr readySet);
+    using Hash = CityHash_v1_0_2::uint128;
+    virtual Hash getHash() const = 0;
 
-    /// The set object will be ready in the future, as opposed to 'null' object  when FutureSet is default constructed.
-    bool isValid() const { return future_set.valid(); }
+    virtual ASTPtr getSourceAST() const = 0;
+};
 
-    /// The the value of SetPtr is ready, but the set object might not have been filled yet.
-    bool isReady() const;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
 
-    /// The set object is ready and filled.
-    bool isCreated() const;
+/// Future set from already filled set.
+/// Usually it is from StorageSet.
+class FutureSetFromStorage final : public FutureSet
+{
+public:
+    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id);
 
-    SetPtr get() const { chassert(isReady()); return future_set.get(); }
+    SetPtr get() const override;
+    DataTypes getTypes() const override;
+    SetPtr buildOrderedSetInplace(const ContextPtr &) override;
+    Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
+
+    const std::optional<StorageID> & getStorageID() const { return storage_id; }
+private:
+    Hash hash;
+    ASTPtr ast;
+    std::optional<StorageID> storage_id;
+    SetPtr set;
+};
+
+using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
+
+/// Set from tuple is filled as well as set from storage.
+/// Additionally, it can be converted to set useful for PK.
+class FutureSetFromTuple final : public FutureSet
+{
+public:
+    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
+
+    SetPtr get() const override { return set; }
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
+
+    DataTypes getTypes() const override;
+    Hash getHash() const override;
+    /// Hash based on actual set element data, computed order-independently so that two IN-clause
+    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
+    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
+    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
+    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
+    /// (see `query_plan_max_set_size_for_projection_match`).
+    Hash getContentHash() const;
+    ASTPtr getSourceAST() const override { return ast; }
+    Columns getKeyColumns() const;
+private:
+    void fillSetElementsOnce() const;
+    Columns getUniqueKeyColumns() const;
+    Hash computeContentHash() const;
+
+    Hash hash;
+    mutable Hash content_hash{};
+    ASTPtr ast;
+    SetPtr set;
+    mutable SetKeyColumns set_key_columns;
+    mutable OnceFlag fill_set_elements_once;
+    mutable OnceFlag content_hash_once;
+};
+
+using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
+
+/// Set from subquery can be filled (by running the subquery) in one of two ways:
+///  1. During query analysis. Specifically, inside `SourceStepWithFilter::applyFilters()`.
+///     Useful if the query plan depends on the set contents, e.g. to determine which files to read.
+///  2. During query execution. This is the preferred way.
+///     Sets are created by CreatingSetStep, which runs before other steps.
+/// Be careful: to build the set during query analysis, the `buildSetInplace()` call must happen
+/// inside `SourceStepWithFilter::applyFilters()`. Calling it later, e.g. from `initializePipeline()`
+/// will result in LOGICAL_ERROR "Not-ready Set is passed" (because a CreatingSetStep was already
+/// added to pipeline but hasn't executed yet).
+///
+/// If use_index_for_in_with_subqueries_max_values is reached, the built set won't be suitable for
+/// key analysis, but will work with function IN (the set will contain only hashes of elements).
+class FutureSetFromSubquery final : public FutureSet
+{
+public:
+    FutureSetFromSubquery(
+        Hash hash_,
+        ASTPtr ast_,
+        std::unique_ptr<QueryPlan> source_,
+        StoragePtr external_table,
+        std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
+
+    FutureSetFromSubquery(
+        Hash hash_,
+        ASTPtr ast_,
+        QueryTreeNodePtr query_tree_,
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
+
+    ~FutureSetFromSubquery() override;
+
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
+
+    SetPtr get() const override;
+    DataTypes getTypes() const override;
+    Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
+
+    std::unique_ptr<QueryPlan> build(
+        const SizeLimits & network_transfer_limits,
+        const PreparedSetsCachePtr & prepared_sets_cache);
+
+    void buildSetInplace(const ContextPtr & context);
+
+    QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
+    void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+
+    void buildExternalTableFromInplaceSet(StoragePtr external_table_);
+    void setExternalTable(StoragePtr external_table_);
+
+    const QueryPlan * getQueryPlan() const { return source.get(); }
+    QueryPlan * getQueryPlan() { return source.get(); }
 
 private:
-    std::shared_future<SetPtr> future_set;
-};
+    Hash hash;
+    ASTPtr ast;
+    SetAndKeyPtr set_and_key;
+    std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
-/// Information on how to build set for the [GLOBAL] IN section.
-class SubqueryForSet
-{
-public:
-
-    void createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
-
-    bool hasSource() const;
-
-    /// Returns query plan for the set's source
-    /// and removes it from SubqueryForSet because we need to build it only once.
-    std::unique_ptr<QueryPlan> detachSource();
-
-    /// Build this set from the result of the subquery.
-    String key;
-    SetPtr set_in_progress;
-    /// After set_in_progress is finished it will be put into promise_to_fill_set and thus all FutureSet's
-    /// that are referencing this set will be filled.
-    std::promise<SetPtr> promise_to_fill_set;
-    FutureSet set = FutureSet{promise_to_fill_set.get_future()};
-
-    /// If set, put the result into the table.
-    /// This is a temporary table for transferring to remote servers for distributed query processing.
-    StoragePtr table;
-
-    /// The source is obtained using the InterpreterSelectQuery subquery.
     std::unique_ptr<QueryPlan> source;
+    QueryTreeNodePtr query_tree;
 };
 
-struct PreparedSetKey
-{
-    /// Prepared sets for tuple literals are indexed by the hash of the tree contents and by the desired
-    /// data types of set elements (two different Sets can be required for two tuples with the same contents
-    /// if left hand sides of the IN operators have different types).
-    static PreparedSetKey forLiteral(const IAST & ast, DataTypes types_);
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
-    /// Prepared sets for subqueries are indexed only by the AST contents because the type of the resulting
-    /// set is fully determined by the subquery.
-    static PreparedSetKey forSubquery(const IAST & ast);
-
-    IAST::Hash ast_hash;
-    DataTypes types; /// Empty for subqueries.
-
-    bool operator==(const PreparedSetKey & other) const;
-
-    String toString() const;
-
-    struct Hash
-    {
-        UInt64 operator()(const PreparedSetKey & key) const { return key.ast_hash.first; }
-    };
-};
-
+/// Container for all the sets used in query.
 class PreparedSets
 {
 public:
-    using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
-    SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
-                                         SizeLimits set_size_limit, bool transform_null_in);
-    SubqueryForSet & getSubquery(const String & subquery_id);
+    using Hash = CityHash_v1_0_2::uint128;
+    struct Hashing
+    {
+        UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
+    };
 
-    void set(const PreparedSetKey & key, SetPtr set_);
-    FutureSet getFuture(const PreparedSetKey & key) const;
-    SetPtr get(const PreparedSetKey & key) const;
+    using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
+    using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
+    using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    /// Get subqueries and clear them.
-    /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
-    /// SetPtr would still be available for consumers of PreparedSets.
-    SubqueriesForSets detachSubqueries();
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
 
-    /// Returns all sets that match the given ast hash not checking types
-    /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey
-    std::vector<FutureSet> getByTreeHash(IAST::Hash ast_hash) const;
+    FutureSetFromSubqueryPtr addFromSubquery(
+        const Hash & key,
+        ASTPtr ast,
+        std::unique_ptr<QueryPlan> source,
+        StoragePtr external_table,
+        FutureSetFromSubqueryPtr external_table_set,
+        const Settings & settings);
 
-    bool empty() const;
+    FutureSetFromSubqueryPtr addFromSubquery(
+        const Hash & key,
+        ASTPtr ast,
+        QueryTreeNodePtr query_tree,
+        const Settings & settings);
+
+    FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
+    FutureSetFromStoragePtr findStorage(const Hash & key) const;
+    FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
+
+    using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
+    Subqueries getSubqueries() const;
+    bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
+
+    const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
+    // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
+    // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
+
+    static String toString(const Hash & key, const DataTypes & types);
+    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
 private:
-    std::unordered_map<PreparedSetKey, FutureSet, PreparedSetKey::Hash> sets;
-
-    /// This is the information required for building sets
-    SubqueriesForSets subqueries;
+    SetsFromTuple sets_from_tuple;
+    SetsFromStorage sets_from_storage;
+    SetsFromSubqueries sets_from_subqueries;
 };
 
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;

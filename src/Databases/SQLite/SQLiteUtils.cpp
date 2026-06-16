@@ -1,7 +1,8 @@
-#include "SQLiteUtils.h"
+#include <Databases/SQLite/SQLiteUtils.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -16,20 +17,20 @@ namespace ErrorCodes
 
 static std::mutex init_sqlite_db_mutex;
 
-void processSQLiteError(const String & message, bool throw_on_error)
+static void processSQLiteError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
         throw Exception::createDeprecated(message, ErrorCodes::PATH_ACCESS_DENIED);
-    else
-        LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), fmt::runtime(message));
+    LOG_ERROR(getLogger("SQLiteEngine"), fmt::runtime(message));
 }
 
-String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
+static String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
 {
-    if (fs::path(path).is_relative())
-        return fs::absolute(fs::path(user_files_path) / path).lexically_normal();
-
     String absolute_path = fs::absolute(path).lexically_normal();
+
+    if (fs::path(path).is_relative())
+        absolute_path = fs::absolute(fs::path(user_files_path) / path).lexically_normal();
+
     String absolute_user_files_path = fs::absolute(user_files_path).lexically_normal();
 
     if (need_check && !absolute_path.starts_with(absolute_user_files_path))
@@ -53,10 +54,10 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         return nullptr;
 
     if (!fs::exists(database_path))
-        LOG_DEBUG(&Poco::Logger::get("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
+        LOG_DEBUG(getLogger("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status;
+    int status = 0;
     {
         std::lock_guard lock(init_sqlite_db_mutex);
         status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);

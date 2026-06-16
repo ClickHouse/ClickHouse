@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 
 namespace DB
@@ -12,8 +13,9 @@ void registerWithNamesAndTypes(const std::string & base_format_name, RegisterWit
 
 void markFormatWithNamesAndTypesSupportsSamplingColumns(const std::string & base_format_name, FormatFactory & factory)
 {
-    factory.markFormatSupportsSubsetOfColumns(base_format_name + "WithNames");
-    factory.markFormatSupportsSubsetOfColumns(base_format_name + "WithNamesAndTypes");
+    auto setting_checker = [](const FormatSettings & settings){ return settings.with_names_use_header; };
+    factory.registerSubsetOfColumnsSupportChecker(base_format_name + "WithNames", setting_checker);
+    factory.registerSubsetOfColumnsSupportChecker(base_format_name + "WithNamesAndTypes", setting_checker);
 }
 
 }

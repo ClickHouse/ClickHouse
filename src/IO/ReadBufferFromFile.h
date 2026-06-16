@@ -53,6 +53,8 @@ public:
     }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
+
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 };
 
 
@@ -103,6 +105,8 @@ public:
     {
         return file_name;
     }
+
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 };
 
 }

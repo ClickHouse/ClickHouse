@@ -1,5 +1,5 @@
 drop table if exists test_table;
-CREATE TABLE test_table (string_value String) ENGINE = MergeTree ORDER BY string_value;
+CREATE TABLE test_table (string_value String) ENGINE = MergeTree ORDER BY string_value SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 system stop merges test_table;
 insert into test_table select * from (
 	select 'test_value_1'
@@ -16,7 +16,8 @@ select distinct
 from (
     select string_value
     from test_table
-);
+)
+order by all;
 
 select distinct
  'constant_1' as constant_value, *

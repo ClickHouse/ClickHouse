@@ -6,7 +6,6 @@
 
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <msgpack.hpp>
 #include <stack>
@@ -19,7 +18,7 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
-    MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+    explicit MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
 
     struct Info
     {
@@ -61,21 +60,26 @@ private:
     bool null_as_default;
 };
 
-class MsgPackRowInputFormat : public IRowInputFormat
+class MsgPackRowInputFormat final : public IRowInputFormat
 {
 public:
-    MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
+    MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
-    String getName() const override { return "MagPackRowInputFormat"; }
+    String getName() const override { return "MsgPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
-    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
+    MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    bool readObject();
+    template <typename Parser>
+    bool readObject(Parser & msgpack_parser);
+
+    size_t countRows(size_t max_block_size) override;
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;
@@ -83,7 +87,7 @@ private:
     const DataTypes data_types;
 };
 
-class MsgPackSchemaReader : public IRowSchemaReader
+class MsgPackSchemaReader final : public IRowSchemaReader
 {
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
@@ -91,7 +95,7 @@ public:
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object);
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     UInt64 number_of_columns;

@@ -1,17 +1,21 @@
 #include "config.h"
+#include <Common/Config/YAMLParser.h>
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_PARSE_YAML;
+}
 
 #if USE_YAML_CPP
-#include "YAMLParser.h"
 
-#include <vector>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/Element.h>
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/DOM/Text.h>
-#include <Common/Exception.h>
 
 #include <yaml-cpp/yaml.h>
 
@@ -19,12 +23,6 @@ using namespace Poco::XML;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_PARSE_YAML;
-}
 
 namespace
 {
@@ -110,9 +108,23 @@ namespace
                     }
                     else
                     {
-                        Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
-                        parent_xml_node.appendChild(xml_key);
-                        processNode(value_node, *xml_key);
+                        if (key == "#text" && value_node.IsScalar())
+                        {
+                            for (Node * child_node = parent_xml_node.firstChild(); child_node; child_node = child_node->nextSibling())
+                                if (child_node->nodeType() == Node::TEXT_NODE)
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                                                    "YAMLParser has encountered node with several text nodes "
+                                                    "and cannot continue parsing of the file");
+                            std::string value = value_node.as<std::string>();
+                            Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
+                            parent_xml_node.appendChild(xml_value);
+                        }
+                        else
+                        {
+                            Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
+                            parent_xml_node.appendChild(xml_key);
+                            processNode(value_node, *xml_key);
+                        }
                     }
                 }
                 break;
@@ -164,4 +176,16 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
 }
 
 }
+#else
+
+namespace DB
+{
+
+Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
+{
+    throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {} without usage of yaml-cpp library", path);
+}
+
+}
+
 #endif

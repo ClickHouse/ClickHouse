@@ -21,6 +21,10 @@ function perform()
 
 perform "select" "SELECT 1, 2, 3 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_select.out'"
 
+perform "select_with_append" "SELECT 1, 2, 3 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_select_with_append.out' APPEND"
+
+perform "select_with_truncate" "SELECT 1, 2, 3 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_select_with_truncate.out' TRUNCATE"
+
 perform "union_all" "SELECT 1, 2 UNION ALL SELECT 3, 4 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_union_all.out' FORMAT TSV" | sort --numeric-sort
 
 perform "bad_union_all" "SELECT 1, 2 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_bad_union_all.out' UNION ALL SELECT 3, 4"

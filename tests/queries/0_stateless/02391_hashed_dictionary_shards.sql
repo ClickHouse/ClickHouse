@@ -89,7 +89,7 @@ SOURCE(CLICKHOUSE(TABLE test_table_string))
 LAYOUT(SPARSE_HASHED(SHARDS 10))
 LIFETIME(0);
 
-SYSTEM RELOAD DICTIONARY test_dictionary_10_shards_string; -- { serverError CANNOT_PARSE_TEXT }
+SYSTEM RELOAD DICTIONARY test_dictionary_10_shards_string;
 
 DROP DICTIONARY test_dictionary_10_shards_string;
 

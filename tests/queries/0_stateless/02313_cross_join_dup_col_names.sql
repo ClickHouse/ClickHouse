@@ -1,4 +1,3 @@
--- Tags: no-upgrade-check
 
 -- https://github.com/ClickHouse/ClickHouse/issues/37561
 

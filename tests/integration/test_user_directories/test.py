@@ -1,6 +1,7 @@
 import os
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -38,15 +39,15 @@ def test_old_style():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users.xml",
-                "users.xml",
-                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users2.xml"}',
+                "local_directory",
+                "local_directory",
+                '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access2\\\\/"}',
                 1,
             ],
             [
-                "local directory",
-                "local directory",
-                '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access2\\\\/"}',
+                "users_xml",
+                "users_xml",
+                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users2.xml"}',
                 2,
             ],
         ]
@@ -62,20 +63,20 @@ def test_local_directories():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users.xml",
-                "users.xml",
+                "users_xml",
+                "users_xml",
                 '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users3.xml"}',
                 1,
             ],
             [
-                "local directory",
-                "local directory",
+                "local_directory",
+                "local_directory",
                 '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access3\\\\/"}',
                 2,
             ],
             [
                 "local directory (ro)",
-                "local directory",
+                "local_directory",
                 '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access3-ro\\\\/","readonly":true}',
                 3,
             ],
@@ -92,8 +93,8 @@ def test_relative_path():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users.xml",
-                "users.xml",
+                "users_xml",
+                "users_xml",
                 '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users4.xml"}',
                 1,
             ]
@@ -110,8 +111,8 @@ def test_memory():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users.xml",
-                "users.xml",
+                "users_xml",
+                "users_xml",
                 '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users5.xml"}',
                 1,
             ],
@@ -129,20 +130,20 @@ def test_mixed_style():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users.xml",
-                "users.xml",
-                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users6.xml"}',
+                "local_directory",
+                "local_directory",
+                '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access6\\\\/"}',
                 1,
             ],
             [
-                "local directory",
-                "local directory",
-                '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access6\\\\/"}',
+                "users_xml",
+                "users_xml",
+                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users6.xml"}',
                 2,
             ],
             [
-                "local directory",
-                "local directory",
+                "local_directory",
+                "local_directory",
                 '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access6a\\\\/"}',
                 3,
             ],
@@ -160,15 +161,15 @@ def test_duplicates():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users.xml",
-                "users.xml",
-                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users7.xml"}',
+                "local_directory",
+                "local_directory",
+                '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access7\\\\/"}',
                 1,
             ],
             [
-                "local directory",
-                "local directory",
-                '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access7\\\\/"}',
+                "users_xml",
+                "users_xml",
+                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users7.xml"}',
                 2,
             ],
         ]

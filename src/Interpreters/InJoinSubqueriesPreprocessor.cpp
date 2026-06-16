@@ -1,6 +1,7 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/StorageDistributed.h>
@@ -10,10 +11,16 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
@@ -65,7 +72,7 @@ struct NonGlobalTableData : public WithContext
 private:
     void renameIfNeeded(ASTPtr & database_and_table)
     {
-        const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef().distributed_product_mode;
+        const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef()[Setting::distributed_product_mode];
 
         StoragePtr storage = tryGetTable(database_and_table, getContext());
         if (!storage || !checker.hasAtLeastTwoShards(*storage))
@@ -88,7 +95,7 @@ private:
             renamed_tables.emplace_back(identifier.clone());
             identifier.resetTable(database, table);
         }
-        else if (getContext()->getSettingsRef().prefer_global_in_and_join || distributed_product_mode == DistributedProductMode::GLOBAL)
+        else if (getContext()->getSettingsRef()[Setting::prefer_global_in_and_join] || distributed_product_mode == DistributedProductMode::GLOBAL)
         {
             if (function)
             {
@@ -103,12 +110,12 @@ private:
                     /// Already processed.
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected function name {}", concrete->name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name {}", concrete->name);
             }
             else if (table_join)
                 table_join->locality = JoinLocality::Global;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected AST node");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST node");
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
@@ -232,7 +239,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
     if (!query || !query->tables())
         return;
 
-    if (getContext()->getSettingsRef().distributed_product_mode == DistributedProductMode::ALLOW)
+    if (getContext()->getSettingsRef()[Setting::distributed_product_mode] == DistributedProductMode::ALLOW)
         return;
 
     const auto & tables_in_select_query = query->tables()->as<ASTTablesInSelectQuery &>();

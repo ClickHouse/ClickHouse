@@ -19,15 +19,20 @@
 #include <memory>
 #include <utility>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
 template <typename Point>
-class FunctionPolygonsEquals : public IFunction
+class FunctionPolygonsEquals final : public IFunction
 {
 public:
     static const char * name;
@@ -55,6 +60,11 @@ public:
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -103,14 +113,39 @@ public:
     }
 };
 
-
 template <>
 const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
 
+}
 
 REGISTER_FUNCTION(PolygonsEquals)
 {
-    factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>();
+    FunctionDocumentation::Description description = R"(
+Returns true if two polygons are equal.
+    )";
+    FunctionDocumentation::Syntax syntax = "polygonsEqualsCartesian(polygon1, polygon2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"polygon1", "The first Polygon.", {"Polygon"}},
+        {"polygon2", "The second Polygon.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if equal, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Equality check example",
+        R"(
+SELECT polygonsEqualsCartesian([[[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+        )",
+        R"(
+1
+    )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>(function_documentation);
 }
 
 }

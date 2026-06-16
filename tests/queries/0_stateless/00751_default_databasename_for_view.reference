@@ -1,4 +1,4 @@
-CREATE MATERIALIZED VIEW test_00751.t_mv_00751
+CREATE MATERIALIZED VIEW default.t_mv_00751
 (
     `date` Date,
     `platform` Enum8('a' = 0, 'b' = 1),
@@ -6,19 +6,19 @@ CREATE MATERIALIZED VIEW test_00751.t_mv_00751
 )
 ENGINE = MergeTree
 ORDER BY date
-SETTINGS index_granularity = 8192 AS
-SELECT
+SETTINGS index_granularity = 8192
+AS SELECT
     date,
     platform,
     app
-FROM test_00751.t_00751
+FROM default.t_00751
 WHERE (app = (
     SELECT min(app)
-    FROM test_00751.u_00751
+    FROM default.u_00751
 )) AND (platform = (
     SELECT (
             SELECT min(platform)
-            FROM test_00751.v_00751
+            FROM default.v_00751
         )
 ))
 2000-01-01	a	a

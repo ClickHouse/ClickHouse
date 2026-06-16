@@ -1,28 +1,70 @@
+#include <Analyzer/TableFunctionNode.h>
+#include <Core/Block_fwd.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionExplain.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/Context.h>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
-std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
+namespace
+{
+
+class TableFunctionExplain : public ITableFunction
+{
+public:
+    static constexpr auto name = "viewExplain";
+
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageEngineName() const override
+    {
+        /// No underlying storage engine
+        return "";
+    }
+
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    InterpreterExplainQuery getInterpreter(ContextPtr context) const;
+
+    ASTPtr query = nullptr;
+};
+
+VectorWithMemoryTracking<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
@@ -34,7 +76,7 @@ std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTr
     return {};
 }
 
-void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
@@ -51,36 +93,50 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!kind_literal || kind_literal->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
-            getName(), queryToString(kind_arg));
+            getName(), kind_arg->formatForErrorMessage());
 
-    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.get<String>());
-    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
+    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a serialized string settings argument, got '{}'",
-            getName(), queryToString(function->arguments->children[1]));
+            getName(), function->arguments->children[1]->formatForErrorMessage());
 
-    const auto & settings_str = settings_arg->value.get<String>();
+    const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
     {
-        constexpr UInt64 max_size = 4096;
-        constexpr UInt64 max_depth = 16;
+        const Settings & settings = context->getSettingsRef();
 
         /// parse_only_internals_ = true - we don't want to parse `SET` keyword
         ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
-        ASTPtr settings_ast = parseQuery(settings_parser, settings_str, max_size, max_depth);
+        ASTPtr settings_ast = parseQuery(
+            settings_parser, settings_str, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         explain_query->setSettings(std::move(settings_ast));
     }
 
     if (function->arguments->children.size() > 2)
     {
-        const auto & query_arg = function->arguments->children[2];
+        const auto & subquery_arg = function->arguments->children[2];
+        const auto * subquery = subquery_arg->as<ASTSubquery>();
+
+        if (!subquery)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function '{}' requires a subquery argument, got '{}'",
+                getName(), subquery_arg->formatForErrorMessage());
+
+        if (subquery->children.empty())
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                "A subquery AST element must have a child");
+
+        const auto & query_arg = subquery->children[0];
+
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}' requires a EXPLAIN SELECT query argument, got EXPLAIN '{}'",
-                getName(), queryToString(query_arg));
+                "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
+                getName(), query_arg->formatForErrorMessage());
+
         explain_query->setExplainedQuery(query_arg);
     }
     else if (kind != ASTExplainQuery::ExplainKind::CurrentTransaction)
@@ -91,22 +147,22 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     query = std::move(explain_query);
 }
 
-ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
+    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind()); /// NOLINT(readability-static-accessed-through-instance)
     ColumnsDescription columns_description;
     for (const auto & column : sample_block.getColumnsWithTypeAndName())
         columns_description.add(ColumnDescription(column.name, column.type));
     return columns_description;
 }
 
-static Block executeMonoBlock(QueryPipeline & pipeline)
+Block executeMonoBlock(QueryPipeline & pipeline)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
 
     PullingPipelineExecutor pulling_executor(pipeline);
-    std::vector<Block> blocks;
+    Blocks blocks;
     while (true)
     {
         Block block;
@@ -116,14 +172,11 @@ static Block executeMonoBlock(QueryPipeline & pipeline)
             break;
     }
 
-    if (blocks.size() == 1)
-        return blocks[0];
-
     return concatenateBlocks(blocks);
 }
 
 StoragePtr TableFunctionExplain::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     /// To support settings inside explain subquery.
     auto mutable_context = Context::createCopy(context);
@@ -132,7 +185,7 @@ StoragePtr TableFunctionExplain::executeImpl(
     Block block = executeMonoBlock(blockio.pipeline);
 
     StorageID storage_id(getDatabaseName(), table_name);
-    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context), std::move(block));
+    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context, is_insert_query), std::move(block));
     storage->startup();
     return storage;
 }
@@ -142,12 +195,14 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
     if (!query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' requires a explain query argument", getName());
 
-    return InterpreterExplainQuery(query, context);
+    return InterpreterExplainQuery(query, context, SelectQueryOptions{});
+}
+
 }
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({.documentation = {
+    factory.registerFunction<TableFunctionExplain>({
             .description=R"(
                 Returns result of EXPLAIN query.
                 The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
@@ -155,8 +210,9 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
-        }});
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        });
 }
 
 }

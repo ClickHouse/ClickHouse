@@ -5,7 +5,7 @@
 using namespace DB::GatherUtils;
 
 
-auto uni_int_dist(int min, int max)
+static auto uni_int_dist(int min, int max)
 {
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -32,7 +32,7 @@ void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_element
     }
 }
 
-void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
+static void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
 {
     /// -2 to keep the last element of the array non-null
     auto [dist, gen] = uni_int_dist(0, static_cast<int>(null_map_size - 2));
@@ -52,7 +52,8 @@ bool testHasAll(size_t nb_elements_to_have, size_t array_size, bool with_null_ma
     auto array_elements = std::make_unique<T[]>(array_size);
     auto elements_to_have = std::make_unique<T[]>(nb_elements_to_have);
 
-    std::unique_ptr<UInt8[]> first_nm = nullptr, second_nm = nullptr;
+    std::unique_ptr<UInt8[]> first_nm = nullptr;
+    std::unique_ptr<UInt8[]> second_nm = nullptr;
     if (with_null_maps)
     {
         first_nm = std::make_unique<UInt8[]>(array_size);

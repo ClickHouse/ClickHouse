@@ -41,6 +41,7 @@
                 <min_session_timeout_ms>10000</min_session_timeout_ms>
                 <session_timeout_ms>100000</session_timeout_ms>
                 <raft_logs_level>information</raft_logs_level>
+                <compress_logs>false</compress_logs>
                 <!-- All settings listed in https://github.com/ClickHouse/ClickHouse/blob/master/src/Coordination/CoordinationSettings.h -->
             </coordination_settings>
 
@@ -65,14 +66,14 @@
       <server>
             <!-- Used for secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <certificateFile>/etc/clickhouse-keeper/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-keeper/server.key</privateKeyFile>
+            <!-- <certificateFile>/etc/clickhouse-keeper/server.crt</certificateFile> -->
+            <!-- <privateKeyFile>/etc/clickhouse-keeper/server.key</privateKeyFile> -->
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-keeper/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
-            <dhParamsFile>/etc/clickhouse-keeper/dhparam.pem</dhParamsFile>
+            <!-- <dhParamsFile>/etc/clickhouse-keeper/dhparam.pem</dhParamsFile> -->
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>

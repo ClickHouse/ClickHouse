@@ -30,7 +30,6 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 }
 
 
-#include <sys/select.h>
 #include <stdlib.h>
 #include <features.h>
 
@@ -426,6 +425,14 @@ int posix_spawn_file_actions_destroy(posix_spawn_file_actions_t *fa) {
 		op = next;
 	}
 	return 0;
+}
+
+/// gettid was added in glibc 2.30. Use the raw syscall for compatibility with older systems.
+/// Rust's standard library (since ~nightly-2026) references gettid as a weak symbol;
+/// providing it here prevents pulling in GLIBC_2.30.
+pid_t gettid(void)
+{
+    return syscall(__NR_gettid);
 }
 
 #if defined (__cplusplus)

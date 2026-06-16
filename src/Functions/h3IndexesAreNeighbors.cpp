@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -8,9 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -23,12 +20,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3IndexesAreNeighbors : public IFunction
+class FunctionH3IndexesAreNeighbors final : public IFunction
 {
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IndexesAreNeighbors>(); }
+    H3Validator validator;
+
+    explicit FunctionH3IndexesAreNeighbors(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3IndexesAreNeighbors>(context); }
 
     std::string getName() const override { return name; }
 
@@ -52,6 +53,11 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arg->getName(), 2, getName());
 
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -91,8 +97,14 @@ public:
         {
             const UInt64 hindex_origin = data_hindex_origin[row];
             const UInt64 hindex_dest = data_hindex_dest[row];
+            UInt8 res = 0;
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            if (validator.validateCell(hindex_origin) && validator.validateCell(hindex_dest))
+            {
+                int are_neighbors = 0;
+                if (!areNeighborCells(hindex_origin, hindex_dest, &are_neighbors))
+                    res = static_cast<UInt8>(are_neighbors);
+            }
 
             dst_data[row] = res;
         }
@@ -105,7 +117,33 @@ public:
 
 REGISTER_FUNCTION(H3IndexesAreNeighbors)
 {
-    factory.registerFunction<FunctionH3IndexesAreNeighbors>();
+    FunctionDocumentation::Description description = R"(
+Returns whether or not the provided [H3](#h3-index) indexes are neighbors.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3IndexesAreNeighbors(index1, index2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index1", "First H3 index.", {"UInt64"}},
+        {"index2", "Second H3 index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the indexes are neighbors (sharing an edge), `0` otherwise.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Check if two H3 indexes are neighbors",
+            "SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n",
+            R"(
+┌─n─┐
+│ 1 │
+└───┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3IndexesAreNeighbors>(documentation);
 }
 
 }

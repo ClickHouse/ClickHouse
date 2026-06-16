@@ -12,7 +12,11 @@ $CLICKHOUSE_CLIENT -q "insert into src values (0)"
 
 function thread()
 {
+    local TIMELIMIT=$((SECONDS+$1))
     for i in $(seq 1000); do
+        if [ $SECONDS -ge "$TIMELIMIT" ]; then
+            return
+        fi
         $CLICKHOUSE_CLIENT -q "alter table src detach partition tuple()"
         $CLICKHOUSE_CLIENT -q "alter table src attach partition tuple()"
         $CLICKHOUSE_CLIENT -q "alter table src update A = ${i} where 1 settings mutations_sync=2"
@@ -20,8 +24,6 @@ function thread()
     done
 }
 
-export -f thread;
-
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c thread || true
+thread $TIMEOUT || true

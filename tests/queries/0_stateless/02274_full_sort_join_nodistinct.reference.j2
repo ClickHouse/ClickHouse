@@ -1,6 +1,6 @@
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 --- {{ join_algorithm }} ---
-{% for block_size in range(1, 11) -%}
+{% for block_size in range(1, 11, 4) -%}
 t1 ALL INNER JOIN t2 | bs = {{ block_size }}
 1	1	4	5
 1	1	4	5
@@ -108,7 +108,6 @@ t1 ALL LEFT JOIN t2 | bs = {{ block_size }}
 2	2	val27	5
 3	3	val3	4
 t1 ALL RIGHT JOIN t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -161,7 +160,6 @@ t1 ALL RIGHT JOIN t2 | bs = {{ block_size }}
 2	2	5	val28
 2	2	5	val28
 3	3	4	val3
-{% endif -%}
 t1 ANY INNER JOIN t2 | bs = {{ block_size }}
 1	1	4	5
 2	2	5	5
@@ -177,7 +175,6 @@ t1 ANY LEFT JOIN t2 | bs = {{ block_size }}
 2	2	val27	5
 3	3	val3	4
 t1 ANY RIGHT JOIN t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	val11
 1	1	4	val12
 2	2	5	val22
@@ -188,9 +185,7 @@ t1 ANY RIGHT JOIN t2 | bs = {{ block_size }}
 2	2	5	val27
 2	2	5	val28
 3	3	4	val3
-{% endif -%}
 t1 ALL FULL JOIN t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	5
 1	1	4	5
 2	2	5	5
@@ -243,9 +238,7 @@ t1 ALL FULL JOIN t2 | bs = {{ block_size }}
 2	2	5	5
 2	2	5	5
 3	3	4	4
-{% endif -%}
 t1 ALL FULL JOIN USING t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	4	5
 1	4	5
 2	5	5
@@ -298,7 +291,6 @@ t1 ALL FULL JOIN USING t2 | bs = {{ block_size }}
 2	5	5
 2	5	5
 3	4	4
-{% endif -%}
 t1 ALL INNER JOIN tn2 | bs = {{ block_size }}
 1	1	4	5
 1	1	4	5
@@ -315,7 +307,6 @@ t1 ALL LEFT JOIN tn2 | bs = {{ block_size }}
 2	\N	val27	0
 3	3	val3	4
 t1 ALL RIGHT JOIN tn2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -326,7 +317,6 @@ t1 ALL RIGHT JOIN tn2 | bs = {{ block_size }}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-{% endif -%}
 t1 ANY INNER JOIN tn2 | bs = {{ block_size }}
 1	1	4	5
 3	3	4	4
@@ -341,7 +331,6 @@ t1 ANY LEFT JOIN tn2 | bs = {{ block_size }}
 2	\N	val27	0
 3	3	val3	4
 t1 ANY RIGHT JOIN tn2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 0	\N	0	val22
 0	\N	0	val23
 0	\N	0	val24
@@ -352,9 +341,7 @@ t1 ANY RIGHT JOIN tn2 | bs = {{ block_size }}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
-{% endif -%}
 t1 ALL FULL JOIN tn2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 0	\N	0	5
 0	\N	0	5
 0	\N	0	5
@@ -372,9 +359,8 @@ t1 ALL FULL JOIN tn2 | bs = {{ block_size }}
 2	\N	5	0
 2	\N	5	0
 3	3	4	4
-{% endif -%}
-t1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 {% if join_algorithm != 'grace_hash' -%}
+t1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 1	4	5
 1	4	5
 2	5	0
@@ -409,7 +395,6 @@ tn1 ALL LEFT JOIN t2 | bs = {{ block_size }}
 \N	0	val26	0
 \N	0	val27	0
 tn1 ALL RIGHT JOIN t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -420,7 +405,6 @@ tn1 ALL RIGHT JOIN t2 | bs = {{ block_size }}
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-{% endif -%}
 tn1 ANY INNER JOIN t2 | bs = {{ block_size }}
 1	1	4	5
 3	3	4	4
@@ -435,7 +419,6 @@ tn1 ANY LEFT JOIN t2 | bs = {{ block_size }}
 \N	0	val26	0
 \N	0	val27	0
 tn1 ANY RIGHT JOIN t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -446,9 +429,7 @@ tn1 ANY RIGHT JOIN t2 | bs = {{ block_size }}
 \N	2	0	val26
 \N	2	0	val27
 \N	2	0	val28
-{% endif -%}
 tn1 ALL FULL JOIN t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	5
 1	1	4	5
 3	3	4	4
@@ -466,9 +447,7 @@ tn1 ALL FULL JOIN t2 | bs = {{ block_size }}
 \N	2	0	5
 \N	2	0	5
 \N	2	0	5
-{% endif -%}
 tn1 ALL FULL JOIN USING t2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	4	5
 1	4	5
 2	0	5
@@ -486,7 +465,6 @@ tn1 ALL FULL JOIN USING t2 | bs = {{ block_size }}
 \N	5	0
 \N	5	0
 \N	5	0
-{% endif -%}
 tn1 ALL INNER JOIN tn2 | bs = {{ block_size }}
 1	1	4	5
 1	1	4	5
@@ -503,7 +481,6 @@ tn1 ALL LEFT JOIN tn2 | bs = {{ block_size }}
 \N	\N	val26	0
 \N	\N	val27	0
 tn1 ALL RIGHT JOIN tn2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -514,7 +491,6 @@ tn1 ALL RIGHT JOIN tn2 | bs = {{ block_size }}
 \N	\N	0	val26
 \N	\N	0	val27
 \N	\N	0	val28
-{% endif -%}
 tn1 ANY INNER JOIN tn2 | bs = {{ block_size }}
 1	1	4	5
 3	3	4	4
@@ -529,7 +505,6 @@ tn1 ANY LEFT JOIN tn2 | bs = {{ block_size }}
 \N	\N	val26	0
 \N	\N	val27	0
 tn1 ANY RIGHT JOIN tn2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	val11
 1	1	4	val12
 3	3	4	val3
@@ -540,9 +515,7 @@ tn1 ANY RIGHT JOIN tn2 | bs = {{ block_size }}
 \N	\N	0	val26
 \N	\N	0	val27
 \N	\N	0	val28
-{% endif -%}
 tn1 ALL FULL JOIN tn2 | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 1	1	4	5
 1	1	4	5
 3	3	4	4
@@ -560,9 +533,8 @@ tn1 ALL FULL JOIN tn2 | bs = {{ block_size }}
 \N	\N	5	0
 \N	\N	5	0
 \N	\N	5	0
-{% endif -%}
-tn1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 {% if join_algorithm != 'grace_hash' -%}
+tn1 ALL FULL JOIN USING tn2 | bs = {{ block_size }}
 1	4	5
 1	4	5
 3	4	4

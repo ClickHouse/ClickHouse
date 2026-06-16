@@ -1,0 +1,105 @@
+-- constant index value
+1	c	['A',NULL,'C']
+-- array_length()
+true
+true
+-- array_sum()
+-- array_index_of()
+3
+1
+-- array_iif()
+[1,5,3]
+[1,5,3]
+[1,5,NULL]
+-- array_concat()
+[1,2,3,4,5,6]
+-- array_reverse()
+[]
+[1]
+[4,3,2,1]
+['example','an','is','this']
+-- array_rotate_left()
+[]
+[]
+[]
+[3,4,5,1,2]
+[1,2,3,4,5]
+[3,4,5,1,2]
+[4,5,1,2,3]
+[1,2,3,4,5]
+[4,5,1,2,3]
+-- array_rotate_right()
+[]
+[]
+[]
+[4,5,1,2,3]
+[1,2,3,4,5]
+[4,5,1,2,3]
+[3,4,5,1,2]
+[1,2,3,4,5]
+[3,4,5,1,2]
+-- array_shift_left()
+[]
+[]
+[]
+[3,4,5,NULL,NULL]
+[NULL,NULL,1,2,3]
+[3,4,5,-1,-1]
+['c',NULL,NULL]
+-- array_shift_right()
+[]
+[]
+[]
+[3,4,5,NULL,NULL]
+[NULL,NULL,1,2,3]
+[3,4,5,-1,-1]
+['c',NULL,NULL]
+-- array_slice()
+[3,4]
+-- array_split()
+[[1,2],[3,4,5]]
+-- array_sort_asc()
+(['George','John','Paul','Ringo'])
+-- array_sort_desc()
+(['Ringo','Paul','John','George'])
+-- jaccard_index()
+0.75
+0
+0
+nan
+0
+0.75
+0.25
+-- pack_array()
+1	2	4	[1,2,4]
+['ab','0.0.0.42','4.2']
+-- repeat()
+[]
+[1,1,1]
+['asd','asd','asd']
+[86400,86400,86400]
+[true,true,true]
+[NULL]
+[NULL]
+-- set_difference()
+[]
+[]
+[]
+[]
+[4]
+-- set_has_element()
+0
+1
+0
+1
+0
+-- set_intersect()
+[]
+[]
+[5]
+[]
+['a']
+['Darth Vader']
+-- set_union()
+[]
+-- zip()

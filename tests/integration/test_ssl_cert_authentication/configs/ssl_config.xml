@@ -25,12 +25,9 @@
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
-            <!-- Use for self-signed: <verificationMode>none</verificationMode> -->
             <invalidCertificateHandler>
-                <!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
                 <name>RejectCertificateHandler</name>
             </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>
-  

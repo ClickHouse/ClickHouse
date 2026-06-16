@@ -1,2 +1,1 @@
 finished	default_TEST02132KILL_QUERY1	default	select (SELECT max(number) from system.numbers) + 1;
-finished	default_TEST02132KILL_QUERY2	default	SELECT (SELECT number FROM system.numbers WHERE number = 1000000000000);

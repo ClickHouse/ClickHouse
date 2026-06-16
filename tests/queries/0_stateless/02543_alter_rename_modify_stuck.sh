@@ -34,19 +34,10 @@ done
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE table_to_rename UPDATE v2 = 77 WHERE 1 = 1 SETTINGS mutations_sync = 2" &
 
-counter=0 retries=60
 
-I=0
-while [[ $counter -lt $retries ]]; do
-    I=$((I + 1))
-    result=$($CLICKHOUSE_CLIENT --query "SELECT count() from system.mutations where database='${CLICKHOUSE_DATABASE}' and table='table_to_rename'")
-    if [[ $result == "2" ]]; then
-        break;
-    fi
-    sleep 0.1
-    ((++counter))
-done
-
+# we cannot wait in the same way like we do for previous alter
+# because it's metadata alter and this one will wait for it
+sleep 3
 
 $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES table_to_rename"
 

@@ -1,9 +1,9 @@
 import logging
+import random
+import threading
 import time
 
 import pytest
-import threading
-import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -36,10 +36,20 @@ def cluster():
         cluster.shutdown()
 
 
+def drop_table(node, table_name, replicated):
+
+    create_table_statement = f"DROP TABLE {table_name} SYNC"
+
+    if replicated:
+        node.query_with_retry(create_table_statement)
+    else:
+        node.query(create_table_statement)
+
+
 def create_table(node, table_name, replicated, additional_settings):
     settings = {
         "storage_policy": "two_disks",
-        "old_parts_lifetime": 1,
+        "old_parts_lifetime": 0,
         "index_granularity": 512,
         "temporary_directories_lifetime": 0,
         "merge_tree_clear_old_temporary_directories_interval_seconds": 1,
@@ -70,12 +80,16 @@ def create_table(node, table_name, replicated, additional_settings):
 
 
 @pytest.mark.parametrize(
-    "allow_remote_fs_zero_copy_replication,replicated_engine",
-    [(False, False), (False, True), (True, True)],
+    "replicated_engine",
+    [False, True],
 )
-def test_create_table(
-    cluster, allow_remote_fs_zero_copy_replication, replicated_engine
+def test_alter_moving(
+    cluster, replicated_engine
 ):
+    """
+    Test that we correctly move parts during ALTER TABLE
+    """
+
     if replicated_engine:
         nodes = list(cluster.instances.values())
     else:
@@ -85,9 +99,6 @@ def test_create_table(
 
     # Different names for logs readability
     table_name = "test_table"
-    if allow_remote_fs_zero_copy_replication:
-        table_name = "test_table_zero_copy"
-        additional_settings["allow_remote_fs_zero_copy_replication"] = 1
     if replicated_engine:
         table_name = table_name + "_replicated"
 
@@ -126,7 +137,7 @@ def test_create_table(
         partition = f"2021-01-{i:02d}"
         try:
             random.choice(nodes).query(
-                f"ALTER TABLE {table_name} MOVE PARTITION '{partition}' TO DISK 's3'",
+                f"ALTER TABLE {table_name} MOVE PARTITION '{partition}' TO DISK 's31'",
             )
         except QueryRuntimeException as e:
             if "PART_IS_TEMPORARILY_LOCKED" in str(e):
@@ -153,3 +164,98 @@ def test_create_table(
         )
 
     assert data_digest == "1000\n"
+
+    for node in nodes:
+        drop_table(node, table_name, replicated_engine)
+
+
+def test_delete_race_leftovers(cluster):
+    """
+    Test that we correctly delete outdated parts and do not leave any leftovers on s3
+    """
+
+    node = cluster.instances["node1"]
+
+    table_name = "test_delete_race_leftovers"
+    additional_settings = {
+        # use another disk not to interfere with other tests
+        "storage_policy": "one_disk",
+        # always remove parts in parallel
+        "concurrent_part_removal_threshold": 1,
+    }
+
+    create_table(
+        node, table_name, replicated=True, additional_settings=additional_settings
+    )
+
+    # Stop merges to have several small parts in active set
+    node.query(f"SYSTEM STOP MERGES {table_name}")
+
+    # Creare several small parts in one partition
+    for i in range(1, 11):
+        node.query(
+            f"INSERT INTO {table_name} SELECT toDate('2021-01-01'), number as id, toString(sipHash64(number, {i})) FROM numbers(10_000)"
+        )
+    table_digest_query = f"SELECT count(), sum(sipHash64(id, data)) FROM {table_name}"
+    table_digest = node.query(table_digest_query)
+
+    # Execute several noop deletes to have parts with updated mutation id without changes in data
+    # New parts will have symlinks to old parts
+    node.query(f"SYSTEM START MERGES {table_name}")
+    for i in range(10):
+        node.query(f"DELETE FROM {table_name} WHERE data = ''")
+
+    # Make existing parts outdated
+    # Also we don't want have changing parts set,
+    # because it will be difficult match objects on s3 and in remote_data_paths to check correctness
+    node.query(f"OPTIMIZE TABLE {table_name} FINAL")
+
+    inactive_parts_query = (
+        f"SELECT count() FROM system.parts "
+        f"WHERE not active AND table = '{table_name}' AND database = 'default'"
+    )
+
+    # Try to wait for deletion of outdated parts
+    # However, we do not want to wait too long
+    # If some parts are not deleted after several iterations, we will just continue
+    for i in range(20):
+        inactive_parts_count = int(node.query(inactive_parts_query).strip())
+        if inactive_parts_count == 0:
+            print(f"Inactive parts are deleted after {i} iterations")
+            break
+
+        print(f"Inactive parts count: {inactive_parts_count}")
+        time.sleep(5)
+
+    # Check that we correctly deleted all outdated parts and no leftovers on s3
+    # Do it with retries because we delete blobs in the background
+    # and it can be race condition between removing from remote_data_paths and deleting blobs
+    all_remote_paths = set()
+    known_remote_paths = set()
+    for i in range(100):
+        known_remote_paths = set(
+            node.query(
+                f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
+            ).splitlines()
+        )
+
+        all_remote_paths = set(
+            obj.object_name
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, "data2/", recursive=True
+            )
+        )
+
+        # Some blobs can be deleted after we listed remote_data_paths
+        # It's alright, thus we check only that all remote paths are known
+        # (in other words, all remote paths is subset of known paths)
+        if all_remote_paths == {p for p in known_remote_paths if p in all_remote_paths}:
+            break
+
+        time.sleep(1)
+
+    assert all_remote_paths == {p for p in known_remote_paths if p in all_remote_paths}
+
+    # Check that we have all data
+    assert table_digest == node.query(table_digest_query)
+    drop_table(node, table_name, replicated=True)

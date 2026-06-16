@@ -1,6 +1,7 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -13,30 +14,38 @@ String ASTUndropQuery::getID(char delim) const
 
 ASTPtr ASTUndropQuery::clone() const
 {
-    auto res = std::make_shared<ASTUndropQuery>(*this);
+    auto res = make_intrusive<ASTUndropQuery>(*this);
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
 }
 
-void ASTUndropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTUndropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    settings.ostr << "UNDROP ";
-    settings.ostr << "TABLE ";
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr
+        << "UNDROP TABLE"
 
-    assert (table);
-    if (!database)
-        settings.ostr << backQuoteIfNeed(getTable());
-    else
-        settings.ostr << backQuoteIfNeed(getDatabase()) + "." << backQuoteIfNeed(getTable());
+        << " ";
+
+    chassert(table);
+
+    if (table)
+    {
+        if (database)
+        {
+            database->format(ostr, settings, state, frame);
+            ostr << '.';
+        }
+
+        chassert(table);
+        table->format(ostr, settings, state, frame);
+    }
 
     if (uuid != UUIDHelpers::Nil)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
+        ostr << " UUID "
             << quoteString(toString(uuid));
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 }
 
 }

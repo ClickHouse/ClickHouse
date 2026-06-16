@@ -1,10 +1,3 @@
-import time
-import threading
-from os import path as p, unlink
-from tempfile import NamedTemporaryFile
-
-import helpers
-import pytest
 from helpers.cluster import ClickHouseCluster
 
 
@@ -17,6 +10,7 @@ def test_extra_yaml_mix():
     all_confd = [
         "configs/config.d/0_common_instance_config.yaml",
         "configs/config.d/access_control.yaml",
+        "configs/config.d/error_log.xml",
         "configs/config.d/keeper_port.xml",
         "configs/config.d/logging_no_rotate.xml",
         "configs/config.d/log_to_console.yaml",
@@ -27,6 +21,7 @@ def test_extra_yaml_mix():
         "configs/config.d/part_log.xml",
         "configs/config.d/path.yaml",
         "configs/config.d/query_masking_rules.xml",
+        "configs/config.d/query_metric_log.xml",
         "configs/config.d/tcp_with_proxy.yaml",
         "configs/config.d/test_cluster_with_incorrect_pw.xml",
         "configs/config.d/text_log.yaml",

@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Common/AsynchronousMetrics.h>
-#include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
-#include <Common/StringUtils/StringUtils.h>
-
+#include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
 
 namespace DB
 {
@@ -18,6 +16,7 @@ namespace ErrorCodes
 }
 
 class IServer;
+class AsynchronousMetrics;
 
 template <typename TEndpoint>
 class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
@@ -25,16 +24,14 @@ class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
 public:
     using Filter = std::function<bool(const HTTPServerRequest &)>;
 
-    template <typename... TArgs>
-    explicit HandlingRuleHTTPHandlerFactory(TArgs &&... args)
+    using Creator = std::function<std::unique_ptr<TEndpoint>()>;
+    explicit HandlingRuleHTTPHandlerFactory(Creator && creator_)
+        : creator(std::move(creator_))
+    {}
+
+    explicit HandlingRuleHTTPHandlerFactory(IServer & server)
     {
-        creator = [my_args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
-        {
-            return std::apply([&](auto && ... endpoint_args)
-            {
-                return std::make_unique<TEndpoint>(std::forward<decltype(endpoint_args)>(endpoint_args)...);
-            }, std::move(my_args));
-        };
+        creator = [&server]() -> std::unique_ptr<TEndpoint> { return std::make_unique<TEndpoint>(server); };
     }
 
     void addFilter(Filter cur_filter)
@@ -55,8 +52,14 @@ public:
         {
             if (filter_type == "handler")
                 continue;
-            else if (filter_type == "url")
+            /// URI (path and query string)
+            if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
+            /// URL (schema, host:port, path and query string)
+            else if (filter_type == "full_url")
+                addFilter(fullUrlFilter(config, prefix + ".full_url"));
+            else if (filter_type == "empty_query_string")
+                addFilter(emptyQueryStringFilter());
             else if (filter_type == "headers")
                 addFilter(headersFilter(config, prefix + ".headers"));
             else if (filter_type == "methods")
@@ -86,16 +89,39 @@ public:
         });
     }
 
+    /// Handle GET, HEAD or POST endpoint on specified path
+    void allowGetHeadAndPostRequest()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
     /// Handle Post request or (Get or Head) with params or OPTIONS requests
     void allowPostAndGetParamsAndOptionsRequest()
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().find('?') != std::string::npos
+            return (request.getURI().contains('?')
                 && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
+    void allowRESTMethods()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE;
         });
     }
 
@@ -111,38 +137,32 @@ private:
 
 HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
-
-HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & config_prefix);
-
-HTTPRequestHandlerFactoryPtr
-createPrometheusMainHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & name);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer
 /// @param async_metrics - used for prometheus (in case of prometheus.asynchronous_metrics=true)
+/// @param http_handlers_key - config key for custom http_handlers (default: "http_handlers")
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
-    const std::string & name);
+    const std::string & name,
+    const std::string & http_handlers_key = {});
 
 }

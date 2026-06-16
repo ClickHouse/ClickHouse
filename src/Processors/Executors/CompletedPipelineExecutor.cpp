@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 namespace DB
 {
@@ -32,20 +33,14 @@ struct CompletedPipelineExecutor::Data
     }
 };
 
-static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(
+    CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    setThreadName("QueryCompPipeEx");
-
     try
     {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -79,9 +74,13 @@ void CompletedPipelineExecutor::execute()
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
-        auto func = [data_ptr = data.get(), num_threads = pipeline.getNumThreads(), thread_group = CurrentThread::getGroup()]
+        auto func = [
+            data_ptr = data.get(),
+            num_threads = pipeline.getNumThreads(),
+            thread_group = CurrentThread::getGroup(),
+            concurrency_control = pipeline.getConcurrencyControl()]
         {
-            threadFunction(*data_ptr, thread_group, num_threads);
+            threadFunction(*data_ptr, thread_group, num_threads, concurrency_control);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -92,7 +91,9 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
+            {
                 data->executor->cancel();
+            }
         }
 
         if (data->has_exception)
@@ -102,7 +103,7 @@ void CompletedPipelineExecutor::execute()
     {
         PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads());
+        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     }
 }
 
@@ -111,11 +112,13 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     try
     {
         if (data && data->executor)
+        {
             data->executor->cancel();
+        }
     }
     catch (...)
     {
-        tryLogCurrentException("PullingAsyncPipelineExecutor");
+        tryLogCurrentException("CompletedPipelineExecutor");
     }
 }
 

@@ -3,7 +3,7 @@
 #include <memory>
 #include <IO/AsynchronousReader.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace DB
@@ -35,6 +35,8 @@ public:
     ThreadPoolReader(size_t pool_size, size_t queue_size_);
 
     std::future<Result> submit(Request request) override;
+
+    Result execute(Request request) override;
 
     void wait() override;
 

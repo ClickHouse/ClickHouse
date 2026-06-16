@@ -86,20 +86,4 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(coverage)
-ORDER BY (coverage, situation_name, NAME_toe, NAME_cockroach);
-
-insert into test select * from generateRandom() limit 10;
-
-with dissonance as (
-    Select cast(toStartOfInterval(coverage, INTERVAL 1 day) as Date) as flour, count() as regulation
-    from test
-    group by flour having flour >= toDate(now())-100
-    ),
-cheetah as (
-    Select flour, regulation from dissonance
-    union distinct
-    Select toDate(now())-1, ifnull((select regulation from dissonance where flour = toDate(now())-1),0) as regulation
-)
-Select flour, regulation from cheetah order by flour with fill step 1 limit 100 format Null;
-
-drop table test;
+ORDER BY (coverage, situation_name, NAME_toe, NAME_cockroach); -- { serverError BAD_ARGUMENTS }

@@ -1,0 +1,6 @@
+<clickhouse>
+    <macros>
+        <replica>node1</replica>
+        <shard>default</shard>
+    </macros>
+</clickhouse>

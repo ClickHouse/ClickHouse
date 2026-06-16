@@ -17,22 +17,26 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemSettingsProfiles::getNamesAndTypes()
+ColumnsDescription StorageSystemSettingsProfiles::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"name", std::make_shared<DataTypeString>()},
-        {"id", std::make_shared<DataTypeUUID>()},
-        {"storage", std::make_shared<DataTypeString>()},
-        {"num_elements", std::make_shared<DataTypeUInt64>()},
-        {"apply_to_all", std::make_shared<DataTypeUInt8>()},
-        {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Setting profile name."},
+        {"id", std::make_shared<DataTypeUUID>(), "Setting profile ID."},
+        {"storage", std::make_shared<DataTypeString>(), "Path to the storage of setting profiles. Configured in the `access_control_path` parameter."},
+        {"num_elements", std::make_shared<DataTypeUInt64>(), "Number of elements for this profile in the `system.settings_profile_elements` table."},
+        {"apply_to_all", std::make_shared<DataTypeUInt8>(), "Shows that the settings profile set for all roles and/or users."},
+        {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "List of the roles and/or users to which the setting profile is applied."
+        },
+        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "The setting profile is applied to all roles and/or users excepting of the listed ones."
+        },
     };
-    return names_and_types;
 }
 
 
-void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -97,10 +101,10 @@ void StorageSystemSettingsProfiles::backupData(
 }
 
 void StorageSystemSettingsProfiles::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }

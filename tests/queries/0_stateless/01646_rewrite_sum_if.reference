@@ -10,12 +10,6 @@
 50
 50	50	50	1	0
 50
-SELECT sumIf(123, (number % 2) = 0)
-FROM numbers(100)
-SELECT sum(if((number % 2) = 0, 123, 0))
-FROM numbers(100)
-SELECT sum(if((number % 2) = 0, 0, 123))
-FROM numbers(100)
 0
 0	0	1
 0
@@ -28,12 +22,6 @@ FROM numbers(100)
 50
 50	50	50	1	0
 50
-SELECT 123 * countIf((number % 2) = 0)
-FROM numbers(100)
-SELECT 123 * countIf((number % 2) = 0)
-FROM numbers(100)
-SELECT 123 * countIf(NOT ((number % 2) = 0))
-FROM numbers(100)
 QUERY id: 0
   PROJECTION COLUMNS
     sumIf(123, equals(modulo(number, 2), 0)) UInt64
@@ -56,7 +44,7 @@ QUERY id: 0
                               CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
                         CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 12, table_function_name: numbers
+    TABLE_FUNCTION id: 12, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 15, nodes: 1
           CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
@@ -82,7 +70,7 @@ QUERY id: 0
                               CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
                         CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 12, table_function_name: numbers
+    TABLE_FUNCTION id: 12, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 15, nodes: 1
           CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
@@ -111,7 +99,7 @@ QUERY id: 0
                                     CONSTANT id: 15, constant_value: UInt64_2, constant_value_type: UInt8
                               CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 14, table_function_name: numbers
+    TABLE_FUNCTION id: 14, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 17, nodes: 1
           CONSTANT id: 18, constant_value: UInt64_100, constant_value_type: UInt8

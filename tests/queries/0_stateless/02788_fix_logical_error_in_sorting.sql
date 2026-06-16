@@ -1,3 +1,8 @@
+SET allow_deprecated_error_prone_window_functions = 1;
+
+DROP TABLE IF EXISTS session_events;
+DROP TABLE IF EXISTS event_types;
+
 CREATE TABLE session_events
 (
     clientId UInt64,
@@ -50,6 +55,7 @@ INSERT INTO event_types SELECT
 FROM numbers(20);
 
 SET optimize_sorting_by_input_stream_properties = 1;
+set ignore_format_null_for_explain = 0;
 
 -- We check only that no exception was thrown
 EXPLAIN PIPELINE
@@ -75,3 +81,6 @@ FROM
 WHERE runningDifference(timestamp) >= 500
 ORDER BY timestamp ASC
 FORMAT Null;
+
+DROP TABLE session_events;
+DROP TABLE event_types;

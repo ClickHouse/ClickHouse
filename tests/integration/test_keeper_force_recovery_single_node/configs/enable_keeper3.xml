@@ -1,5 +1,6 @@
 <clickhouse>
     <keeper_server>
+        <use_cluster>false</use_cluster>
         <tcp_port>9181</tcp_port>
         <server_id>3</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
@@ -10,6 +11,7 @@
             <session_timeout_ms>10000</session_timeout_ms>
             <snapshot_distance>75</snapshot_distance>
             <raft_logs_level>trace</raft_logs_level>
+            <max_requests_batch_size>200</max_requests_batch_size>
         </coordination_settings>
 
         <raft_configuration>

@@ -1,0 +1,88 @@
+number	UInt64					
+u8	UInt8					
+u16	UInt16					
+u32	UInt32					
+u64	UInt64					
+i8	Int8					
+i16	Int16					
+i32	Int32					
+i64	Int64					
+date32	Date32					
+dt64_ms	DateTime64(3, \'UTC\')					
+dt64_us	DateTime64(6, \'UTC\')					
+dt64_ns	DateTime64(9, \'UTC\')					
+dt64_s	DateTime64(3, \'UTC\')					
+dt64_cs	DateTime64(3, \'UTC\')					
+f32	Float32					
+f64	Float64					
+s	String					
+fs	FixedString(9)					
+d32	Decimal(9, 3)					
+d64	Decimal(18, 10)					
+d128	Decimal(38, 20)					
+d256	Decimal(76, 40)					
+# Go over all types individually
+800	3959600
+1000	4999500
+1800	6479100
+500	2474750
+300	1604850
+500	2474750
+300	1604850
+500	2474750
+2100	5563950
+300	1184850
+400	1599800
+300	1184850
+500	2524750
+500	2524750
+300	1514850
+300	1514850
+300	1594850
+300	1594850
+200	999900
+200	999900
+200	999900
+200	999900
+# Some random other cases
+0	0
+400	1709800
+0	0
+10000	49995000
+0	0
+200	909900
+10000	49995000
+0	0
+# Very long string, which makes the Parquet encoder omit the corresponding min/max stat
+2
+# Nullable and LowCardinality
+number	UInt64					
+sometimes_null	Nullable(UInt64)					
+never_null	Nullable(UInt64)					
+mostly_null	Nullable(String)					
+sometimes_null_lc	Nullable(UInt64)					
+never_null_lc	Nullable(UInt64)					
+mostly_null_lc	Nullable(String)					
+500	244750
+500	244750
+300	104850
+300	104850
+200	179900
+200	179900
+200	179900
+200	179900
+200	19900
+200	19900
+600	259700
+600	259700
+# Settings that affect the table schema or contents
+500	244750
+500	244750
+0	0
+500	244750
+500	244750
+500	244750
+500	244750
+# Bad type conversions
+42
+100

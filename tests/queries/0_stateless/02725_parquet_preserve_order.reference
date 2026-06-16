@@ -3,10 +3,10 @@
 2
 (Expression)
 ExpressionTransform
-  (ReadFromStorage)
+  (ReadFromFile)
   File 0 → 1
 (Expression)
 ExpressionTransform × 2
-  (ReadFromStorage)
+  (ReadFromFile)
   Resize 1 → 2
     File 0 → 1

@@ -1,15 +1,13 @@
 #pragma once
 
 #include <set>
-#include <map>
 #include <list>
 #include <mutex>
-#include <thread>
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <base/types.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
@@ -18,6 +16,27 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
+struct ReplicatedCheckResult
+{
+    enum Action
+    {
+        None,
+
+        Cancelled,
+        DoNothing,
+        RecheckLater,
+
+        DetachUnexpected,
+        TryFetchMissing,
+    };
+
+    CheckResult status;
+    Action action = None;
+
+    bool exists_in_zookeeper{};
+    MergeTreeDataPartPtr part;
+    time_t recheck_after_seconds = 0;
+};
 
 /** Checks the integrity of the parts requested for validation.
   *
@@ -44,43 +63,41 @@ public:
     size_t size() const;
 
     /// Check part by name
-    CheckResult checkPart(const String & part_name);
+    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
 
-    std::unique_lock<std::mutex> pausePartsCheck();
+    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
 
-    /// Can be called only while holding a lock returned from pausePartsCheck()
+    /// Pause parts check in a thread-safe way.
+    /// The returned guard can be safely destroyed from any thread.
+    BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
+
+    /// Can be called only while holding a BackgroundSchedulePoolTaskBlocker guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
+    BackgroundSchedulePoolTaskHolder & getTask();
+
     void run();
 
-    /// Search for missing part and queue fetch if possible. Otherwise
-    /// remove part from zookeeper and queue.
-    void searchForMissingPartAndFetchIfPossible(const String & part_name, bool exists_in_zookeeper);
+    bool onPartIsLostForever(const String & part_name);
 
     std::pair<bool, MergeTreeDataPartPtr> findLocalPart(const String & part_name);
 
-    enum MissingPartSearchResult
-    {
-        /// We found this part on other replica, let's fetch it.
-        FoundAndNeedFetch,
-        /// We found covering part or source part with same min and max block number
-        /// don't need to fetch because we should do it during normal queue processing.
-        FoundAndDontNeedFetch,
-        /// Covering part not found anywhere and exact part_name doesn't found on other
-        /// replicas.
-        LostForever,
-    };
-
     /// Search for missing part on other replicas or covering part on all replicas (including our replica).
-    MissingPartSearchResult searchForMissingPartOnOtherReplicas(const String & part_name);
+    /// Returns false if the part is lost forever.
+    bool searchForMissingPartOnOtherReplicas(const String & part_name) const;
 
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     using StringSet = std::set<String>;
-    using PartToCheck = std::pair<String, time_t>;    /// The name of the part and the minimum time to check (or zero, if not important).
+    struct PartToCheck
+    {
+        using TimePoint = std::chrono::steady_clock::time_point;
+        String name;
+        TimePoint time;
+    };
     using PartsToCheckQueue = std::list<PartToCheck>;
 
     /** Parts for which you want to check one of two:
@@ -94,7 +111,8 @@ private:
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-    BackgroundSchedulePool::TaskHolder task;
+
+    BackgroundSchedulePoolPausableTask pausable_task;
 };
 
 }

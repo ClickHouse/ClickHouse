@@ -26,11 +26,11 @@ select cutToFirstSignificantSubdomainCustom('foo.kernel.biz.ss', 'public_suffix_
 kernel.biz.ss
 select '-- difference';
 -- difference
--- biz.ss is not in the default TLD list, hence:
-select cutToFirstSignificantSubdomain('foo.kernel.biz.ss'); -- biz.ss
-biz.ss
-select cutToFirstSignificantSubdomainCustom('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel.biz.ss
-kernel.biz.ss
+-- dev.ss is not in the default TLD list, hence:
+select cutToFirstSignificantSubdomain('foo.kernel.dev.ss'); -- dev.ss
+dev.ss
+select cutToFirstSignificantSubdomainCustom('foo.kernel.dev.ss', 'public_suffix_list'); -- kernel.dev.ss
+dev.ss
 select '-- 3+level';
 -- 3+level
 select cutToFirstSignificantSubdomainCustom('xx.blogspot.co.at', 'public_suffix_list'); -- xx.blogspot.co.at
@@ -115,11 +115,11 @@ select cutToFirstSignificantSubdomainCustomRFC('foo.kernel.biz.ss', 'public_suff
 kernel.biz.ss
 select '-- difference';
 -- difference
--- biz.ss is not in the default TLD list, hence:
-select cutToFirstSignificantSubdomainRFC('foo.kernel.biz.ss'); -- biz.ss
-biz.ss
-select cutToFirstSignificantSubdomainCustomRFC('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel.biz.ss
-kernel.biz.ss
+-- dev.ss is not in the default TLD list, hence:
+select cutToFirstSignificantSubdomainRFC('foo.kernel.dev.ss'); -- dev.ss
+dev.ss
+select cutToFirstSignificantSubdomainCustomRFC('foo.kernel.dev.ss', 'public_suffix_list'); -- kernel.dev.ss
+dev.ss
 select '-- 3+level';
 -- 3+level
 select cutToFirstSignificantSubdomainCustomRFC('xx.blogspot.co.at', 'public_suffix_list'); -- xx.blogspot.co.at

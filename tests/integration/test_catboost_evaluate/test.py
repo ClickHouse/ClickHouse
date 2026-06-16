@@ -12,7 +12,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance(
-    "instance", stay_alive=True, main_configs=["config/models_config.xml"]
+    "instance",
+    stay_alive=True,
+    main_configs=["config/models_config.xml", "config/logger_library_bridge.xml"],
 )
 
 
@@ -21,13 +23,23 @@ def ch_cluster():
     try:
         cluster.start()
 
-        os.system(
-            "docker cp {local} {cont_id}:{dist}".format(
-                local=os.path.join(SCRIPT_DIR, "model/."),
-                cont_id=instance.docker_id,
-                dist="/etc/clickhouse-server/model",
+        instance.exec_in_container(["mkdir", f"/etc/clickhouse-server/model/"])
+
+        machine = instance.get_machine_name()
+        for source_name in os.listdir(os.path.join(SCRIPT_DIR, "model/.")):
+            dest_name = source_name
+            if machine in source_name:
+                machine_suffix = "_" + machine
+                dest_name = source_name[: -len(machine_suffix)]
+
+            os.system(
+                "docker cp {local} {cont_id}:{dist}".format(
+                    local=os.path.join(SCRIPT_DIR, f"model/{source_name}"),
+                    cont_id=instance.docker_id,
+                    dist=f"/etc/clickhouse-server/model/{dest_name}",
+                )
             )
-        )
+
         instance.restart_clickhouse()
 
         yield cluster

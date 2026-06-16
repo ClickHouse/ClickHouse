@@ -1,11 +1,11 @@
-#include "ConnectionString.h"
+#include <Client/ConnectionString.h>
 
 #include <Common/Exception.h>
+#include <Client/ConnectionParameters.h>
 #include <Poco/Exception.h>
 #include <Poco/URI.h>
 
 #include <array>
-#include <iostream>
 #include <string>
 #include <unordered_map>
 
@@ -136,7 +136,7 @@ bool tryParseConnectionString(
     else
         hosts_end_pos = hosts_or_user_info_end_pos;
 
-    const auto * hosts_end = hosts_end_pos != std::string_view::npos ? connection_string.begin() + hosts_end_pos
+    const auto hosts_end = hosts_end_pos != std::string_view::npos ? connection_string.begin() + hosts_end_pos
                                                                      : connection_string.end();
 
     try
@@ -149,8 +149,8 @@ bool tryParseConnectionString(
           * clickhouse:[user[:password]@]hostN:portN[database]?[query_parameters]
           */
         Poco::URI uri;
-        const auto * last_host_begin = connection_string.begin() + offset;
-        for (const auto * it = last_host_begin; it != hosts_end; ++it)
+        auto last_host_begin = connection_string.begin() + offset;
+        for (auto it = last_host_begin; it != hosts_end; ++it)
         {
             if (*it == ',')
             {
@@ -201,8 +201,8 @@ bool tryParseConnectionString(
                 else
                 {
                     // in case of user_info == 'user:', ':' is specified, but password is empty
-                    // then add password argument "\n" which means: Ask user for a password.
-                    common_arguments.push_back("\n");
+                    // then ask user for a password.
+                    common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
                 }
             }
             else

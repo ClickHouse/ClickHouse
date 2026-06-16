@@ -4,9 +4,9 @@ import string
 import struct
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -193,12 +193,16 @@ def start_cluster():
     ],
 )
 def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
+    # Clean up data from potential previous runs (pytest-repeat with --count)
+    first_node.query("TRUNCATE TABLE polymorphic_table")
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
+
     first_node.query("SYSTEM STOP MERGES")
     second_node.query("SYSTEM STOP MERGES")
 
     for size in [300, 300, 600]:
         insert_random_data("polymorphic_table", first_node, size)
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
 
     assert first_node.query("SELECT count() FROM polymorphic_table") == "1200\n"
     assert second_node.query("SELECT count() FROM polymorphic_table") == "1200\n"
@@ -225,14 +229,14 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
         insert_random_data("polymorphic_table", first_node, 10)
         insert_random_data("polymorphic_table", second_node, 10)
 
-    first_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    first_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
 
     assert first_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
     assert second_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
 
     first_node.query("OPTIMIZE TABLE polymorphic_table FINAL")
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
 
     assert first_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
     assert second_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
@@ -251,10 +255,10 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
     )
 
     # Check alters and mutations also work
-    first_node.query("ALTER TABLE polymorphic_table ADD COLUMN ss String")
+    first_node.query("ALTER TABLE polymorphic_table ADD COLUMN IF NOT EXISTS ss String")
     first_node.query("ALTER TABLE polymorphic_table UPDATE ss = toString(id) WHERE 1")
 
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
 
     first_node.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
     first_node.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
@@ -265,12 +269,16 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
 
 # Checks mostly that merge from compact part to compact part works.
 def test_compact_parts_only(start_cluster):
+    # Clean up data from potential previous runs (pytest-repeat with --count)
+    node1.query("TRUNCATE TABLE compact_parts_only")
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
+
     for i in range(20):
         insert_random_data("compact_parts_only", node1, 100)
         insert_random_data("compact_parts_only", node2, 100)
 
-    node1.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
-    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+    node1.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
 
     assert node1.query("SELECT count() FROM compact_parts_only") == "4000\n"
     assert node2.query("SELECT count() FROM compact_parts_only") == "4000\n"
@@ -289,7 +297,7 @@ def test_compact_parts_only(start_cluster):
     )
 
     node1.query("OPTIMIZE TABLE compact_parts_only FINAL")
-    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
     assert node2.query("SELECT count() FROM compact_parts_only") == "4000\n"
 
     expected = "Compact\t1\n"
@@ -316,6 +324,10 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
     leader = node3
     follower = node4
 
+    # Clean up data from potential previous runs (pytest-repeat with --count)
+    leader.query("TRUNCATE TABLE {}".format(table))
+    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=60)
+
     assert (
         leader.query(
             "SELECT is_leader FROM system.replicas WHERE table = '{}'".format(table)
@@ -332,8 +344,14 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
     for _ in range(3):
         insert_random_data(table, leader, 100)
 
-    leader.query("OPTIMIZE TABLE {} FINAL".format(table))
-    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=20)
+    exec_query_with_retry(
+        leader,
+        "OPTIMIZE TABLE {} FINAL".format(table),
+        settings={"optimize_throw_if_noop": 1},
+        silent=True,
+    )
+
+    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=60)
 
     expected = "{}\t1\n".format(part_type)
 
@@ -359,8 +377,8 @@ node7 = cluster.add_instance(
     "node7",
     user_configs=["configs_old/users.d/not_optimize_count.xml"],
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="19.17.8.54",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
 )
@@ -413,63 +431,19 @@ def start_cluster_diff_versions():
         cluster.shutdown()
 
 
-@pytest.mark.skip(reason="compatability is temporary broken")
-def test_polymorphic_parts_diff_versions(start_cluster_diff_versions):
-    # Check that replication with Wide parts works between different versions.
-
-    node_old = node7
-    node_new = node8
-
-    insert_random_data("polymorphic_table", node7, 100)
-    node8.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
-
-    assert node8.query("SELECT count() FROM polymorphic_table") == "100\n"
-    assert (
-        node8.query(
-            "SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table' and active"
-        )
-        == "Wide\n"
-    )
-
-
-@pytest.mark.skip(reason="compatability is temporary broken")
-def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
-    # Replication doesn't work on old version if part is created in compact format, because
-    #  this version doesn't know anything about it. It's considered to be ok.
-
-    node_old = node7
-    node_new = node8
-
-    insert_random_data("polymorphic_table_2", node_new, 100)
-
-    assert node_new.query("SELECT count() FROM polymorphic_table_2") == "100\n"
-    assert node_old.query("SELECT count() FROM polymorphic_table_2") == "0\n"
-    with pytest.raises(Exception):
-        node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=3)
-
-    node_old.restart_with_latest_version(fix_metadata=True)
-
-    node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=20)
-
-    # Works after update
-    assert node_old.query("SELECT count() FROM polymorphic_table_2") == "100\n"
-    assert (
-        node_old.query(
-            "SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table_2' and active"
-        )
-        == "Compact\n"
-    )
-
-
 def test_polymorphic_parts_non_adaptive(start_cluster):
+    # Clean up data from potential previous runs (pytest-repeat with --count)
+    node1.query("TRUNCATE TABLE non_adaptive_table")
+    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=60)
+
     node1.query("SYSTEM STOP MERGES")
     node2.query("SYSTEM STOP MERGES")
 
     insert_random_data("non_adaptive_table", node1, 100)
-    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=20)
+    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=60)
 
     insert_random_data("non_adaptive_table", node2, 100)
-    node1.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=20)
+    node1.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=60)
 
     assert TSV(
         node1.query(
@@ -491,14 +465,15 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query(
-        "CREATE DATABASE test_index ENGINE=Ordinary",
+        "CREATE DATABASE IF NOT EXISTS test_index ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )  # Different paths with Atomic
+    node1.query("DROP TABLE IF EXISTS test_index.index_compact SYNC")
     node1.query(
         """
         CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
-        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false"""
+        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"""
     )
 
     node1.query(

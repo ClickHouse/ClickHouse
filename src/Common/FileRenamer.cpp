@@ -2,12 +2,11 @@
 
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
 
 #include <chrono>
 #include <filesystem>
-#include <format>
 #include <map>
-#include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -38,7 +37,7 @@ String FileRenamer::generateNewFilename(const String & filename) const
 
     // Get current timestamp in microseconds
     String timestamp;
-    if (rule.find("%t") != String::npos)
+    if (rule.contains("%t"))
     {
         auto now = std::chrono::system_clock::now();
         timestamp = std::to_string(timeInMicroseconds(now));
@@ -47,6 +46,7 @@ String FileRenamer::generateNewFilename(const String & filename) const
     // Define placeholders and their corresponding values
     std::map<String, String> placeholders =
     {
+        {"%a", filename},
         {"%f", file_base},
         {"%e", file_ext},
         {"%t", timestamp},
@@ -69,16 +69,17 @@ bool FileRenamer::isEmpty() const
 bool FileRenamer::validateRenamingRule(const String & rule, bool throw_on_error)
 {
     // Check if the rule contains invalid placeholders
-    re2::RE2 invalid_placeholder_pattern("^([^%]|%[fet%])*$");
+    re2::RE2 invalid_placeholder_pattern("^([^%]|%[afet%])*$");
     if (!re2::RE2::FullMatch(rule, invalid_placeholder_pattern))
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid renaming rule: Allowed placeholders only %f, %e, %t, and %%");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid renaming rule: Allowed placeholders only %a, %f, %e, %t, and %%");
         return false;
     }
 
     // Replace valid placeholders with empty strings and count remaining percentage signs.
     String replaced_rule = rule;
+    boost::replace_all(replaced_rule, "%a", "");
     boost::replace_all(replaced_rule, "%f", "");
     boost::replace_all(replaced_rule, "%e", "");
     boost::replace_all(replaced_rule, "%t", "");

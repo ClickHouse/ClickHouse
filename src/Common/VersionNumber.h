@@ -1,9 +1,8 @@
 #pragma once
 
 #include <string>
-#include <vector>
-#include <iostream>
 #include <base/types.h>
+
 
 namespace DB
 {
@@ -11,11 +10,12 @@ namespace DB
 /// Simple numeric version representation.
 struct VersionNumber
 {
-    explicit VersionNumber() = default;
+    constexpr VersionNumber() = default;
 
-    VersionNumber(const std::initializer_list<Int64> & init) : components(init) {}
-    explicit VersionNumber(Int64 major, Int64 minor = 0, Int64 patch = 0) : components{major, minor, patch} {}
-    explicit VersionNumber(const std::vector<Int64> & components_) : components(components_) {}
+    constexpr VersionNumber(Int64 major_, Int64 minor_ = 0, Int64 patch_ = 0) // NOLINT(google-explicit-constructor)
+        : version_major(major_), version_minor(minor_), version_patch(patch_)
+    {
+    }
 
     /// Parse version number from string.
     explicit VersionNumber(std::string version);
@@ -27,14 +27,10 @@ struct VersionNumber
 
     std::string toString() const;
 
-    friend std::ostream & operator<<(std::ostream & os, const VersionNumber & v)
-    {
-        return os << v.toString();
-    }
-
 private:
-    using Components = std::vector<Int64>;
-    Components components;
+    Int64 version_major = 0;
+    Int64 version_minor = 0;
+    Int64 version_patch = 0;
 
     int compare(const VersionNumber & rhs) const;
 };

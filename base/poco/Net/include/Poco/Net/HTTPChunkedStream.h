@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <istream>
 #include <ostream>
-#include "Poco/MemoryPool.h"
 #include "Poco/Net/HTTPBasicStreamBuf.h"
 #include "Poco/Net/Net.h"
 
@@ -45,6 +44,8 @@ namespace Net
         HTTPChunkedStreamBuf(HTTPSession & session, openmode mode);
         ~HTTPChunkedStreamBuf();
         void close();
+
+        bool isComplete(bool read_from_device_to_check_eof = false) noexcept;
 
     protected:
         int readFromDevice(char * buffer, std::streamsize length);
@@ -81,11 +82,7 @@ namespace Net
         HTTPChunkedInputStream(HTTPSession & session);
         ~HTTPChunkedInputStream();
 
-        void * operator new(std::size_t size);
-        void operator delete(void * ptr);
-
-    private:
-        static Poco::MemoryPool _pool;
+        bool isComplete() { return _buf.isComplete(/*read_from_device_to_check_eof*/ true); }
     };
 
 
@@ -96,11 +93,7 @@ namespace Net
         HTTPChunkedOutputStream(HTTPSession & session);
         ~HTTPChunkedOutputStream();
 
-        void * operator new(std::size_t size);
-        void operator delete(void * ptr);
-
-    private:
-        static Poco::MemoryPool _pool;
+        bool isComplete() { return _buf.isComplete(); }
     };
 
 

@@ -27,7 +27,7 @@ namespace
  * should produce:
  *   ['abc', '111']
  */
-class FunctionExtractGroups : public IFunction
+class FunctionExtractGroups final : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";
@@ -45,10 +45,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
-            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
+            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -63,7 +63,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(needle);
         const auto & re2 = regexp.getRE2();
 
         if (!re2)
@@ -75,7 +75,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);
+        PODArrayWithStackMemory<std::string_view, 128> matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnString::MutablePtr data_col = ColumnString::create();
@@ -87,10 +87,10 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view current_row = column_haystack->getDataAt(i).toView();
+            std::string_view current_row = column_haystack->getDataAt(i);
 
-            if (re2->Match(re2_st::StringPiece(current_row.data(), current_row.size()),
-                0, current_row.size(), re2_st::RE2::UNANCHORED, matched_groups.data(),
+            if (re2->Match({current_row.data(), current_row.size()},
+                0, current_row.size(), re2::RE2::UNANCHORED, matched_groups.data(),
                 static_cast<int>(matched_groups.size())))
             {
                 // 1 is to exclude group #0 which is whole re match.
@@ -111,7 +111,35 @@ public:
 
 REGISTER_FUNCTION(ExtractGroups)
 {
-    factory.registerFunction<FunctionExtractGroups>();
+    FunctionDocumentation::Description description = R"(
+Extracts the capturing groups from the first substring matched by a regular expression. To extract groups from all matches, use [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) or [`extractAllGroupsVertical`](/sql-reference/functions/splitting-merging-functions#extractAllGroupsVertical).
+    )";
+    FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string to extract from.", {"String", "FixedString"}},
+        {"regexp", "Regular expression. Must contain at least one capturing group. Constant.", {"const String", "const FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"If the regular expression matches, returns an array containing the captured groups (`1` to `N`, where `N` is the number of capturing groups in `regexp`) of the first match. If there is no match, returns an empty array.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+WITH '< Server: nginx
+< Date: Tue, 22 Jan 2019 00:26:14 GMT
+< Content-Type: text/html; charset=UTF-8
+< Connection: keep-alive
+' AS s
+SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
+)",
+            R"(
+['Server','nginx']
+    )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionExtractGroups>(documentation);
 }
 
 }

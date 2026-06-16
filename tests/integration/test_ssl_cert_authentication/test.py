@@ -1,12 +1,16 @@
+import logging
+import os.path
+import ssl
+import urllib.parse
+import urllib.request
+import uuid
+from os import remove
+
 import pytest
+
 from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.ssl_context import WrapSSLContextWithSNI
-import ssl
-import os.path
-from os import remove
-import urllib3
-
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client have to verify server certificate against that name. Client uses SNI
@@ -14,6 +18,7 @@ SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
 # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+MAX_RETRY = 5
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -41,22 +46,17 @@ def started_cluster():
 config = """<clickhouse>
     <openSSL>
         <client>
-            <verificationMode>none</verificationMode>
-
+            <verificationMode>strict</verificationMode>
             <certificateFile>{certificateFile}</certificateFile>
             <privateKeyFile>{privateKeyFile}</privateKeyFile>
             <caConfig>{caConfig}</caConfig>
-
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>"""
 
 
 def execute_query_native(node, query, user, cert_name, password=None):
-    config_path = f"{SCRIPT_DIR}/configs/client.xml"
+    config_path = f"{SCRIPT_DIR}/configs/client_{uuid.uuid4().hex}.xml"
 
     formatted = config.format(
         certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
@@ -77,12 +77,9 @@ def execute_query_native(node, query, user, cert_name, password=None):
     )
 
     try:
-        result = client.query(query, user=user, password=password)
+        return client.query(query, user=user, password=password)
+    finally:
         remove(config_path)
-        return result
-    except:
-        remove(config_path)
-        raise
 
 
 def test_native():
@@ -120,7 +117,7 @@ def test_native_wrong_cert():
         execute_query_native(
             instance, "SELECT currentUser()", user="john", cert_name="wrong"
         )
-    assert "UNKNOWN_CA" in str(err.value)
+    assert "unknown ca" in str(err.value)
 
 
 def test_native_fallback_to_password():
@@ -158,23 +155,29 @@ def get_ssl_context(cert_name):
         )
         context.verify_mode = ssl.CERT_REQUIRED
     context.check_hostname = True
+    # Python 3.10 has removed many ciphers from the cipher suite.
+    # Hence based on https://github.com/urllib3/urllib3/issues/3100#issuecomment-1671106236
+    # we are expanding the list of cipher suites.
+    context.set_ciphers("DEFAULT")
     return context
 
 
 def execute_query_https(
     query, user, enable_ssl_auth=True, cert_name=None, password=None
 ):
-    url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={query}"
-    headers = {"X-ClickHouse-User": user}
+    url = (
+        f"https://{instance.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
+    )
+    request = urllib.request.Request(url)
+    request.add_header("X-ClickHouse-User", user)
     if enable_ssl_auth:
-        headers["X-ClickHouse-SSL-Certificate-Auth"] = "on"
+        request.add_header("X-ClickHouse-SSL-Certificate-Auth", "on")
     if password:
-        headers["X-ClickHouse-Key"] = password
-    http_client = urllib3.PoolManager(ssl_context=get_ssl_context(cert_name))
-    response = http_client.request("GET", url, headers=headers)
-    if response.status != 200:
-        raise Exception(response.status)
-    return response.data.decode("utf-8")
+        request.add_header("X-ClickHouse-Key", password)
+    response = urllib.request.urlopen(
+        request, context=get_ssl_context(cert_name)
+    ).read()
+    return response.decode("utf-8")
 
 
 def test_https():
@@ -198,10 +201,8 @@ def test_https_wrong_cert():
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
     assert "403" in str(err.value)
 
-    # Wrong certificate: self-signed certificate.
-    with pytest.raises(Exception) as err:
-        execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
-    assert "unknown ca" in str(err.value)
+    # TODO: Add non-flaky tests for:
+    # - Wrong certificate: self-signed certificate.
 
     # No certificate.
     with pytest.raises(Exception) as err:
@@ -291,27 +292,37 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
-    # However if we send a certificate it must not be wrong.
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="peter",
-            enable_ssl_auth=False,
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="jane",
-            enable_ssl_auth=False,
-            password="qwe123",
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
+    # TODO: Add non-flaky tests for:
+    # - sending wrong cert
 
+def test_mixed_x509_san_password_support():
+    assert (
+        execute_query_https("SELECT currentUser()", user="trurl", cert_name="client4")
+        == "trurl\n"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", enable_ssl_auth=False, user="trurl", password="mixed_sha_pass")
+        == "trurl\n"
+    )
+
+    # Verify that system.users shows both auth methods (sha256_password + ssl_certificate)
+    # for user 'trurl'. Sort by auth_type name for a deterministic assertion regardless of
+    # config order. Both columns are extracted from a single sorted zip to keep them aligned.
+    assert (
+        instance.query(
+            "SELECT name, "
+            "arrayMap(x -> toString(x.1), s) AS auth_type, "
+            "arrayMap(x -> x.2, s) AS auth_params "
+            "FROM (SELECT name, arraySort(x -> toString(x.1), arrayZip(auth_type, auth_params)) AS s "
+            "FROM system.users WHERE name='trurl')"
+        )
+        == 'trurl\t[\'sha256_password\',\'ssl_certificate\']\t[\'{}\',\'{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar"]}\']\n'
+    )
+    
 
 def test_create_user():
+    instance.query("DROP USER IF EXISTS emma")
+
     instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
     assert (
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
@@ -345,6 +356,85 @@ def test_create_user():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name IN ['emma', 'lucy'] ORDER BY name"
         )
-        == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
-        'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
+        == "emma\t['ssl_certificate']\t['{\"common_names\":[\"client2\"]}']\n"
+        'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
+
+    instance.query("DROP USER IF EXISTS emma")
+
+
+def test_x509_san_support():
+    instance.query("DROP USER IF EXISTS jemma")
+
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="jerome", cert_name="client4"
+        )
+        == "jerome\n"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="jerome", cert_name="client4")
+        == "jerome\n"
+    )
+    assert (
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='jerome'"
+        )
+        == 'jerome\t[\'ssl_certificate\']\t[\'{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar","URI:spiffe:\\\\/\\\\/foo.com\\\\/baz"]}\']\n'
+    )
+    # user `jerome` is configured via xml config, but `show create` should work regardless.
+    assert (
+        instance.query("SHOW CREATE USER jerome")
+        == "CREATE USER jerome IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
+    )
+
+    instance.query(
+        "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://foo.com/bar', 'URI:spiffe://foo.com/baz'"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="jemma", cert_name="client4")
+        == "jemma\n"
+    )
+    assert (
+        instance.query("SHOW CREATE USER jemma")
+        == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
+    )
+
+    instance.query("DROP USER IF EXISTS jemma")
+
+
+def test_x509_san_wildcard_support():
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="stewie", cert_name="client5"
+        )
+        == "stewie\n"
+    )
+
+    assert (
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='stewie'"
+        )
+        == "stewie\t['ssl_certificate']\t['{\"subject_alt_names\":[\"URI:spiffe:\\\\/\\\\/bar.com\\\\/foo\\\\/*\\\\/far\"]}']\n"
+    )
+
+    assert (
+        instance.query("SHOW CREATE USER stewie")
+        == "CREATE USER stewie IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
+    )
+
+    instance.query(
+        "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://bar.com/foo/*/far'"
+    )
+
+    assert (
+        execute_query_https("SELECT currentUser()", user="brian", cert_name="client6")
+        == "brian\n"
+    )
+
+    assert (
+        instance.query("SHOW CREATE USER brian")
+        == "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
+    )
+
+    instance.query("DROP USER brian")

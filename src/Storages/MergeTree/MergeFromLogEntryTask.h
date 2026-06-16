@@ -22,7 +22,16 @@ public:
         StorageReplicatedMergeTree & storage_,
         IExecutableTask::TaskResultCallback & task_result_callback_);
 
-    Priority getPriority() override { return priority; }
+    Priority getPriority() const override { return priority; }
+
+    void cancel() noexcept override
+    {
+        if (merge_task)
+            merge_task->cancel();
+
+        if (part)
+            part->removeIfNeeded();
+    }
 
 protected:
     /// Both return false if we can't execute merge.
@@ -38,6 +47,7 @@ private:
     TableLockHolder table_lock_holder{nullptr};
 
     MergeTreeData::DataPartsVector parts;
+    MergeTreeData::DataPartsVector patch_parts;
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
 
@@ -47,6 +57,8 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+
+    std::map<String, UInt64> projections_merge_time;
 };
 
 

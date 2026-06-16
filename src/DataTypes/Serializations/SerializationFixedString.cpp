@@ -1,19 +1,21 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
+#include <Formats/ParseError.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
+#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -26,9 +28,30 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
+
+UInt128 SerializationFixedString::getHash(size_t n_)
+{
+    SipHash hash;
+    hash.update("FixedString");
+    hash.update(n_);
+    return hash.get128();
+}
+
+static const char * getEndWithOptionalTrim(const char * pos, size_t n, const FormatSettings & settings)
+{
+    const char * end = pos + n;
+    if (!settings.trim_fixed_string)
+        return end;
+
+    while (end > pos && end[-1] == '\0')
+        --end;
+
+    return end;
+}
+
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const String & s = field.get<const String &>();
+    const String & s = field.safeGet<String>();
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -39,7 +62,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
-    String & s = field.get<String &>();
+    String & s = field.safeGet<String>();
     s.resize(n);
     istr.readStrict(s.data(), n);
 }
@@ -82,13 +105,19 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
+    size_t skipped_bytes = 0;
+
+    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    istr.ignore(skipped_bytes);
+
     size_t initial_size = data.size();
-    size_t max_bytes;
-    size_t new_data_size;
+    size_t max_bytes = 0;
+    size_t new_data_size = 0;
 
     if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
@@ -108,16 +137,19 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 }
 
 
-void SerializationFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeString(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+    writeString(pos, end - pos, ostr);
 }
 
 
-void SerializationFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeAnyEscapedString<'\''>(pos, pos + n, ostr);
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+    writeAnyEscapedString<'\''>(pos, end, ostr);
 }
 
 
@@ -152,17 +184,72 @@ static inline void read(const SerializationFixedString & self, IColumn & column,
     }
 }
 
-
-void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationFixedString::tryAlignStringLength(size_t n, PaddedPODArray<UInt8> & data, size_t string_start)
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
+    size_t length = data.size() - string_start;
+    if (length < n)
+    {
+        data.resize_fill(string_start + n);
+    }
+    else if (length > n)
+    {
+        data.resize_assume_reserved(string_start);
+        return false;
+    }
+
+    return true;
+}
+
+template <typename Reader>
+static inline bool tryRead(const SerializationFixedString & self, IColumn & column, Reader && reader)
+{
+    ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
+    size_t prev_size = data.size();
+    try
+    {
+        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+    }
+    catch (...) // Ok: tryRead is a try-pattern
+    {
+        data.resize_assume_reserved(prev_size);
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
+        return false;
+    }
+}
+
+SerializationPtr SerializationFixedString::create(size_t n_)
+{
+    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
 }
 
 
-void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data)
+    {
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<ColumnFixedString::Chars,true>(data, istr) : readEscapedStringInto<ColumnFixedString::Chars,false>(data, istr);
+    });
+}
+
+bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr); return true; });
+}
+
+
+void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeAnyQuotedString<'\''>(pos, pos + n, ostr);
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+    if (settings.values.escape_quote_with_quote)
+    {
+        writeChar('\'', ostr);
+        writeAnyEscapedString<'\'', true, false>(pos, end, ostr);
+        writeChar('\'', ostr);
+    }
+    else
+        writeAnyQuotedString<'\''>(pos, end, ostr);
 }
 
 
@@ -171,37 +258,54 @@ void SerializationFixedString::deserializeTextQuoted(IColumn & column, ReadBuffe
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readQuotedStringInto<true>(data, istr); });
 }
 
+bool SerializationFixedString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { return tryReadQuotedStringInto<true>(data, istr); });
+}
+
 
 void SerializationFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); });
 }
 
+bool SerializationFixedString::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); return true; });
+}
+
 
 void SerializationFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeJSONString(pos, pos + n, ostr, settings);
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+    writeJSONString(pos, end, ostr, settings);
 }
 
 
-void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr); });
+    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
 }
 
-
-void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+bool SerializationFixedString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeXMLStringForTextElement(pos, pos + n, ostr);
+    return tryRead(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
 }
 
-
-void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeCSVString(pos, pos + n, ostr);
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+    writeXMLStringForTextElement(pos, end, ostr);
+}
+
+
+void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+    writeCSVString(pos, end, ostr);
 }
 
 
@@ -210,5 +314,23 @@ void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer &
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
 }
 
+bool SerializationFixedString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return tryRead(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto<ColumnFixedString::Chars, false, false>(data, istr, csv); return true; });
+}
+
+void SerializationFixedString::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    const char * pos = reinterpret_cast<const char *>(&(assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]));
+    const char * end = getEndWithOptionalTrim(pos, n, settings);
+
+    if (settings.markdown.escape_special_characters)
+    {
+        writeMarkdownEscapedString(pos, end - pos, ostr);
+    }
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
+}
 
 }

@@ -1,5 +1,6 @@
 -- Tags: no-fasttest, no-parallel
 set format_json_object_each_row_column_for_object_name='name';
+set input_format_json_try_infer_numbers_from_strings=1;
 
 select number, concat('name_', toString(number)) as name from numbers(3) format JSONObjectEachRow;
 select number, concat('name_', toString(number)) as name, number + 1 as x from numbers(3) format JSONObjectEachRow;

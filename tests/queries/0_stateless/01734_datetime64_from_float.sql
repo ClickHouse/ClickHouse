@@ -17,6 +17,6 @@ SELECT toDateTime64(-999999999999, 9, 'UTC');
 SELECT toDateTime64(9200000000.0, 9, 'UTC'); -- value < 2262-04-11
 SELECT toDateTime64(9200000000, 9, 'UTC');
 
-SELECT toDateTime64(9300000000.0, 9, 'UTC'); -- { serverError 407 } # 2262-04-11 < value
-SELECT toDateTime64(9300000000, 9, 'UTC'); -- { serverError 407 }
+SELECT toDateTime64(9300000000.0, 9, 'UTC'); -- { serverError DECIMAL_OVERFLOW } # 2262-04-11 < value
+SELECT toDateTime64(9300000000, 9, 'UTC'); -- { serverError DECIMAL_OVERFLOW }
 

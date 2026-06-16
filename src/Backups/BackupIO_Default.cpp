@@ -1,20 +1,19 @@
 #include <Backups/BackupIO_Default.h>
 
 #include <Disks/IDisk.h>
-#include <IO/copyData.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Context.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-BackupReaderDefault::BackupReaderDefault(Poco::Logger * log_, const ContextPtr & context_)
+BackupReaderDefault::BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)
-    , read_settings(context_->getBackupReadSettings())
-    , write_settings(context_->getWriteSettings())
+    , read_settings(read_settings_)
+    , write_settings(write_settings_)
     , write_buffer_size(DBMS_DEFAULT_BUFFER_SIZE)
 {
 }
@@ -37,15 +36,15 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
     write_buffer->finalize();
 }
 
-BackupWriterDefault::BackupWriterDefault(Poco::Logger * log_, const ContextPtr & context_)
+BackupWriterDefault::BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)
-    , read_settings(context_->getBackupReadSettings())
-    , write_settings(context_->getWriteSettings())
+    , read_settings(read_settings_)
+    , write_settings(write_settings_)
     , write_buffer_size(DBMS_DEFAULT_BUFFER_SIZE)
 {
 }
 
-bool BackupWriterDefault::fileContentsEqual(const String & file_name, const String & expected_file_contents)
+bool BackupWriterDefault::fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents)
 {
     if (!fileExists(file_name))
         return false;
@@ -53,7 +52,7 @@ bool BackupWriterDefault::fileContentsEqual(const String & file_name, const Stri
     try
     {
         auto in = readFile(file_name, expected_file_contents.size());
-        String actual_file_contents(expected_file_contents.size(), ' ');
+        actual_file_contents = String(expected_file_contents.size(), ' ');
         return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
             && (actual_file_contents == expected_file_contents) && in->eof();
     }
@@ -77,19 +76,31 @@ void BackupWriterDefault::copyDataToFile(const String & path_in_backup, const Cr
     write_buffer->finalize();
 }
 
-void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                           bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterDefault::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
+    /// Copy through buffers (derived classes may override with optimized implementations)
     LOG_TRACE(log, "Copying file {} from disk {} through buffers", src_path, src_disk->getName());
 
     auto create_read_buffer = [src_disk, src_path, copy_encrypted, settings = read_settings.adjustBufferSize(start_pos + length)]
     {
         if (copy_encrypted)
             return src_disk->readEncryptedFile(src_path, settings);
-        else
-            return src_disk->readFile(src_path, settings);
+        return src_disk->readFile(src_path, settings);
     };
 
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);
 }
+
+void BackupWriterDefault::removeFiles(const Strings & file_names)
+{
+    /// Derived classes can override removeFiles() to remove files faster (e.g. by using batch remove).
+    for (const auto & file_name : file_names)
+        removeFile(file_name);
+}
+
+void BackupWriterDefault::removeEmptyDirectories()
+{
+}
+
 }

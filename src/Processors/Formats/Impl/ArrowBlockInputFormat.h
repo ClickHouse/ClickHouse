@@ -3,6 +3,7 @@
 
 #if USE_ARROW
 
+#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -16,21 +17,23 @@ namespace DB
 class ReadBuffer;
 class ArrowColumnToCHColumn;
 
-class ArrowBlockInputFormat : public IInputFormat
+class ArrowBlockInputFormat final : public IInputFormat
 {
 public:
-    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
 
     void resetParser() override;
 
     String getName() const override { return "ArrowBlockInputFormat"; }
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
+
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 private:
-    Chunk generate() override;
+    Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -48,6 +51,7 @@ private:
     int record_batch_current = 0;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
 
@@ -56,16 +60,22 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ArrowSchemaReader : public ISchemaReader
+class ArrowSchemaReader final : public ISchemaReader
 {
 public:
     ArrowSchemaReader(ReadBuffer & in_, bool stream_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 
+    std::optional<size_t> readNumberOrRows() override;
+
 private:
+    void initializeIfNeeded();
+
     bool stream;
     const FormatSettings format_settings;
+    std::shared_ptr<arrow::RecordBatchReader> stream_reader;
+    std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
 };
 
 }

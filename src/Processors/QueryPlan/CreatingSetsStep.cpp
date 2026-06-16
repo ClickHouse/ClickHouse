@@ -1,11 +1,13 @@
-#include <exception>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>
 
@@ -15,6 +17,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -33,59 +42,62 @@ static ITransformingStep::Traits getTraits()
 }
 
 CreatingSetStep::CreatingSetStep(
-    const DataStream & input_stream_,
-    String description_,
-    SubqueryForSet subquery_for_set_,
+    const SharedHeader & input_header_,
+    SetAndKeyPtr set_and_key_,
     SizeLimits network_transfer_limits_,
-    ContextPtr context_)
-    : ITransformingStep(input_stream_, Block{}, getTraits())
-    , WithContext(context_)
-    , description(std::move(description_))
-    , subquery_for_set(std::move(subquery_for_set_))
+    PreparedSetsCachePtr prepared_sets_cache_)
+    : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
+    , set_and_key(std::move(set_and_key_))
     , network_transfer_limits(std::move(network_transfer_limits_))
+    , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
 }
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
+    pipeline.addCreatingSetsTransform(
+        getOutputHeader(),
+        std::move(set_and_key),
+        network_transfer_limits,
+        std::move(prepared_sets_cache));
 }
 
-void CreatingSetStep::updateOutputStream()
+void CreatingSetStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(input_streams.front(), Block{}, getDataStreamTraits());
+    output_header = std::make_shared<const Block>(Block{});
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    if (!set_and_key->set)
+        return ;
+
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix;
-    if (subquery_for_set.set_in_progress)
-        settings.out << "Set: ";
-
-    settings.out << description << '\n';
+    settings.out << "Set: ";
+    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set_in_progress)
-        map.add("Set", description);
+    if (set_and_key->set)
+        map.add("Set", set_and_key->key);
 }
 
 
-CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
+CreatingSetsStep::CreatingSetsStep(SharedHeaders input_headers_)
 {
-    if (input_streams_.empty())
+    if (input_headers_.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
-    input_streams = std::move(input_streams_);
-    output_stream = DataStream{input_streams.front().header};
+    input_headers = std::move(input_headers_);
+    output_header = input_headers.front();
 
-    for (size_t i = 1; i < input_streams.size(); ++i)
-        if (input_streams[i].header)
+    for (size_t i = 1; i < input_headers.size(); ++i)
+        if (!input_headers[i]->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Creating set input must have empty header. Got: {}",
-                            input_streams[i].header.dumpStructure());
+                            input_headers[i]->dumpStructure());
 }
 
 QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -122,37 +134,28 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
 {
-    DataStreams input_streams;
-    input_streams.emplace_back(query_plan.getCurrentDataStream());
+    SharedHeaders input_headers;
+    input_headers.emplace_back(query_plan.getCurrentHeader());
 
     std::vector<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, subquery_for_set] : subqueries_for_sets)
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+    for (auto & future_set : subqueries)
     {
-        if (!subquery_for_set.hasSource())
-        {
-            subquery_for_set.promise_to_fill_set.set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::LOGICAL_ERROR, "Subquery for set {} has no source", subquery_for_set.key)));
+        if (future_set->get())
             continue;
-        }
 
-        auto plan = subquery_for_set.detachSource();
+        auto plan = future_set->build(network_transfer_limits, prepared_sets_cache);
+        if (!plan)
+            continue;
 
-        const Settings & settings = context->getSettingsRef();
-        auto creating_set = std::make_unique<CreatingSetStep>(
-                plan->getCurrentDataStream(),
-                description,
-                std::move(subquery_for_set),
-                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-                context);
-        creating_set->setStepDescription("Create set for subquery");
-        plan->addStep(std::move(creating_set));
-
-        input_streams.emplace_back(plan->getCurrentDataStream());
+        input_headers.emplace_back(plan->getCurrentHeader());
         plans.emplace_back(std::move(plan));
     }
 
@@ -162,17 +165,131 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
         return;
     }
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
+    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_headers));
     creating_sets->setStepDescription("Create sets before main query execution");
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
+QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context)
 {
-    if (!prepared_sets || prepared_sets->empty())
+    SharedHeaders input_headers;
+    input_headers.emplace_back(pipeline->getSharedHeader());
+
+    QueryPipelineBuilders pipelines;
+    pipelines.reserve(1 + subqueries.size());
+    pipelines.push_back(std::move(pipeline));
+
+    QueryPlanOptimizationSettings plan_settings(context);
+    BuildQueryPipelineSettings pipeline_settings(context);
+
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
+    for (auto & future_set : subqueries)
+    {
+        if (future_set->get())
+            continue;
+
+        auto plan = future_set->build(network_transfer_limits, prepared_sets_cache);
+        if (!plan)
+            continue;
+
+        input_headers.emplace_back(plan->getCurrentHeader());
+        pipelines.emplace_back(plan->buildQueryPipeline(plan_settings, pipeline_settings));
+    }
+
+    return CreatingSetsStep(input_headers).updatePipeline(std::move(pipelines), pipeline_settings);
+}
+
+std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(
+    DelayedCreatingSetsStep && step,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+
+    for (auto & future_set : step.subqueries)
+    {
+        if (future_set->get())
+            continue;
+
+        auto plan = future_set->build(optimization_settings.network_transfer_limits, optimization_settings.prepared_sets_cache);
+        if (!plan)
+            continue;
+
+        /// The set's plan was built by the Planner under
+        /// `forceMaterializeCTE`, which plants a safety-net
+        /// `DelayedMaterializingCTEsStep` per dependency level on the
+        /// source plan so that `buildSetInplace` / `buildOrderedSetInplace`
+        /// can materialize the referenced CTEs synchronously if that path
+        /// fires first. Here we are attaching the plan for *runtime* set
+        /// construction; for the runtime path, we want the outer plan's
+        /// `MaterializingCTEsStep` to be the single canonical writer site
+        /// so its `DelayedPortsProcessor` lazily gates every reader,
+        /// including readers that sit on the "main" (always-eventually-pulled)
+        /// side of an inner `CreatingSets` gate. The outer plan can only
+        /// win that role if no surviving `DelayedMaterializingCTEsStep`
+        /// inside this sub-plan claims `is_materialization_planned` first
+        /// via the recursive `plan->optimize(...)` below — that includes
+        /// per-branch safety-nets planted by `buildPlanForQueryNode` below
+        /// each `UnionStep` / `IntersectOrExceptStep` branch, which sit
+        /// *below* the union-level safety-net.
+        ///
+        /// So strip every `DelayedMaterializingCTEsStep` in this sub-plan
+        /// tree, not just the top contiguous chain. Nested
+        /// `DelayedCreatingSetsStep` source plans (held in
+        /// `subqueries`, not as children of any node in this tree) are
+        /// untouched — they keep their safety-nets for their own
+        /// `buildSetInplace` / `buildOrderedSetInplace` consumers.
+        removeAllDelayedMaterializingCTEsStep(*plan);
+
+        plan->optimize(optimization_settings);
+        plans.emplace_back(std::move(plan));
+    }
+
+    return plans;
+}
+
+void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
+{
+    if (!prepared_sets)
         return;
 
-    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
+    auto subqueries = prepared_sets->getSubqueries();
+    if (subqueries.empty())
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
+    auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentHeader(),
+            std::move(subqueries),
+            network_transfer_limits,
+            prepared_sets_cache);
+
+    query_plan.addStep(std::move(step));
+}
+
+DelayedCreatingSetsStep::DelayedCreatingSetsStep(
+    SharedHeader input_header,
+    PreparedSets::Subqueries subqueries_,
+    SizeLimits network_transfer_limits_,
+    PreparedSetsCachePtr prepared_sets_cache_)
+    : subqueries(std::move(subqueries_))
+    , network_transfer_limits(std::move(network_transfer_limits_))
+    , prepared_sets_cache(std::move(prepared_sets_cache_))
+{
+    input_headers = {input_header};
+    output_header = std::move(input_header);
+}
+
+QueryPipelineBuilderPtr DelayedCreatingSetsStep::updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &)
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Cannot build pipeline in DelayedCreatingSets. This step should be optimized out.");
 }
 
 }

@@ -1,28 +1,57 @@
 #pragma once
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/quoteString.h>
-#include <unordered_set>
+#include <Common/re2.h>
+
 #include <string_view>
+
 #include <fmt/format.h>
-#include <regex>
+#include <fmt/ranges.h>
+
+
+namespace DB
+{
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-namespace DB
-{
-
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
+/// If dependent_table_id is provided, registers the table as a dependency of the named collection.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts, ContextPtr context, bool throw_unknown_collection = true, std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr);
+    ASTs asts,
+    ContextPtr context,
+    bool throw_unknown_collection = true,
+    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
+    const StorageID * dependent_table_id = nullptr);
+
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+/// Also registers the dictionary as a dependency of the named collection, so that
+/// DROP NAMED COLLECTION is blocked while the dictionary exists.
+/// The dictionary's identity is derived from config_prefix, which has the form
+/// "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"); the first
+/// component is used as the dictionary root to call StorageID::fromDictionaryConfig.
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context);
+
+/// Parses the ast as a key-value pair.
+/// Throws an exception if the key cannot be parsed as a string literal.
+/// If the value cannot be parsed as a literal or interpreted as a constant expression,
+/// falls back to the AST value.
+std::pair<std::string, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context);
+
+/// Parses asts as key value pairs and returns a map of them.
+std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context);
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 
@@ -44,9 +73,9 @@ struct RedisEqualKeysSet
 template <typename EqualKeys> struct NamedCollectionValidateKey
 {
     NamedCollectionValidateKey() = default;
-    NamedCollectionValidateKey(const char * value_) : value(value_) {}
-    NamedCollectionValidateKey(std::string_view value_) : value(value_) {}
-    NamedCollectionValidateKey(const String & value_) : value(value_) {}
+    NamedCollectionValidateKey(const char * value_) : value(value_) {} /// NOLINT(google-explicit-constructor)
+    NamedCollectionValidateKey(std::string_view value_) : value(value_) {} /// NOLINT(google-explicit-constructor)
+    NamedCollectionValidateKey(const String & value_) : value(value_) {} /// NOLINT(google-explicit-constructor)
 
     std::string_view value;
 
@@ -96,7 +125,7 @@ void validateNamedCollection(
     const NamedCollection & collection,
     const Keys & required_keys,
     const Keys & optional_keys,
-    const std::vector<std::regex> & optional_regex_keys = {})
+    const std::vector<std::shared_ptr<re2::RE2>> & optional_regex_keys = {})
 {
     NamedCollection::Keys keys = collection.getKeys();
     auto required_keys_copy = required_keys;
@@ -119,14 +148,14 @@ void validateNamedCollection(
 
         auto match = std::find_if(
             optional_regex_keys.begin(), optional_regex_keys.end(),
-            [&](const std::regex & regex) { return std::regex_search(key, regex); })
+            [&](const std::shared_ptr<re2::RE2> & regex) { return re2::RE2::PartialMatch(key, *regex); })
             != optional_regex_keys.end();
 
         if (!match)
         {
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,
-                 "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
+                 "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
                  backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
         }
     }
@@ -151,7 +180,7 @@ struct fmt::formatter<DB::NamedCollectionValidateKey<T>>
     }
 
     template <typename FormatContext>
-    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context)
+    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "{}", elem.value);
     }

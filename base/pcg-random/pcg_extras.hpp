@@ -463,7 +463,7 @@ auto bounded_rand(RngType& rng, typename RngType::result_type upper_bound)
 }
 
 template <typename Iter, typename RandType>
-void shuffle(Iter from, Iter to, RandType&& rng)
+void shuffle(Iter from, Iter to, RandType&& rng) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     typedef typename std::iterator_traits<Iter>::difference_type delta_t;
     typedef typename std::remove_reference<RandType>::type::result_type result_t;
@@ -536,7 +536,7 @@ template <typename T>
 std::ostream& operator<<(std::ostream& out, printable_typename<T>) {
     const char *implementation_typename = typeid(T).name();
 #ifdef __GNUC__
-    int status;
+    int status = 0;
     char* pretty_name =
         abi::__cxa_demangle(implementation_typename, nullptr, nullptr, &status);
     if (status == 0)

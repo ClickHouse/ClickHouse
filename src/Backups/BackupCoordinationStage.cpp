@@ -5,9 +5,9 @@
 namespace DB
 {
 
-String BackupCoordinationStage::formatGatheringMetadata(size_t pass)
+String BackupCoordinationStage::formatGatheringMetadata(int attempt_no)
 {
-    return fmt::format("{} ({})", GATHERING_METADATA, pass);
+    return fmt::format("{} ({})", GATHERING_METADATA, attempt_no);
 }
 
 }

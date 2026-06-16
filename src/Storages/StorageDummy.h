@@ -3,28 +3,43 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
-class StorageDummy : public IStorage
+class StorageDummy final : public StorageWithCommonVirtualColumns
 {
 public:
-    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, ColumnsDescription object_columns_ = {});
+    StorageDummy(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const StorageSnapshotPtr & original_storage_snapshot_ = nullptr,
+        bool supports_replication_ = false);
 
     std::string getName() const override { return "StorageDummy"; }
+
+    static VirtualColumnsDescription createVirtuals();
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool canMoveConditionsToPrewhere() const override { return false; }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    std::optional<NameSet> supportedPrewhereColumns() const override
     {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
+        return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
+    }
+
+    bool supportsSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool canMoveConditionsToPrewhere() const override
+    {
+        return original_storage_snapshot ? original_storage_snapshot->storage.canMoveConditionsToPrewhere() : false;
+    }
+
+    bool hasEvenlyDistributedRead() const override
+    {
+        return original_storage_snapshot ? original_storage_snapshot->storage.hasEvenlyDistributedRead() : false;
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -33,7 +48,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -42,25 +57,28 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    bool supportsReplication() const override { return supports_replication; }
+
 private:
-    const ColumnsDescription object_columns;
+    /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
+    StorageSnapshotPtr original_storage_snapshot;
+    const bool supports_replication;
 };
 
-class ReadFromDummy : public SourceStepWithFilter
+class ReadFromDummy final : public SourceStepWithFilter
 {
 public:
-    explicit ReadFromDummy(const StorageDummy & storage_,
-        StorageSnapshotPtr storage_snapshot_,
-        Names column_names_);
+    explicit ReadFromDummy(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        const StorageDummy & storage_);
 
     const StorageDummy & getStorage() const
     {
         return storage;
-    }
-
-    const StorageSnapshotPtr & getStorageSnapshot() const
-    {
-        return storage_snapshot;
     }
 
     const Names & getColumnNames() const
@@ -74,7 +92,6 @@ public:
 
 private:
     const StorageDummy & storage;
-    StorageSnapshotPtr storage_snapshot;
     Names column_names;
 };
 

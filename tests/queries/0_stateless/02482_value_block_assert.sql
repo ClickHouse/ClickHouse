@@ -9,7 +9,7 @@ CREATE TABLE range_key_dictionary_source_table__fuzz_323
 )
 ENGINE = TinyLog;
 INSERT INTO range_key_dictionary_source_table__fuzz_323 FORMAT Values
-(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First'); -- { clientError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First'); -- { error CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 
 
 CREATE TABLE complex_key_dictionary_source_table__fuzz_267
@@ -21,4 +21,4 @@ CREATE TABLE complex_key_dictionary_source_table__fuzz_267
 )
 ENGINE = TinyLog;
 INSERT INTO complex_key_dictionary_source_table__fuzz_267 FORMAT Values
-(1, 'key', 'First', 'First'); -- { clientError CANNOT_READ_ARRAY_FROM_TEXT }
+(1, 'key', 'First', 'First'); -- { error CANNOT_READ_ARRAY_FROM_TEXT }

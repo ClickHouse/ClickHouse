@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
@@ -15,22 +15,29 @@ namespace DB
 {
 
 class Context;
+class ASTCreateQuery;
+class ASTStorage;
 struct StorageID;
-
+struct ConstraintsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : private boost::noncopyable, public IHints<1, StorageFactory>
+class StorageFactory : private boost::noncopyable, public IHints<>
 {
 public:
 
     static StorageFactory & instance();
 
+    /// Helper function to validate if a specific storage supports a setting
+    /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
+    using HasBuiltinSettingFn = bool(std::string_view);
+
     struct Arguments
     {
         const String & engine_name;
+        /// Mutable to allow replacing constant expressions with literals, and other transformations.
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
@@ -42,9 +49,9 @@ public:
         ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        bool attach;
-        bool has_force_restore_data_flag;
+        LoadingStrictnessLevel mode;
         const String & comment;
+        bool is_restore_from_backup = false;
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
@@ -67,7 +74,13 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        AccessType source_access_type = AccessType::NONE;
+        /// Whether `UNIQUE KEY` is accepted at CREATE time. Currently set only on
+        /// non-replicated MergeTree variants — replicated metadata does not yet
+        /// serialize `unique_key`, which would allow replicas to diverge silently.
+        bool supports_unique_key = false;
+        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
+
+        HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -75,6 +88,7 @@ public:
     {
         CreatorFn creator_fn;
         StorageFeatures features;
+        Documentation documentation;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -86,7 +100,8 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool has_force_restore_data_flag) const;
+        LoadingStrictnessLevel mode,
+        bool is_restore_from_backup = false) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
@@ -100,8 +115,10 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .source_access_type = AccessType::NONE,
-    });
+        .supports_unique_key = false,
+        .source_access_type = std::nullopt,
+        .has_builtin_setting_fn = nullptr,
+    }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
     {
@@ -126,16 +143,14 @@ public:
         return result;
     }
 
-    AccessType getSourceAccessType(const String & table_engine) const;
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
-    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
-    {
-        if (storages.contains(storage_name))
-            return storages[storage_name].features.supports_schema_inference;
-        return false;
-    }
+    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
 private:
     Storages storages;
 };
+
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
 
 }

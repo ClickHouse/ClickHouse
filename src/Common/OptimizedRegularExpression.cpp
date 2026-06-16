@@ -1,10 +1,14 @@
 #include <limits>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/PODArray.h>
+#include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
-#define MIN_LENGTH_FOR_STRSTR 3
-#define MAX_SUBPATTERNS 1024
+#include <Common/StringSearcher.h>
+
+constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
+constexpr size_t MAX_SUBPATTERNS = 1024;
 
 
 namespace DB
@@ -21,8 +25,8 @@ namespace
 struct Literal
 {
     std::string literal;
-    bool prefix; /// this literal string is the prefix of the whole string.
-    bool suffix; /// this literal string is the suffix of the whole string.
+    bool prefix{}; /// this literal string is the prefix of the whole string.
+    bool suffix{}; /// this literal string is the suffix of the whole string.
     void clear()
     {
         literal.clear();
@@ -38,9 +42,27 @@ size_t shortest_literal_length(const Literals & literals)
     if (literals.empty()) return 0;
     size_t shortest = std::numeric_limits<size_t>::max();
     for (const auto & lit : literals)
-        if (shortest > lit.literal.size())
-            shortest = lit.literal.size();
+        shortest = std::min(shortest, lit.literal.size());
     return shortest;
+}
+
+const char * skipNameCapturingGroup(const char * pos, size_t offset, const char * end)
+{
+    const char special = *(pos + offset) == '<' ? '>' : '\'';
+    offset ++;
+    while (pos + offset < end)
+    {
+        const char cur = *(pos + offset);
+        if (cur == special)
+        {
+            return pos + offset;
+        }
+        if (('0' <= cur && cur <= '9') || ('a' <= cur && cur <= 'z') || ('A' <= cur && cur <= 'Z'))
+            offset ++;
+        else
+            return pos;
+    }
+    return pos;
 }
 
 const char * analyzeImpl(
@@ -48,8 +70,11 @@ const char * analyzeImpl(
     const char * pos,
     Literal & required_substring,
     bool & is_trivial,
+    bool & has_capture,
     Literals & global_alternatives)
 {
+    checkStackSize();
+
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
       *  a string outside parentheses,
@@ -63,6 +88,7 @@ const char * analyzeImpl(
     bool is_first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
+    has_capture = false;
     bool is_prefix = true;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
@@ -222,38 +248,61 @@ const char * analyzeImpl(
                 is_trivial = false;
                 if (!in_square_braces)
                 {
-                    /// Check for case-insensitive flag.
-                    if (pos + 1 < end && pos[1] == '?')
+                    bool is_non_capturing_group = false;
+
+                    /// it means flag negation
+                    /// there are various possible flags
+                    /// actually only imsU are supported by re2
+                    auto is_flag_char = [](char x)
                     {
-                        for (size_t offset = 2; pos + offset < end; ++offset)
+                        return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
+                    };
+                    /// Check for case-insensitive flag.
+                    if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
+                    {
+                        size_t offset = 2;
+                        for (; pos + offset < end; ++offset)
                         {
-                            if (pos[offset] == '-'  /// it means flag negation
-                                /// various possible flags, actually only imsU are supported by re2
-                                || (pos[offset] >= 'a' && pos[offset] <= 'z')
-                                || (pos[offset] >= 'A' && pos[offset] <= 'Z'))
+                            if (pos[offset] == 'i')
                             {
-                                if (pos[offset] == 'i')
-                                {
-                                    /// Actually it can be negated case-insensitive flag. But we don't care.
-                                    has_case_insensitive_flag = true;
-                                    break;
-                                }
+                                /// Actually it can be negated case-insensitive flag. But we don't care.
+                                has_case_insensitive_flag = true;
                             }
-                            else
+                            else if (!is_flag_char(pos[offset]))
                                 break;
                         }
+                        pos += offset;
+                        if (pos == end)
+                            return pos;
+                        /// if this group only contains flags, we have nothing to do.
+                        if (*pos == ')')
+                        {
+                            has_capture = true;
+                            ++pos;
+                            break;
+                        }
                     }
-                    if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
+                    /// (?:regex) means non-capturing parentheses group
+                    else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
+                        is_non_capturing_group = true;
                         pos += 2;
+                    }
+                    else if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
+                    {
+                        has_capture = true;
+                        pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }
                     Literal group_required_substr;
                     bool group_is_trival = true;
+                    bool group_has_capture = false;
                     Literals group_alters;
-                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_alters);
+                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters);
                     /// pos should be ')', if not, then it is not a valid regular expression
                     if (pos == end)
                         return pos;
+
+                    has_capture = !is_non_capturing_group;
 
                     /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
                     if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
@@ -364,7 +413,7 @@ finish:
                 }
             }
 
-            if (max_length >= MIN_LENGTH_FOR_STRSTR || (!is_first_call && max_length > 0))
+            if (max_length >= MIN_LENGTH_FOR_STRSTR || ((!is_first_call || has_alternative_on_depth_0) && max_length > 0))
             {
                 required_substring.literal = candidate_it->first;
                 required_substring.prefix = candidate_it->second;
@@ -384,13 +433,17 @@ finish:
     if (has_alternative_on_depth_0)
     {
         /// compare the quality of required substring and alternatives and choose the better one.
-        if (shortest_literal_length(global_alternatives) < required_substring.literal.size())
+        if (global_alternatives.empty() || shortest_literal_length(global_alternatives) < required_substring.literal.size())
             global_alternatives = {required_substring};
-        Literals next_alternatives;
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
+        Literals next_alternatives;
         bool next_is_trivial = true;
-        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
-        /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
+        bool next_has_capture = false;
+        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives);
+
+        /// has_capture is true when all alternatives have captures
+        has_capture &= next_has_capture;
+        /// For xxx|xxx|xxx, we only combine the alternatives and return a empty required_substring.
         if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
         {
             global_alternatives.push_back(required_substring);
@@ -413,34 +466,39 @@ finish:
 }
 }
 
-template <bool thread_safe>
-void OptimizedRegularExpressionImpl<thread_safe>::analyze(
-        std::string_view regexp_,
-        std::string & required_substring,
-        bool & is_trivial,
-        bool & required_substring_is_prefix,
-        std::vector<std::string> & alternatives)
+namespace DB
 {
+RegexpAnalysisResult OptimizedRegularExpression::analyze(std::string_view regexp_)
+try
+{
+    RegexpAnalysisResult r;
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals);
-    required_substring = std::move(required_literal.literal);
-    required_substring_is_prefix = required_literal.prefix;
+    analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals); // NOLINT
+    r.required_substring = std::move(required_literal.literal);
+    r.required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
-        alternatives.push_back(std::move(lit.literal));
+        r.alternatives.push_back(std::move(lit.literal));
+    return r;
+}
+catch (...)
+{
+    LOG_ERROR(
+        getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    return {};
 }
 
-template <bool thread_safe>
-OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
+OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
 {
-    std::vector<std::string> alternativesDummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternativesDummy);
-
-
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
         throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
 
+    RegexpAnalysisResult result = analyze(regexp_);
+    required_substring = result.required_substring;
+    is_trivial = result.is_trivial;
+    has_capture = result.has_capture;
+    required_substring_is_prefix = result.required_substring_is_prefix;
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
     bool is_dot_nl = options & RE_DOT_NL;
@@ -449,7 +507,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        typename RegexType::Options regexp_options;
+        re2::RE2::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);
@@ -460,7 +518,15 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
         if (is_dot_nl)
             regexp_options.set_dot_nl(true);
 
-        re2 = std::make_unique<RegexType>(regexp_, regexp_options);
+        re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
+
+        /// Fallback to latin1 to allow matching binary data.
+        if (!re2->ok() && re2->error_code() == re2::RE2::ErrorCode::ErrorBadUTF8)
+        {
+            regexp_options.set_encoding(re2::RE2::Options::EncodingLatin1);
+            re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
+        }
+
         if (!re2->ok())
         {
             throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
@@ -484,32 +550,36 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     if (!required_substring.empty())
     {
         if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
 
-template <bool thread_safe>
-OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept
-    : is_trivial(rhs.is_trivial)
+OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept
+    : required_substring(std::move(rhs.required_substring))
+    , is_trivial(rhs.is_trivial)
     , required_substring_is_prefix(rhs.required_substring_is_prefix)
     , is_case_insensitive(rhs.is_case_insensitive)
-    , required_substring(std::move(rhs.required_substring))
     , re2(std::move(rhs.re2))
     , number_of_subpatterns(rhs.number_of_subpatterns)
 {
     if (!required_substring.empty())
     {
         if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+                reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
 
-template <bool thread_safe>
-bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const
+OptimizedRegularExpression::~OptimizedRegularExpression() = default;
+
+bool OptimizedRegularExpression::match(const char * subject, size_t subject_size) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -521,32 +591,28 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
         if (is_case_insensitive)
             return haystack_end != case_insensitive_substring_searcher->search(haystack, subject_size);
-        else
-            return haystack_end != case_sensitive_substring_searcher->search(haystack, subject_size);
+        return haystack_end != case_sensitive_substring_searcher->search(haystack, subject_size);
     }
-    else
-    {
-        if (!required_substring.empty())
-        {
-            if (is_case_insensitive)
-            {
-                if (haystack_end == case_insensitive_substring_searcher->search(haystack, subject_size))
-                    return false;
-            }
-            else
-            {
-                if (haystack_end == case_sensitive_substring_searcher->search(haystack, subject_size))
-                    return false;
-            }
-        }
 
-        return re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
+    if (!required_substring.empty())
+    {
+        if (is_case_insensitive)
+        {
+            if (haystack_end == case_insensitive_substring_searcher->search(haystack, subject_size))
+                return false;
+        }
+        else
+        {
+            if (haystack_end == case_sensitive_substring_searcher->search(haystack, subject_size))
+                return false;
+        }
     }
+
+    return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
 }
 
 
-template <bool thread_safe>
-bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, Match & match) const
+bool OptimizedRegularExpression::match(const char * subject, size_t subject_size, Match & match) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -556,7 +622,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
         if (required_substring.empty())
             return true;
 
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -564,43 +630,36 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
         if (haystack_end == pos)
             return false;
-        else
-        {
-            match.offset = pos - haystack;
-            match.length = required_substring.size();
-            return true;
-        }
+
+        match.offset = pos - haystack;
+        match.length = required_substring.size();
+        return true;
     }
-    else
+
+    if (!required_substring.empty())
     {
-        if (!required_substring.empty())
-        {
-            const UInt8 * pos;
-            if (is_case_insensitive)
-                pos = case_insensitive_substring_searcher->search(haystack, subject_size);
-            else
-                pos = case_sensitive_substring_searcher->search(haystack, subject_size);
-
-            if (haystack_end == pos)
-                return false;
-        }
-
-        StringPieceType piece;
-
-        if (!RegexType::PartialMatch(StringPieceType(subject, subject_size), *re2, &piece))
-            return false;
+        const UInt8 * pos = nullptr;
+        if (is_case_insensitive)
+            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
-        {
-            match.offset = piece.data() - subject;
-            match.length = piece.length();
-            return true;
-        }
+            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+
+        if (haystack_end == pos)
+            return false;
     }
+
+    std::string_view piece;
+
+    if (!re2::RE2::PartialMatch({subject, subject_size}, *re2, &piece))
+        return false;
+
+    match.offset = piece.data() - subject;
+    match.length = piece.length();
+    return true;
 }
 
 
-template <bool thread_safe>
-unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -610,8 +669,7 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     if (limit == 0)
         return 0;
 
-    if (limit > number_of_subpatterns + 1)
-        limit = number_of_subpatterns + 1;
+    limit = std::min(limit, number_of_subpatterns + 1);
 
     if (is_trivial)
     {
@@ -621,7 +679,7 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
             return 1;
         }
 
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -629,61 +687,47 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
 
         if (haystack_end == pos)
             return 0;
-        else
-        {
-            Match match;
-            match.offset = pos - haystack;
-            match.length = required_substring.size();
-            matches.push_back(match);
-            return 1;
-        }
+
+        Match match;
+        match.offset = pos - haystack;
+        match.length = required_substring.size();
+        matches.push_back(match);
+        return 1;
     }
-    else
+
+    if (!required_substring.empty())
     {
-        if (!required_substring.empty())
-        {
-            const UInt8 * pos;
-            if (is_case_insensitive)
-                pos = case_insensitive_substring_searcher->search(haystack, subject_size);
-            else
-                pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+        const UInt8 * pos = nullptr;
+        if (is_case_insensitive)
+            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
+        else
+            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
 
-            if (haystack_end == pos)
-                return 0;
-        }
-
-        DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
-
-        if (!re2->Match(
-            StringPieceType(subject, subject_size),
-            0,
-            subject_size,
-            RegexType::UNANCHORED,
-            pieces.data(),
-            static_cast<int>(pieces.size())))
-        {
+        if (haystack_end == pos)
             return 0;
+    }
+
+    DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
+
+    if (!re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, pieces.data(), static_cast<int>(pieces.size())))
+    {
+        return 0;
+    }
+
+    matches.resize(limit);
+    for (size_t i = 0; i < limit; ++i)
+    {
+        if (pieces[i].empty())
+        {
+            matches[i].offset = std::string::npos;
+            matches[i].length = 0;
         }
         else
         {
-            matches.resize(limit);
-            for (size_t i = 0; i < limit; ++i)
-            {
-                if (pieces[i] != nullptr)
-                {
-                    matches[i].offset = pieces[i].data() - subject;
-                    matches[i].length = pieces[i].length();
-                }
-                else
-                {
-                    matches[i].offset = std::string::npos;
-                    matches[i].length = 0;
-                }
-            }
-            return limit;
+            matches[i].offset = pieces[i].data() - subject;
+            matches[i].length = pieces[i].length();
         }
     }
+    return limit;
 }
-
-template class OptimizedRegularExpressionImpl<true>;
-template class OptimizedRegularExpressionImpl<false>;
+}

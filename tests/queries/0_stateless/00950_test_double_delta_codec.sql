@@ -24,7 +24,7 @@ CREATE TABLE codecTest (
     valueI8  Int8     CODEC(DoubleDelta),
     valueDT  DateTime CODEC(DoubleDelta),
     valueD   Date     CODEC(DoubleDelta)
-) Engine = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0;
+) Engine = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
 
 
 -- checking for overflow

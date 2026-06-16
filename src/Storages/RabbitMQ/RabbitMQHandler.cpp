@@ -1,6 +1,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <thread>
 
 namespace DB
 {
@@ -8,7 +9,7 @@ namespace DB
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
  */
-RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
+RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_) :
     AMQP::LibUvHandler(loop_),
     loop(loop_),
     log(log_),
@@ -40,7 +41,10 @@ void RabbitMQHandler::startLoop()
     loop_running.store(true);
 
     while (loop_state.load() == Loop::RUN)
-        uv_run(loop, UV_RUN_NOWAIT);
+    {
+        if (!uv_run(loop, UV_RUN_NOWAIT))
+            std::this_thread::yield();
+    }
 
     LOG_DEBUG(log, "Background loop ended");
     loop_running.store(false);
@@ -64,7 +68,13 @@ int RabbitMQHandler::startBlockingLoop()
 
 void RabbitMQHandler::stopLoop()
 {
-    LOG_DEBUG(log, "Implicit loop stop.");
+    LOG_DEBUG(log, "Stopping background loop.");
+    loop_state.store(Loop::STOP);
+}
+
+void RabbitMQHandler::stopBlockingLoop()
+{
+    LOG_DEBUG(log, "Stopping blocking loop.");
     uv_stop(loop);
 }
 

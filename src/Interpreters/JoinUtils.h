@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
-#include <Interpreters/IJoin.h>
+#include <Columns/IColumn.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
+#include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IJoin.h>
+#include <base/FnTraits.h>
 
 namespace DB
 {
@@ -25,41 +29,50 @@ namespace JoinCommon
 class JoinMask
 {
 public:
+    enum class Kind
+    {
+        AllTrue,
+        AllFalse,
+        Unknown,
+    };
+
     explicit JoinMask()
         : column(nullptr)
+        , size(0)
+        , kind(Kind::Unknown)
     {}
 
-    explicit JoinMask(bool value, size_t size)
-        : column(ColumnUInt8::create(size, value))
+    JoinMask(bool value, size_t size_)
+        : column(nullptr)
+        , size(size_)
+        , kind(value ? Kind::AllTrue : Kind::AllFalse)
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
+        , size(col ? col->size() : 0)
+        , kind(Kind::Unknown)
     {}
 
-    bool hasData()
+    bool hasData() { return column != nullptr || kind != Kind::Unknown; }
+
+    size_t getSize() const { return size; }
+
+    bool isRowFiltered(size_t row) const
     {
-        return column != nullptr;
+        chassert(!column || row < size);
+        return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
     }
 
-    UInt8ColumnDataPtr getData()
-    {
-        if (column)
-            return &assert_cast<const ColumnUInt8 &>(*column).getData();
-        return nullptr;
-    }
-
-    inline bool isRowFiltered(size_t row) const
-    {
-        return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
-    }
+    Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
+    size_t size;
+    Kind kind;
 };
 
 
-bool isNullable(const DataTypePtr & type);
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
@@ -71,10 +84,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
-void convertToFullColumnsInplace(Block & block);
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
@@ -105,6 +115,17 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name);
 void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
+
+template <Fn<size_t(size_t)> Sharder>
+IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder sharder)
+{
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(intHashCRC32(hashes[i]));
+    return selector;
+}
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);

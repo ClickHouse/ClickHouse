@@ -1,24 +1,37 @@
+#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/ParseError.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/ObjectUtils.h>
-
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -33,7 +46,7 @@ namespace ErrorCodes
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     ReadBuffer & in_,
-    const Block & header_,
+    SharedHeader header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
@@ -42,74 +55,20 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     std::unique_ptr<PeekableReadBuffer> buf_,
-    const Block & header_,
+    SharedHeader header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
-        params(params_), format_settings(format_settings_), num_columns(header_.columns()),
+        params(params_), format_settings(format_settings_), num_columns(header_->columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_->getDataTypes()), serializations(header_->getSerializations())
+    , block_missing_values(getPort().getHeader().columns())
 {
-}
-
-Chunk ValuesBlockInputFormat::generate()
-{
-    if (total_rows == 0)
-        readPrefix();
-
-    const Block & header = getPort().getHeader();
-    MutableColumns columns = header.cloneEmptyColumns();
-    block_missing_values.clear();
-
-    for (size_t rows_in_block = 0; rows_in_block < params.max_block_size; ++rows_in_block)
-    {
-        try
-        {
-            skipWhitespaceIfAny(*buf);
-            if (buf->eof() || *buf->position() == ';')
-                break;
-            readRow(columns, rows_in_block);
-        }
-        catch (Exception & e)
-        {
-            if (isParseError(e.code()))
-                e.addMessage(" at row " + std::to_string(total_rows));
-            throw;
-        }
-    }
-
-    /// Evaluate expressions, which were parsed using templates, if any
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!templates[i] || !templates[i]->rowsCount())
-            continue;
-
-        const auto & expected_type = header.getByPosition(i).type;
-        if (columns[i]->empty())
-            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
-        else
-        {
-            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
-            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
-        }
-    }
-
-    if (columns.empty() || columns[0]->empty())
-    {
-        readSuffix();
-        return {};
-    }
-
-    for (const auto & column : columns)
-        column->finalize();
-
-    size_t rows_in_block = columns[0]->size();
-    return Chunk{std::move(columns), rows_in_block};
 }
 
 /// Can be used in fileSegmentationEngine for parallel parsing of Values
-static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int balance)
+bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance)
 {
     skipWhitespaceIfAny(*buf);
     if (buf->eof() || *buf->position() == ';')
@@ -152,6 +111,80 @@ static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int 
     return true;
 }
 
+Chunk ValuesBlockInputFormat::read()
+{
+    if (total_rows == 0)
+        readPrefix();
+
+    const Block & header = getPort().getHeader();
+    MutableColumns columns = header.cloneEmptyColumns();
+    block_missing_values.clear();
+    size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
+
+    size_t rows_in_block = 0;
+    for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
+    {
+        try
+        {
+            skipWhitespaceAndSQLComments(*buf);
+            if (buf->eof() || *buf->position() == ';')
+                break;
+            if (need_only_count)
+                skipToNextRow(buf.get(), 1, 0);
+            else
+                readRow(columns, rows_in_block);
+        }
+        catch (Exception & e)
+        {
+            if (isParseError(e.code()))
+                e.addMessage(" at row " + std::to_string(total_rows));
+            throw;
+        }
+    }
+
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
+
+    if (need_only_count)
+    {
+        if (!rows_in_block)
+        {
+            readSuffix();
+            return {};
+        }
+
+        total_rows += rows_in_block;
+        return getChunkForCount(rows_in_block);
+    }
+
+    /// Evaluate expressions, which were parsed using templates, if any
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!templates[i] || !templates[i]->rowsCount())
+            continue;
+
+        const auto & expected_type = header.getByPosition(i).type;
+        if (columns[i]->empty())
+            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
+        else
+        {
+            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
+            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
+        }
+    }
+
+    if (columns.empty() || columns[0]->empty())
+    {
+        readSuffix();
+        return {};
+    }
+
+    for (const auto & column : columns)
+        column->finalize();
+
+    size_t rows = columns[0]->size();
+    return Chunk{std::move(columns), rows};
+}
+
 /// We need continuous memory containing the expression to use Lexer
 /// Note that this is both reading and tokenizing until the end of the row
 /// This is doing unnecessary work if the rest of the columns can be read with tryReadValue (which doesn't require tokens)
@@ -174,7 +207,10 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
+    token_iterator.emplace(
+        *tokens,
+        static_cast<unsigned>(context->getSettingsRef()[Setting::max_parser_depth]),
+        static_cast<unsigned>(context->getSettingsRef()[Setting::max_parser_backtracks]));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -263,7 +299,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
+        if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
             column.insertDefault();
             read = false;
@@ -272,15 +308,15 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         {
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
+            /// Let Enum conversion functions handle the null value.
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
 
         rollback_on_exception = true;
 
-        skipWhitespaceIfAny(*buf);
         assertDelimiterAfterValue(column_idx);
         return read;
     }
@@ -293,9 +329,35 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         if (rollback_on_exception)
             column.popBack(1);
 
+        buf->rollbackToCheckpoint();
+
+        /// We might hit something like ('{\'key1\':1, \'key2\':10}') which is valid, but escaped text
+        /// for Map/Array/Tuple. Try reading it here rather than falling back to the more expensive
+        /// expression parser.
+        if (!buf->eof() && *buf->position() == '\'')
+        {
+            WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
+            if (which.isMap() || which.isArray() || which.isTuple())
+            {
+                String string_value;
+                const bool parsed_string = tryReadQuotedStringWithSQLStyle(string_value, *buf)
+                    && checkDelimiterAfterValue(column_idx);
+
+                if (parsed_string)
+                {
+                    ReadBufferFromString in_buffer(string_value);
+                    if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
+                        return true;
+                }
+
+                /// Deserialization failed or delimiter not found after the string
+                /// Rollback and let the SQL parser handle it.
+                buf->rollbackToCheckpoint();
+            }
+        }
+
         /// Switch to SQL parser and don't try to use streaming parser for complex expressions
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
-        buf->rollbackToCheckpoint();
         return parseExpression(column, column_idx);
     }
 }
@@ -312,7 +374,7 @@ namespace
         {
             const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
 
-            Tuple & tuple_value = value.get<Tuple>();
+            Tuple & tuple_value = value.safeGet<Tuple>();
 
             size_t src_tuple_size = tuple_value.size();
             size_t dst_tuple_size = type_tuple.getElements().size();
@@ -339,7 +401,7 @@ namespace
             if (element_type.isNullable())
                 return;
 
-            Array & array_value = value.get<Array>();
+            Array & array_value = value.safeGet<Array>();
             size_t array_value_size = array_value.size();
 
             for (size_t i = 0; i < array_value_size; ++i)
@@ -357,12 +419,12 @@ namespace
             const auto & key_type = *type_map.getKeyType();
             const auto & value_type = *type_map.getValueType();
 
-            auto & map = value.get<Map>();
+            auto & map = value.safeGet<Map>();
             size_t map_size = map.size();
 
             for (size_t i = 0; i < map_size; ++i)
             {
-                auto & map_entry = map[i].get<Tuple>();
+                auto & map_entry = map[i].safeGet<Tuple>();
 
                 auto & entry_key = map_entry[0];
                 auto & entry_value = map_entry[1];
@@ -385,7 +447,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
-    auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);
@@ -393,12 +455,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     bool parsed = false;
     ASTPtr ast;
     std::optional<IParser::Pos> ti_start;
+    LiteralTokenMap literal_token_map;
 
     if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
     {
         Expected expected;
+        expected.literal_token_map = &literal_token_map;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+        ti_start = IParser::Pos(
+            *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -444,7 +509,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             parser_type_for_column[column_idx] = ParserType::Streaming;
             return true;
         }
-        else if (rollback_on_exception)
+        if (rollback_on_exception)
             column.popBack(1);
     }
 
@@ -468,9 +533,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 *ti_start,
                 *token_iterator,
                 ast,
+                literal_token_map,
                 context,
                 &found_in_cache,
                 delimiter);
+
+            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+                     column_idx, structure->dumpTemplate());
+
             templates[column_idx].emplace(structure);
             if (found_in_cache)
                 ++attempts_to_deduce_template_cached[column_idx];
@@ -517,10 +587,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get());
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
+    if (value.isNull() && !canContainNull(type))
     {
         if (format_settings.null_as_default)
         {
@@ -533,7 +603,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                         std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
-    column.insert(value);
+    /// Insert value into the column.
+    /// For Dynamic type we cannot just insert Field as we lose information about the data type.
+    /// Instead try to create a column with single element and cast it to the destination type.
+    if (type.hasDynamicStructure())
+    {
+        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+    }
+    else
+    {
+        column.insert(value);
+    }
     return true;
 }
 
@@ -548,9 +630,14 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     skipWhitespaceIfAny(*buf);
 
     if (likely(column_idx + 1 != num_columns))
+    {
         return checkChar(',', *buf);
-    else
-        return checkChar(')', *buf);
+    }
+
+    /// Optional trailing comma.
+    if (checkChar(',', *buf))
+        skipWhitespaceIfAny(*buf);
+    return checkChar(')', *buf);
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
@@ -562,13 +649,13 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    double attempts_weighted = 1.5 * static_cast<double>(attempts_to_deduce_template[column_idx]) +  0.5 * static_cast<double>(attempts_to_deduce_template_cached[column_idx]);
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
         return true;
 
-    if (rows_parsed_using_template[column_idx] / attempts_weighted > 1)
+    if (static_cast<double>(rows_parsed_using_template[column_idx]) / attempts_weighted > 1)
     {
         /// Try again
         attempts_to_deduce_template[column_idx] = 0;
@@ -596,7 +683,7 @@ void ValuesBlockInputFormat::readSuffix()
         return;
     }
 
-    if (buf->hasUnreadData())
+    if (buf->hasUnreadData() || !buf->eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
@@ -616,13 +703,41 @@ void ValuesBlockInputFormat::resetParser()
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
-    buf->reset();
     total_rows = 0;
 }
 
 void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+void ValuesBlockInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IInputFormat::resetReadBuffer();
+}
+
+void ValuesBlockInputFormat::setContext(const ContextPtr & context_)
+{
+    context = Context::createCopy(context_);
+}
+
+void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
+{
+    if (parameters == context->getQueryParameters())
+        return;
+
+    auto context_copy = Context::createCopy(context);
+    context_copy->setQueryParameters(parameters);
+    context = std::move(context_copy);
+
+    // Reset templates when parameters change
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        templates[i].reset();
+        parser_type_for_column[i] = ParserType::Streaming;
+    }
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -630,7 +745,7 @@ ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & 
 {
 }
 
-DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
 {
     if (first_row)
     {
@@ -638,7 +753,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
         first_row = false;
     }
 
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceAndSQLComments(buf);
     if (buf.eof() || end_of_data)
         return {};
 
@@ -675,6 +790,12 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
+void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
+}
+
+void registerInputFormatValues(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -683,10 +804,48 @@ void registerInputFormatValues(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
+        return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
     });
+
+    factory.setDocumentation("Values", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+The `Values` format prints every row in brackets. 
+
+- Rows are separated by commas without a comma after the last row. 
+- The values inside the brackets are also comma-separated. 
+- Numbers are output in a decimal format without quotes. 
+- Arrays are output in `[]`.
+- Strings, dates, and dates with times are output in quotes. 
+- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
+
+During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
+[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
+
+The minimum set of characters that you need to escape when passing data in the `Values` format: 
+- single quotes
+- backslashes
+
+This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`input_format_values_interpret_expressions`](../../operations/settings/settings-formats.md/#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
+| [`input_format_values_deduce_templates_of_expressions`](../../operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
+| [`input_format_values_accurate_types_of_literals`](../../operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
+)DOCS_MD"});
 }
 
+void registerValuesSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)

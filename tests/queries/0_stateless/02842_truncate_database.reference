@@ -1,0 +1,24 @@
+0
+0
+0
+0
+0
+dest_dictionary	test_truncate_database	0
+1	First
+=== TABLES IN test_truncate_database ===
+dest_dictionary
+dest_view_log
+dest_view_memory
+dest_view_merge_tree
+dest_view_stripe_log
+dest_view_tiny_log
+source_table_dictionary
+source_table_log
+source_table_memory
+source_table_merge_tree
+source_table_stripe_log
+source_table_tiny_log
+=== DICTIONARIES IN test_truncate_database ===
+dest_dictionary
+new tables
+new_table

@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 ASTPtr ASTProjectionSelectQuery::clone() const
 {
-    auto res = std::make_shared<ASTProjectionSelectQuery>(*this);
+    auto res = make_intrusive<ASTProjectionSelectQuery>(*this);
     res->children.clear();
     res->positions.clear();
 
@@ -48,43 +48,44 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 }
 
 
-void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
-    frame.need_parens = false;
+    frame.expression_list_prepend_whitespace = true;
+
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (with())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
-        s.one_line ? with()->formatImpl(s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        s.ostr << s.nl_or_ws;
+        ostr << indent_str << "WITH";
+        s.one_line ? with()->format(ostr, s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        ostr << s.nl_or_ws;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (s.hilite ? hilite_none : "");
+    ostr << indent_str << "SELECT";
 
-    s.one_line ? select()->formatImpl(s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+    s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
     if (groupBy())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
-        s.one_line ? groupBy()->formatImpl(s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        ostr << s.nl_or_ws << indent_str << "GROUP BY";
+        s.one_line ? groupBy()->format(ostr, s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
     if (orderBy())
     {
-        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
+        /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && !func->arguments->children.empty())
             order_by = func->arguments;
         else
         {
-            order_by = std::make_shared<ASTExpressionList>();
+            order_by = make_intrusive<ASTExpressionList>();
             order_by->children.push_back(orderBy());
         }
-        s.one_line ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        s.one_line ? order_by->format(ostr, s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 }
 
@@ -121,7 +122,7 @@ ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 
 ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
 {
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
     ASTPtr node = select_query;
     if (with())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
@@ -142,6 +143,23 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
+
+    /// Attach settings to prevent AST transformations. We already have ignored AST optimizations
+    /// for projection queries. Only remaining settings need to be added here.
+    ///
+    /// NOTE: `count_distinct_implementation` has already been selected during the creation of the
+    /// projection, so there will be no countDistinct(...) to rewrite in projection queries.
+    /// Ideally, we should aim for a unique and normalized query representation that remains
+    /// unchanged after the AST rewrite. For instance, we can add -OrEmpty, realIn as the default
+    /// behavior w.r.t -OrNull, nullIn.
+    auto settings_query = make_intrusive<ASTSetQuery>();
+    SettingsChanges settings_changes;
+    settings_changes.insertSetting("aggregate_functions_null_for_empty", false);
+    settings_changes.insertSetting("transform_null_in", false);
+    settings_changes.insertSetting("legacy_column_name_of_tuple_literal", false);
+    settings_query->changes = std::move(settings_changes);
+    settings_query->is_standalone = false;
+    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     return node;
 }
 

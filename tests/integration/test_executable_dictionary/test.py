@@ -217,53 +217,21 @@ def test_executable_implicit_input_argument_python(started_cluster):
 
 def test_executable_input_signalled_python(started_cluster):
     skip_test_msan(node)
-    assert (
-        node.query(
-            "SELECT dictGet('executable_input_signalled_python', 'result', toUInt64(1))"
-        )
-        == "Default result\n"
+    assert node.query_and_get_error(
+        "SELECT dictGet('executable_input_signalled_python', 'result', toUInt64(1))"
     )
-    assert (
-        node.query(
-            "SELECT dictGet('executable_input_signalled_pool_python', 'result', toUInt64(1))"
-        )
-        == "Default result\n"
+    assert node.query_and_get_error(
+        "SELECT dictGet('executable_input_signalled_pool_python', 'result', toUInt64(1))"
     )
 
 
 def test_executable_implicit_input_signalled_python(started_cluster):
     skip_test_msan(node)
-    assert (
-        node.query(
-            "SELECT dictGet('executable_implicit_input_signalled_python', 'result', toUInt64(1))"
-        )
-        == "Default result\n"
-    )
-    assert (
-        node.query(
-            "SELECT dictGet('executable_implicit_input_signalled_pool_python', 'result', toUInt64(1))"
-        )
-        == "Default result\n"
-    )
-
-
-def test_executable_input_slow_python(started_cluster):
-    skip_test_msan(node)
     assert node.query_and_get_error(
-        "SELECT dictGet('executable_input_slow_python', 'result', toUInt64(1))"
+        "SELECT dictGet('executable_implicit_input_signalled_python', 'result', toUInt64(1))"
     )
     assert node.query_and_get_error(
-        "SELECT dictGet('executable_input_slow_pool_python', 'result', toUInt64(1))"
-    )
-
-
-def test_executable_implicit_input_slow_python(started_cluster):
-    skip_test_msan(node)
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_implicit_input_slow_python', 'result', toUInt64(1))"
-    )
-    assert node.query_and_get_error(
-        "SELECT dictGet('executable_implicit_input_slow_pool_python', 'result', toUInt64(1))"
+        "SELECT dictGet('executable_implicit_input_signalled_pool_python', 'result', toUInt64(1))"
     )
 
 
@@ -427,6 +395,7 @@ def test_executable_source_argument_python(started_cluster):
 
 def test_executable_source_updated_python(started_cluster):
     skip_test_msan(node)
+    node.restart_clickhouse()
     assert (
         node.query(
             "SELECT * FROM dictionary(executable_source_simple_key_update_python) ORDER BY input"
@@ -481,4 +450,24 @@ def test_executable_source_updated_python(started_cluster):
             "SELECT dictGet('executable_source_complex_key_update_python', 'result', toUInt64(1))"
         )
         == "Value 1 1\n"
+    )
+
+
+def test_executable_source_exit_code_check(started_cluster):
+    skip_test_msan(node)
+    assert "DB::Exception" in node.query_and_get_error(
+        "SELECT * FROM dictionary(executable_input_missing_executable) ORDER BY input"
+    )
+    assert "DB::Exception" in node.query_and_get_error(
+        "SELECT dictGet('executable_input_missing_executable', 'result', toUInt64(1))"
+    )
+
+    assert (
+        node.query(
+            "SELECT status FROM system.dictionaries WHERE name='executable_input_missing_executable'"
+        )
+        == "FAILED\n"
+    )
+    assert "DB::Exception" in node.query(
+        "SELECT last_exception FROM system.dictionaries WHERE name='executable_input_missing_executable'"
     )

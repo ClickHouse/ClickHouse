@@ -48,6 +48,8 @@ namespace Net
         HTTPFixedLengthStreamBuf(HTTPSession & session, ContentLength length, openmode mode);
         ~HTTPFixedLengthStreamBuf();
 
+        bool isComplete() const;
+
     protected:
         int readFromDevice(char * buffer, std::streamsize length);
         int writeToDevice(const char * buffer, std::streamsize length);
@@ -67,6 +69,8 @@ namespace Net
         ~HTTPFixedLengthIOS();
         HTTPFixedLengthStreamBuf * rdbuf();
 
+        bool isComplete() const { return _buf.isComplete(); }
+
     protected:
         HTTPFixedLengthStreamBuf _buf;
     };
@@ -78,12 +82,6 @@ namespace Net
     public:
         HTTPFixedLengthInputStream(HTTPSession & session, HTTPFixedLengthStreamBuf::ContentLength length);
         ~HTTPFixedLengthInputStream();
-
-        void * operator new(std::size_t size);
-        void operator delete(void * ptr);
-
-    private:
-        static Poco::MemoryPool _pool;
     };
 
 
@@ -93,12 +91,6 @@ namespace Net
     public:
         HTTPFixedLengthOutputStream(HTTPSession & session, HTTPFixedLengthStreamBuf::ContentLength length);
         ~HTTPFixedLengthOutputStream();
-
-        void * operator new(std::size_t size);
-        void operator delete(void * ptr);
-
-    private:
-        static Poco::MemoryPool _pool;
     };
 
 

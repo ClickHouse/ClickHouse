@@ -20,6 +20,7 @@ struct ExternalResultDescription
         vtInt16,
         vtInt32,
         vtInt64,
+        vtInt256,
         vtFloat32,
         vtFloat64,
         vtEnum8,
@@ -30,16 +31,22 @@ struct ExternalResultDescription
         vtDateTime,
         vtUUID,
         vtDateTime64,
+        vtTime,
+        vtTime64,
         vtDecimal32,
         vtDecimal64,
         vtDecimal128,
         vtDecimal256,
         vtArray,
-        vtFixedString
+        vtFixedString,
+        vtPoint,
     };
 
     Block sample_block;
     std::vector<std::pair<ValueType, bool /* is_nullable */>> types;
+
+    ExternalResultDescription() = default;
+    explicit ExternalResultDescription(const Block & sample_block_);
 
     void init(const Block & sample_block_);
 };

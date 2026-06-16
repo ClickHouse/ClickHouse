@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class DataTypeIPv4 : public IDataType
+class DataTypeIPv4 final : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;
@@ -19,6 +19,7 @@ public:
     static constexpr auto type_id = TypeToTypeIndex<IPv4>;
 
     const char * getFamilyName() const override { return TypeName<IPv4>.data(); }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override { return IPv4{}; }
@@ -29,6 +30,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -46,10 +48,10 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv4>>(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv4>::create(); }
 };
 
-class DataTypeIPv6 : public IDataType
+class DataTypeIPv6 final : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;
@@ -59,6 +61,7 @@ public:
     static constexpr auto type_id = TypeToTypeIndex<IPv6>;
 
     const char * getFamilyName() const override { return TypeName<IPv6>.data(); }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override { return IPv6{}; }
@@ -69,6 +72,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -83,7 +87,7 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv6>>(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv6>::create(); }
 };
 
 

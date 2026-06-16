@@ -10,8 +10,10 @@ set (CMAKE_OSX_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/darwin-aarch64")
 
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake
 
-set (HAS_PRE_1970_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
-set (HAS_PRE_1970_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
-
-set (HAS_POST_2038_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
-set (HAS_POST_2038_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
+# Make sure to ignore global clang configuration files which could influence the
+# build environment using --no-default-config
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --no-default-config")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --no-default-config")
+set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --no-default-config")
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --no-default-config")
+set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} --no-default-config")

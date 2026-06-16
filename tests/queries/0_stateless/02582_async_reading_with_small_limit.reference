@@ -4,4 +4,4 @@ ExpressionTransform
   Limit
     (ReadFromMergeTree)
     Concat 3 → 1
-      MergeTreeInOrder × 3 0 → 1
+      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 3 0 → 1

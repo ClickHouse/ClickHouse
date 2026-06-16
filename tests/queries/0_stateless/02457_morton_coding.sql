@@ -11,7 +11,7 @@ create table morton_numbers_02457(
     n8 UInt8
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 SELECT '----- CONST -----';
 select mortonEncode(1,2,3,4);
@@ -45,7 +45,7 @@ create table morton_numbers_1_02457(
     n8 UInt64
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_1_02457
 select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8)))
@@ -80,7 +80,7 @@ create table morton_numbers_2_02457(
     n4 UInt64
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_2_02457
 select untuple(mortonDecode(4, mortonEncode(n1, n2, n3, n4)))
@@ -114,7 +114,7 @@ create table morton_numbers_3_02457(
     n2 UInt64
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_3_02457
 select untuple(mortonDecode(2, mortonEncode(n1, n2)))

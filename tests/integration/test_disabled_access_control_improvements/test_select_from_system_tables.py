@@ -1,12 +1,17 @@
 import os
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/disable_access_control_improvements.xml"],
+    main_configs=[
+        "configs/config.d/disable_access_control_improvements.xml",
+        "configs/remote_servers.xml",
+    ],
     user_configs=[
         "configs/users.d/another_user.xml",
     ],
@@ -43,7 +48,7 @@ def test_system_db():
     assert node.query("SELECT count() FROM system.tables WHERE name='table2'") == "1\n"
 
     assert node.query("SELECT count()>0 FROM system.settings", user="another") == "1\n"
-    expected_error = "necessary to have grant SHOW USERS ON *.*"
+    expected_error = "necessary to have the grant SHOW USERS ON *.*"
     assert expected_error in node.query_and_get_error(
         "SELECT count()>0 FROM system.users", user="another"
     )
@@ -62,7 +67,7 @@ def test_system_db():
     )
 
     assert node.query("SELECT count()>0 FROM system.settings", user="sqluser") == "1\n"
-    expected_error = "necessary to have grant SHOW USERS ON *.*"
+    expected_error = "necessary to have the grant SHOW USERS ON *.*"
     assert expected_error in node.query_and_get_error(
         "SELECT count()>0 FROM system.users", user="sqluser"
     )

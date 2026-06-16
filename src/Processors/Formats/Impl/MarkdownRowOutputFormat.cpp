@@ -1,11 +1,13 @@
 #include <Processors/Formats/Impl/MarkdownRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
 
-MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), format_settings(format_settings_) {}
 
 void MarkdownRowOutputFormat::writePrefix()
@@ -52,21 +54,67 @@ void MarkdownRowOutputFormat::writeRowEndDelimiter()
 
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    serialization.serializeTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextMarkdown(column, row_num, out, format_settings);
 }
 
+void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Markdown", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const FormatSettings & settings)
+    auto registerWithName = [&](const auto & name)
     {
-        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, settings);
-    });
+        factory.registerOutputFormat(name, [](
+            WriteBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
+        {
+            return std::make_shared<MarkdownRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        });
+    };
+
+    registerWithName("Markdown");
+    registerWithName("MD");
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");
     factory.registerFileExtension("md", "Markdown");
+
+    factory.setDocumentation("MD", Documentation{
+        .description = "An alias for the `Markdown` format. See the `Markdown` entry for the full documentation.",
+        .related = {"Markdown"}});
+
+    factory.setDocumentation("Markdown", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      | `MD`  |
+
+## Description {#description}
+
+You can export results using [Markdown](https://en.wikipedia.org/wiki/Markdown) format to generate output ready to be pasted into your `.md` files:
+
+The markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.
+
+## Example usage {#example-usage}
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

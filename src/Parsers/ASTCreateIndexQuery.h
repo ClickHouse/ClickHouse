@@ -16,10 +16,11 @@ class ASTCreateIndexQuery : public ASTQueryWithTableAndOutput, public ASTQueryWi
 public:
     ASTPtr index_name;
 
-    /// Stores the IndexDeclaration here.
+    /// Stores the ASTIndexDeclaration here.
     ASTPtr index_decl;
 
     bool if_not_exists{false};
+    bool unique{false};
 
     String getID(char delim) const override;
 
@@ -36,7 +37,7 @@ public:
     ASTPtr convertToASTAlterCommand() const;
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

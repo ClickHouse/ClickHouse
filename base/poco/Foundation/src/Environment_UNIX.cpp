@@ -281,15 +281,15 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 /// #include <sys/ioctl.h>
 #if defined(sun) || defined(__sun)
 #include <sys/sockio.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <net/if_arp.h>
 #endif
 /// #include <sys/socket.h>
 /// #include <sys/types.h>
 /// #include <netinet/in.h>
 /// #include <net/if.h>
 /// #include <arpa/inet.h>
-/// #include <netdb.h>
-/// #include <net/if.h>
-/// #include <net/if_arp.h>
 /// #include <unistd.h>
 
 

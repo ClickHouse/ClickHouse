@@ -10,10 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /**
  * Generic interface for background operations. Simply this is self-made coroutine.
@@ -30,10 +26,21 @@ class IExecutableTask
 {
 public:
     using TaskResultCallback = std::function<void(bool)>;
+
     virtual bool executeStep() = 0;
+
+    /// Sometimes exceptions from the executeStep() had been already printed to
+    /// the log, but with different level (see
+    /// ReplicatedMergeMutateTaskBase::executeStep()), but the exception should
+    /// be throw, since there are some sanity assertions based on the
+    /// std::uncaught_exceptions() (i.e. WriteBuffer::~WriteBuffer())
+    virtual bool printExecutionException() const { return true; }
+
     virtual void onCompleted() = 0;
-    virtual StorageID getStorageID() = 0;
-    virtual Priority getPriority() = 0;
+    virtual void cancel() noexcept = 0;
+    virtual StorageID getStorageID() const = 0;
+    virtual String getQueryId() const = 0;
+    virtual Priority getPriority() const = 0;
     virtual ~IExecutableTask() = default;
 };
 
@@ -62,12 +69,13 @@ public:
         return false;
     }
 
+    void cancel() noexcept override { /* no op */ }
+
     void onCompleted() override { job_result_callback(!res); }
-    StorageID getStorageID() override { return id; }
-    Priority getPriority() override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
-    }
+    StorageID getStorageID() const override { return id; }
+    Priority getPriority() const override;
+
+    String getQueryId() const override { return id.getShortName() + "::lambda"; }
 
 private:
     bool res = false;
@@ -75,6 +83,5 @@ private:
     IExecutableTask::TaskResultCallback job_result_callback;
     StorageID id;
 };
-
 
 }

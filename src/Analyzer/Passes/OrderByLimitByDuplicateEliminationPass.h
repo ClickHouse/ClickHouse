@@ -20,7 +20,7 @@ public:
 
     String getDescription() override { return "Remove duplicate columns from ORDER BY, LIMIT BY."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

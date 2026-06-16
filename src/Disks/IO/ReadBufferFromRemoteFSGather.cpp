@@ -1,116 +1,78 @@
-#include "ReadBufferFromRemoteFSGather.h"
-
-#include <IO/SeekableReadBuffer.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Common/CurrentThread.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Common/logger_useful.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
-#include <iostream>
-#include <base/hex.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Common/logger_useful.h>
 
+#include <cstdint>
+
+using namespace DB;
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int LOGICAL_ERROR;
+
+}
+
+namespace
+{
+
+/// Diagnostic predicate for the bounds-corruption class of bug tracked in
+/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates that
+/// `inner` is fully contained in `outer` WITHOUT touching `Buffer::size` or
+/// `begin + size` arithmetic on `inner`. If `inner` is corrupt (inverted, or
+/// `begin`/`end` from different allocations), `Buffer::size` would be a huge
+/// unsigned and `begin + size` would overflow before `chassert` ever reports
+/// anything. Compare the four stored pointers as integer addresses instead.
+void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer outer)
+{
+    auto inner_begin = reinterpret_cast<std::uintptr_t>(inner.begin());
+    auto inner_end = reinterpret_cast<std::uintptr_t>(inner.end());
+    auto outer_begin = reinterpret_cast<std::uintptr_t>(outer.begin());
+    auto outer_end = reinterpret_cast<std::uintptr_t>(outer.end());
+    chassert(inner_begin <= inner_end);
+    chassert(inner_begin >= outer_begin);
+    chassert(inner_end <= outer_end);
+}
+
 }
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
-    const ReadSettings & settings_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_,
-    bool use_external_buffer_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0)
-    , settings(settings_)
+    size_t min_bytes_for_seek_,
+    bool use_external_buffer_,
+    size_t buffer_size)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
+    , min_bytes_for_seek(min_bytes_for_seek_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
-    , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
-    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
-    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
+    , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
-
-    with_cache = settings.remote_fs_cache
-        && settings.enable_filesystem_cache
-        && (!query_id.empty()
-            || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-            || !settings.avoid_readthrough_cache_outside_query_context);
 }
 
-SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
+SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
-    if (current_buf && !with_cache)
-    {
-        appendUncachedReadInfo();
-    }
-
     current_object = object;
-    const auto & object_path = object.remote_path;
+    auto buf = read_buffer_creator(/* restricted_seek */true, object);
 
-    size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
-    auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
+    if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
+        buf->setReadUntilPosition(read_until_position - start_offset);
 
-    if (with_cache)
-    {
-        auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        return std::make_shared<CachedOnDiskReadBufferFromFile>(
-            object_path,
-            cache_key,
-            settings.remote_fs_cache,
-            std::move(current_read_buffer_creator),
-            settings,
-            query_id,
-            object.bytes_size,
-            /* allow_seeks */false,
-            /* use_external_buffer */true,
-            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt,
-            cache_log);
-    }
-
-    return current_read_buffer_creator();
-}
-
-void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
-{
-    if (!cache_log || current_object.remote_path.empty())
-        return;
-
-    FilesystemCacheLogElement elem
-    {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .source_file_path = current_object.remote_path,
-        .file_segment_range = { 0, current_object.bytes_size },
-        .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
-        .file_segment_size = current_object.bytes_size,
-        .read_from_cache_attempted = false,
-    };
-    cache_log->add(elem);
-}
-
-IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
-{
-    /**
-     * Set `data` to current working and internal buffers.
-     * Internal buffer with size `size`. Working buffer with size 0.
-     */
-    set(data, size);
-
-    file_offset_of_buffer_end = offset;
-    bytes_to_ignore = ignore;
-
-    const auto result = nextImpl();
-
-    if (result)
-        return { working_buffer.size(), BufferBase::offset(), nullptr };
-
-    return {0, 0, nullptr};
+    return buf;
 }
 
 void ReadBufferFromRemoteFSGather::initialize()
@@ -119,12 +81,12 @@ void ReadBufferFromRemoteFSGather::initialize()
         return;
 
     /// One clickhouse file can be split into multiple files in remote fs.
-    auto current_buf_offset = file_offset_of_buffer_end;
+    size_t start_offset = 0;
     for (size_t i = 0; i < blobs_to_read.size(); ++i)
     {
         const auto & object = blobs_to_read[i];
 
-        if (object.bytes_size > current_buf_offset)
+        if (start_offset + object.bytes_size > file_offset_of_buffer_end)
         {
             LOG_TEST(log, "Reading from file: {} ({})", object.remote_path, object.local_path);
 
@@ -132,14 +94,14 @@ void ReadBufferFromRemoteFSGather::initialize()
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                current_buf = createImplementationBuffer(object);
+                current_buf = createImplementationBuffer(object, start_offset);
             }
 
-            current_buf->seek(current_buf_offset, SEEK_SET);
+            current_buf->seek(file_offset_of_buffer_end - start_offset, SEEK_SET);
             return;
         }
 
-        current_buf_offset -= object.bytes_size;
+        start_offset += object.bytes_size;
     }
     current_buf_idx = blobs_to_read.size();
     current_buf = nullptr;
@@ -166,14 +128,14 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 {
     /// If there is no available buffers - nothing to read.
-    if (current_buf_idx + 1 >= blobs_to_read.size())
+    if (current_buf_idx + 1 >= blobs_to_read.size() || (read_until_position && file_offset_of_buffer_end >= read_until_position))
         return false;
 
     ++current_buf_idx;
 
     const auto & object = blobs_to_read[current_buf_idx];
     LOG_TEST(log, "Reading from next file: {} ({})", object.remote_path, object.local_path);
-    current_buf = createImplementationBuffer(object);
+    current_buf = createImplementationBuffer(object, file_offset_of_buffer_end);
 
     return true;
 }
@@ -182,39 +144,27 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 {
     SwapHelper swap(*this, *current_buf);
 
-    bool result = false;
-
-    /**
-     * Lazy seek is performed here.
-     * In asynchronous buffer when seeking to offset in range [pos, pos + min_bytes_for_seek]
-     * we save how many bytes need to be ignored (new_offset - position() bytes).
-     */
-    if (bytes_to_ignore)
-    {
-        current_buf->ignore(bytes_to_ignore);
-        result = current_buf->hasPendingData();
-        file_offset_of_buffer_end += bytes_to_ignore;
-        bytes_to_ignore = 0;
-    }
-
-    if (!result)
-        result = current_buf->next();
-
-    if (blobs_to_read.size() == 1)
-    {
-        file_offset_of_buffer_end = current_buf->getFileOffsetOfBufferEnd();
-    }
-    else
-    {
-        /// For log family engines there are multiple s3 files for the same clickhouse file
-        file_offset_of_buffer_end += current_buf->available();
-    }
-
-    /// Required for non-async reads.
+    bool result = current_buf->next();
     if (result)
     {
-        assert(current_buf->available());
+        file_offset_of_buffer_end += current_buf->available();
         nextimpl_working_buffer_offset = current_buf->offset();
+
+        chassert(current_buf->available());
+        chassert(
+            blobs_to_read.size() != 1
+            || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd(),
+            fmt::format(
+                "offset: {}, buf offset: {}, available: {}, nextimpl offset: {}",
+                file_offset_of_buffer_end, current_buf->getFileOffsetOfBufferEnd(),
+                current_buf->available(), nextimpl_working_buffer_offset));
+
+        /// While the `SwapHelper` is in scope our external buffer lives on
+        /// `current_buf->internalBuffer`, not on `this->internal_buffer`.
+        /// The asserts must run on the same side of the swap as the working
+        /// buffer they validate.
+        if (use_external_buffer)
+            assertWorkingBufferContainedIn(current_buf->buffer(), current_buf->internalBuffer());
     }
 
     return result;
@@ -225,16 +175,36 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
     if (position == read_until_position)
         return;
 
+    if (!use_external_buffer && position < file_offset_of_buffer_end)
+    {
+        /// file has been read beyond new read until position already
+        if (available() >= file_offset_of_buffer_end - position)
+        {
+            /// new read until position is after the current position in the working buffer
+            working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
+            file_offset_of_buffer_end = position;
+            pos = std::min(pos, working_buffer.end());
+        }
+        else
+        {
+            /// new read until position is before the current position in the working buffer
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Attempt to set read until position before already read data ({} < {})",
+                position,
+                getPosition());
+        }
+    }
+
     reset();
     read_until_position = position;
 }
 
 void ReadBufferFromRemoteFSGather::reset()
 {
-    current_object = {};
+    current_object = StoredObject();
     current_buf_idx = {};
     current_buf.reset();
-    bytes_to_ignore = 0;
 }
 
 off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
@@ -257,8 +227,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
             && static_cast<size_t>(offset) < file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -267,7 +237,7 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
         if (current_buf && offset > position)
         {
             size_t diff = offset - position;
-            if (diff < settings.remote_read_min_bytes_for_seek)
+            if (diff < min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset;
@@ -282,10 +252,34 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     return file_offset_of_buffer_end;
 }
 
-ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
+bool ReadBufferFromRemoteFSGather::isSeekCheap()
 {
-    if (!with_cache)
-        appendUncachedReadInfo();
+    return !current_buf || current_buf->isSeekCheap();
 }
 
+bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
+{
+    if (!current_buf)
+        initialize();
+
+    if (current_buf)
+    {
+        /// offset should be adjusted the same way as we do it in initialize()
+        for (size_t i = 0; i < blobs_to_read.size(); ++i)
+        {
+            const auto & blob = blobs_to_read[i];
+            if (i == current_buf_idx)
+            {
+                if (offset + size <= blob.bytes_size)
+                    return current_buf->isContentCached(offset, size);
+                return false;
+            }
+            if (offset < blob.bytes_size)
+                return false;
+            offset -= blob.bytes_size;
+        }
+    }
+
+    return false;
+}
 }

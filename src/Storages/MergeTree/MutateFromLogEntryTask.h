@@ -20,14 +20,23 @@ public:
         StorageReplicatedMergeTree & storage_,
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(
-            &Poco::Logger::get(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
+            getLogger(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
             storage_,
             selected_entry_,
             task_result_callback_)
         {}
 
 
-    Priority getPriority() override { return priority; }
+    Priority getPriority() const override { return priority; }
+
+    void cancel() noexcept override
+    {
+        if (mutate_task)
+            mutate_task->cancel();
+
+        if (new_part)
+            new_part->removeIfNeeded();
+    }
 
 private:
 
@@ -47,6 +56,7 @@ private:
 
     MergeTreePartInfo new_part_info;
     MutationCommandsConstPtr commands;
+    Strings mutation_ids_for_log;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;

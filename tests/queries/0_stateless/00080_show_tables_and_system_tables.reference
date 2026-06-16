@@ -2,8 +2,8 @@ A
 B
 numbers
 one
-A	1	TinyLog	CREATE TABLE test_show_tables.A (`A` UInt8) ENGINE = TinyLog
-B	1	TinyLog	CREATE TABLE test_show_tables.B (`A` UInt8) ENGINE = TinyLog
+A	1	TinyLog	CREATE TABLE default.A (`A` UInt8) ENGINE = TinyLog
+B	1	TinyLog	CREATE TABLE default.B (`A` UInt8) ENGINE = TinyLog
 test_temporary_table
-['test_show_tables']	['test_materialized']
+['default']	['test_materialized']
 0

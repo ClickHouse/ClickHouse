@@ -1,6 +1,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
-#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 namespace DB
 {
@@ -11,14 +11,16 @@ namespace ErrorCodes
 }
 
 ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
-    std::unique_ptr<WriteBufferFromFile> out_,
+    std::unique_ptr<WriteBufferFromFileBase> out_,
     int compression_level,
     bool append_to_existing_file_,
+    std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
     : BufferWithOwnMemory(buf_size, existing_memory, alignment)
     , out(std::move(out_))
+    , read_buffer_creator(std::move(read_buffer_creator_))
     , append_to_existing_file(append_to_existing_file_)
 {
     cctx = ZSTD_createCCtx();
@@ -85,11 +87,6 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
 
 }
 
-ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
-{
-    finalize();
-}
-
 void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
 {
     if (first_write)
@@ -100,18 +97,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
     }
     else
     {
-        try
-        {
-            finalizeBefore();
-            out->finalize();
-            finalizeAfter();
-        }
-        catch (...)
-        {
-            /// Do not try to flush next time after exception.
-            out->position() = out->buffer().begin();
-            throw;
-        }
+        finalizeBefore();
+        out->finalize();
+        finalizeAfter();
     }
 }
 
@@ -162,6 +150,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 {
+    if (!cctx)
+        return;
+
     try
     {
         size_t err = ZSTD_freeCCtx(cctx);
@@ -176,6 +167,8 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
         /// since all data already written to the stream.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    cctx = nullptr;
 }
 
 void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
@@ -194,27 +187,37 @@ void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 
 bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 {
-    ReadBufferFromFile reader(out->getFileName());
-    auto fsize = reader.getFileSize();
+    auto reader = read_buffer_creator();
+    auto fsize = reader->getFileSize();
     if (fsize > 3)
     {
-        std::array<char, 3> result;
-        reader.seek(fsize - 3, SEEK_SET);
-        reader.readStrict(result.data(), 3);
+        std::array<char, 3> result{};
+        reader->seek(fsize - 3, SEEK_SET);
+        reader->readStrict(result.data(), 3);
 
         /// If we don't have correct block in the end, then we need to add it manually.
         /// NOTE: maybe we can have the same bytes in case of data corruption/unfinished write.
         /// But in this case file still corrupted and we have to remove it.
         return result != ZSTD_CORRECT_TERMINATION_LAST_BLOCK;
     }
-    else if (fsize > 0)
+    if (fsize > 0)
     {
         throw Exception(
             ErrorCodes::ZSTD_ENCODER_FAILED,
             "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
-            out->getFileName(), fsize);
+            out->getFileName(),
+            fsize);
     }
     return false;
 }
 
+void ZstdDeflatingAppendableWriteBuffer::cancelImpl() noexcept
+{
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+
+    out->cancel();
+
+    /// To free cctx
+    finalizeZstd();
+}
 }

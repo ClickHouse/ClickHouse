@@ -2,24 +2,26 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
+# 24.1 is the oldest tag that ships a multi-arch image (see #59132); using it
+# unconditionally keeps the test working on both x86_64 and arm64 runners.
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,
-    image="yandex/clickhouse-server",
-    tag="19.16.9.37",
+    image="clickhouse/clickhouse-server",
+    tag="24.1",
     stay_alive=True,
     with_installed_binary=True,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
-    image="yandex/clickhouse-server",
-    tag="19.16.9.37",
+    image="clickhouse/clickhouse-server",
+    tag="24.1",
     stay_alive=True,
     with_installed_binary=True,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False)
+node3 = cluster.add_instance("node3", with_zookeeper=False, use_old_analyzer=True)
 
 
 @pytest.fixture(scope="module")

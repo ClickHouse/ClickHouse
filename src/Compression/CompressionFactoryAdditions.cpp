@@ -6,11 +6,11 @@
 
 #include <Compression/CompressionFactory.h>
 
+#include <Compression/ICompressionCodec.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
+#include <Common/SetWithMemoryTracking.h>
 
 
 namespace DB
@@ -41,13 +42,13 @@ void CompressionCodecFactory::validateCodec(
 
     if (level)
     {
-        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
             {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
             {}, sanity_check, allow_experimental_codecs);
     }
@@ -81,14 +82,14 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        ASTPtr codecs_descriptions = std::make_shared<ASTExpressionList>();
+        ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
 
         bool with_compression_codec = false;
         bool with_none_codec = false;
         std::optional<size_t> first_generic_compression_codec_pos;
         std::optional<size_t> first_delta_codec_pos;
         std::optional<size_t> last_floating_point_time_series_codec_pos;
-        std::set<size_t> encryption_codecs_pos;
+        SetWithMemoryTracking<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
         for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
@@ -119,7 +120,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
 
                 result_codec = default_codec;
-                codecs_descriptions->children.emplace_back(std::make_shared<ASTIdentifier>(DEFAULT_CODEC_NAME));
+                codecs_descriptions->children.emplace_back(make_intrusive<ASTIdentifier>(DEFAULT_CODEC_NAME));
             }
             else
             {
@@ -128,7 +129,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     CompressionCodecPtr prev_codec;
                     ISerialization::StreamCallback callback = [&](const auto & substream_path)
                     {
-                        assert(!substream_path.empty());
+                        chassert(!substream_path.empty());
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
                             const auto & last_type = substream_path.back().data.type;
@@ -156,7 +157,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (!allow_experimental_codecs && result_codec->isExperimental())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting.",
+                        " You can enable it with the 'allow_experimental_codecs' setting",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
@@ -178,7 +179,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 encryption_codecs_pos.insert(i);
         }
 
-        String codec_description = queryToString(codecs_descriptions);
+        String codec_description = codecs_descriptions->formatWithSecretsOneLine();
 
         if (sanity_check)
         {
@@ -245,18 +246,16 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         /// readability and backward compatibility.
         if (can_substitute_codec_arguments)
         {
-            std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+            boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
             result->name = "CODEC";
             result->arguments = codecs_descriptions;
             return result;
         }
-        else
-        {
-            return ast;
-        }
+
+        return ast;
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatForErrorMessage());
 }
 
 

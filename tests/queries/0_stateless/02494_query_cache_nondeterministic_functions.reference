@@ -1,5 +1,8 @@
+-- query_cache_nondeterministic_function_handling = throw
+0
+-- query_cache_nondeterministic_function_handling = save
+1
+1
+-- query_cache_nondeterministic_function_handling = ignore
 1
 0
----
-1
-1

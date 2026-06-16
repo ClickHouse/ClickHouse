@@ -18,11 +18,13 @@ public:
     String toString() const { return full_name.toString(); }
 
     String getID(char) const override { return "RowPolicyName"; }
-    ASTPtr clone() const override { return std::make_shared<ASTRowPolicyName>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    ASTPtr clone() const override { return make_intrusive<ASTRowPolicyName>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyName>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 
@@ -40,11 +42,13 @@ public:
     Strings toStrings() const;
 
     String getID(char) const override { return "RowPolicyNames"; }
-    ASTPtr clone() const override { return std::make_shared<ASTRowPolicyNames>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    ASTPtr clone() const override { return make_intrusive<ASTRowPolicyNames>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
 private:
     String tableOrAsterisk(const String & table_name) const;

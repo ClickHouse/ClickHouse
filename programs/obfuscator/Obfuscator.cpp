@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -16,10 +17,11 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
+#include <Processors/Chunk.h>
 #include <Processors/LimitTransform.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -37,15 +39,18 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
+#include <iostream>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
+#include <Common/ErrnoException.h>
 #include <bit>
 
 
@@ -136,7 +141,7 @@ using ModelPtr = std::unique_ptr<IModel>;
 
 
 template <typename... Ts>
-UInt64 hash(Ts... xs)
+static UInt64 hash(Ts... xs)
 {
     SipHash hash;
     (hash.update(xs), ...);
@@ -231,8 +236,8 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
-    else
-        return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+
+    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
 }
 
 
@@ -271,7 +276,7 @@ public:
 
 /// Pseudorandom permutation of mantissa.
 template <typename Float>
-Float transformFloatMantissa(Float x, UInt64 seed)
+static Float transformFloatMantissa(Float x, UInt64 seed)
 {
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
@@ -365,17 +370,14 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
         hash.update(seed);
         hash.update(i);
 
+        const auto checksum = getSipHash128AsArray(hash);
         if (size >= 16)
         {
-            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(hash_dst);
+            auto * hash_dst = std::min(pos, end - 16);
+            memcpy(hash_dst, checksum.data(), checksum.size());
         }
         else
-        {
-            char value[16];
-            hash.get128(value);
-            memcpy(dst, value, end - dst);
-        }
+            memcpy(dst, checksum.data(), end - dst);
 
         pos += 16;
         ++i;
@@ -393,7 +395,10 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
+    auto src_copy = src_uuid;
+    transformEndianness<std::endian::little, std::endian::native>(src_copy);
+
+    const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
 
     SipHash hash;
@@ -401,10 +406,11 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
-    hash.get128(reinterpret_cast<char *>(&dst));
+    dst = hash.get128();
 
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
+    UUIDHelpers::getLowBytes(dst_uuid) = (UUIDHelpers::getLowBytes(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getLowBytes(src_uuid) & trace[1]);
+    UUIDHelpers::getHighBytes(dst_uuid) = (UUIDHelpers::getHighBytes(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getHighBytes(src_uuid) & trace[0]);
 }
 
 class FixedStringModel : public IModel
@@ -491,7 +497,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -597,7 +603,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
+            UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -663,7 +669,7 @@ private:
 
     static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
-        return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
+        return static_cast<NGramHash>(CRC32Hash()(std::string_view(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint))));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
@@ -673,8 +679,7 @@ private:
 
         if (pos + length > end)
             length = end - pos;
-        if (length > sizeof(CodePoint))
-            length = sizeof(CodePoint);
+        length = std::min(length, sizeof(CodePoint));
 
         CodePoint res = 0;
         memcpy(&res, pos, length);
@@ -839,12 +844,12 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
+                double average = static_cast<double>(histogram.total) / static_cast<double>(histogram.buckets.size());
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
+                    bucket.second = static_cast<UInt64>(static_cast<double>(bucket.second) * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 
@@ -864,7 +869,7 @@ public:
 
         while (pos < end)
         {
-            Table::LookupResult it;
+            Table::LookupResult it = {};
 
             size_t context_size = params.order;
             while (true)
@@ -882,9 +887,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in markov model");
 
             size_t offset_from_begin_of_string = pos - data;
-            size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
-            if (determinator_sliding_window_size > determinator_size)
-                determinator_sliding_window_size = determinator_size;
+            size_t determinator_sliding_window_size = std::min(params.determinator_sliding_window_size, determinator_size);
 
             size_t determinator_sliding_window_overflow = offset_from_begin_of_string + determinator_sliding_window_size > determinator_size
                 ? offset_from_begin_of_string + determinator_sliding_window_size - determinator_size : 0;
@@ -913,7 +916,7 @@ public:
             {
                 /// Heuristic: break at ASCII non-alnum code point.
                 /// This allows to be close to desired_size but not break natural looking words.
-                if (code < 128 && !isAlphaNumericASCII(code))
+                if (code < 128 && !isAlphaNumericASCII(static_cast<char>(code)))
                     break;
             }
 
@@ -950,8 +953,8 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef string = column_string.getDataAt(i);
-            markov_model.consume(string.data, string.size);
+            auto string = column_string.getDataAt(i);
+            markov_model.consume(string.data(), string.size());
         }
     }
 
@@ -971,13 +974,13 @@ public:
         std::string new_string;
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef src_string = column_string.getDataAt(i);
-            size_t desired_string_size = transform(src_string.size, seed);
+            auto src_string = column_string.getDataAt(i);
+            size_t desired_string_size = transform(src_string.size(), seed);
             new_string.resize(desired_string_size * 2);
 
             size_t actual_size = 0;
             if (desired_string_size != 0)
-                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data, src_string.size);
+                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data(), src_string.size());
 
             res_column->insertData(new_string.data(), actual_size);
         }
@@ -1105,10 +1108,10 @@ public:
     {
         if (isInteger(data_type))
         {
-            if (isUnsignedInteger(data_type))
+            if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
-            else
-                return std::make_unique<SignedIntegerModel>(seed);
+
+            return std::make_unique<SignedIntegerModel>(seed);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
@@ -1203,9 +1206,10 @@ public:
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {
@@ -1237,20 +1241,20 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help")
-        || !options.count("seed")
-        || !options.count("input-format")
-        || !options.count("output-format"))
+    if (options.contains("help")
+        || !options.contains("seed")
+        || !options.contains("input-format")
+        || !options.contains("output-format"))
     {
         std::cout << documentation << "\n"
-            << "\nUsage: " << argv[0] << " [options] < in > out\n"
+            << "\nUsage: clickhouse obfuscator [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    clickhouse obfuscator --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
-    if (options.count("save") && options.count("load"))
+    if (options.contains("save") && options.contains("load"))
     {
         std::cerr << "The options --save and --load cannot be used together.\n";
         return 1;
@@ -1260,7 +1264,7 @@ try
 
     std::string structure;
 
-    if (options.count("structure"))
+    if (options.contains("structure"))
         structure = options["structure"].as<std::string>();
 
     std::string input_format = options["input-format"].as<std::string>();
@@ -1269,18 +1273,18 @@ try
     std::string load_from_file;
     std::string save_into_file;
 
-    if (options.count("load"))
+    if (options.contains("load"))
         load_from_file = options["load"].as<std::string>();
-    else if (options.count("save"))
+    else if (options.contains("save"))
         save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
-    if (options.count("limit"))
+    if (options.contains("limit"))
         limit = options["limit"].as<UInt64>();
 
     bool silent = options["silent"].as<bool>();
 
-    MarkovModelParameters markov_model_params;
+    MarkovModelParameters markov_model_params{};
 
     markov_model_params.order = options["order"].as<UInt64>();
     markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();
@@ -1301,19 +1305,16 @@ try
 
     if (structure.empty())
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+        auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-            /// stdin must be seekable
-            auto res = lseek(file->getFD(), 0, SEEK_SET);
-            if (-1 == res)
-                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        /// stdin must be seekable
+        auto res = lseek(file->getFD(), 0, SEEK_SET);
+        if (-1 == res)
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
 
-            return file;
-        };
+        SingleReadBufferIterator read_buffer_iterator(std::move(file));
 
-        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
     }
     else
     {
@@ -1339,7 +1340,7 @@ try
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
     }
 
     Obfuscator obfuscator(header, seed, markov_model_params);
@@ -1432,7 +1433,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!options.count("limit"))
+    if (!options.contains("limit"))
         limit = source_rows;
 
     /// Generation step
@@ -1449,7 +1450,7 @@ try
 
         if (processed_rows + source_rows > limit)
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
             });
@@ -1479,11 +1480,13 @@ try
         rewind_needed = true;
     }
 
+    file_out.finalize();
+
     return 0;
 }
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     auto code = DB::getCurrentExceptionCode();
-    return code ? code : 1;
+    return static_cast<UInt8>(code) ? code : 1;
 }

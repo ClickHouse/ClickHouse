@@ -1,12 +1,16 @@
 #pragma once
 
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
@@ -15,6 +19,9 @@
 namespace DB
 {
 
+class ClientInfo;
+class ASTSQLSecurity;
+
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
 struct StorageInMemoryMetadata
@@ -22,7 +29,17 @@ struct StorageInMemoryMetadata
     /// Columns of table with their names, types,
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
+    /// Virtual columns description (e.g. _part, _table, _row_exists).
+    /// Not serialized to disk — recomputed by each storage engine.
+    VirtualColumnsDescription virtuals;
     /// Table indices. Currently supported for MergeTree only.
+    bool add_minmax_index_for_numeric_columns = false;
+    bool add_minmax_index_for_string_columns = false;
+    bool add_minmax_index_for_temporal_columns = false;
+    bool add_minmax_index_for_block_number_column = false;
+    bool add_minmax_index_for_block_offset_column = false;
+    /// Needed for compatibility
+    bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -39,14 +56,26 @@ struct StorageInMemoryMetadata
     KeyDescription sorting_key;
     /// SAMPLE BY expression. Supported for MergeTree only.
     KeyDescription sampling_key;
+    /// UNIQUE KEY expression. Supported for MergeTree only. Experimental.
+    KeyDescription unique_key;
     /// Separate ttl expressions for columns
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
+    /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
+    /// Materialized view REFRESH parameters.
+    ASTPtr refresh;
+
+    /// DEFINER <user_name>. Allows to specify a definer of the table.
+    /// Supported for MaterializedView and View.
+    std::optional<String> definer;
+
+    /// SQL SECURITY <DEFINER | INVOKER | NONE>
+    /// Supported for MaterializedView and View.
+    std::optional<SQLSecurityType> sql_security_type;
 
     String comment;
 
@@ -54,13 +83,16 @@ struct StorageInMemoryMetadata
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
 
+    ///  Current state of a datalake table.
+    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
-    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
-    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     /// NOTE: Thread unsafe part. You should not modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
@@ -69,8 +101,11 @@ struct StorageInMemoryMetadata
     /// Sets a user-defined comment for a table
     void setComment(const String & comment_);
 
-    /// Sets only real columns, possibly overwrites virtual ones.
+    /// Sets only real columns.
     void setColumns(ColumnsDescription columns_);
+
+    /// Sets virtual columns
+    void setVirtuals(VirtualColumnsDescription virtuals_);
 
     /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
@@ -94,10 +129,26 @@ struct StorageInMemoryMetadata
     /// Set SELECT query for (Materialized)View
     void setSelectQuery(const SelectQueryDescription & select_);
 
+    /// Set refresh parameters for materialized view (REFRESH ... [DEPENDS ON ...] [SETTINGS ...]).
+    void setRefresh(ASTPtr refresh_);
+
     /// Set version of metadata.
     void setMetadataVersion(int32_t metadata_version_);
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
+    /// Get copy of current metadata with virtual columns
+    StorageInMemoryMetadata withVirtuals(VirtualColumnsDescription virtual_columns_) const;
+
+    /// Sets SQL security for the storage.
+    void setSQLSecurity(const ASTSQLSecurity & sql_security);
+
+    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
+    UUID getDefinerID(ContextPtr context) const;
+
+    /// Returns a copy of the context with the correct user from SQL security options.
+    /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
+    /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info = nullptr) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -118,6 +169,9 @@ struct StorageInMemoryMetadata
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
+
+    /// Returns true if only rows TTL is set, not even rows where.
+    bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
@@ -147,15 +201,20 @@ struct StorageInMemoryMetadata
     TTLDescriptions getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
 
+    using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
+
     /// Returns columns, which will be needed to calculate dependencies (skip indices, projections,
     /// TTL expressions) if we update @updated_columns set of columns.
     ColumnDependencies getColumnDependencies(
         const NameSet & updated_columns,
         bool include_ttl_target,
-        const std::function<bool(const String & file_name)> & has_indice_or_projection) const;
+        const HasDependencyCallback & has_dependency) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
+
+    /// Block with ordinary + materialized columns + subcolumns.
+    Block getSampleBlockWithSubcolumns() const;
 
     /// Block with ordinary + ephemeral.
     Block getSampleBlockInsertable() const;
@@ -163,10 +222,11 @@ struct StorageInMemoryMetadata
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
 
-    /// Block with ordinary + materialized + virtuals. Virtuals have to be
-    /// explicitly specified, because they are part of Storage type, not
-    /// Storage metadata.
-    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
+    /// Block with ordinary + materialized + virtuals.
+    Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+
+    /// Returns whether the column is virtual and not shadowed by a real column.
+    bool isVirtualColumn(const String & column_name) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
@@ -192,6 +252,9 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     Names getSortingKeyColumns() const;
+    /// Returns reverse indicators of columns in sorting key specified by user in ORDER BY
+    /// expression. For example: ('a' DESC, 'x * y', 'toStartOfMonth(date)' DESC) -> {1, 0, 1}.
+    std::vector<bool> getSortingKeyReverseFlags() const;
 
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
@@ -222,13 +285,28 @@ struct StorageInMemoryMetadata
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
+    /// Returns structure with unique key (UNIQUE KEY clause).
+    const KeyDescription & getUniqueKey() const;
+    /// Returns AST of unique key expression for storage or nullptr if there is none.
+    ASTPtr getUniqueKeyAST() const { return unique_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) unique key.
+    bool isUniqueKeyDefined() const;
+    /// Storage has unique key (at least one column).
+    bool hasUniqueKey() const;
+    /// Returns column names from UNIQUE KEY clause.
+    Names getUniqueKeyColumns() const;
+
     /// Storage settings
     ASTPtr getSettingsChanges() const;
+    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
+
+    /// If any of the columns has statistics.
+    bool hasStatistics() const;
 
     /// Get version of metadata
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -243,6 +321,21 @@ struct StorageInMemoryMetadata
     /// contains only the columns of the table, and all the columns are different.
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
+
+    /// Returns a IStorage::ColumnSizeByName with made up numbers.
+    /// Used for making PREWHERE work for Parquet input format.
+    /// TODO [parquet]: Propagate real sizes from file metadata instead. We should probably put file
+    ///                 metadata into SchemaCache, similar to row count.
+    std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
+
+    /// Elements of `columns` that have `default_desc.expression == nullptr`.
+    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
+
+    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
+    void dropImplicitIndicesForColumn(const String & column_name);
+
+    void addImplicitIndicesForVirtualColumns(ContextPtr context);
+    void dropImplicitIndicesForVirtualColumns();
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

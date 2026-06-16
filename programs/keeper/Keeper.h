@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Server/IServer.h>
-#include <Server/HTTP/HTTPContext.h>
 #include <Daemon/BaseDaemon.h>
-#include <Coordination/TinyContext.h>
 
 namespace Poco
 {
@@ -67,12 +65,9 @@ protected:
 
     std::string getDefaultConfigFileName() const override;
 
+    bool allowTextLog() const override;
+
 private:
-    TinyContextPtr tiny_context;
-
-    struct KeeperHTTPContext;
-    HTTPContextPtr httpContext();
-
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
     using CreateServerFunc = std::function<void(UInt16)>;

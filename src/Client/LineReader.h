@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+#include <unistd.h>
 #include <mutex>
 #include <atomic>
 #include <vector>
@@ -21,7 +23,7 @@ public:
         using Callback = std::function<Words(const String & prefix, size_t prefix_length)>;
 
         /// Get vector for the matched range of words if any.
-        replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length);
+        replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters);
         void addWords(Words && new_words);
 
         void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }
@@ -37,7 +39,15 @@ public:
 
     using Patterns = std::vector<const char *>;
 
-    LineReader(const String & history_file_path, bool multiline, Patterns extenders, Patterns delimiters);
+    LineReader(
+        const String & history_file_path,
+        bool multiline,
+        Patterns extenders,
+        Patterns delimiters,
+        std::istream & input_stream_ = std::cin,
+        std::ostream & output_stream_ = std::cout,
+        int in_fd_ = STDIN_FILENO);
+
     virtual ~LineReader() = default;
 
     /// Reads the whole line until delimiter (in multiline mode) or until the last line without extender.
@@ -56,6 +66,11 @@ public:
     virtual void enableBracketedPaste() {}
     virtual void disableBracketedPaste() {}
 
+    /// Set text to be prepopulated in the next readLine call
+    virtual void setInitialText(const String &) {}
+
+    bool hasInputData() const;
+
 protected:
     enum InputStatus
     {
@@ -65,7 +80,6 @@ protected:
     };
 
     const String history_file_path;
-    static constexpr char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
     String input;
 
@@ -78,6 +92,10 @@ protected:
 
     virtual InputStatus readOneLine(const String & prompt);
     virtual void addToHistory(const String &) {}
+
+    std::istream & input_stream;
+    std::ostream & output_stream;
+    int in_fd;
 };
 
 }

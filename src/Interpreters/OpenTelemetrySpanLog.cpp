@@ -1,5 +1,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -14,27 +16,43 @@
 namespace DB
 {
 
-NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
+ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
 {
     auto span_kind_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::INTERNAL)},
-            {"SERVER",      static_cast<Int8>(OpenTelemetry::SERVER)},
-            {"CLIENT",      static_cast<Int8>(OpenTelemetry::CLIENT)},
-            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::PRODUCER)},
-            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::CONSUMER)}
+            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::SpanKind::INTERNAL)},
+            {"SERVER",      static_cast<Int8>(OpenTelemetry::SpanKind::SERVER)},
+            {"CLIENT",      static_cast<Int8>(OpenTelemetry::SpanKind::CLIENT)},
+            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::SpanKind::PRODUCER)},
+            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::SpanKind::CONSUMER)}
+        }
+    );
+
+    auto status_code_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"UNSET",   static_cast<Int8>(OpenTelemetry::SpanStatus::UNSET)},
+            {"OK",      static_cast<Int8>(OpenTelemetry::SpanStatus::OK)},
+            {"ERROR",   static_cast<Int8>(OpenTelemetry::SpanStatus::ERROR)}
         }
     );
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    return {
-        {"trace_id", std::make_shared<DataTypeUUID>()},
-        {"span_id", std::make_shared<DataTypeUInt64>()},
-        {"parent_span_id", std::make_shared<DataTypeUInt64>()},
-        {"operation_name", low_cardinality_string},
-        {"kind", std::move(span_kind_type)},
+    return ColumnsDescription
+    {
+        {"hostname", low_cardinality_string, "The hostname where this span was captured."},
+        {"trace_id", std::make_shared<DataTypeUUID>(), "ID of the trace for executed query."},
+        {"span_id", std::make_shared<DataTypeUInt64>(), "ID of the trace span."},
+        {"parent_span_id", std::make_shared<DataTypeUInt64>(), "ID of the parent trace span."},
+        {"operation_name", low_cardinality_string, "The name of the operation."},
+        {"kind", std::move(span_kind_type), "The SpanKind of the span. "
+            "INTERNAL — Indicates that the span represents an internal operation within an application. "
+            "SERVER — Indicates that the span covers server-side handling of a synchronous RPC or other remote request. "
+            "CLIENT — Indicates that the span describes a request to some remote service. "
+            "PRODUCER — Indicates that the span describes the initiators of an asynchronous request. This parent span will often end before the corresponding child CONSUMER span, possibly even before the child span starts. "
+            "CONSUMER - Indicates that the span describes a child of an asynchronous PRODUCER request."},
         // DateTime64 is really unwieldy -- there is no "normal" way to convert
         // it to an UInt64 count of microseconds, except:
         // 1) reinterpretAsUInt64(reinterpretAsFixedString(date)), which just
@@ -45,10 +63,12 @@ NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
         // Also subtraction of two DateTime64 points doesn't work, so you can't
         // get duration.
         // It is much less hassle to just use UInt64 of microseconds.
-        {"start_time_us", std::make_shared<DataTypeUInt64>()},
-        {"finish_time_us", std::make_shared<DataTypeUInt64>()},
-        {"finish_date", std::make_shared<DataTypeDate>()},
-        {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>())},
+        {"start_time_us", std::make_shared<DataTypeUInt64>(), "The start time of the trace span (in microseconds)."},
+        {"finish_time_us", std::make_shared<DataTypeUInt64>(), "The finish time of the trace span (in microseconds)."},
+        {"finish_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
+        {"status_code", std::move(status_code_type), "The status code of the span."},
+        {"status_message", low_cardinality_string, "Error message."},
+        {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Attribute depending on the trace span. They are filled in according to the recommendations in the OpenTelemetry standard."},
     };
 }
 
@@ -67,18 +87,23 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(trace_id);
-    columns[i++]->insert(span_id);
-    columns[i++]->insert(parent_span_id);
-    columns[i++]->insert(operation_name);
-    columns[i++]->insert(kind);
-    columns[i++]->insert(start_time_us);
-    columns[i++]->insert(finish_time_us);
-    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());
-    // The user might add some ints values, and we will have Int Field, and the
-    // insert will fail because the column requires Strings. Convert the fields
-    // here, because it's hard to remember to convert them in all other places.
-    columns[i++]->insert(attributes);
+    columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(span.trace_id);
+    columns[i++]->insert(span.span_id);
+    columns[i++]->insert(span.parent_span_id);
+    columns[i++]->insert(span.operation_name);
+    columns[i++]->insert(span.kind);
+    columns[i++]->insert(span.start_time_us);
+    columns[i++]->insert(span.finish_time_us);
+    columns[i++]->insert(DateLUT::instance().toDayNum(span.finish_time_us / 1000000).toUnderType());
+    columns[i++]->insert(static_cast<Int8>(span.status_code));
+    columns[i++]->insert(span.status_message);
+
+    Map attributes_map;
+    attributes_map.reserve(span.attributes.size());
+    for (const auto & attribute : span.attributes)
+        attributes_map.push_back(Tuple{attribute.getKey(), attribute.getValue()});
+    columns[i++]->insert(std::move(attributes_map));
 }
 
 }

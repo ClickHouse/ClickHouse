@@ -1,0 +1,3 @@
+v	UInt64					
+v2	UInt8					
+CREATE MATERIALIZED VIEW default.pipe TO default.dest\n(\n    `v` UInt64,\n    `v2` UInt8\n)\nAS SELECT\n    v * 2 AS v,\n    1 AS v2\nFROM default.src

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "FunctionsURL.h"
 #include <base/find_symbols.h>
+#include <Functions/StringHelpers.h>
 
 
 namespace DB
@@ -18,7 +18,7 @@ struct ExtractQueryStringAndFragment
         res_size = 0;
 
         Pos end = data + size;
-        Pos pos;
+        Pos pos = nullptr;
 
         if (end != (pos = find_first_symbols<'?'>(data, end)))
         {
@@ -34,4 +34,3 @@ struct ExtractQueryStringAndFragment
 };
 
 }
-

@@ -173,7 +173,7 @@ TEST(HierarchyDictionariesUtils, getIsInHierarchy)
 TEST(HierarchyDictionariesUtils, getDescendants)
 {
     {
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child[0].emplace_back(1);
         parent_to_child[1].emplace_back(2);
         parent_to_child[1].emplace_back(3);
@@ -184,7 +184,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         PaddedPODArray<UInt64> keys = {0, 1, 2, 3, 4};
 
         {
-            size_t keys_found;
+            size_t keys_found = {};
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,
@@ -202,7 +202,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
             ASSERT_EQ(keys_found, 3);
         }
         {
-            size_t keys_found;
+            size_t keys_found = {};
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,
@@ -221,7 +221,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         }
     }
     {
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child[1].emplace_back(2);
         parent_to_child[2].emplace_back(1);
 
@@ -230,7 +230,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         PaddedPODArray<UInt64> keys = {1, 2, 3};
 
         {
-            size_t keys_found;
+            size_t keys_found = {};
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,
@@ -248,7 +248,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
             ASSERT_EQ(keys_found, 2);
         }
         {
-            size_t keys_found;
+            size_t keys_found = {};
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,

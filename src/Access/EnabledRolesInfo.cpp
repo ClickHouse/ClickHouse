@@ -4,6 +4,16 @@
 namespace DB
 {
 
+std::vector<UUID> EnabledRolesInfo::getCurrentRoles() const
+{
+    return std::vector<UUID>{current_roles.begin(), current_roles.end()};
+}
+
+std::vector<UUID> EnabledRolesInfo::getEnabledRoles() const
+{
+    return std::vector<UUID>{enabled_roles.begin(), enabled_roles.end()};
+}
+
 Strings EnabledRolesInfo::getCurrentRolesNames() const
 {
     Strings result;

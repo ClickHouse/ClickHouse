@@ -1,14 +1,25 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
-#include <Common/Exception.h>
-#include <Coordination/KeeperConstants.h>
-#include <Poco/Net/SocketAddress.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
+#include <chrono>
+#include <limits>
+#include <map>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <span>
 #include <functional>
+
+#include <fmt/format.h>
+#include <Poco/Event.h>
 
 /** Generic interface for ZooKeeper-like services.
   * Possible examples are:
@@ -17,6 +28,10 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredOther;
+}
 
 namespace Coordination
 {
@@ -33,7 +48,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions;
+    int32_t permissions{};
     String scheme;
     String id;
 
@@ -42,6 +57,8 @@ struct ACL
         return std::tuple(permissions, scheme, id)
             < std::tuple(other.permissions, other.scheme, other.id);
     }
+
+    bool operator==(const ACL & other) const = default;
 };
 
 using ACLs = std::vector<ACL>;
@@ -82,6 +99,7 @@ enum class Error : int32_t
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
     ZINVALIDSTATE = -9,         /// Invalid zhandle state
+    ZOUTOFMEMORY = -10,         /// Keeper has reached soft memory limit
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than
@@ -102,7 +120,13 @@ enum class Error : int32_t
     ZAUTHFAILED = -115,                 /// Client authentication failed
     ZCLOSING = -116,                    /// ZooKeeper is closing
     ZNOTHING = -117,                    /// (not error) no server responses to process
-    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
+    ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
+    ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
+    ZNOWATCHER = -121,                  /// No wathces were found
+
+    /// IMPORTANT: Update these when adding new error codes.
+    MIN = ZNOWATCHER,
+    MAX = ZOK,
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -136,6 +160,8 @@ using ResponseCallback = std::function<void(const Response &)>;
 struct Response
 {
     Error error = Error::ZOK;
+    int64_t zxid = 0;
+
     Response() = default;
     Response(const Response &) = default;
     Response & operator=(const Response &) = default;
@@ -156,6 +182,77 @@ struct WatchResponse : virtual Response
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
+using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
+using EventPtr = std::shared_ptr<Poco::Event>;
+struct TestKeeperRequest;
+
+struct WatchCallbackPtrOrEventPtr
+{
+private:
+    friend class IKeeper;
+    friend class ZooKeeper;
+    friend class TestKeeper;
+    friend struct TestKeeperRequest;
+
+    WatchCallbackPtr callback;
+    EventPtr event;
+    /// The ProfileEvent incremented when this watch is triggered, identifying the subsystem that owns the callback.
+    ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther;
+
+    void operator()(WatchResponse response) const
+    {
+        if (callback)
+            (*callback)(response);
+        else if (event)
+            event->set();
+    }
+
+public:
+    WatchCallbackPtrOrEventPtr() = default;
+
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_, ProfileEvents::Event triggered_event_)
+        : callback(std::move(callback_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_, ProfileEvents::Event triggered_event_)
+        : event(std::move(event_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+
+    ProfileEvents::Event getTriggeredEvent() const { return triggered_event; }
+    void setTriggeredEvent(ProfileEvents::Event triggered_event_) { triggered_event = triggered_event_; }
+
+    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
+
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
+    WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
+    WatchCallbackPtrOrEventPtr & operator=(WatchCallbackPtrOrEventPtr &&) = default;
+    WatchCallbackPtrOrEventPtr & operator=(const WatchCallbackPtrOrEventPtr &) = default;
+
+    explicit operator bool() const
+    {
+        return static_cast<bool>(event) || static_cast<bool>(callback);
+    }
+
+    bool operator==(const WatchCallbackPtrOrEventPtr & rhs) const
+    {
+        return std::tie(callback, event) == std::tie(rhs.callback, rhs.event);
+    }
+
+    size_t hash() const
+    {
+        if (callback)
+        {
+            std::hash<Coordination::WatchCallbackPtr> hasher;
+            return hasher(callback);
+        }
+        if (event)
+        {
+            std::hash<Coordination::EventPtr> hasher;
+            return hasher(event);
+        }
+        return 0;
+    }
+};
+
 
 struct SetACLRequest : virtual Request
 {
@@ -191,6 +288,136 @@ struct GetACLResponse : virtual Response
     size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
 };
 
+struct CheckWatchRequest : virtual Request
+{
+    enum class CheckWatchType : int32_t
+    {
+        CHILDREN = 1,
+        DATA = 2,
+        ANY = 3,
+        PERSISTENT = 4,
+        PERSISTENT_RECURSIVE = 5
+    };
+
+    String path;
+    CheckWatchType type{};
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(type);
+    }
+};
+
+struct CheckWatchResponse : virtual Response
+{
+};
+
+struct RemoveWatchRequest : virtual Request
+{
+    String path;
+    enum class WatchType : int32_t
+    {
+        CHILDREN = 1,
+        DATA = 2,
+        PERSISTENT = 4,
+        PERSISTENTRECURSIVE = 5,
+        ANY = 3
+    } type{};
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(type);
+    }
+};
+
+struct RemoveWatchResponse : virtual Response
+{
+};
+
+struct AddWatchRequest : virtual Request
+{
+    enum class AddWatchMode : int32_t
+    {
+        PERSISTENT = 0,
+        PERSISTENT_RECURSIVE = 1,
+    };
+
+    String path;
+    AddWatchMode mode{};
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(mode);
+    }
+};
+
+struct AddWatchResponse : virtual Response
+{
+};
+
+struct SetWatchesRequest : virtual Request
+{
+    int64_t zxid{};
+    std::vector<String> child_watches;
+    std::vector<String> exist_watches;
+    std::vector<String> data_watches;
+
+    String getPath() const override { return data_watches[0]; }
+    void addRootPath(const String &) override {}
+    size_t bytesSize() const override
+    {
+        size_t result = sizeof(zxid);
+        result += pathesSize(data_watches);
+        result += pathesSize(exist_watches);
+        result += pathesSize(child_watches);
+
+        return result;
+    }
+
+protected:
+    static size_t pathesSize(const std::vector<String> & paths)
+    {
+        size_t result = sizeof(Int32);
+        for (const auto & elem : paths)
+            result += sizeof(Int32) + elem.size();
+        return result;
+    }
+};
+
+struct SetWatchesResponse : virtual Response
+{
+};
+
+
+struct SetWatches2Request : virtual SetWatchesRequest
+{
+    std::vector<String> persistent_watches;
+    std::vector<String> persistent_recursive_watches;
+
+    String getPath() const override { return data_watches[0]; }
+    void addRootPath(const String &) override {}
+    size_t bytesSize() const override
+    {
+        size_t result = SetWatchesRequest::bytesSize();
+        result += pathesSize(persistent_watches);
+        result += pathesSize(persistent_recursive_watches);
+        return result;
+    }
+};
+
+struct SetWatches2Response : virtual Response
+{
+};
+
 struct CreateRequest : virtual Request
 {
     String path;
@@ -198,6 +425,10 @@ struct CreateRequest : virtual Request
     bool is_ephemeral = false;
     bool is_sequential = false;
     ACLs acls;
+    bool include_stats = false;
+
+    /// should it succeed if node already exists
+    bool not_exists = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -219,6 +450,7 @@ struct RemoveRequest : virtual Request
 {
     String path;
     int32_t version = -1;
+    bool try_remove = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -228,6 +460,39 @@ struct RemoveRequest : virtual Request
 
 struct RemoveResponse : virtual Response
 {
+};
+
+struct RemoveRecursiveRequest : virtual Request
+{
+    String path;
+
+    /// strict limit for number of deleted nodes
+    uint32_t remove_nodes_limit = 1;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
+};
+
+struct RemoveRecursiveResponse : virtual Response
+{
+};
+
+
+struct ListRecursiveResponse : virtual Response
+{
+    std::vector<String> children;
+
+    void removeRootPath(const String & root_path) override;
+
+    size_t bytesSize() const override
+    {
+        size_t result = 0;
+        for (const auto & child : children)
+            result += child.size();
+        return result;
+    }
 };
 
 struct ExistsRequest : virtual Request
@@ -306,13 +571,28 @@ struct ListResponse : virtual Response
     std::vector<String> names;
     Stat stat;
 
+    /// Optional fields for LIST_WITH_STAT_AND_DATA feature
+    std::vector<Stat> stats;  /// Per-child stats (if requested via with_stat)
+    std::vector<String> data; /// Per-child data (if requested via with_data)
+
     size_t bytesSize() const override
     {
         size_t size = sizeof(stat);
         for (const auto & name : names)
             size += name.size();
+        size += stats.size() * sizeof(Stat);
+        for (const auto & child_data : data)
+            size += child_data.size();
         return size;
     }
+};
+
+struct ListRecursiveRequest : virtual ListRequest
+{
+    /// strict limit for number of listed nodes
+    uint32_t children_nodes_limit = std::numeric_limits<uint32_t>::max();
+
+    size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(children_nodes_limit); }
 };
 
 struct CheckRequest : virtual Request
@@ -323,10 +603,13 @@ struct CheckRequest : virtual Request
     /// should it check if a node DOES NOT exist
     bool not_exists = false;
 
+    /// should it check node stat
+    std::optional<Stat> stat_to_check;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
 };
 
 struct CheckResponse : virtual Response
@@ -350,11 +633,40 @@ struct SyncResponse : virtual Response
     size_t bytesSize() const override { return path.size(); }
 };
 
+struct ReconfigRequest : virtual Request
+{
+    String joining;
+    String leaving;
+    String new_members;
+    int32_t version{};
+
+    String getPath() const final { return keeper_config_path; }
+
+    size_t bytesSize() const final
+    {
+        return joining.size() + leaving.size() + new_members.size() + sizeof(version);
+    }
+};
+
+struct ReconfigResponse : virtual Response
+{
+    String value;
+    Stat stat;
+
+    size_t bytesSize() const override { return value.size() + sizeof(stat); }
+};
+
+template <typename T>
 struct MultiRequest : virtual Request
 {
-    Requests requests;
+    std::vector<T> requests;
 
-    void addRootPath(const String & root_path) override;
+    void addRootPath(const String & root_path) override
+    {
+        for (auto & request : requests)
+            request->addRootPath(root_path);
+    }
+
     String getPath() const override { return {}; }
 
     size_t bytesSize() const override
@@ -389,14 +701,17 @@ struct ErrorResponse : virtual Response
 
 using CreateCallback = std::function<void(const CreateResponse &)>;
 using RemoveCallback = std::function<void(const RemoveResponse &)>;
+using RemoveRecursiveCallback = std::function<void(const RemoveRecursiveResponse &)>;
 using ExistsCallback = std::function<void(const ExistsResponse &)>;
 using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
 using ListCallback = std::function<void(const ListResponse &)>;
 using CheckCallback = std::function<void(const CheckResponse &)>;
 using SyncCallback = std::function<void(const SyncResponse &)>;
+using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
-
+using GetACLCallback = std::function<void(const GetACLResponse &)>;
+using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
 
 /// For watches.
 enum State
@@ -406,6 +721,7 @@ enum State
     CONNECTING = 1,
     ASSOCIATING = 2,
     CONNECTED = 3,
+    READONLY = 5,
     NOTCONNECTED = 999
 };
 
@@ -419,30 +735,16 @@ enum Event
     NOTWATCHING = -2
 };
 
-
-class Exception : public DB::Exception
+class SimpleFaultInjection
 {
-private:
-    /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const Error code_, int); /// NOLINT
-
 public:
-    explicit Exception(const Error code_); /// NOLINT
-    Exception(const std::string & msg, const Error code_); /// NOLINT
-    Exception(const Error code_, const std::string & path); /// NOLINT
-    Exception(const Exception & exc);
+    SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_);
+    ~SimpleFaultInjection() noexcept(false);
 
-    template <typename... Args>
-    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
-    {
-    }
-
-    const char * name() const noexcept override { return "Coordination::Exception"; }
-    const char * className() const noexcept override { return "Coordination::Exception"; }
-    Exception * clone() const override { return new Exception(*this); }
-
-    const Error code;
+private:
+    Float64 probability_after = 0;
+    String description;
+    int exceptions_level = 0;
 };
 
 
@@ -464,10 +766,31 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
 
+    /// Get the current connected node idx.
+    virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
+
+    /// Get the current connected host and port.
+    virtual String getConnectedHostPort() const = 0;
+
+    /// Get the xid of current connection.
+    virtual int64_t getConnectionXid() const = 0;
+
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
-    virtual Poco::Net::SocketAddress getConnectedAddress() const = 0;
+    virtual int64_t getLastZXIDSeen() const = 0;
+
+    /// Returns the timestamp (in microseconds since `steady_clock` epoch) of the
+    /// last data received from the server (any kind: response, heartbeat, or
+    /// watch event). Used by progress-based timeout logic in sync wrappers.
+    /// Returns 0 (epoch) by default, meaning implementations without progress
+    /// tracking will fall back to plain timeout.
+    virtual Int64 getLastReceivedTimestamp() const { return 0; }
+
+    virtual String tryGetAvailabilityZone() { return ""; }
+
+    using WatchCallbackCreator = std::function<WatchCallback()>;
+    WatchCallbackPtrOrEventPtr createWatchFromRawCallback(const String & id, const WatchCallbackCreator & creator);
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -495,15 +818,25 @@ public:
         int32_t version,
         RemoveCallback callback) = 0;
 
+    virtual void removeRecursive(
+        const String & path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) = 0;
+
+    virtual void listRecursive(
+        const String & path,
+        uint32_t get_children_recursive_nodes_limit,
+        ListRecursiveCallback callback) = 0;
+
     virtual void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void set(
         const String & path,
@@ -515,7 +848,9 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtrOrEventPtr watch,
+        bool with_stat,
+        bool with_data) = 0;
 
     virtual void check(
         const String & path,
@@ -526,14 +861,61 @@ public:
         const String & path,
         SyncCallback callback) = 0;
 
+    virtual void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) = 0;
+
+    virtual void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) = 0;
+
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
 
-    virtual DB::KeeperApiVersion getApiVersion() const = 0;
+    virtual void getACL(const String & path, GetACLCallback  callback) = 0;
+
+    virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
+
+    virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
+
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
+    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
+
+    struct WatchCreateInfo
+    {
+        std::chrono::system_clock::time_point create_time{};
+        XID request_xid{0};
+        OpNum op_num{OpNum::Error};
+    };
+
+    using WatchesSnapshot = std::unordered_map<String, std::vector<WatchCreateInfo>>;
+
+protected:
+    std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
+    mutable std::mutex watches_mutex;
 };
 
 }
+
+template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
+{
+    constexpr auto format(Coordination::Error code, auto & ctx) const
+    {
+        return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
+    }
+};
+
+template <> struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
+{
+    size_t operator()(const Coordination::WatchCallbackPtrOrEventPtr & self) const
+    {
+        return self.hash();
+    }
+};

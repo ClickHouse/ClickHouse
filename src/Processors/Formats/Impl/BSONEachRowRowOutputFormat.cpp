@@ -21,6 +21,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 
+#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -36,15 +38,16 @@ namespace ErrorCodes
 static String toValidUTF8String(const String & name, const FormatSettings & settings)
 {
     WriteBufferFromOwnString buf;
-    WriteBufferValidUTF8 validating_buf(buf);
-    writeJSONString(name, validating_buf, settings);
-    validating_buf.finalize();
+    {
+        WriteBufferValidUTF8 validating_buf(buf);
+        writeJSONString(name, validating_buf, settings);
+    }
     /// Return value without quotes
     return buf.str().substr(1, buf.str().size() - 2);
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
@@ -58,7 +61,7 @@ static void writeBSONSize(size_t size, WriteBuffer & buf)
     if (size > MAX_BSON_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Too large document/value size: {}. Maximum allowed size: {}.", size, MAX_BSON_SIZE);
 
-    writePODBinary<BSONSizeT>(BSONSizeT(size), buf);
+    writeBinaryLittleEndian(BSONSizeT(size), buf);
 }
 
 template <typename Type>
@@ -79,25 +82,25 @@ template <typename ColumnType, typename ValueType>
 static void writeBSONNumber(BSONType type, const IColumn & column, size_t row_num, const String & name, WriteBuffer & buf)
 {
     writeBSONTypeAndKeyName(type, name, buf);
-    writePODBinary<ValueType>(assert_cast<const ColumnType &>(column).getElement(row_num), buf);
+    writeBinaryLittleEndian(ValueType(assert_cast<const ColumnType &>(column).getElement(row_num)), buf);
 }
 
 template <typename StringColumnType>
 static void writeBSONString(const IColumn & column, size_t row_num, const String & name, WriteBuffer & buf, bool as_bson_string)
 {
     const auto & string_column = assert_cast<const StringColumnType &>(column);
-    StringRef data = string_column.getDataAt(row_num);
+    std::string_view data = string_column.getDataAt(row_num);
     if (as_bson_string)
     {
         writeBSONTypeAndKeyName(BSONType::STRING, name, buf);
-        writeBSONSize(data.size + 1, buf);
+        writeBSONSize(data.size() + 1, buf);
         writeString(data, buf);
         writeChar(0x00, buf);
     }
     else
     {
         writeBSONTypeAndKeyName(BSONType::BINARY, name, buf);
-        writeBSONSize(data.size, buf);
+        writeBSONSize(data.size(), buf);
         writeBSONType(BSONBinarySubtype::BINARY, buf);
         writeString(data, buf);
     }
@@ -109,8 +112,7 @@ static void writeBSONBigInteger(const IColumn & column, size_t row_num, const St
     writeBSONTypeAndKeyName(BSONType::BINARY, name, buf);
     writeBSONSize(sizeof(typename ColumnType::ValueType), buf);
     writeBSONType(BSONBinarySubtype::BINARY, buf);
-    auto data = assert_cast<const ColumnType &>(column).getDataAt(row_num);
-    buf.write(data.data, data.size);
+    writeBinaryLittleEndian(assert_cast<const ColumnType &>(column).getElement(row_num), buf);
 }
 
 size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
@@ -165,7 +167,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::String:
         {
             const auto & string_column = assert_cast<const ColumnString &>(column);
-            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
+            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
         }
         case TypeIndex::FixedString:
         {
@@ -407,7 +409,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
             writeBSONSize(sizeof(UUID), out);
             writeBSONType(BSONBinarySubtype::UUID, out);
-            writeBinary(assert_cast<const ColumnUUID &>(column).getElement(row_num), out);
+            writeBinaryLittleEndian(assert_cast<const ColumnUUID &>(column).getElement(row_num), out);
             break;
         }
         case TypeIndex::LowCardinality:
@@ -458,7 +460,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
-            BSONType bson_type =  tuple_type->haveExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
+            BSONType bson_type =  tuple_type->hasExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
             String current_path = path + "." + name;
@@ -536,13 +538,16 @@ void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
             document_size);
 }
 
+void registerOutputFormatBSONEachRow(FormatFactory & factory);
 void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings, FormatFilterInfoPtr /*format_filter_info*/)
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
+    factory.markOutputFormatNotTTYFriendly("BSONEachRow");
+    factory.setContentType("BSONEachRow", "application/octet-stream");
 }
 
 }

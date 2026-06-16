@@ -1,4 +1,6 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
+#include <Core/UUID.h>
 
 #if USE_MSGPACK
 
@@ -13,6 +15,7 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -47,17 +50,28 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
 }
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
     : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_.getDataTypes())  {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_->getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf->reset();
     visitor.reset();
+}
+
+void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void MsgPackRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
 }
 
 void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) // NOLINT
@@ -119,13 +133,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -142,13 +156,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -244,7 +258,8 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
             case TypeIndex::Decimal256:
                 insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, value, size);
                 return;
-            default:;
+            default:
+                break;
         }
     }
 
@@ -326,8 +341,8 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
-    readBinaryBigEndian(uuid.toUnderType().items[0], buf);
-    readBinaryBigEndian(uuid.toUnderType().items[1], buf);
+    readBinaryBigEndian(UUIDHelpers::getHighBytes(uuid), buf);
+    readBinaryBigEndian(UUIDHelpers::getLowBytes(uuid), buf);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
@@ -385,17 +400,34 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(info_stack.top().type))
+    else if (isTuple(removeNullable(info_stack.top().type)))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
+        /// If the type is Nullable, reaching start_array means the value
+        /// is non-null (for nulls, the parser calls visit_nil instead).
+        /// So we can safely unwrap the Nullable to work with the inner
+        /// ColumnTuple directly.
+        IColumn * column_ptr = &info_stack.top().column;
+        if (info_stack.top().type->isNullable())
+        {
+            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
+            nullable_column.getNullMapColumn().insertValue(0);
+            column_ptr = &nullable_column.getNestedColumn();
+        }
+
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
         /// Push nested columns into stack in reverse order.
-        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+        for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
+
+        /// There are no nested columns to grow, so we must explicitly increment the column size.
+        /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+        if (nested_types.empty())
+            column_tuple.addSize(1);
     }
     else
     {
@@ -412,7 +444,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        assert(info_stack.top().array_size.has_value());
+        chassert(info_stack.top().array_size.has_value());
         auto & current_array_size = *info_stack.top().array_size;
         --current_array_size;
         if (current_array_size == 0)
@@ -482,14 +514,15 @@ void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
     throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
 }
 
-bool MsgPackRowInputFormat::readObject()
+template <typename Parser>
+bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 {
     if (buf->eof())
         return false;
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    while (!parser.execute(buf->position(), buf->available(), offset))
+    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
     {
         buf->position() = buf->buffer().end();
         if (buf->eof())
@@ -502,6 +535,24 @@ bool MsgPackRowInputFormat::readObject()
     return true;
 }
 
+size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    msgpack::null_visitor null_visitor;
+    msgpack::detail::parse_helper<msgpack::null_visitor> null_parser(null_visitor);
+
+    size_t columns = getPort().getHeader().columns();
+
+    while (!buf->eof() && num_rows < max_block_size)
+    {
+        for (size_t i = 0; i < columns; ++i)
+            readObject(null_parser);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     size_t column_index = 0;
@@ -510,7 +561,7 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     for (; column_index != columns.size(); ++column_index)
     {
         visitor.set_info(*columns[column_index], data_types[column_index], ext.read_columns[column_index]);
-        has_more_data = readObject();
+        has_more_data = readObject(parser);
         if (!has_more_data)
             break;
     }
@@ -523,11 +574,6 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return true;
 }
 
-void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
-}
-
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
@@ -535,6 +581,15 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
+
+    /// Guard against absurdly large values that would cause std::length_error
+    /// or trigger sanitizer OOM aborts in vector::reserve() below.
+    /// Uses the same limit as Native format readers (see Core/Defines.h).
+    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "input_format_msgpack_number_of_columns = {} is too large "
+                        "(maximum: {})",
+                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
 
@@ -631,10 +686,9 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
-    UNREACHABLE();
 }
 
-DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};
@@ -650,6 +704,7 @@ DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
+void registerInputFormatMsgPack(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormat("MsgPack", [](
@@ -658,11 +713,65 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const RowInputFormatParams & params,
             const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
+
+    factory.setDocumentation("MsgPack", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
+
+## Data types matching {#data-types-matching}
+
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
+|--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
+| `uint N`, `positive fixint`                                        | [`UIntN`](/sql-reference/data-types/int-uint.md)                                                  | `uint N`                         |
+| `int N`, `negative fixint`                                         | [`IntN`](/sql-reference/data-types/int-uint.md)                                                   | `int N`                          |
+| `bool`                                                             | [`UInt8`](/sql-reference/data-types/int-uint.md)                                                  | `uint 8`                         |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`, `bin 16`, `bin 32`      |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/sql-reference/data-types/fixedstring.md)                                         | `bin 8`, `bin 16`, `bin 32`      |
+| `float 32`                                                         | [`Float32`](/sql-reference/data-types/float.md)                                                   | `float 32`                       |
+| `float 64`                                                         | [`Float64`](/sql-reference/data-types/float.md)                                                   | `float 64`                       |
+| `uint 16`                                                          | [`Date`](/sql-reference/data-types/date.md)                                                       | `uint 16`                        |
+| `int 32`                                                           | [`Date32`](/sql-reference/data-types/date32.md)                                                   | `int 32`                         |
+| `uint 32`                                                          | [`DateTime`](/sql-reference/data-types/datetime.md)                                               | `uint 32`                        |
+| `uint 64`                                                          | [`DateTime64`](/sql-reference/data-types/datetime.md)                                             | `uint 64`                        |
+| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/sql-reference/data-types/array.md)/[`Tuple`](/sql-reference/data-types/tuple.md) | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/sql-reference/data-types/map.md)                                                         | `fixmap`, `map 16`, `map 32`     |
+| `uint 32`                                                          | [`IPv4`](/sql-reference/data-types/ipv4.md)                                                       | `uint 32`                        |
+| `bin 8`                                                            | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`                          |
+| `int 8`                                                            | [`Enum8`](/sql-reference/data-types/enum.md)                                                      | `int 8`                          |
+| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/sql-reference/data-types/int-uint.md)                                    | `bin 8`                          |
+| `int 32`                                                           | [`Decimal32`](/sql-reference/data-types/decimal.md)                                               | `int 32`                         |
+| `int 64`                                                           | [`Decimal64`](/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
+| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
+
+## Example usage {#example-usage}
+
+Writing to a file ".msgpk":
+
+```sql
+$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
+$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
+$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                    | Description                                                                                    | Default |
+|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|---------|
+| [`input_format_msgpack_number_of_columns`](/operations/settings/settings-formats.md/#input_format_msgpack_number_of_columns)       | the number of columns in inserted MsgPack data. Used for automatic schema inference from data. | `0`     |
+| [`output_format_msgpack_uuid_representation`](/operations/settings/settings-formats.md/#output_format_msgpack_uuid_representation) | the way how to output UUID in MsgPack format.                                                  | `EXT`   |
+)DOCS_MD"});
 }
 
+void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -685,6 +794,8 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatMsgPack(FormatFactory &);
+void registerMsgPackSchemaReader(FormatFactory &);
 void registerInputFormatMsgPack(FormatFactory &)
 {
 }

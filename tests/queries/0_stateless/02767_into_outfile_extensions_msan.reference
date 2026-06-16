@@ -1,2 +1,2 @@
 Expression ((Projection + Before ORDER BY))
-  ReadFromStorage (SystemNumbers)
+  ReadFromSystemNumbers

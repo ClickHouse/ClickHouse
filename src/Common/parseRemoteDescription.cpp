@@ -1,4 +1,4 @@
-#include "parseRemoteDescription.h"
+#include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -45,27 +45,15 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
         if (!isNumericASCII(description[pos]))
             return false;
         res = res * 10 + description[pos] - '0';
-        if (res > 1e15)
+        if (static_cast<double>(res) > 1e15)
             return false;
     }
     return true;
 }
 
 
-/* Parse a string that generates shards and replicas. Separator - one of two characters | or ,
- *  depending on whether shards or replicas are generated.
- * For example:
- * host1,host2,...      - generates set of shards from host1, host2, ...
- * host1|host2|...      - generates set of replicas from host1, host2, ...
- * abc{8..10}def        - generates set of shards abc8def, abc9def, abc10def.
- * abc{08..10}def       - generates set of shards abc08def, abc09def, abc10def.
- * abc{x,yy,z}def       - generates set of shards abcxdef, abcyydef, abczdef.
- * abc{x|yy|z} def      - generates set of replicas abcxdef, abcyydef, abczdef.
- * abc{1..9}de{f,g,h}   - is a direct product, 27 shards.
- * abc{1..9}de{0|1}     - is a direct product, 9 shards, in each 2 replicas.
- */
-std::vector<String>
-parseRemoteDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses, const String & func_name)
+std::vector<String> parseRemoteDescription(
+    const String & description, size_t l, size_t r, char separator, size_t max_addresses, const String & func_name)
 {
     std::vector<String> res;
     std::vector<String> cur;
@@ -84,25 +72,31 @@ parseRemoteDescription(const String & description, size_t l, size_t r, char sepa
         {
             ssize_t cnt = 1;
             ssize_t last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
-            size_t m;
+            size_t m = 0;
             std::vector<String> buffer;
             bool have_splitter = false;
 
             /// Look for the corresponding closing bracket
             for (m = i + 1; m < r; ++m)
             {
-                if (description[m] == '{') ++cnt;
-                if (description[m] == '}') --cnt;
-                if (description[m] == '.' && description[m-1] == '.') last_dot = m;
-                if (description[m] == separator) have_splitter = true;
-                if (cnt == 0) break;
+                if (description[m] == '{')
+                    ++cnt;
+                if (description[m] == '}')
+                    --cnt;
+                if (description[m] == '.' && description[m-1] == '.')
+                    last_dot = m;
+                if (description[m] == separator)
+                    have_splitter = true;
+                if (cnt == 0)
+                    break;
             }
             if (cnt != 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': incorrect brace sequence in first argument", func_name);
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
-                size_t left, right;
+                size_t left = 0;
+                size_t right = 0;
                 if (description[last_dot - 1] != '.')
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -188,15 +182,31 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
 
     for (const auto & address : addresses)
     {
-        size_t colon = address.find(':');
-        if (colon == String::npos)
+        const size_t close_bracket = address.rfind(']');
+        size_t colon = 0;
+        std::string host;
+        if (address.length() > 2 && address[0] == '[' && close_bracket != String::npos)
         {
-            LOG_WARNING(&Poco::Logger::get("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
-            result.emplace_back(std::make_pair(address, default_port));
+            colon = address.find(':', close_bracket + 1);
+            host = address.substr(1, close_bracket - 1);
         }
         else
         {
-            result.emplace_back(std::make_pair(address.substr(0, colon), DB::parseFromString<UInt16>(address.substr(colon + 1))));
+            colon = address.find(':');
+            if (colon == String::npos)
+                host = address;
+            else
+                host = address.substr(0, colon);
+
+        }
+        if (colon == String::npos)
+        {
+            LOG_WARNING(getLogger("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
+            result.emplace_back(std::make_pair(host, default_port));
+        }
+        else
+        {
+            result.emplace_back(std::make_pair(host, DB::parseFromStringWithoutAssertEOF<UInt16>(address.substr(colon + 1))));
         }
     }
 

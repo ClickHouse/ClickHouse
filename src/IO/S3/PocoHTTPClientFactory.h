@@ -15,7 +15,7 @@ class PocoHTTPClientFactory : public Aws::Http::HttpClientFactory
 public:
     ~PocoHTTPClientFactory() override = default;
     [[nodiscard]] std::shared_ptr<Aws::Http::HttpClient>
-    CreateHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration) const override;
+    CreateHttpClient(const Aws::Client::ClientConfiguration & client_configuration) const override;
     [[nodiscard]] std::shared_ptr<Aws::Http::HttpRequest>
     CreateHttpRequest(const Aws::String & uri, Aws::Http::HttpMethod method, const Aws::IOStreamFactory & streamFactory) const override;
     [[nodiscard]] std::shared_ptr<Aws::Http::HttpRequest>

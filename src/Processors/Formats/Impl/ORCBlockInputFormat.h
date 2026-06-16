@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_ORC
 
+#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -18,21 +19,23 @@ namespace DB
 
 class ArrowColumnToCHColumn;
 
-class ORCBlockInputFormat : public IInputFormat
+class ORCBlockInputFormat final : public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
+    ORCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
     void resetParser() override;
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
+
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk generate() override;
+    Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -50,6 +53,7 @@ private:
     std::vector<int> include_indices;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;
@@ -60,14 +64,20 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ORCSchemaReader : public ISchemaReader
+class ORCSchemaReader final : public ISchemaReader
 {
 public:
     ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
+    std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };
 

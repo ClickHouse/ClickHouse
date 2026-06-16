@@ -4,10 +4,10 @@
             <!-- always send via network -->
             <prefer_localhost_replica>0</prefer_localhost_replica>
             <!-- disable -->
-            <distributed_directory_monitor_split_batch_on_failure>0</distributed_directory_monitor_split_batch_on_failure>
+            <distributed_background_insert_split_batch_on_failure>0</distributed_background_insert_split_batch_on_failure>
             <!-- wait for explicit flush -->
-            <distributed_directory_monitor_sleep_time_ms>86400</distributed_directory_monitor_sleep_time_ms>
-            <distributed_directory_monitor_max_sleep_time_ms>86400</distributed_directory_monitor_max_sleep_time_ms>
+            <distributed_background_insert_sleep_time_ms>86400</distributed_background_insert_sleep_time_ms>
+            <distributed_background_insert_max_sleep_time_ms>86400</distributed_background_insert_max_sleep_time_ms>
         </default>
     </profiles>
 </clickhouse>

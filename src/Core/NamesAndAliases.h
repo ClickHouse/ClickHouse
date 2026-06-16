@@ -47,7 +47,7 @@ using NamesAndAliases = std::vector<NameAndAliasPair>;
 namespace std
 {
     template <> struct tuple_size<DB::NameAndAliasPair> : std::integral_constant<size_t, 2> {};
-    template <> struct tuple_element<0, DB::NameAndAliasPair> { using type = DB::String; };
+    template <> struct tuple_element<0, DB::NameAndAliasPair> { using type = String; };
     template <> struct tuple_element<1, DB::NameAndAliasPair> { using type = DB::DataTypePtr; };
-    template <> struct tuple_element<2, DB::NameAndAliasPair> { using type = DB::String; };
+    template <> struct tuple_element<2, DB::NameAndAliasPair> { using type = String; };
 }

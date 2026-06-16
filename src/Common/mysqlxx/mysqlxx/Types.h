@@ -36,7 +36,7 @@ using Int64 = int64_t;
 using UInt32 = uint32_t;
 using Int32 = int32_t;
 
-using MYSQL_LENGTH = unsigned long;
+using MYSQL_LENGTH = unsigned long; /// NOLINT
 using MYSQL_LENGTHS = MYSQL_LENGTH *;
 using MYSQL_FIELDS = MYSQL_FIELD *;
 

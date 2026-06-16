@@ -1,15 +1,19 @@
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
 #include <cstddef>
-#include <mutex>
 
-#include <Interpreters/Set.h>
+#include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
+
+#include <Poco/String.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -35,7 +39,11 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     Columns columns;
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
-        columns.push_back(all_cols.at(index));
+    {
+        auto col = removeSpecialRepresentations(all_cols.at(index));
+        columns.push_back(std::move(col));
+    }
+
     return columns;
 }
 
@@ -49,7 +57,7 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
 }
 
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
-    const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
+    SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -106,7 +114,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     if (chunk.getNumRows())
     {
         Columns key_columns = getColumnsByIndices(chunk, key_column_indices);
-        bool limit_exceeded = !set->insertFromBlock(key_columns);
+        bool limit_exceeded = !set->insertFromColumns(key_columns);
         if (limit_exceeded)
         {
             auto prev_state = set->state.exchange(SetWithState::State::Suspended);
@@ -123,7 +131,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     }
 }
 
-FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
+FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -149,7 +157,7 @@ IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
             LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {:.2f}% filtered",
                 Poco::toLower(getDescription()), fmt::join(column_names, ", "),
                 stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
-                100 - 100.0 * stat.result_rows / stat.consumed_rows);
+                stat.consumed_rows > 0 ? (100 - 100.0 * static_cast<double>(stat.result_rows) / static_cast<double>(stat.consumed_rows)) : 0);
         }
         else
         {

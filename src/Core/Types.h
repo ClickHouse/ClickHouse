@@ -21,11 +21,11 @@ namespace DB
 /// comparison which is used for nullable KeyCondition.
 struct Null
 {
-    enum class Value
+    enum class Value : int8_t
     {
-        Null,
-        PositiveInfinity,
-        NegativeInfinity,
+        NegativeInfinity = -1,
+        Null = 0,
+        PositiveInfinity = 1,
     };
 
     Value value{Value::Null};
@@ -34,15 +34,12 @@ struct Null
     bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
     bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
 
-    bool operator==(const Null & other) const
+    auto operator<=>(const Null & other) const
     {
-        return value == other.value;
+        return static_cast<int>(value) <=> static_cast<int>(other.value);
     }
 
-    bool operator!=(const Null & other) const
-    {
-        return !(*this == other);
-    }
+    bool operator==(const Null &) const = default;
 };
 
 using UInt128 = ::UInt128;
