@@ -50,10 +50,13 @@ SELECT formatQuery('BACKUP TABLE t TO File(''/tmp/bk/'') SETTINGS cluster_host_i
 -- ConstantExpressionTemplate fast path: mixing ARRAY[...] and [...] spellings in the same INSERT
 -- must not cause a template-key mismatch. Without the recordLiteralTokens fix, the ARRAY keyword
 -- is treated as a fixed token, so [3,4] fails the fast path when ARRAY[1,2] was cached first.
+-- Disable the slow expression fallback so the test exercises only the ConstantExpressionTemplate path.
+SET input_format_values_interpret_expressions = 0;
 CREATE TABLE test_array_values_mixed (arr Array(UInt32)) ENGINE = Memory;
 INSERT INTO test_array_values_mixed VALUES (ARRAY[1, 2]), ([3, 4]), (ARRAY[5, 6]);
 SELECT arr FROM test_array_values_mixed ORDER BY arr;
 DROP TABLE test_array_values_mixed;
+SET input_format_values_interpret_expressions = 1;
 
 -- Precedence: ARRAY[n] is always an array constructor, never an identifier subscript.
 -- This follows PostgreSQL, where ARRAY is a reserved constructor keyword.
