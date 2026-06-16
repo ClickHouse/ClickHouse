@@ -28,11 +28,14 @@ SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET automatic_parallel_replicas_mode = 0;
 
--- Empty left with default join-order algo (the original repro from issue #89166).
-SELECT '--- empty left, default algo ---';
+-- Empty left with the greedy join-order algo (the original repro from issue #89166).
+-- Pin `greedy` explicitly: stateless tests randomize
+-- `query_plan_optimize_join_order_algorithm`, so the default is not reliably greedy.
+SELECT '--- empty left, greedy algo ---';
 SELECT r.id, r.val
 FROM t_left_empty AS l INNER JOIN t_right AS r ON l.id = r.id
-ORDER BY r.id;
+ORDER BY r.id
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy';
 
 -- Same query forcing the dpsize join-order algorithm.
 SELECT '--- empty left, dpsize algo ---';

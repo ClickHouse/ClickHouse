@@ -1,4 +1,4 @@
---- empty left, default algo ---
+--- empty left, greedy algo ---
 --- empty left, dpsize algo ---
 --- empty left, new logical join step off ---
 --- non-empty left, correctness ---
