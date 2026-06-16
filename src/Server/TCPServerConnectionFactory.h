@@ -47,6 +47,8 @@ public:
     {
         return createConnectionImpl(socket, tcp_server);
     }
+
+    virtual bool isSecure() const { return false; }
 };
 
 }
