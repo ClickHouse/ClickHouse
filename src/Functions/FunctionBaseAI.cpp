@@ -31,7 +31,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
-    extern const SettingsString ai_credentials;
+    extern const SettingsString ai_function_credentials;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -79,11 +79,11 @@ FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
 FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context)
 {
     AINamedCollectionConfig config;
-    config.collection_name = context->getSettingsRef()[Setting::ai_credentials];
+    config.collection_name = context->getSettingsRef()[Setting::ai_function_credentials];
 
     if (config.collection_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI functions require credentials: set the `ai_credentials` setting to the name of a named collection "
+            "AI functions require credentials: set the `ai_function_credentials` setting to the name of a named collection "
             "containing the provider configuration (`provider`, `endpoint`, `model`, ...)");
 
     context->checkAccess(AccessType::NAMED_COLLECTION, config.collection_name);

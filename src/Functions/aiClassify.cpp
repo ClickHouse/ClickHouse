@@ -191,7 +191,7 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
 )",
         .syntax = "aiClassify(text, categories[, temperature])",
         .arguments = {
@@ -201,7 +201,7 @@ Provider credentials and configuration are taken from the named collection speci
         },
         .returned_value = {"One of the provided category labels, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_credentials = 'my_ai_credentials'", "positive"},
+            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'", "positive"},
             {"Classify a column", "SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 4},

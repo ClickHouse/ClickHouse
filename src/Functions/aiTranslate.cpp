@@ -88,7 +88,7 @@ Translates the given text into the specified target language using an LLM provid
 
 Additional style or dialect instructions may be passed as a third argument (e.g. `'keep technical terms untranslated'`).
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
 )",
         .syntax = "aiTranslate(text, target_language[, instructions[, temperature]])",
         .arguments = {
@@ -99,7 +99,7 @@ Provider credentials and configuration are taken from the named collection speci
         },
         .returned_value = {"The translated text, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_credentials = 'my_ai_credentials'", "Bonjour le monde!"},
+            {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'", "Bonjour le monde!"},
             {"Translate to Japanese with style instructions", "SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5", ""},
         },
         .introduced_in = {26, 4},

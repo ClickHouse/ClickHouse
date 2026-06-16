@@ -1,7 +1,7 @@
 -- Disabled by default
 -- Enabled after setting
 aiGenerate
--- ai_credentials unset errors
+-- ai_function_credentials unset errors
 -- aiGenerate: too few arguments
 -- aiGenerate: too many arguments
 -- Named collection missing provider
@@ -39,7 +39,7 @@ result	String
 -- Non-constant temperature
 -- Wrong type for system prompt (number instead of string)
 -- Wrong type for temperature (string instead of number)
--- ai_credentials setting default
+-- ai_function_credentials setting default
 1
 -- Setting defaults
 ai_function_embedding_max_batch_size	100

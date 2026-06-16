@@ -6,7 +6,7 @@
 -- AI Functions Test Suite
 -- Tests argument validation, error handling, return types, settings behavior,
 -- and named collection resolution for `aiGenerate`.
--- Credentials are resolved from the `ai_credentials` setting (the named collection
+-- Credentials are resolved from the `ai_function_credentials` setting (the named collection
 -- name), not from a function argument.
 -- All tests run without a real AI provider or API key.
 -- =============================================================================
@@ -29,9 +29,9 @@ SET allow_experimental_ai_functions = 1;
 SELECT '-- Enabled after setting';
 SELECT name FROM system.functions WHERE name = 'aiGenerate';
 
--- `ai_credentials` is unset by default: AI functions must raise a clear error
+-- `ai_function_credentials` is unset by default: AI functions must raise a clear error
 -- rather than make an implicit outbound call.
-SELECT '-- ai_credentials unset errors';
+SELECT '-- ai_function_credentials unset errors';
 SELECT aiGenerate('hello'); -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
@@ -55,7 +55,7 @@ CREATE NAMED COLLECTION ai_no_provider AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing provider';
-SELECT aiGenerate('hi') SETTINGS ai_credentials = 'ai_no_provider'; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('hi') SETTINGS ai_function_credentials = 'ai_no_provider'; -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_provider;
 
@@ -66,7 +66,7 @@ CREATE NAMED COLLECTION ai_no_endpoint AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing endpoint';
-SELECT aiGenerate('hi') SETTINGS ai_credentials = 'ai_no_endpoint'; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('hi') SETTINGS ai_function_credentials = 'ai_no_endpoint'; -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_endpoint;
 
@@ -77,7 +77,7 @@ CREATE NAMED COLLECTION ai_no_model AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing model';
-SELECT aiGenerate('hi') SETTINGS ai_credentials = 'ai_no_model'; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('hi') SETTINGS ai_function_credentials = 'ai_no_model'; -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_model;
 
@@ -91,7 +91,7 @@ CREATE NAMED COLLECTION ai_no_api_key AS
     model = 'test-model';
 
 SELECT '-- Named collection without api_key resolves';
-SELECT count() FROM (SELECT aiGenerate(x) AS result FROM tab) SETTINGS ai_credentials = 'ai_no_api_key';
+SELECT count() FROM (SELECT aiGenerate(x) AS result FROM tab) SETTINGS ai_function_credentials = 'ai_no_api_key';
 
 -- Force the no-key path through provider construction and an actual HTTP request:
 -- `localhost:1` refuses the connection, `ai_function_throw_on_error = 0` swallows it,
@@ -101,13 +101,13 @@ SELECT '-- Named collection without api_key reaches HTTP path';
 DROP TABLE IF EXISTS _03300_no_api_key_in;
 CREATE TABLE _03300_no_api_key_in (x String) ENGINE = Memory;
 INSERT INTO _03300_no_api_key_in VALUES ('hello');
-SET ai_credentials = 'ai_no_api_key';
+SET ai_function_credentials = 'ai_no_api_key';
 SET ai_function_throw_on_error = 0;
 SET ai_function_request_timeout_sec = 3;
 SELECT length(aiGenerate(x)) FROM _03300_no_api_key_in;
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
-SET ai_credentials = '';
+SET ai_function_credentials = '';
 DROP TABLE _03300_no_api_key_in;
 
 DROP NAMED COLLECTION ai_no_api_key;
@@ -117,7 +117,7 @@ DROP NAMED COLLECTION ai_no_api_key;
 -- =============================================================================
 
 SELECT '-- Nonexistent named collection';
-SELECT aiGenerate('hello') SETTINGS ai_credentials = 'nonexistent_collection_xyz'; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+SELECT aiGenerate('hello') SETTINGS ai_function_credentials = 'nonexistent_collection_xyz'; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 -- =============================================================================
 -- 5. Test collection for remaining tests
@@ -131,7 +131,7 @@ CREATE NAMED COLLECTION ai_credentials AS
     api_key = 'fake-key';
 
 -- From here on, resolve credentials from this collection by default.
-SET ai_credentials = 'ai_credentials';
+SET ai_function_credentials = 'ai_credentials';
 
 -- =============================================================================
 -- 6. Return type verification
@@ -180,11 +180,11 @@ CREATE NAMED COLLECTION ai_bad_provider AS
     api_key = 'fake-key';
 
 SELECT '-- Unknown provider name';
-SELECT aiGenerate('hi') SETTINGS ai_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('hi') SETTINGS ai_function_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- Unknown provider name on empty input';
-SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
-SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
+SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_bad_provider;
 
@@ -200,11 +200,11 @@ CREATE NAMED COLLECTION ai_anthropic AS
     api_key = 'fake-key';
 
 SELECT '-- Anthropic provider resolves';
-SELECT count() FROM (SELECT aiGenerate(x) AS result FROM tab) SETTINGS ai_credentials = 'ai_anthropic';
+SELECT count() FROM (SELECT aiGenerate(x) AS result FROM tab) SETTINGS ai_function_credentials = 'ai_anthropic';
 
 SELECT '-- aiEmbed rejects anthropic provider';
-SELECT aiEmbed('hi') SETTINGS ai_credentials = 'ai_anthropic'; -- { serverError NOT_IMPLEMENTED }
-SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_credentials = 'ai_anthropic'; -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed('hi') SETTINGS ai_function_credentials = 'ai_anthropic'; -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_anthropic'; -- { serverError NOT_IMPLEMENTED }
 
 DROP NAMED COLLECTION ai_anthropic;
 
@@ -253,8 +253,8 @@ SELECT aiGenerate(x, 'system', 'hot') FROM tab; -- { serverError ILLEGAL_TYPE_OF
 -- 13. Setting types and defaults
 -- =============================================================================
 
-SELECT '-- ai_credentials setting default';
-SELECT default = '' FROM system.settings WHERE name = 'ai_credentials';
+SELECT '-- ai_function_credentials setting default';
+SELECT default = '' FROM system.settings WHERE name = 'ai_function_credentials';
 
 SELECT '-- Setting defaults';
 SELECT
@@ -442,7 +442,7 @@ SELECT '-- aiEmbed: out-of-range dimensions on empty input';
 SELECT aiEmbed(x, 18446744073709551615) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiEmbed: nonexistent named collection';
-SELECT aiEmbed('hello') SETTINGS ai_credentials = 'nonexistent_collection_xyz'; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+SELECT aiEmbed('hello') SETTINGS ai_function_credentials = 'nonexistent_collection_xyz'; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 SELECT '-- aiEmbed: batch size setting default';
 SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batch_size';

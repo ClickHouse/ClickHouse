@@ -84,7 +84,7 @@ The function sends the prompt to the configured AI provider and returns the gene
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
 If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
 )",
         .syntax = "aiGenerate(prompt[, system_prompt[, temperature]])",
         .arguments
@@ -93,8 +93,8 @@ Provider credentials and configuration are taken from the named collection speci
            {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},
         .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples
-        = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_credentials = 'my_ai_credentials'", "4"},
-           {"With system prompt", "SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_credentials = 'my_ai_credentials'", ""},
+        = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'", "4"},
+           {"With system prompt", "SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'", ""},
            {"Summarize column values", "SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

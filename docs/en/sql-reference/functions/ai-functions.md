@@ -23,7 +23,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions resolve provider credentials and configuration from a **named collection**. To set a named collection to use for credentials, use the [`ai_credentials`](/operations/settings/settings#ai_credentials) setting.
+AI functions resolve provider credentials and configuration from a **named collection**. To set a named collection to use for credentials, use the [`ai_function_credentials`](/operations/settings/settings#ai_function_credentials) setting.
 
 Example statement to create a named collection with provider credentials:
 ```sql
@@ -34,19 +34,19 @@ CREATE NAMED COLLECTION my_ai_credentials AS
     api_key = 'sk-...';
 ```
 
-Select the collection with the `ai_credentials` setting, for the session or for a single query:
+Select the collection with the `ai_function_credentials` setting, for the session or for a single query:
 ```sql
 -- For the session:
 SET allow_experimental_ai_functions = 1;
-SET ai_credentials = 'my_ai_credentials';
+SET ai_function_credentials = 'my_ai_credentials';
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
 
 -- Or for a single query:
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
-SETTINGS allow_experimental_ai_functions = 1, ai_credentials = 'my_ai_credentials';
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
 ```
 
-When `ai_credentials` is empty (the default), an exception is raised.
+When `ai_function_credentials` is empty (the default), an exception is raised.
 
 ### Named collection parameters {#named-collection-parameters}
 
@@ -65,35 +65,35 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 
 ### Query-level settings {#query-level-settings}
 
-Which named collection to use is controlled by the [`ai_credentials`](/operations/settings/settings#ai_credentials) setting. Other AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
+Which named collection to use is controlled by the [`ai_function_credentials`](/operations/settings/settings#ai_function_credentials) setting. Other AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
 
 ### Use in `DEFAULT` and `MATERIALIZED` columns {#default-and-materialized-columns}
 
-The `ai_credentials` setting is read when the default expression is evaluated, NOT when the column is defined. The collection name is not stored in the column definition:
+The `ai_function_credentials` setting is read when the default expression is evaluated, NOT when the column is defined. The collection name is not stored in the column definition:
 
 ```sql
 CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
 -- The stored default is `aiEmbed(doc)`; no collection is captured.
 ```
 
-A `DEFAULT` column is evaluated at `INSERT`, so `ai_credentials` must be set in the inserting session or query:
+A `DEFAULT` column is evaluated at `INSERT`, so `ai_function_credentials` must be set in the inserting session or query:
 
 ```sql
-SET ai_credentials = 'my_ai_credentials';
+SET ai_function_credentials = 'my_ai_credentials';
 INSERT INTO t (id, doc) VALUES (1, 'hello');
 ```
 
-To make such tables insertable without setting `ai_credentials` per session, set it in a [settings profile](/operations/settings/settings-profiles):
+To make such tables insertable without setting `ai_function_credentials` per session, set it in a [settings profile](/operations/settings/settings-profiles):
 
 ```xml
 <profiles>
     <default>
-        <ai_credentials>my_ai_credentials</ai_credentials>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
     </default>
 </profiles>
 ```
 
-A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set `ai_credentials` in a settings profile for mutation-driven recomputation to succeed; otherwise it raises an exception.
+A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set `ai_function_credentials` in a settings profile for mutation-driven recomputation to succeed; otherwise it raises an exception.
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 

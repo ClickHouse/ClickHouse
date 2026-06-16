@@ -32,7 +32,7 @@ function check_access_both()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
         SET allow_experimental_ai_functions = 1;
-        SET ai_credentials = '$collection_name';
+        SET ai_function_credentials = '$collection_name';
         SELECT aiGenerate('hi') FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed('hi') FORMAT Null;
