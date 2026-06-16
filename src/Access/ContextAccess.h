@@ -62,6 +62,7 @@ public:
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
+    std::vector<QuotaUsage> getQuotaUsages() const;
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     SettingsChanges getDefaultSettings() const;
@@ -257,6 +258,7 @@ public:
     /// Returns the quota to track resource consumption.
     ALWAYS_INLINE std::shared_ptr<const EnabledQuota> getQuota() const { return access->getQuota(); }
     ALWAYS_INLINE std::optional<QuotaUsage> getQuotaUsage() const { return access->getQuotaUsage(); }
+    ALWAYS_INLINE std::vector<QuotaUsage> getQuotaUsages() const { return access->getQuotaUsages(); }
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     ALWAYS_INLINE SettingsChanges getDefaultSettings() const { return access->getDefaultSettings(); }

@@ -610,6 +610,14 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
         return quota->getUsage();
 }
 
+std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
+{
+    auto quota = getQuota();
+    if (!quota)
+        return {};
+    return quota->getAllUsage();
+}
+
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};

@@ -2202,6 +2202,11 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
     return getAccess()->getQuotaUsage();
 }
 
+std::vector<QuotaUsage> Context::getQuotaUsages() const
+{
+    return getAccess()->getQuotaUsages();
+}
+
 void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
     try
