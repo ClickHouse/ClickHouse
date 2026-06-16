@@ -47,6 +47,14 @@ SET param_array_test = ARRAY[10, 20, 30];
 -- Use formatQuery to verify parsing without executing the backup.
 SELECT formatQuery('BACKUP TABLE t TO File(''/tmp/bk/'') SETTINGS cluster_host_ids = ARRAY[ARRAY[''id1'', ''id2'']]') != '';
 
+-- ConstantExpressionTemplate fast path: mixing ARRAY[...] and [...] spellings in the same INSERT
+-- must not cause a template-key mismatch. Without the recordLiteralTokens fix, the ARRAY keyword
+-- is treated as a fixed token, so [3,4] fails the fast path when ARRAY[1,2] was cached first.
+CREATE TABLE test_array_values_mixed (arr Array(UInt32)) ENGINE = Memory;
+INSERT INTO test_array_values_mixed VALUES (ARRAY[1, 2]), ([3, 4]), (ARRAY[5, 6]);
+SELECT arr FROM test_array_values_mixed ORDER BY arr;
+DROP TABLE test_array_values_mixed;
+
 -- Precedence: ARRAY[n] is always an array constructor, never an identifier subscript.
 -- This follows PostgreSQL, where ARRAY is a reserved constructor keyword.
 -- To subscript a column named ARRAY, quote it: `ARRAY`[n].

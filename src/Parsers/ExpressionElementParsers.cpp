@@ -1648,11 +1648,39 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
 bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+    Pos original_pos = pos;
+    bool keyword_consumed = false;
+
     Pos pos_copy = pos;
     if (ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
         && pos_copy->type == TokenType::OpeningSquareBracket)
+    {
         pos = pos_copy;
-    return array_parser.parse(pos, node, expected);
+        keyword_consumed = true;
+    }
+
+    if (!array_parser.parse(pos, node, expected))
+        return false;
+
+    /// If the ARRAY keyword was consumed, extend the recorded literal token span to include it.
+    /// Without this, ConstantExpressionTemplate sees `ARRAY` as a fixed token that precedes the
+    /// `[...]` span.  A subsequent row spelled `[...]` (without the keyword) produces a different
+    /// fixed-token sequence, causing a template mismatch: with
+    /// input_format_values_interpret_expressions = 0 the row is rejected outright; with it enabled
+    /// parsing falls back to the slow expression-evaluation path.  Including `ARRAY` in the span
+    /// makes both spellings produce an identical fixed-token-free template, so the fast path works
+    /// regardless of which spelling appears first.
+    if (keyword_consumed && expected.literal_token_map && node)
+    {
+        if (const auto * literal = node->as<ASTLiteral>())
+        {
+            auto it = expected.literal_token_map->find(literal);
+            if (it != expected.literal_token_map->end())
+                it->second.begin = original_pos->begin;
+        }
+    }
+
+    return true;
 }
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
