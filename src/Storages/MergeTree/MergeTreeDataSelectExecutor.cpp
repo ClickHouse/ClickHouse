@@ -639,7 +639,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             fmt::join(partition_columns_names, ", "));
     }
 
-    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     QueryStatusPtr query_status = context->getProcessListElement();
 
     PartFilterCounters part_filter_counters;
