@@ -15,6 +15,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <unordered_map>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -312,6 +313,8 @@ class TextIndexAnalyzer;
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
+    using PostingsBlockCache = std::unordered_map<UInt128, PostingListPtr, UInt128TrivialHash>;
+
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override;
 
@@ -336,7 +339,8 @@ public:
     void setPostingsReadContext(
         MergeTreeIndexReaderStream & postings_stream,
         MergeTreeIndexDeserializationState & state,
-        PostingsSerialization & postings_serialization);
+        PostingsSerialization & postings_serialization,
+        PostingsBlockCache & postings_block_cache);
     void resetPostingsReadContext() { postings_read_context.reset(); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
@@ -356,6 +360,7 @@ private:
         MergeTreeIndexReaderStream * postings_stream = nullptr;
         MergeTreeIndexDeserializationState * state = nullptr;
         PostingsSerialization * postings_serialization = nullptr;
+        PostingsBlockCache * postings_block_cache = nullptr;
     };
 
     const PostingsReadContext & getPostingsReadContext() const;

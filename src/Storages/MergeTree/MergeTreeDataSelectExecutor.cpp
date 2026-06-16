@@ -2061,7 +2061,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule_text.getPostingsCodecType());
         PostingsSerialization postings_serialization(std::move(postings_codec), granule_text.getSerializationVersion());
-        granule_text.setPostingsReadContext(*postings_stream, state, postings_serialization);
+        MergeTreeIndexGranuleText::PostingsBlockCache postings_block_cache;
+        granule_text.setPostingsReadContext(*postings_stream, state, postings_serialization, postings_block_cache);
         SCOPE_EXIT({ granule_text.resetPostingsReadContext(); });
 
         for (const auto & range : ranges)

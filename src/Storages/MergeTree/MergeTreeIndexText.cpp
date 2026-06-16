@@ -673,9 +673,23 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
-    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
+    auto hash = TextIndexPostingsCache::hash(
+        index_id_for_caches,
+        token_info.offsets[block_idx],
+        static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
     auto cell = condition_text.postingsCache()->getOrSet(hash, load_postings);
     return std::get<PostingListPtr>(cell->value);
+}
+
+static UInt128 getRoaringPostingsBlockCacheKey(
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    const String & index_id_for_caches)
+{
+    return TextIndexPostingsCache::hash(
+        index_id_for_caches,
+        token_info.offsets[block_idx],
+        static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
 }
 
 static PostingListPtr getCachedPostingsBlock(
@@ -684,12 +698,37 @@ static PostingListPtr getCachedPostingsBlock(
     size_t block_idx,
     const String & index_id_for_caches)
 {
-    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
+    auto hash = getRoaringPostingsBlockCacheKey(token_info, block_idx, index_id_for_caches);
     auto cell = condition_text.postingsCache()->get(hash);
     if (!cell)
         return nullptr;
 
     return std::get<PostingListPtr>(cell->value);
+}
+
+static PostingListPtr getPostingsBlockForAnalysis(
+    const MergeTreeIndexConditionText & condition_text,
+    MergeTreeIndexReaderStream & stream,
+    MergeTreeIndexDeserializationState & state,
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    PostingsSerialization & postings_serialization,
+    const String & index_id_for_caches,
+    MergeTreeIndexGranuleText::PostingsBlockCache & postings_block_cache,
+    bool allow_cold_postings_read)
+{
+    auto hash = getRoaringPostingsBlockCacheKey(token_info, block_idx, index_id_for_caches);
+    if (auto it = postings_block_cache.find(hash); it != postings_block_cache.end())
+        return it->second;
+
+    auto block = allow_cold_postings_read
+        ? MergeTreeIndexGranuleText::readPostingsBlock(stream, state, token_info, block_idx, postings_serialization, index_id_for_caches)
+        : getCachedPostingsBlock(condition_text, token_info, block_idx, index_id_for_caches);
+
+    if (block)
+        postings_block_cache.emplace(hash, block);
+
+    return block;
 }
 
 void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
@@ -728,13 +767,15 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 void MergeTreeIndexGranuleText::setPostingsReadContext(
     MergeTreeIndexReaderStream & postings_stream,
     MergeTreeIndexDeserializationState & state,
-    PostingsSerialization & postings_serialization)
+    PostingsSerialization & postings_serialization,
+    PostingsBlockCache & postings_block_cache)
 {
     postings_read_context = PostingsReadContext
     {
         .postings_stream = &postings_stream,
         .state = &state,
         .postings_serialization = &postings_serialization,
+        .postings_block_cache = &postings_block_cache,
     };
 }
 
@@ -908,6 +949,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
     auto & postings_stream = *context.postings_stream;
     auto & state = *context.state;
     auto & postings_serialization = *context.postings_serialization;
+    auto & postings_block_cache = *context.postings_block_cache;
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const UInt64 max_cardinality_per_token_for_analysis = condition_text.getContext()->getSettingsRef()[Setting::text_index_max_cardinality_per_token_for_analysis];
 
@@ -921,9 +963,16 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
         PostingList token_postings;
         for (const auto block_idx : blocks_to_read)
         {
-            auto block = entry.allow_cold_postings_read
-                ? readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches)
-                : getCachedPostingsBlock(condition_text, *token_info, block_idx, index_id_for_caches);
+            auto block = getPostingsBlockForAnalysis(
+                condition_text,
+                postings_stream,
+                state,
+                *token_info,
+                block_idx,
+                postings_serialization,
+                index_id_for_caches,
+                postings_block_cache,
+                entry.allow_cold_postings_read);
 
             if (!block)
                 return true;
@@ -966,9 +1015,11 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
     auto & postings_stream = *context.postings_stream;
     auto & state = *context.state;
     auto & postings_serialization = *context.postings_serialization;
+    auto & postings_block_cache = *context.postings_block_cache;
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const UInt64 max_cardinality_per_token_for_analysis = condition_text.getContext()->getSettingsRef()[Setting::text_index_max_cardinality_per_token_for_analysis];
 
+    bool has_inconclusive_token = false;
     for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range, max_cardinality_per_token_for_analysis))
     {
         const auto & token_info = entry.token_info;
@@ -976,17 +1027,34 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
         if (blocks_to_read.empty())
             return false;
 
+        bool token_is_inconclusive = false;
         PostingList token_postings;
         for (const auto block_idx : blocks_to_read)
         {
-            auto block = entry.allow_cold_postings_read
-                ? readPostingsBlock(postings_stream, state, *token_info, block_idx, postings_serialization, index_id_for_caches)
-                : getCachedPostingsBlock(condition_text, *token_info, block_idx, index_id_for_caches);
+            auto block = getPostingsBlockForAnalysis(
+                condition_text,
+                postings_stream,
+                state,
+                *token_info,
+                block_idx,
+                postings_serialization,
+                index_id_for_caches,
+                postings_block_cache,
+                entry.allow_cold_postings_read);
 
             if (!block)
-                return true;
+            {
+                token_is_inconclusive = true;
+                break;
+            }
 
             token_postings |= (*block & range_posting);
+        }
+
+        if (token_is_inconclusive)
+        {
+            has_inconclusive_token = true;
+            continue;
         }
 
         if (token_postings.cardinality() == 0)
@@ -1003,6 +1071,9 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
                 return false;
         }
     }
+
+    if (has_inconclusive_token)
+        return true;
 
     return result && result->cardinality() > 0;
 }
