@@ -1123,7 +1123,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     /// as valid LZ4). An if-chain (not a `switch`) so an out-of-range value — which the FlatBuffers enum
     /// can still carry — is handled without tripping `-Wcovered-switch-default`.
     const auto compression_type = batch.compression()->codec();
-    CompressionCodec codec;
+    CompressionCodec codec = CompressionCodec::Lz4Frame;
     if (compression_type == flatbuf::CompressionType_LZ4_FRAME)
         codec = CompressionCodec::Lz4Frame;
     else if (compression_type == flatbuf::CompressionType_ZSTD)
