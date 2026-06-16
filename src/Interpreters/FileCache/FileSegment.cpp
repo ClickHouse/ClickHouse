@@ -83,6 +83,11 @@ FileSegment::FileSegment(
     , log(getLogger("FileSegment"))
 #endif
 {
+    /// The size is encoded into the file name only for fully downloaded regular segments
+    /// (see `renameToIncludeSizeInNameUnlocked`), so on creation it can be set only together
+    /// with the `DOWNLOADED` state (used when loading cache metadata on startup).
+    chassert(!size_in_filename || download_state == State::DOWNLOADED);
+
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
     {
