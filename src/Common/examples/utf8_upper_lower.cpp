@@ -1,8 +1,7 @@
 #include <iostream>
 #include <unicode/unistr.h>
-#include <Examples/clickhouse_examples.h>
 
-[[maybe_unused]] static std::string utf8_to_lower(const std::string & input)
+std::string utf8_to_lower(const std::string & input)
 {
     icu::UnicodeString unicodeInput(input.c_str(), "UTF-8");
     unicodeInput.toLower();
@@ -11,7 +10,7 @@
     return output;
 }
 
-static std::string utf8_to_upper(const std::string & input)
+std::string utf8_to_upper(const std::string & input)
 {
     icu::UnicodeString unicodeInput(input.c_str(), "UTF-8");
     unicodeInput.toUpper();
