@@ -638,6 +638,7 @@ namespace
     Maximum size in bytes of the cache of preprocessed polygons used by the function `pointInPolygon` with a constant polygon argument.
     Entries above the limit are evicted in least recently used order.
     Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
+    The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](../../sql-reference/statements/system#drop-point-in-polygon-cache) query.
     :::note
     This setting can be modified at runtime and will take effect immediately.
     :::
