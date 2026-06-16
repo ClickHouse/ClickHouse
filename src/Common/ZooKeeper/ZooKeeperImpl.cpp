@@ -20,6 +20,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
@@ -862,6 +863,30 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
+                    /// Until the request is registered in `operations` below, the local `info` is the
+                    /// only owner of its callback. If anything in between throws (span finalize,
+                    /// addRootPath, the map insert), `info` is destroyed while unwinding and the
+                    /// callback never runs. Async callers that capture a std::promise (e.g.
+                    /// asyncTryExistsNoThrow) would then get a broken promise, and ~promise() throwing
+                    /// future_error from a destructor aborts the server. Satisfy the callback with an
+                    /// error in that window instead.
+                    bool callback_registered = false;
+                    SCOPE_EXIT({
+                        if (callback_registered || !info.callback)
+                            return;
+                        try
+                        {
+                            ZooKeeperResponsePtr response = info.request->makeResponse();
+                            response->error = info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED;
+                            response->xid = info.request->xid;
+                            info.callback(*response);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log);
+                        }
+                    });
+
                     info.request->spans.maybeFinalize(
                         KeeperSpan::ClientRequestsQueue,
                         [&]
@@ -886,6 +911,10 @@ void ZooKeeper::sendThread()
                         std::lock_guard lock(operations_mutex);
                         operations[info.request->xid] = info;
                     }
+
+                    /// Ownership of the callback is now with `operations` (or the request is a close
+                    /// with no callback): receiveEvent() or finalize() will satisfy it. Disarm the guard.
+                    callback_registered = true;
 
                     if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {
