@@ -138,6 +138,11 @@ class CreateIssue:
             validator=lambda x: x in result.info,
             default=failure_reason_default,
         )
+        if failure_reason is None:
+            print(
+                "WARNING: no failure reason could be determined automatically - skipping issue creation"
+            )
+            return ""
         if result.name.startswith("test_"):
             # pytest case
             test_name = UserPrompt.get_string(
@@ -392,7 +397,20 @@ Test output example:
 class CommitStatusCheck:
 
     @staticmethod
-    def get_ci_praktika_result(pr_number, commit_sha):
+    def get_ci_praktika_result(pr_number, commit_sha, repo=PUBLIC_REPO):
+        if repo != PUBLIC_REPO:
+            # Private repo results are not public; fetch them via the S3 proxy.
+            report_url = (
+                f"{S3_PROXY_BASE_URL}/{S3_PRIVATE_REPORT_BUCKET}"
+                f"/PRs/{pr_number}/{commit_sha}/result_pr.json"
+            )
+            if not Shell.check(
+                f"curl -f {report_url} -o /tmp/result_pr.json > /dev/null 2>&1"
+            ):
+                raise Exception(
+                    f"Failed to fetch private PR result from {report_url}"
+                )
+            return Result.from_file("/tmp/result_pr.json")
         if pr_number != 0:
             report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/PRs/{pr_number}/{commit_sha}/result_pr.json"
         else:
@@ -401,7 +419,34 @@ class CommitStatusCheck:
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
-    def process_sync_status(commit_status_data: Optional[GH.CommitStatus], sha: str):
+    def ensure_s3_proxy_reachable() -> bool:
+        """
+        Check that the private-reports S3 proxy is reachable, prompting the user
+        to connect to VPN/Tailscale and retry. Returns False if the user skips.
+        """
+        while True:
+            if Shell.check(
+                f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
+            ):
+                return True
+            print(
+                f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
+                "Connect to VPN/Tailscale to access private repo results."
+            )
+            answer = UserPrompt.select_from_menu(
+                [
+                    ("Skip", "skip"),
+                    ("Retry (after connecting to VPN)", "retry"),
+                ],
+                question="S3 proxy is not available",
+            )
+            if answer[1] == "skip":
+                return False
+
+    @staticmethod
+    def process_sync_status(
+        commit_status_data: Optional[GH.CommitStatus], sha: str, repo: str = PUBLIC_REPO
+    ):
         if not commit_status_data:
             if not UserPrompt.confirm(
                 "CH Inc sync status is missing. Override to success?"
@@ -413,7 +458,7 @@ class CommitStatusCheck:
                 "Manually overridden",
                 "",
                 sha=sha,
-                repo="ClickHouse/ClickHouse",
+                repo=repo,
             )
             return
         if commit_status_data.state in (Result.GHStatus.SUCCESS,):
@@ -430,7 +475,7 @@ class CommitStatusCheck:
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
-                        repo="ClickHouse/ClickHouse",
+                        repo=repo,
                     )
                 else:
                     sys.exit(0)
@@ -451,7 +496,7 @@ class CommitStatusCheck:
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
-                        repo="ClickHouse/ClickHouse",
+                        repo=repo,
                     )
                 else:
                     sys.exit(0)
@@ -463,7 +508,7 @@ class CommitStatusCheck:
 
     @staticmethod
     def process_mergeable_check_status(
-        commit_status_data: Optional[GH.CommitStatus], sha: str
+        commit_status_data: Optional[GH.CommitStatus], sha: str, repo: str = PUBLIC_REPO
     ):
         override = False
         if commit_status_data and commit_status_data.state in (Result.GHStatus.SUCCESS,):
@@ -486,23 +531,24 @@ class CommitStatusCheck:
                 "Manually overridden",
                 "",
                 sha=sha,
-                repo="ClickHouse/ClickHouse",
+                repo=repo,
             )
 
     @classmethod
-    def get_commit_statuses(cls, head_sha: str) -> dict:
+    def get_commit_statuses(cls, head_sha: str, repo: str = PUBLIC_REPO) -> dict:
         """
         Fetch and filter commit statuses for the given commit SHA.
 
         Args:
             head_sha: The commit SHA to fetch statuses for
+            repo: GitHub repository to fetch statuses from
 
         Returns:
             Dictionary mapping status context names to GH.CommitStatus objects
         """
         # Get commit statuses with pagination
         statuses_list = Shell.get_output(
-            f"gh api repos/ClickHouse/ClickHouse/commits/{head_sha}/statuses --paginate"
+            f"gh api repos/{repo}/commits/{head_sha}/statuses --paginate"
         )
         statuses_list = json.loads(statuses_list)
 
@@ -562,6 +608,16 @@ class CommitStatusCheck:
             print(f"WARNING: Failed to fetch sync PR result from {report_url}")
             return None
         return Result.from_file("/tmp/result_sync_pr.json")
+
+    @staticmethod
+    def detect_pr_repo(pr_number) -> Optional[str]:
+        """Find which repo a PR number belongs to: public first, then private."""
+        for repo in (PUBLIC_REPO, SYNC_REPO):
+            if Shell.check(
+                f"gh pr view {pr_number} --json number --repo {repo} > /dev/null 2>&1"
+            ):
+                return repo
+        return None
 
 
 issues_created = 0
@@ -785,8 +841,23 @@ def main():
         action="store_true",
         help="Create infrastructure issues for failures",
     )
+    parser.add_argument(
+        "--ci-only",
+        "--no-merge",
+        action="store_true",
+        dest="ci_only",
+        help="Only analyze CI and create issues; do not override statuses or merge",
+    )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Answer all prompts automatically (non-interactive)",
+    )
     args = parser.parse_args()
     create_infrastructure_issue = args.create_infrastructure_issue
+    ci_only = args.ci_only
+    UserPrompt.assume_yes = args.yes
 
     # Check gh CLI version
     gh_version_output = Shell.get_output("gh --version")
@@ -847,14 +918,27 @@ def main():
         else:
             pr_number = selected_pr[1]
 
+    # Default repo for the master-commit path; PR path detects it below.
+    repo = PUBLIC_REPO
+
     if not is_master_commit:
-        pr_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"
+        repo = CommitStatusCheck.detect_pr_repo(pr_number)
+        if not repo:
+            print(
+                f"ERROR: PR #{pr_number} not found in {PUBLIC_REPO} or {SYNC_REPO}"
+            )
+            sys.exit(1)
+        if repo != PUBLIC_REPO and not CommitStatusCheck.ensure_s3_proxy_reachable():
+            print(f"Cannot fetch results for private PR #{pr_number} - aborting")
+            sys.exit(1)
+        print(f"PR #{pr_number} found in {repo}")
+        pr_url = f"https://github.com/{repo}/pull/{pr_number}"
         pr_data = Shell.get_output(
-            f"gh pr view {pr_number} --json headRefOid,headRefName --repo ClickHouse/ClickHouse"
+            f"gh pr view {pr_number} --json headRefOid,headRefName --repo {repo}"
         )
         pr_data = json.loads(pr_data)
         head_sha = pr_data["headRefOid"]
-        if GH.pr_has_conflicts(pr_number, "ClickHouse/ClickHouse"):
+        if GH.pr_has_conflicts(pr_number, repo):
             print("PR has conflicts, cannot merge")
             sys.exit(1)
     else:
@@ -866,7 +950,7 @@ def main():
     print(f"CI Report: {CreateIssue.get_job_report_url(pr_number, head_sha)}")
 
     if not is_master_commit:
-        status_map = CommitStatusCheck.get_commit_statuses(head_sha)
+        status_map = CommitStatusCheck.get_commit_statuses(head_sha, repo=repo)
         sync_status = status_map.get(CheckStatuses.CH_INC_SYNC)
         mergeable_check_status = status_map.get(CheckStatuses.MERGEABLE_CHECK)
         if (
@@ -886,7 +970,7 @@ def main():
         mergeable_check_status = None
 
     workflow_result = CommitStatusCheck.get_ci_praktika_result(
-        pr_number if not is_master_commit else 0, head_sha
+        pr_number if not is_master_commit else 0, head_sha, repo=repo
     ).to_failed_results_with_flat_leaves()
 
     global ci_start_time
@@ -895,7 +979,7 @@ def main():
     known_failures, unknown_failures, not_finished_jobs, new_issues_count = (
         process_workflow_failures(
             workflow_result,
-            PUBLIC_REPO,
+            repo,
             pr_number,
             head_sha,
             allow_infra_issues=create_infrastructure_issue,
@@ -914,34 +998,16 @@ def main():
     sync_known_failures = []
     sync_unknown_failures = []
     if (
-        sync_status
+        repo == PUBLIC_REPO
+        and sync_status
         and sync_status.state == Result.GHStatus.FAILURE
         and sync_status.description == "tests failed"
     ):
         print("\n=== Processing Sync PR (CH Inc sync) failures ===")
 
-        # Check proxy connectivity before proceeding
-        process_sync = False
-        while True:
-            if Shell.check(
-                f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
-            ):
-                process_sync = True
-                break
-            print(
-                f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
-                "Connect to VPN/Tailscale to access sync PR results."
-            )
-            answer = UserPrompt.select_from_menu(
-                [
-                    ("Skip sync PR processing", "skip"),
-                    ("Retry (after connecting to VPN)", "retry"),
-                ],
-                question="S3 proxy is not available",
-            )
-            if answer[1] == "skip":
-                print("Skipping sync PR processing")
-                break
+        process_sync = CommitStatusCheck.ensure_s3_proxy_reachable()
+        if not process_sync:
+            print("Skipping sync PR processing")
 
         if process_sync:
             sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
@@ -989,7 +1055,8 @@ def main():
         if known_failures:
             question += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
         question += " - all other checks passed\n"
-        question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
+        if sync_status:
+            question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
         if sync_known_failures or sync_unknown_failures:
             question += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
     else:
@@ -1009,7 +1076,7 @@ def main():
             if not GH.post_updateable_comment(
                 comment_tags_and_bodies={"summary": summary_body},
                 pr=pr_number,
-                repo="ClickHouse/ClickHouse",
+                repo=repo,
                 only_update=True,
                 verbose=False,
             ):
@@ -1018,26 +1085,30 @@ def main():
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
 
+    if ci_only:
+        print("\n--ci-only: skipping merge queue. Done.")
+        sys.exit(0)
+
     if not UserPrompt.confirm(
         f"Add PR #{pr_number} to the merge queue (y - continue, n - exit)?"
     ):
         sys.exit(0)
 
     if Shell.check(
-        f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo ClickHouse/ClickHouse | grep -q true"
+        f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo {repo} | grep -q true"
     ):
         if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
             Shell.check(
-                f"gh pr ready {pr_number} --repo ClickHouse/ClickHouse",
+                f"gh pr ready {pr_number} --repo {repo}",
                 strict=True,
                 verbose=True,
             )
         else:
             sys.exit(0)
 
-    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha)
+    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha, repo=repo)
     CommitStatusCheck.process_mergeable_check_status(
-        mergeable_check_status, sha=head_sha
+        mergeable_check_status, sha=head_sha, repo=repo
     )
 
     # `gh pr merge --auto` calls the `enablePullRequestAutoMerge` mutation,
@@ -1045,7 +1116,7 @@ def main():
     # `enqueuePullRequest` directly: it is the mutation the "Merge when ready"
     # button on github.com uses.
     pr_node_id = Shell.get_output(
-        f"gh pr view {pr_number} --json id --jq '.id' --repo ClickHouse/ClickHouse"
+        f"gh pr view {pr_number} --json id --jq '.id' --repo {repo}"
     ).strip()
     if not pr_node_id:
         print(f"ERROR: Failed to fetch node ID for PR #{pr_number}")
@@ -1072,7 +1143,7 @@ def main():
     # actually landed in the queue.
     time.sleep(5)
     merge_status = Shell.get_output(
-        f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
+        f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo {repo}"
     )
     if merge_status == "QUEUED":
         print(f"OK: PR #{pr_number} added to the merge queue")

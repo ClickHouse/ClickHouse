@@ -8,6 +8,11 @@ import sys
 class UserPrompt:
     """Provides interactive prompts for user input in terminal."""
 
+    # When set, prompts are answered automatically: confirmations return True,
+    # menus return their first item, and string prompts return their default
+    # (or None when no default is available).
+    assume_yes = False
+
     @staticmethod
     def _safe_input(prompt):
         try:
@@ -34,6 +39,12 @@ class UserPrompt:
             menu_map[i] = item
             val = item[0] if isinstance(item, tuple) else item
             print(f"{i}. {val}")
+
+        if UserPrompt.assume_yes:
+            selected_item = menuitems[0]
+            val = selected_item[0] if isinstance(selected_item, tuple) else selected_item
+            print(f"\n{question}: {val} [auto]")
+            return selected_item
 
         while True:
             try:
@@ -89,6 +100,9 @@ class UserPrompt:
         Returns:
             True for yes, False for no, None if cancelled.
         """
+        if UserPrompt.assume_yes:
+            print(f"\n{question} (y/n): y [auto]")
+            return True
         while True:
             choice = UserPrompt._safe_input(f"\n{question} (y/n): ")
             if choice.lower() in ("y", "yes"):
@@ -115,6 +129,13 @@ class UserPrompt:
         if default is not None:
             prompt += f" (default: {default})"
         prompt += ": "
+
+        if UserPrompt.assume_yes:
+            if default is not None and validator(default):
+                print(f"{prompt}{default} [auto]")
+                return default
+            print(f"{prompt}<no default available, skipping> [auto]")
+            return None
 
         while True:
             try:
