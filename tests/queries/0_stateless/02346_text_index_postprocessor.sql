@@ -860,4 +860,26 @@ SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');   -- 0
 
 DROP TABLE tab;
 
+SELECT '33. hasPhrase whose tokens are all dropped by the postprocessor must not prune the granule.';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'the the'), (2, 'foo bar'), (3, 'baz qux');
+
+-- 'the the' postprocesses to no tokens; hasPhrase is hint-only and not postprocessed at row level, so
+-- it must still match row 1 instead of pruning every granule via an unsatisfiable all-empty hint.
+SELECT count() FROM tab WHERE hasPhrase(val, 'the the'); -- 1
+-- A phrase with surviving tokens still uses the index hint and matches.
+SELECT count() FROM tab WHERE hasPhrase(val, 'foo bar'); -- 1
+-- Tokens present but not as an adjacent phrase: granule kept, row-level rejects the order.
+SELECT count() FROM tab WHERE hasPhrase(val, 'qux baz'); -- 0
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

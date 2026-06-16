@@ -991,6 +991,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Apply both preprocessor and postprocessor so the lookup tokens match what was stored in
         /// the index. In Hint mode any false positives are resolved by the row-level filter.
         auto tokens = stringToTokens(value_field);
+
+        /// If a pre/postprocessor maps the whole phrase to no tokens, an empty FUNCTION_HAS_ALL_TOKENS
+        /// would prune every granule (hasAllQueryTokens returns false for empty tokens). hasPhrase is
+        /// hint-only and is not postprocessed at row level, so it can still match. Bail out of index use
+        /// instead of producing an unsatisfiable hint, letting the row-level filter decide.
+        if (tokens.empty())
+            return false;
+
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;

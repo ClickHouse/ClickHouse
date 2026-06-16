@@ -204,3 +204,7 @@ wo	1
 1
 1
 0
+33. hasPhrase whose tokens are all dropped by the postprocessor must not prune the granule.
+1
+1
+0
