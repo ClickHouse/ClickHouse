@@ -817,4 +817,27 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['xyz', 'abc']) SETTINGS query_p
 
 DROP TABLE tab;
 
+SELECT '31. Empty postprocessed hasAllTokens / hasAnyTokens never match, even when an OR keeps the granule alive.';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'stop', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Row 3 literally contains 'stop', but the postprocessor maps it to empty, so the search has no tokens.
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar'), (3, 'stop sign');
+
+-- The empty search must match nothing; the 'OR id = 1' keeps the granule from being pruned, so the
+-- result isolates the search predicate. Direct read previously leaked an always-true virtual column
+-- here and returned all rows. Both paths must agree (only id = 1 matches → 1).
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

@@ -260,6 +260,13 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 
         if (search_query->tokens.empty() && search_query->patterns.empty())
         {
+            /// hasAnyTokens / hasAllTokens with no search tokens never match (row-level returns 0,
+            /// e.g. when a postprocessor maps every needle token to empty). Encode this as an explicit
+            /// no-match so direct read agrees with the row-scan path; otherwise an always-true virtual
+            /// column would wrongly keep all rows once granule pruning cannot mask it (e.g. under OR).
+            if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens")
+                continue;
+
             /// Always return true for empty needles.
             is_always_true[i] = true;
         }

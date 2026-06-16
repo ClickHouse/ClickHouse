@@ -195,3 +195,8 @@ wo	1
 1
 0
 0
+31. Empty postprocessed hasAllTokens / hasAnyTokens never match, even when an OR keeps the granule alive.
+1
+1
+1
+1
