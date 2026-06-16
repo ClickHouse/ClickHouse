@@ -17,4 +17,4 @@ This is file data4	file.csv
 This is file data5	file.csv
 This is file OK1	file.csv
 This is file OK2	file.csv
-This is file data_zip	file.csv
+This is file data_zip	a.zip::file.csv

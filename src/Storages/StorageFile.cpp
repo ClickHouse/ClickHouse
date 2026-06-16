@@ -304,13 +304,24 @@ std::vector<std::string> listFilesWithRegexpMatching(
     size_t & total_bytes_to_read)
 {
     std::vector<std::string> result;
-    /// Deduplicate paths produced by `**` recursion and zero-depth matches.
-    std::unordered_set<std::string> matched_paths;
 
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, &matched_paths);
+    {
+        /// Enable de-duplication only for patterns that contain `/**`.
+        /// It avoids duplicates caused by `/**` zero-depth matching, while preserving the historical behavior
+        /// of producing duplicates across overlapping brace expansions like `{*.csv,a.csv}`.
+        if (for_match_expanded.contains("/**"))
+        {
+            std::unordered_set<std::string> matched_paths;
+            listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, &matched_paths);
+        }
+        else
+        {
+            listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, nullptr);
+        }
+    }
 
     return result;
 }

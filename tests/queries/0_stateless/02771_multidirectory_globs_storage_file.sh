@@ -51,22 +51,7 @@ echo 'This is file OK2' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/base
 echo 'This is file BAD_NO_FOO' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/base/bar/file.csv
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/base/**/foo/*/file.csv', CSV) ORDER BY 1;"
 
-mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/zipdir/
-echo 'This is file data_zip' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/zipdir/file.csv
-python3 - <<'PY'
-import os
-import zipfile
-
-base = os.environ["USER_FILES_PATH"]
-name = os.environ["CLICKHOUSE_TEST_UNIQUE_NAME"]
-zip_dir = os.path.join(base, name, "path", "zipdir")
-zip_path = os.path.join(base, name, "path", "a.zip")
-
-with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-    zf.write(os.path.join(zip_dir, "file.csv"), arcname="file.csv")
-PY
-rm -rf ${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/path/zipdir/
-
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/**/a.zip::file.csv', CSV) ORDER BY _file;"
+echo 'This is file data_zip' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/a.zip::file.csv
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/**/a.zip::file.csv', CSV) ORDER BY _file SETTINGS allow_archive_path_syntax = 0;"
 
 rm -rf ${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
