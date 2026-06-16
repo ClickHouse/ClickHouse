@@ -131,7 +131,9 @@ public:
 
         cnt += end - data;
 
-        while (data + 8 <= end)
+        /// Use pointer subtraction, not `data + 8 <= end`: forming `data + 8` when fewer than
+        /// 8 bytes remain points past `end`, which is undefined behavior ([expr.add]/4).
+        while (end - data >= 8)
         {
             current_word = unalignedLoadLittleEndian<UInt64>(data);
 
