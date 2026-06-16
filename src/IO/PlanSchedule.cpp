@@ -257,7 +257,8 @@ PlanSchedule buildSchedule(
     {
         const size_t region_end = geometry.nextGapStart(sub.offset);
         size_t region_start = sub.offset;
-        for (bool extended = true; extended; )
+        bool extended = true;
+        while (extended)
         {
             extended = false;
             for (const auto & tr : sched.ranges)
