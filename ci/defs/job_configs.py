@@ -68,10 +68,12 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes the Darwin skip list, so changes to
-# it must schedule the job (the shared digest above does not cover that file).
+# The Darwin fast test additionally consumes the Darwin skip list and its wrapper
+# script, so changes to either must schedule the job (the shared digest above does
+# not cover them).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
-    include_paths=fast_test_digest_config.include_paths + ["./ci/defs/darwin.skip"],
+    include_paths=fast_test_digest_config.include_paths
+    + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
 )
 
 common_build_job_config = Job.Config(
@@ -207,24 +209,14 @@ class JobConfigs:
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()
-        # macOS does not auto-route 127.0.0.0/8, so alias 127.0.0.2+ on lo0 for the
-        # run (remote()/cluster() tests need them reachable), then remove the aliases:
-        # the macos_m2 runner is reused, so a leaked alias makes 127.0.0.2+ look local
-        # to later jobs. Both setup and teardown run in the command, not pre/post
-        # hooks, because praktika does not propagate hook exit codes to job status, so
-        # a hook cannot fail the job. Both are idempotent and fail-closed (setup skips
-        # an already-present alias and aborts on failure; teardown skips an absent
-        # alias and sets rc=1 on a failed removal); the fast_test.py exit code is kept.
-        # No literal { } in the command: parametrize() runs str.format(PARAMETER=...)
-        # on it, so the teardown uses if/then/fi, not a { ...; } group.
-        command=(
-            'for i in $(seq 2 16); do ifconfig lo0 | grep -qF "127.0.0.$i " '
-            "|| sudo ifconfig lo0 alias 127.0.0.$i up || exit 1; done; "
-            "python3 ./ci/jobs/fast_test.py; rc=$?; "
-            'for i in $(seq 2 16); do if ifconfig lo0 | grep -qF "127.0.0.$i "; then '
-            "sudo ifconfig lo0 -alias 127.0.0.$i || rc=1; fi; done; "
-            "exit $rc"
-        ),
+        # macOS needs 127.0.0.2+ aliased on lo0 (it does not auto-route 127.0.0.0/8)
+        # so remote()/cluster() tests are reachable, and the aliases must be removed
+        # afterwards or the reused runner leaks them into later jobs. That setup and
+        # fail-closed teardown live in a wrapper script (not pre/post hooks, whose
+        # exit codes praktika does not propagate to job status). The script path is
+        # the whole command: an inlined shell command tripped str.format() braces and
+        # the run-command file-path validator. See ci/jobs/scripts/fast_test_darwin.sh.
+        command="./ci/jobs/scripts/fast_test_darwin.sh",
         digest_config=darwin_fast_test_digest_config,
         result_name_for_cidb="Tests",
         pre_hooks=[
