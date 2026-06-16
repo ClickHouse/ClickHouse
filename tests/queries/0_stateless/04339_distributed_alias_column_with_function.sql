@@ -59,5 +59,11 @@ FROM remote('127.0.0.{1,2}', currentDatabase(), t_04339) ORDER BY x;
 SELECT materialize(7)::UInt32 AS f, x, xx
 FROM remote('127.0.0.{1,2}', currentDatabase(), t_04339) ORDER BY x;
 
+-- The original issue shapes: a non-deterministic function next to a plain column and its ALIAS.
+-- These used to throw CANNOT_PARSE_*; FORMAT Null proves they run (output is non-deterministic).
+SELECT now(), x, xx FROM remote('127.0.0.{1,2}', currentDatabase(), t_04339) ORDER BY x FORMAT Null;
+SELECT generateUUIDv4(), x, xx FROM remote('127.0.0.{1,2}', currentDatabase(), t_04339) ORDER BY x FORMAT Null;
+SELECT rand(), x, xx FROM remote('127.0.0.{1,2}', currentDatabase(), t_04339) ORDER BY x FORMAT Null;
+
 DROP TABLE t_04339;
 DROP TABLE t_04339_num;
