@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -1212,7 +1213,22 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::SYNTAX_ERROR,
                         "Max query size exceeded (can be increased with the `max_query_size` setting)");
 
-                out_ast = IAST::createFromJSON(String(begin, end),
+                /// A single-statement `clickhouse_json` query may carry a trailing `;` delimiter, just as
+                /// the SQL path and the JSON multiquery scanner accept one. `Poco::JSON::Parser` rejects
+                /// any trailing non-whitespace ("Excess characters found after JSON end"), so strip one
+                /// trailing `;` (and surrounding whitespace) before deserializing. Anything else after the
+                /// object is still rejected by the JSON parser as excess input.
+                const char * json_end = end;
+                while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > begin && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+
+                out_ast = IAST::createFromJSON(String(begin, json_end),
                     settings[Setting::max_ast_depth],
                     settings[Setting::max_ast_elements]);
                 checkASTSizeLimits(*out_ast, settings);
