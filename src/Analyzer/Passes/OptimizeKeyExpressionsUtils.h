@@ -15,7 +15,7 @@ namespace DB
 /// Returns true if `node` is an ordinary deterministic function computed only from `keys` (every
 /// column it reads is one of the keys). Such a value is the same for all rows in a group, so this
 /// key can be dropped without changing the grouping.
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys);
+bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithGlobalHashSet & keys);
 
 /// Removes, in place, every key that is a function of the other keys.
 void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys);

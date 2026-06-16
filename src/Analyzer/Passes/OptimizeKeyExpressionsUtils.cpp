@@ -45,7 +45,7 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
 
 }
 
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys)
+bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithGlobalHashSet & keys)
 {
     auto * function = node->as<FunctionNode>();
     if (!function || function->getArguments().getNodes().empty())
@@ -119,7 +119,7 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
 
 void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
 {
-    QueryTreeNodePtrWithHashSet key_set(keys.begin(), keys.end());
+    QueryTreeNodePtrWithGlobalHashSet key_set(keys.begin(), keys.end());
 
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());
