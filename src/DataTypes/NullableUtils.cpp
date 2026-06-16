@@ -121,9 +121,11 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 
 
 void applyParentNullMapToExtractedSubcolumn(
-    const MutableColumnPtr & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset, size_t length)
+    const MutableColumnPtr & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset)
 {
-    chassert(column_offset + length == column->size());
+    chassert(column_offset <= column->size());
+    const size_t length = column->size() - column_offset;
+    chassert(parent_null_map_offset + length <= parent_null_map.size());
 
     /// When no row of the range is NULL in the parent, the subcolumn already holds the correct values and
     /// nothing needs to be marked NULL.
@@ -199,7 +201,7 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     {
         const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
         auto mutable_column = IColumn::mutate(prev);
-        applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0, mutable_column->size());
+        applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
         return mutable_column;
     }
 
