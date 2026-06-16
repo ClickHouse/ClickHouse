@@ -2026,6 +2026,7 @@ std::vector<std::pair<std::string, Int32>> KeeperStateMachine<Storage>::getExpir
     return storage->collectExpiredTTLPaths(now_ms, batch_size);
 }
 
+template<typename Storage>
 std::vector<KeeperSnapshotStatus> KeeperStateMachine<Storage>::getSnapshotsStatus() const
 {
     std::lock_guard lock(snapshots_lock);
