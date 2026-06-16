@@ -269,8 +269,12 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
 {
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
-    while (!keeper_context->isShutdownCalled())
+    const auto & shutdown_called = keeper_context->isShutdownCalled();
+    while (true)
     {
+        if (shutdown_called)
+            return;
+
         try
         {
             if (server->checkInit() && isLeader())
