@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/logger_useful.h>
@@ -405,8 +406,12 @@ static std::unique_ptr<AggregatingStep> makePartialAggStep(
     return step;
 }
 
-/// Create a MergingAggregatedStep that merges partial states from eager
-/// aggregation, using the original aggregation's full key set.
+/// Create a MergingAggregatedStep that merges partial states from eager aggregation, using the
+/// original aggregation's full key set. MergingAggregatedStep natively consumes intermediate
+/// state columns (unlike an `only_merge` AggregatingStep, which still references the aggregate's
+/// raw argument columns and needs the projection-specific header adaptation). The states reach
+/// this merge through a join, which does not carry `AggregatedChunkInfo`, so the merge is told to
+/// read untagged chunks as single-level states.
 static std::unique_ptr<MergingAggregatedStep> makeMergeStep(
     const AggregatingStep & original,
     SharedHeader input_header)
@@ -424,6 +429,7 @@ static std::unique_ptr<MergingAggregatedStep> makeMergeStep(
         original.getMaxBlockSize(),
         original.getMaxBlockSizeForAggregationInOrder(),
         original.usingMemoryBoundMerging());
+    step->setInputMayLackChunkInfo();
     step->setStepDescription(fmt::format("EagerMerge: {}", original.getStepDescription()), 200);
     return step;
 }
@@ -716,9 +722,37 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
             continue;
         }
 
-        auto merge_step_ptr = makeMergeStep(*agg_step, final_header);
+        /// The merge reads key and aggregate-state columns positionally as [keys..., states...],
+        /// but the join output carries the other side's columns in join order. Project to exactly
+        /// that layout (dropping the other side's columns) before feeding the merge.
+        Names merge_input_names;
+        merge_input_names.reserve(agg_step->getParams().keys.size() + agg_step->getParams().aggregates.size());
+        for (const auto & key : agg_step->getParams().keys)
+            merge_input_names.push_back(key);
+        for (const auto & agg_desc : agg_step->getParams().aggregates)
+            merge_input_names.push_back(agg_desc.column_name);
+
+        ActionsDAG projection_dag(final_header->getColumnsWithTypeAndName());
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
+        for (const auto * output_node : projection_dag.getOutputs())
+            output_by_name.emplace(output_node->result_name, output_node);
+
+        ActionsDAG::NodeRawConstPtrs projected_outputs;
+        projected_outputs.reserve(merge_input_names.size());
+        for (const auto & name : merge_input_names)
+            projected_outputs.push_back(output_by_name.at(name));
+        projection_dag.getOutputs() = std::move(projected_outputs);
+
+        auto projection_step = std::make_unique<ExpressionStep>(final_header, std::move(projection_dag));
+        projection_step->setStepDescription("EagerMergeProjection");
+        auto merge_input_header = projection_step->getOutputHeader();
+        GroupExpressionPtr projection_expr = std::make_shared<GroupExpression>(std::move(projection_step));
+        projection_expr->inputs = {{final_group_id, {}}};
+        GroupId projection_group_id = memo.addGroup(projection_expr);
+
+        auto merge_step_ptr = makeMergeStep(*agg_step, merge_input_header);
         GroupExpressionPtr merge_expr = std::make_shared<GroupExpression>(std::move(merge_step_ptr));
-        merge_expr->inputs = {{final_group_id, {}}};
+        merge_expr->inputs = {{projection_group_id, {}}};
         merge_expr->setApplied(*this, {});
         memo.getGroup(expression->group_id)->addLogicalExpression(merge_expr);
         result.push_back(merge_expr);

@@ -42,6 +42,10 @@ public:
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 
+    /// Eager aggregation feeds partial states through a join, which strips `AggregatedChunkInfo`.
+    /// Tells the merge to read such untagged chunks as single-level partial states.
+    void setInputMayLackChunkInfo() { input_may_lack_chunk_info = true; }
+
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -65,6 +69,8 @@ private:
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
     const bool memory_bound_merging_of_aggregation_results_enabled;
+
+    bool input_may_lack_chunk_info = false;
 };
 
 }

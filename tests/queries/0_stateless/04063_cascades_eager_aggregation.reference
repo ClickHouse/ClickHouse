@@ -1,13 +1,14 @@
 -- 1. GROUP BY = join key (eager candidate)
 Expression ((Project names + Projection))
   MergingAggregated
-    JoinLogical (Local HashJoin EagerJoin:  swapped swapped)
-      GatherExchange
-        Aggregating
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (ParallelRead default.t_lineitem)
-      Expression (Change column names to column identifiers)
-        ReadFromMergeTree (default.t_orders)
+    Expression (EagerMergeProjection)
+      JoinLogical (Local HashJoin EagerJoin:  swapped swapped)
+        GatherExchange
+          Aggregating
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_lineitem)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_orders)
 -- 2. GROUP BY from other side (eager fires)
 Expression ((Project names + Projection))
   Aggregating
