@@ -193,6 +193,13 @@ SELECT sumMap([1, 2, 1], [inf, 1.0, -inf]);
 SELECT 'Float64 key NaN sorting';
 SELECT sumMap([x], [y]) FROM values('x Float64, y Float64', (4, 1), (1, 2), (nan, 3), (6.7, 4), (4, 5), (5, 6));
 
+-- NaN keys must merge into a single key (all NaN bit patterns are equivalent)
+SELECT 'Float64 NaN key merging';
+SELECT sumMap([nan, nan], [1, 2]);
+
+SELECT 'Float64 NaN key multi-row merge';
+SELECT sumMap(k, v) FROM values('k Array(Float64), v Array(Int64)', ([nan], [10]), ([nan], [20]));
+
 -- ===================== Nullable values =====================
 
 SELECT 'Nullable values - NULL as no-op';
