@@ -81,6 +81,14 @@ struct FieldHash
                 return intHash64(static_cast<UInt64>(x.safeGet<DecimalField<Decimal64>>().getValue().value));
             case Field::Types::Decimal128:
                 return UInt128Hash()(std::bit_cast<UInt128>(x.safeGet<DecimalField<Decimal128>>().getValue().value));
+            case Field::Types::Int128:
+                return UInt128Hash()(std::bit_cast<UInt128>(x.safeGet<Int128>()));
+            case Field::Types::UInt256:
+                return UInt256Hash()(x.safeGet<UInt256>());
+            case Field::Types::Int256:
+                return UInt256Hash()(std::bit_cast<UInt256>(x.safeGet<Int256>()));
+            case Field::Types::Decimal256:
+                return UInt256Hash()(std::bit_cast<UInt256>(x.safeGet<DecimalField<Decimal256>>().getValue().value));
             default:
             {
                 /// Compound types (Array, Tuple, Map, etc.) — use SipHash as fallback.
