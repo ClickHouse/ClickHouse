@@ -737,6 +737,14 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     /// The Variant's global discriminator order is defined by sorting element type names; build the
     /// local (child) -> global mapping accordingly.
     auto variant_data_type = std::make_shared<DataTypeVariant>(variant_types);
+    /// `DataTypeVariant` deduplicates its element types by name, but the decoder keeps one local column
+    /// per Arrow union child. If two children map to the same ClickHouse type, the locals would both point
+    /// at a single global discriminator, producing a `ColumnVariant` whose physical layout does not match
+    /// its declared type. Reject such a union rather than build an inconsistent column.
+    if (variant_data_type->getVariants().size() != variant_types.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC union has multiple children mapping to the same ClickHouse type, which Variant cannot represent");
     std::unordered_map<String, ColumnVariant::Discriminator> name_to_global;
     for (size_t g = 0; g < variant_data_type->getVariants().size(); ++g)
         name_to_global[variant_data_type->getVariants()[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
@@ -1004,6 +1012,12 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
         }
     prepareBuffers(batch, body);
 
+    /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk` would
+    /// mix columns of different sizes (an internal inconsistency) instead of being rejected as bad data.
+    if (batch.length() < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
+    const size_t batch_rows = static_cast<size_t>(batch.length());
+
     const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
     bool pruned = false;
 
@@ -1033,6 +1047,11 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
         if (field.dictionary && decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
         decoded.column = decodeField(field, /*allow_low_cardinality=*/true);
+        if (decoded.column->size() != batch_rows)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC top-level column '{}' has {} rows, expected the batch length {}",
+                field.name, decoded.column->size(), batch_rows);
         result.push_back(std::move(decoded));
     }
 
@@ -1163,12 +1182,17 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     jobs.reserve(num_buffers);
     for (const auto & p : placements)
     {
-        if (p.length == 0)
-            continue;
         char * dst = decompressed_body.data() + p.offset;
         if (p.raw)
-            memcpy(dst, p.src, p.length);
-        else
+        {
+            /// Raw (uncompressed, `-1` prefix) buffer: copy the payload verbatim; nothing to validate.
+            if (p.length > 0)
+                memcpy(dst, p.src, p.length);
+            continue;
+        }
+        /// Compressed buffer: run the codec whenever there is a payload, even when it decodes to zero
+        /// bytes, so a non-empty frame is still validated. A genuinely empty buffer has nothing to decode.
+        if (p.src_size > 0)
             jobs.push_back(DecompressJob{p.src, p.src_size, dst, p.length});
     }
     decompressBuffersParallel(codec, jobs);
