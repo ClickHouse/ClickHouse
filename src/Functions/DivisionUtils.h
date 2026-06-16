@@ -50,6 +50,28 @@ inline bool divisionLeadsToFPE(A a, B b)
     return false;
 }
 
+/// Whether integer division of `a` by `b` would raise an FPE, accounting for the same operand
+/// casts that `DivideIntegralImpl::apply` performs before dividing. This matters for mixed
+/// signed/unsigned operands: e.g. `Int8(-128) / UInt8(255)` is evaluated as `Int8(-128) / Int8(-1)`,
+/// which is the `INT_MIN / -1` overflow even though the raw `divisionLeadsToFPE(a, b)` would miss it
+/// (because `B` is unsigned). Must stay in sync with `DivideIntegralImpl::apply`.
+template <typename A, typename B>
+inline bool integerDivisionLeadsToFPE(A a, B b)
+{
+    using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+    using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
+    if constexpr (is_integer<A> && is_integer<B> && (is_signed_v<A> || is_signed_v<B>))
+    {
+        using SignedCastA = make_signed_t<CastA>;
+        using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
+
+        return divisionLeadsToFPE(static_cast<SignedCastA>(a), static_cast<SignedCastB>(b));
+    }
+    else
+        return divisionLeadsToFPE(static_cast<CastA>(a), static_cast<CastB>(b));
+}
+
 template <typename A, typename B>
 inline auto checkedDivision(A a, B b)
 {
@@ -147,7 +169,7 @@ struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
     template<typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
+        if (unlikely(integerDivisionLeadsToFPE(a, b)))
             return 0;
         else
             return DivideIntegralImpl<A, B>::apply(a, b);
