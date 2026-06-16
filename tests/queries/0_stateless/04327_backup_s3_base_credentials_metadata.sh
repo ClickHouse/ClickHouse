@@ -37,8 +37,8 @@ function rewrite_backup_metadata()
     local from=$1 && shift
     local to=$1 && shift
     local content
-    content=$($CLICKHOUSE_CLIENT "${client_opts[@]}" --param_from="$from" --param_to="$to" -q "SELECT replace(line, {from:String}, {to:String}) FROM s3($(s3_location $name/.backup), 'LineAsString')") || return 1
-    $CLICKHOUSE_CLIENT "${client_opts[@]}" --param_content="$content" -q "INSERT INTO FUNCTION s3($(s3_location $name/.backup), 'LineAsString') SETTINGS s3_truncate_on_insert=1 VALUES ({content:String})"
+    content=$($CLICKHOUSE_CLIENT "${client_opts[@]}" --param_from="$from" --param_to="$to" -q "SELECT replace(line, {from:String}, {to:String}) FROM s3($(s3_location $name/.backup), 'LineAsString') FORMAT LineAsString") || return 1
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "INSERT INTO FUNCTION s3($(s3_location $name/.backup), 'LineAsString') SETTINGS s3_truncate_on_insert=1 FORMAT LineAsString" <<< "$content"
 }
 
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
