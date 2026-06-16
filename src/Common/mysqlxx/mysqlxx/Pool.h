@@ -61,6 +61,18 @@ public:
             incrementRefCount();
         }
 
+        Entry& operator=(const Entry& src)
+        {
+            if (this != &src)
+            {
+                decrementRefCount();
+                data = src.data;
+                pool = src.pool;
+                incrementRefCount();
+            }
+            return *this;
+        }
+
         ~Entry()
         {
             decrementRefCount();
@@ -155,13 +167,17 @@ public:
          const std::string & user_,
          const std::string & password_,
          unsigned port_,
+         const std::string & ssl_ca_ = "",
+         const std::string & ssl_cert_ = "",
+         const std::string & ssl_key_ = "",
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+         bool enable_compression_ = false);
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
@@ -170,7 +186,9 @@ public:
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
-          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect)
+          ssl_ca(other.ssl_ca), ssl_cert(other.ssl_cert), ssl_key(other.ssl_key),
+          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect),
+          enable_compression{other.enable_compression}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -233,6 +251,7 @@ private:
     std::string ssl_key;
     bool enable_local_infile;
     bool opt_reconnect;
+    bool enable_compression;
 
     /// True if connection was established at least once.
     bool was_successful{false};

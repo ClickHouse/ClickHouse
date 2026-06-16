@@ -1,23 +1,25 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
+#include <atomic>
+#include <list>
 #include <memory>
+#include <vector>
+#include <fmt/format.h>
 
 class EventCounter;
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
-}
+
+class InputPort;
+class OutputPort;
+using InputPorts = std::list<InputPort>;
+using OutputPorts = std::list<OutputPort>;
 
 class IQueryPlanStep;
 
@@ -29,7 +31,7 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -154,9 +156,9 @@ public:
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
-        /// Processor wants to add other processors to pipeline.
-        /// New processors must be obtained by expandPipeline() call.
-        ExpandPipeline,
+        /// Processor wants to add new processors and/or remove finished neighbours.
+        /// Update must be obtained by updatePipeline() call.
+        UpdatePipeline,
     };
 
     static std::string statusToName(std::optional<Status> status);
@@ -179,25 +181,19 @@ public:
       * - method 'prepare' cannot be executed in parallel even for different objects,
       *   if they are connected (including indirectly) to each other by their ports;
       */
-    virtual Status prepare()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());
-    }
-
-    using PortNumbers = std::vector<UInt64>;
+    virtual Status prepare();
 
     /// Optimization for prepare in case we know ports were updated.
-    virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
+    using UpdatedInputPorts  = std::vector<InputPort *>;
+    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
       * Method work can be executed in parallel for different processors.
       */
-    virtual void work()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
-    }
+    virtual void work();
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -213,10 +209,15 @@ public:
       * It is expected that executor epoll using level-triggered notifications.
       * Read all available data from descriptor before returning ASYNC.
       */
-    virtual int schedule()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
-    }
+    virtual int schedule();
+
+    /** This method is similar to schedule() but also returns epoll events mask
+      * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
+      * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
+      */
+#ifdef OS_LINUX
+    virtual std::pair<int, uint32_t> scheduleForEvent();
+#endif
 
     /* The method is called right after asynchronous job is done
      * i.e. when file descriptor returned by schedule() is readable.
@@ -235,24 +236,38 @@ public:
      */
     virtual void onAsyncJobReady() {}
 
-    /** You must call this method if 'prepare' returned ExpandPipeline.
+    /** You must call this method if 'prepare' returned UpdatePipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
-      * Method should return set of new already connected processors.
-      * All added processors must be connected only to each other or current processor.
+      * Method should return set of new already connected processors or disconnected finished processors.
+      * All returned processors must be connected only to each other or current processor.
       *
-      * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
-      * 'prepare' should be called again after expanding pipeline.
+      * Method can't move data from/to port or perform calculations.
+      * 'prepare' should be called again after this operation.
       */
-    virtual Processors expandPipeline()
+    struct PipelineUpdate
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
-    }
+        Processors to_add;
+        Processors to_remove;
+    };
+    virtual PipelineUpdate updatePipeline();
+
+    /// Why the processor is being cancelled, chosen by the caller of cancel.
+    enum class CancelReason : uint8_t
+    {
+        NotCancelled,           /// Default state: no cancellation happened yet.
+        Unknown,                /// Cancelled without a specific reason (legacy callers).
+        CancelledByUser,        /// User killed the query or closed the session.
+        CancelledByTimeout,     /// Query time limit exceeded.
+        PartialResult,          /// Consumer has enough data; stop ingress and drain compute.
+        Exception,              /// Pipeline is being torn down due to an error.
+    };
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel() noexcept;
+    virtual void cancel(CancelReason reason) noexcept;
+    void cancel() noexcept { cancel(CancelReason::Unknown); }
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -263,33 +278,9 @@ public:
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }
 
-    UInt64 getInputPortNumber(const InputPort * input_port) const
-    {
-        UInt64 number = 0;
-        for (const auto & port : inputs)
-        {
-            if (&port == input_port)
-                return number;
+    UInt64 getInputPortNumber(const InputPort * input_port) const;
 
-            ++number;
-        }
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find input port for {} processor", getName());
-    }
-
-    UInt64 getOutputPortNumber(const OutputPort * output_port) const
-    {
-        UInt64 number = 0;
-        for (const auto & port : outputs)
-        {
-            if (&port == output_port)
-                return number;
-
-            ++number;
-        }
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
-    }
+    UInt64 getOutputPortNumber(const OutputPort * output_port) const;
 
     const auto & getInputs() const { return inputs; }
     const auto & getOutputs() const { return outputs; }
@@ -328,24 +319,29 @@ public:
         size_t output_bytes = 0;
     };
 
-    ProcessorDataStats getProcessorDataStats() const
+    ProcessorDataStats getProcessorDataStats() const;
+
+    /// Information for system.processors_profile_log
+    struct ProcessorsProfileLogInfo
     {
-        ProcessorDataStats stats;
-
-        for (const auto & input : inputs)
-        {
-            stats.input_rows += input.rows;
-            stats.input_bytes += input.bytes;
-        }
-
-        for (const auto & output : outputs)
-        {
-            stats.output_rows += output.rows;
-            stats.output_bytes += output.bytes;
-        }
-
-        return stats;
-    }
+        UInt64 id = 0;
+        std::vector<UInt64> parent_ids;
+        UInt64 plan_step = 0;
+        String plan_step_name;
+        String plan_step_description;
+        UInt64 plan_group = 0;
+        String processor_uniq_id;
+        String step_uniq_id;
+        String processor_name;
+        UInt64 elapsed_us = 0;
+        UInt64 input_wait_elapsed_us = 0;
+        UInt64 output_wait_elapsed_us = 0;
+        UInt64 input_rows = 0;
+        UInt64 input_bytes = 0;
+        UInt64 output_rows = 0;
+        UInt64 output_bytes = 0;
+    };
+    ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
 
     struct ReadProgressCounters
     {
@@ -379,10 +375,25 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
+    /// Returns true if processor can spill memory to disk.
+    /// Aggregate, join and sort processors can be spillable.
+    /// For unspillable processors, the memory usage is not tracked.
+    inline bool isSpillable() const { return spillable; }
+
+    virtual ProcessorMemoryStats getMemoryStats()
+    {
+        return {};
+    }
+
+    // If the in-memory data's size is not larger then bytes, it doesn't spill
+    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+
 protected:
+    /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
+    bool spillable = false;
 
 private:
     /// For:
@@ -411,6 +422,7 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
 };
 
 

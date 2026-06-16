@@ -1,6 +1,8 @@
 #pragma once
 
-#include "Pool.h"
+#include <map>
+
+#include <mysqlxx/Pool.h>
 
 
 /// NOLINTBEGIN(modernize-macro-to-enum)
@@ -123,13 +125,17 @@ namespace mysqlxx
             const RemoteDescription & addresses,
             const std::string & user,
             const std::string & password,
+            const std::string & ssl_ca,
+            const std::string & ssl_cert,
+            const std::string & ssl_key,
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
             uint64_t wait_timeout_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT,
             size_t connect_timeout = MYSQLXX_DEFAULT_TIMEOUT,
             size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
-            bool bg_reconnect_ = false);
+            bool bg_reconnect_ = false,
+            bool enable_compression_ = false);
 
         PoolWithFailover(const PoolWithFailover & other);
 

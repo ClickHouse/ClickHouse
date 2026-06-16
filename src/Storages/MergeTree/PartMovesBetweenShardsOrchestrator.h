@@ -4,7 +4,7 @@
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/CancellationCode.h>
 
@@ -165,8 +165,8 @@ private:
 public:
     explicit PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);
 
-    void start() { task->activateAndSchedule(); }
-    void wakeup() { task->schedule(); }
+    void start();
+    void wakeup();
     void shutdown();
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid);
@@ -189,7 +189,7 @@ private:
     LoggerPtr log = nullptr;
     std::atomic<bool> need_stop{false};
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
 
     mutable std::mutex state_mutex;
     std::vector<Entry> entries;

@@ -1,17 +1,19 @@
-#include "StorageSystemRemoteDataPaths.h"
+#include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -34,12 +36,12 @@ namespace ErrorCodes
 }
 
 
-class SystemRemoteDataPathsSource : public ISource
+class SystemRemoteDataPathsSource final : public ISource
 {
 public:
     SystemRemoteDataPathsSource(
         const DisksMap & disks_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
         : ISource(header_)
@@ -52,6 +54,7 @@ public:
                 disks.push_back(disk);
         }
 
+        auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::SystemRemoteDataPathsSource");
         /// Position at the first disk
         nextDisk();
     }
@@ -132,7 +135,7 @@ public:
         const Block & header,
         UInt64 max_block_size_)
         : SourceStepWithFilter(
-            header,
+            std::make_shared<const Block>(header),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -157,7 +160,7 @@ private:
 
 
 StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -171,10 +174,19 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemRemoteDataPaths::read(
+VirtualColumnsDescription StorageSystemRemoteDataPaths::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemRemoteDataPaths::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -185,7 +197,7 @@ void StorageSystemRemoteDataPaths::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     auto read_step = std::make_unique<ReadFromSystemRemoteDataPaths>(
         context->getDisksMap(),
         column_names,
@@ -199,8 +211,7 @@ void StorageSystemRemoteDataPaths::read(
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
 {
-    const auto & header = getOutputHeader();
-    auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), header, max_block_size, context);
+    auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), getOutputHeader(), max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));
@@ -319,6 +330,7 @@ bool SystemRemoteDataPathsSource::nextFile()
 
 Chunk SystemRemoteDataPathsSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::generate");
     /// Finish if all disks are processed
     if (current_disk >= static_cast<ssize_t>(disks.size()))
         return {};
@@ -373,7 +385,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         {
             storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
@@ -383,6 +395,7 @@ Chunk SystemRemoteDataPathsSource::generate()
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 continue;
 
+            e.addMessage("While parsing file {}", local_path);
             throw;
         }
 

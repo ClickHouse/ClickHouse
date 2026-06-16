@@ -20,28 +20,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase : public IFunction, WithContext
+class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
-    static FunctionPtr create(ContextPtr context_)
-    {
-        return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_);
-    }
-
-    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr context_) : WithContext(context_)
-    {
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(); }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -57,11 +43,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t allowed_max_length;
+        size_t allowed_max_length = 0;
 
         if (!isColumnConst(*arguments[0].column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
@@ -75,7 +59,7 @@ public:
         if (database_name.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
-        allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+        allowed_max_length = computeMaxTableNameLength(database_name, Context::getGlobalContextInstance());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 
@@ -95,8 +79,8 @@ REGISTER_FUNCTION(getMaxTableName)
     factory.registerFunction<FunctionGetMaxTableNameLengthForDatabase>(FunctionDocumentation{
         .description=R"(Returns the maximum table name length in a specified database.)",
         .syntax=R"(getMaxTableNameLengthForDatabase(database_name))",
-        .arguments={{"database_name", "The name of the specified database. String."}},
-        .returned_value=R"(Returns the length of the maximum table name, an Integer)",
+        .arguments={{"database_name", "The name of the specified database.", {"String"}}},
+        .returned_value={R"(Returns the length of the maximum table name, an Integer)"},
         .examples{
             {"typical",
             "SELECT getMaxTableNameLengthForDatabase('default');",
@@ -105,7 +89,9 @@ REGISTER_FUNCTION(getMaxTableName)
             │                                         206 │
             └─────────────────────────────────────────────┘
             )"
-        }}
+        }},
+        .introduced_in = {25, 1},
+        .category = FunctionDocumentation::Category::Other
     });
 }
 

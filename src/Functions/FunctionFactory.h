@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/register_objects.h>
 #include <Common/IFactoryWithAliases.h>
@@ -10,6 +11,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -29,13 +32,13 @@ public:
     static FunctionFactory & instance();
 
     template <typename Function>
-    void registerFunction(FunctionDocumentation doc = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(FunctionDocumentation documentation, Case case_sensitiveness = Case::Sensitive)
     {
-        registerFunction<Function>(Function::name, std::move(doc), case_sensitiveness);
+        registerFunction<Function>(Function::name, std::move(documentation), case_sensitiveness);
     }
 
     /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
-    std::vector<std::string> getAllNames() const;
+    Strings getAllNames() const;
 
     bool has(const std::string & name) const;
 
@@ -54,19 +57,19 @@ public:
     void registerFunction(
         const std::string & name,
         FunctionCreator creator,
-        FunctionDocumentation doc = {},
+        FunctionDocumentation documentation,
         Case case_sensitiveness = Case::Sensitive);
 
     void registerFunction(
         const std::string & name,
         FunctionSimpleCreator creator,
-        FunctionDocumentation doc = {},
+        FunctionDocumentation documentation,
         Case case_sensitiveness = Case::Sensitive);
 
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
 private:
-    using Functions = std::unordered_map<std::string, Value>;
+    using Functions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     Functions functions;
     Functions case_insensitive_functions;
@@ -78,9 +81,9 @@ private:
     String getFactoryName() const override { return "FunctionFactory"; }
 
     template <typename Function>
-    void registerFunction(const std::string & name, FunctionDocumentation doc = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(const std::string & name, FunctionDocumentation documentation, Case case_sensitiveness = Case::Sensitive)
     {
-        registerFunction(name, &Function::create, std::move(doc), case_sensitiveness);
+        registerFunction(name, &Function::create, std::move(documentation), case_sensitiveness);
     }
 };
 

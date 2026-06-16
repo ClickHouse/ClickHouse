@@ -14,12 +14,24 @@ namespace DB
   */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
+    struct ASTQueryWithTableAndOutputFlags
+    {
+        using ParentFlags = ASTQueryWithOutput::ASTQueryWithOutputFlags;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 1;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 is_temporary : 1;
+    };
 public:
     ASTPtr database;
     ASTPtr table;
-
     UUID uuid = UUIDHelpers::Nil;
-    bool temporary{false};
+
+    /// Note that flags are initialized to zero (false) by default
+    ASTQueryWithTableAndOutput() = default;
+
+    bool isTemporary() const { return flags<ASTQueryWithTableAndOutputFlags>().is_temporary; }
+    void setIsTemporary(bool value) { flags<ASTQueryWithTableAndOutputFlags>().is_temporary = value; }
 
     String getDatabase() const;
     String getTable() const;
@@ -40,7 +52,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
+        auto res = make_intrusive<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);
@@ -52,9 +64,9 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "")
-            << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
-            << " " << (settings.hilite ? hilite_none : "");
+        ostr
+            << (isTemporary() ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
+            << " ";
 
         if (database)
         {

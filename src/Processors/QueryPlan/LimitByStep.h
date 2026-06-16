@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -9,7 +10,7 @@ class LimitByStep : public ITransformingStep
 {
 public:
     explicit LimitByStep(
-            const Header & input_header_,
+            const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_);
 
     String getName() const override { return "LimitBy"; }
@@ -20,8 +21,20 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    size_t getGroupLength() const { return group_length; }
+    size_t getGroupOffset() const { return group_offset; }
+    const Names & getColumns() const { return columns; }
+
+    void applyOrder();
+
+    /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
+    /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
+    /// partition sets so no `LIMIT BY` group spans two streams.
+    void skipStreamMerging() { skip_stream_merging = true; }
 
 private:
     void updateOutputHeader() override
@@ -31,7 +44,11 @@ private:
 
     size_t group_length;
     size_t group_offset;
+
     Names columns;
+
+    bool input_sorted_by_keys = false;
+    bool skip_stream_merging = false;
 };
 
 }

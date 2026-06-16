@@ -5,7 +5,7 @@
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
@@ -45,7 +45,7 @@ public:
 
     std::string getName() const override { return "FileLog"; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -170,9 +170,9 @@ private:
 
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };
@@ -194,6 +194,17 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     bool updateFileInfos();
+
+    /// Apply a "file `file_name` now refers to a regular file with `inode`" event
+    /// (shared by `DW_ITEM_ADDED` and `DW_ITEM_MOVED_TO` branches).
+    /// If the name was previously tracked with a different inode (delete+recreate
+    /// or rename-over), cleans up the stale `meta_by_inode` entry and removes the
+    /// stale on-disk meta file, guarded by filename ownership: we only drop the
+    /// stale entry if it still claims this `file_name`, so that a rename pair
+    /// re-assigning the old inode to a different filename earlier in the batch
+    /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
+    /// and pushes the name into `file_names` exactly once.
+    void onFileAppeared(const String & file_name, UInt64 inode);
 
     size_t getTableDependentCount() const;
 

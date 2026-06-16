@@ -10,13 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-value_before=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveMetadataMutations'"`
+counters_query="SELECT active_on_fly_metadata_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters_rename'"
 
 function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
-        res=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveMetadataMutations'"`
-        if [[ $res == "$value_before" ]]; then
+        res=`$CLICKHOUSE_CLIENT --query "$counters_query"`
+        if [[ $res == "0" ]]; then
             break
         fi
         sleep 0.5
@@ -26,7 +26,7 @@ function wait_for_mutation_cleanup()
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_mutations_counters_rename;
 
-    CREATE TABLE t_mutations_counters_rename (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_mutations_counters_rename (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     INSERT INTO t_mutations_counters_rename VALUES (1, 2) (2, 3);
 
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM STOP MERGES t_mutations_counters_rename;
     ALTER TABLE t_mutations_counters_rename RENAME COLUMN b TO c;
 
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
+    $counters_query;
     SYSTEM START MERGES t_mutations_counters_rename;
 "
 
@@ -44,7 +44,7 @@ wait_for_mutation "t_mutations_counters_rename" "mutation_2.txt"
 wait_for_mutation_cleanup
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
+    $counters_query;
     SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters_rename' AND NOT is_done;
     DROP TABLE t_mutations_counters_rename;
 "

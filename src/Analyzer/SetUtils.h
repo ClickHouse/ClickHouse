@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <memory>
 
@@ -9,7 +9,7 @@ namespace DB
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-
+class Field;
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 
@@ -25,6 +25,6 @@ struct GetSetElementParams
   * Example: SELECT id FROM test_table WHERE id IN (1, 2, 3, 4);
   * Example: SELECT id FROM test_table WHERE id IN ((1, 2), (3, 4));
   */
-ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, GetSetElementParams params);
+ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & rhs, const DataTypePtr & rhs_type, GetSetElementParams params);
 
 }

@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 void CompressedWriteBuffer::nextImpl()
 {
     if (!offset())
@@ -79,6 +84,8 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
     , adaptive_buffer_max_size(buf_size)
 {
+    if (!codec)
+        codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
 
 void CompressedWriteBuffer::cancelImpl() noexcept
@@ -87,4 +94,14 @@ void CompressedWriteBuffer::cancelImpl() noexcept
     out.cancel();
 }
 
+void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
+{
+    // Flush all the pending data that was supposed to be compressed with the old codec.
+    next();
+    if (offset() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedWriteBuffer: offset() is not zero");
+
+    chassert(codec_);
+    codec = std::move(codec_);
+}
 }

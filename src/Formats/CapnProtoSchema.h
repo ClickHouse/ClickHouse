@@ -4,7 +4,6 @@
 #if USE_CAPNP
 
 #include <Formats/FormatSchemaInfo.h>
-#include <Core/Block.h>
 #include <capnp/schema-parser.h>
 #include <capnp/dynamic.h>
 
@@ -18,7 +17,7 @@ struct DestructorCatcher
     T impl;
     template <typename ... Arg>
     explicit DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
-    ~DestructorCatcher() noexcept try { } catch (...) { return; }
+    ~DestructorCatcher() noexcept try { } catch (...) { return; } // Ok: intentionally catches destructor exceptions
 };
 
 class CapnProtoSchemaParser : public DestructorCatcher<capnp::SchemaParser>

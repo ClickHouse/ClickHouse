@@ -4,14 +4,13 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-
+#include <Common/setThreadName.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <unordered_map>
-#include <map>
 #include <memory>
 #include <atomic>
 
@@ -53,7 +52,7 @@ private:
     };
 
 public:
-    SchedulerRoot()
+    explicit SchedulerRoot()
         : ISchedulerNode(&events)
     {}
 
@@ -65,10 +64,10 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start()
+    void start(ThreadName name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this] { schedulerThread(); });
+            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -81,13 +80,15 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Attach to event queue for graceful shutdown processing
+                EventQueue::SchedulerThread scheduler_thread(&events);
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
                 {
                     auto [request, _] = dequeueRequest();
                     if (request)
-                        execute(request);
+                        request->execute();
                     else
                         has_work = false;
                     while (events.forceProcess())
@@ -115,7 +116,7 @@ public:
     void attachChild(const SchedulerNodePtr & child) override
     {
         // Take ownership
-        assert(child->parent == nullptr);
+        chassert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
@@ -193,7 +194,7 @@ public:
 private:
     void activate(Resource * value)
     {
-        assert(value->next == nullptr && value->prev == nullptr);
+        chassert(value->next == nullptr && value->prev == nullptr);
         if (current == nullptr) // No active children
         {
             current = value;
@@ -213,7 +214,7 @@ private:
     {
         if (value->next == nullptr)
             return; // Already deactivated
-        assert(current != nullptr);
+        chassert(current != nullptr);
         if (current == value)
         {
             if (current->next == current) // We are going to remove the last active child
@@ -233,14 +234,17 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread()
+    void schedulerThread(ThreadName name)
     {
+        DB::setThreadName(name);
+        EventQueue::SchedulerThread scheduler_thread(&events);
+
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();
             if (request)
-                execute(request);
+                request->execute();
             else // No more requests -- block until any event happens
                 events.process();
 
@@ -249,15 +253,12 @@ private:
         }
     }
 
-    void execute(ResourceRequest * request)
-    {
-        request->execute();
-    }
-
     Resource * current = nullptr; // round-robin pointer
-    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
+    /// Resources by pointer. Must be destroyed before the "events",
+    /// because the descructor of ISchedulerNode might access the mutex in that queue.
+    std::unordered_map<ISchedulerNode *, Resource> children;
     ThreadFromGlobalPool scheduler;
 };
 

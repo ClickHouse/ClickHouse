@@ -1,11 +1,13 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -112,7 +114,7 @@ String withOrdinalEnding(size_t i)
 }
 
 void validateArgumentsImpl(
-    const IFunction & func,
+    const String & function_name,
     const ColumnsWithTypeAndName & arguments,
     size_t argument_offset,
     const FunctionArgumentDescriptors & descriptors)
@@ -131,8 +133,29 @@ void validateArgumentsImpl(
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
                 withOrdinalEnding(argument_offset + i),
                 descriptor.name,
-                func.getName(),
+                function_name,
                 descriptor.type_name,
+                arg.type ? arg.type->getName() : "<?>");
+    }
+}
+
+void validateVariadicArgumentsImpl(
+    const String & function_name,
+    const ColumnsWithTypeAndName & arguments,
+    size_t argument_offset,
+    const FunctionArgumentDescriptor & variadic_descriptor)
+{
+    for (size_t i = argument_offset; i < arguments.size(); ++i)
+    {
+        const auto & arg = arguments[i];
+        if (int error_code = variadic_descriptor.isValid(arg.type, arg.column); error_code != 0)
+            throw Exception(
+                error_code,
+                "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
+                withOrdinalEnding(argument_offset + i),
+                variadic_descriptor.name,
+                function_name,
+                variadic_descriptor.type_name,
                 arg.type ? arg.type->getName() : "<?>");
     }
 }
@@ -159,45 +182,106 @@ void validateFunctionArguments(
     const FunctionArgumentDescriptors & mandatory_args,
     const FunctionArgumentDescriptors & optional_args)
 {
+    validateFunctionArguments(func.getName(), arguments, mandatory_args, optional_args);
+}
+
+std::string_view getArgumentSingularOrPlural(const auto & args)
+{
+    return args.size() == 1 ? "argument" : "arguments";
+}
+
+void validateFunctionArguments(
+    const String & function_name,
+    const ColumnsWithTypeAndName & arguments,
+    const FunctionArgumentDescriptors & mandatory_args,
+    const FunctionArgumentDescriptors & optional_args)
+{
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto argument_singular_or_plural
-            = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
-
         String expected_args_string;
         if (!mandatory_args.empty() && !optional_args.empty())
             expected_args_string = fmt::format(
                 "{} mandatory {} and {} optional {}",
                 mandatory_args.size(),
-                argument_singular_or_plural(mandatory_args),
+                getArgumentSingularOrPlural(mandatory_args),
                 optional_args.size(),
-                argument_singular_or_plural(optional_args));
+                getArgumentSingularOrPlural(optional_args));
         else if (!mandatory_args.empty() && optional_args.empty())
             expected_args_string = fmt::format(
-                "{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
+                "{} {}", mandatory_args.size(), getArgumentSingularOrPlural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
         else if (mandatory_args.empty() && !optional_args.empty())
-            expected_args_string = fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args));
+            expected_args_string = fmt::format("{} optional {}", optional_args.size(), getArgumentSingularOrPlural(optional_args));
         else
             expected_args_string = "0 arguments";
 
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
-            func.getName(),
+            function_name,
             expected_args_string,
-            fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
+            fmt::format("{} {}", arguments.size(), getArgumentSingularOrPlural(arguments)));
     }
 
-    validateArgumentsImpl(func, arguments, 0, mandatory_args);
+    validateArgumentsImpl(function_name, arguments, 0, mandatory_args);
     if (!optional_args.empty())
-        validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
+        validateArgumentsImpl(function_name, arguments, mandatory_args.size(), optional_args);
 }
 
-std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
+void validateFunctionArgumentsWithVariadics(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    const FunctionArgumentDescriptors & mandatory_args,
+    const FunctionArgumentDescriptor & variadic_args)
+{
+    if (arguments.size() < mandatory_args.size())
+    {
+        String expected_args_string;
+        if (!mandatory_args.empty())
+            expected_args_string = fmt::format(
+                "{} {}",
+                mandatory_args.size(),
+                getArgumentSingularOrPlural(mandatory_args));
+        else if (!mandatory_args.empty())
+            expected_args_string = fmt::format(
+                "{} {}", mandatory_args.size(), getArgumentSingularOrPlural(mandatory_args));
+        else
+            expected_args_string = "0 arguments";
+
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "An incorrect number of arguments was specified for function '{}'. Expected at least {}, got {}",
+            func.getName(),
+            expected_args_string,
+            fmt::format("{} {}", arguments.size(), getArgumentSingularOrPlural(arguments)));
+    }
+
+    validateArgumentsImpl(func.getName(), arguments, 0, mandatory_args);
+    validateVariadicArgumentsImpl(func.getName(), arguments, mandatory_args.size(), variadic_args);
+}
+
+void validateNumberOfFunctionArguments(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    size_t expected_min_args,
+    size_t expected_max_args)
+{
+    if (arguments.size() < expected_min_args || arguments.size() > expected_max_args)
+    {
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for function {}. Expected {} or {}, got {}",
+            func.getName(),
+            expected_min_args,
+            expected_max_args,
+            arguments.size());
+        }
+}
+
+std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 {
-    assert(num_arguments > 0);
-    std::vector<const IColumn *> nested_columns(num_arguments);
+    chassert(num_arguments > 0);
+    VectorWithMemoryTracking<const IColumn *> nested_columns(num_arguments);
     const ColumnArray::Offsets * offsets = nullptr;
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -241,7 +325,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
         {
-            assert(result_type->isNullable());
+            chassert(result_type->isNullable());
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
         }
 
@@ -276,37 +360,82 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
     return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }
 
-ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map)
+ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
 {
     if (src->onlyNull())
         return src;
 
-    ColumnPtr result_null_map_column;
     ColumnPtr src_not_nullable = src;
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src.get()))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
-        result_null_map_column = nullable->getNullMapColumnPtr();
+        const auto & src_null_map = nullable->getNullMapColumn().getData();
 
-        MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
-        NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
-        const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        for (size_t i = 0; i < result_null_map.size(); ++i)
-            result_null_map[i] |= null_map_data[i];
+        if (null_map)
+        {
+            /// Reuse null_map as result_null_map if possible, thus avoiding unnecessary memory allocation.
+            auto result_null_map_column = IColumn::mutate(std::move(null_map));
+            auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+            for (size_t i = 0; i < result_null_map.size(); ++i)
+                result_null_map[i] |= src_null_map[i];
+            null_map = std::move(result_null_map_column);
+        }
+        else
+        {
+            /// Share the null map between src and result.
+            null_map = nullable->getNullMapColumnPtr();
+        }
 
-        result_null_map_column = std::move(mutable_result_null_map_column);
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), null_map);
     }
-    else if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
+    if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
     {
-        const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        ColumnPtr result_null_map = ColumnUInt8::create(1, null_map_data[0] || const_src->isNullAt(0));
+        /// Only collapse the result to a single ColumnConst when the input null map is
+        /// uniform (or absent). Per-row null maps cannot be folded onto a constant value
+        /// without losing the not-null rows.
+        bool uniform_null_map = true;
+        UInt8 is_null = 0;
+        if (null_map)
+        {
+            const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+            is_null = null_map_data.empty() ? 0 : null_map_data[0];
+            for (size_t i = 1, size = null_map_data.size(); i < size; ++i)
+            {
+                if (null_map_data[i] != is_null)
+                {
+                    uniform_null_map = false;
+                    break;
+                }
+            }
+        }
+
+        if (uniform_null_map)
+        {
+            ColumnPtr result_null_map_column = ColumnUInt8::create(1, is_null || const_src->isNullAt(0));
+            const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
+            auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
+            return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
+        }
+
+        /// Heterogeneous null map: expand the constant and merge the inner null map (if any)
+        /// into the caller's per-row null_map.
         const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
-        auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
-        return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map), const_src->size());
+        if (nullable_data && nullable_data->isNullAt(0))
+        {
+            auto result_null_map_column = IColumn::mutate(std::move(null_map));
+            auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+            std::fill(result_null_map.begin(), result_null_map.end(), UInt8(1));
+            null_map = std::move(result_null_map_column);
+        }
+        ColumnPtr inner = nullable_data
+            ? ColumnConst::create(nullable_data->getNestedColumnPtr(), const_src->size())
+            : src;
+        return ColumnNullable::create(inner->convertToFullColumnIfConst(), null_map);
     }
-    else
+
+    if (null_map)
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
+    return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
@@ -330,6 +459,11 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     if (!which.isNullable())
         return false;
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+}
+
+bool isLowCardinalityType(const IDataType & type)
+{
+    return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
 }
 
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the

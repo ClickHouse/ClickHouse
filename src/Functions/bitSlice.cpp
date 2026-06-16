@@ -9,7 +9,7 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
-class FunctionBitSlice : public IFunction
+class FunctionBitSlice final : public IFunction
 {
     const UInt8 word_size = 8;
 
@@ -166,16 +166,16 @@ public:
 
         for (size_t i = 0; i < size - 1; i++)
         {
-            out[i] = (input[i] << shift_bit) | (input[i + 1] >> (word_size - shift_bit));
+            out[i] = static_cast<UInt8>((input[i] << shift_bit) | (input[i + 1] >> (word_size - shift_bit)));
         }
         if (abandon_last_byte)
         {
-            out[size - 1] = (input[size - 1] << shift_bit) | (input[size] >> (word_size - shift_bit));
+            out[size - 1] = static_cast<UInt8>((input[size - 1] << shift_bit) | (input[size] >> (word_size - shift_bit)));
             out[size - 1] = out[size - 1] & (0xFF << (abandon_last_bit + shift_bit - word_size));
         }
         else
         {
-            out[size - 1] = (input[size - 1] << shift_bit) & (0xFF << (abandon_last_bit + shift_bit));
+            out[size - 1] = static_cast<UInt8>((input[size - 1] << shift_bit) & (0xFF << (abandon_last_bit + shift_bit)));
         }
 
 
@@ -230,7 +230,7 @@ public:
             if (start != 0)
             {
                 typename std::decay_t<Source>::Slice slice;
-                size_t shift_bit;
+                size_t shift_bit = 0;
 
                 if (start > 0)
                 {
@@ -354,9 +354,9 @@ public:
                 size_t offset = left_offset ? static_cast<size_t>(start - 1) : -static_cast<size_t>(start);
                 size_t size = src.getElementSize();
 
-                size_t offset_byte;
-                size_t offset_bit;
-                size_t shift_bit;
+                size_t offset_byte = 0;
+                size_t offset_bit = 0;
+                size_t shift_bit = 0;
                 if (left_offset)
                 {
                     offset_byte = offset / word_size;
@@ -375,8 +375,8 @@ public:
 
                 ssize_t remain_byte = left_offset ? size - offset_byte : offset_byte;
 
-                size_t length_byte;
-                size_t over_bit;
+                size_t length_byte = 0;
+                size_t over_bit = 0;
                 if (length > 0)
                 {
                     length_byte = (length + offset_bit) / word_size;
@@ -408,7 +408,52 @@ public:
 
 REGISTER_FUNCTION(BitSlice)
 {
-    factory.registerFunction<FunctionBitSlice>();
+    FunctionDocumentation::Description description = "Returns a substring starting with the bit from the 'offset' index that is 'length' bits long.";
+    FunctionDocumentation::Syntax syntax = "bitSlice(s, offset[, length])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The String or Fixed String to slice.", {"String", "FixedString"}},
+        {"offset", R"(
+Returns the starting bit position (1-based indexing).
+- Positive values: count from the beginning of the string.
+- Negative values: count from the end of the string.
+
+        )", {"(U)Int8/16/32/64", "Float*"}},
+        {"length", R"(
+Optional. The number of bits to extract.
+- Positive values: extract `length` bits.
+- Negative values: extract from the offset to `(string_length - |length|)`.
+- Omitted: extract from offset to end of string.
+- If length is not a multiple of 8, the result is padded with zeros on the right.
+        )", {"(U)Int8/16/32/64", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
+    FunctionDocumentation::Examples examples = {{"Usage example",
+        R"(
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 8));
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 2));
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 9));
+SELECT bin('Hello'), bin(bitSlice('Hello', -4, 8));
+        )",
+        R"(
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 8))─┐
+│ 0100100001100101011011000110110001101111 │ 01001000                     │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 2))─┐
+│ 0100100001100101011011000110110001101111 │ 01000000                     │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 9))─┐
+│ 0100100001100101011011000110110001101111 │ 0100100000000000             │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', -4, 8))─┐
+│ 0100100001100101011011000110110001101111 │ 11110000                      │
+└──────────────────────────────────────────┴───────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitSlice>(documentation);
 }
 
 

@@ -1,7 +1,9 @@
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 namespace DB
 {
@@ -46,14 +48,17 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
-        node->processor->work();
+        if (node->processor()->isSpillable() && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+
+        node->processor()->work();
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
 
         if (is_source && read_progress_callback)
         {
-            if (auto read_progress = node->processor->getReadProgress())
+            if (auto read_progress = node->processor()->getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -62,7 +67,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    node->processor->cancel();
+                    node->processor()->cancel();
             }
         }
     }
@@ -70,7 +75,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
     {
         /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + node->processor->getName());
+            exception.addMessage("While executing " + node->processor()->getName());
         throw exception;
     }
 }
@@ -81,7 +86,7 @@ bool ExecutionThreadContext::executeTask()
 
     if (trace_processors)
     {
-        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor->getUniqID());
+        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor()->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
     std::optional<Stopwatch> execution_time_watch;
@@ -106,7 +111,7 @@ bool ExecutionThreadContext::executeTask()
     if (profile_processors)
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
-        node->processor->elapsed_ns += elapsed_ns;
+        node->processor()->elapsed_ns += elapsed_ns;
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
@@ -122,28 +127,6 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
         std::rethrow_exception(exception);
-}
-
-ExecutingGraph::Node * ExecutionThreadContext::tryPopAsyncTask()
-{
-    ExecutingGraph::Node * task = nullptr;
-
-    if (!async_tasks.empty())
-    {
-        task = async_tasks.front();
-        async_tasks.pop();
-
-        if (async_tasks.empty())
-            has_async_tasks = false;
-    }
-
-    return task;
-}
-
-void ExecutionThreadContext::pushAsyncTask(ExecutingGraph::Node * async_task)
-{
-    async_tasks.push(async_task);
-    has_async_tasks = true;
 }
 
 }

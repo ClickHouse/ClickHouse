@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <DataTypes/DataTypeString.h>

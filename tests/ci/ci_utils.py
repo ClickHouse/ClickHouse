@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -266,6 +267,13 @@ class GH:
 
 class Shell:
     @classmethod
+    def run(cls, command, verbose=False) -> int:
+        """Run command and return its integer exit code (no retries, no assert)."""
+        if verbose:
+            print(f"Run command [{command}]")
+        return subprocess.run(command, shell=True).returncode
+
+    @classmethod
     def get_output_or_raise(cls, command):
         return cls.get_output(command, strict=True)
 
@@ -289,6 +297,9 @@ class Shell:
         verbose=False,
         dry_run=False,
         stdin_str=None,
+        retries=0,
+        retry_delay=2,
+        retry_backoff=2,
         **kwargs,
     ):
         if dry_run:
@@ -296,27 +307,40 @@ class Shell:
             return True
         if verbose:
             print(f"Run command [{command}]")
-        with subprocess.Popen(
-            command,
-            shell=True,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE if stdin_str else None,
-            universal_newlines=True,
-            start_new_session=True,
-            bufsize=1,
-            errors="backslashreplace",
-            **kwargs,
-        ) as proc:
-            if stdin_str:
-                proc.communicate(input=stdin_str)
-            elif proc.stdout:
-                for line in proc.stdout:
-                    sys.stdout.write(line)
-            proc.wait()
-            retcode = proc.returncode
-            if strict:
-                assert retcode == 0
+        attempts = max(1, retries + 1)
+        retcode = 1
+        for attempt in range(attempts):
+            with subprocess.Popen(
+                command,
+                shell=True,
+                stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE,
+                stdin=subprocess.PIPE if stdin_str else None,
+                universal_newlines=True,
+                start_new_session=True,
+                bufsize=1,
+                errors="backslashreplace",
+                **kwargs,
+            ) as proc:
+                if stdin_str:
+                    proc.communicate(input=stdin_str)
+                elif proc.stdout:
+                    for line in proc.stdout:
+                        sys.stdout.write(line)
+                proc.wait()
+                retcode = proc.returncode
+            if retcode == 0:
+                break
+            if attempt + 1 < attempts:
+                delay = retry_delay * (retry_backoff**attempt)
+                print(
+                    f"Command failed with exit code {retcode}, "
+                    f"retrying in {delay}s "
+                    f"(attempt {attempt + 2}/{attempts}): {command}"
+                )
+                time.sleep(delay)
+        if strict:
+            assert retcode == 0, f"Command failed with exit code {retcode}: {command}"
         return retcode == 0
 
 
@@ -352,6 +376,13 @@ class Utils:
             return False
 
     @staticmethod
+    def is_arm():
+        arch = platform.machine()
+        if "arm" in arch.lower() or "aarch" in arch.lower():
+            return True
+        return False
+
+    @staticmethod
     def normalize_string(string: str) -> str:
         res = string.lower()
         for r in (
@@ -361,6 +392,7 @@ class Utils:
             (",", "_"),
             ("/", "_"),
             ("-", "_"),
+            (":", "_"),
         ):
             res = res.replace(*r)
         return res

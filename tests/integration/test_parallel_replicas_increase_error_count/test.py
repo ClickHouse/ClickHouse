@@ -56,6 +56,7 @@ def test_increase_error_count(start_cluster):
     for i in range(4):
         expected_result += f"{i}\t1000\n"
 
+    node1.query("SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas");
     assert (
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",

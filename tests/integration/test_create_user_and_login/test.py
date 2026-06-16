@@ -81,10 +81,11 @@ EOF""",
         instance.exec_in_container(
             ["bash", "-c", "rm /etc/clickhouse-server/users.d/user_c.xml"]
         )
+        instance.query("SYSTEM RELOAD CONFIG")
 
         expected_errors = [
             "no user with such name",
-            "not found in user directories",
+            "not found in `user directories`",
             "User has been dropped",
         ]
         while True:

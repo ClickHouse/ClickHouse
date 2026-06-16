@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Compression/CompressionInfo.h>
-#include <Compression/ICompressionCodec.h>
-#include <DataTypes/IDataType.h>
-#include <Parsers/IAST_fwd.h>
+#include <Core/Types.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Parsers/IAST_fwd.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
 #include <optional>
-#include <unordered_map>
+
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -17,6 +18,8 @@ namespace DB
 static constexpr auto DEFAULT_CODEC_NAME = "Default";
 
 class ICompressionCodec;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
@@ -30,8 +33,8 @@ protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
-    using CompressionCodecsDictionary = std::unordered_map<String, CreatorWithType>;
-    using CompressionCodecsCodeDictionary = std::unordered_map<uint8_t, CreatorWithType>;
+    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
+    using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 public:
 
     static CompressionCodecFactory & instance();
@@ -40,10 +43,10 @@ public:
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_zstd_qat_codec) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Validate codecs AST specified by user
-    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_zstd_qat_codec) const;
+    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
@@ -71,6 +74,9 @@ public:
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
     CompressionCodecPtr get(const String & compression_codec) const;
 
+    /// Insert codec information into MutableColumns to show in the system table
+    void fillCodecDescriptions(MutableColumns & res_columns) const;
+
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
     /// Register codec with parameters
@@ -78,6 +84,8 @@ public:
 
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
+
+    Strings getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;

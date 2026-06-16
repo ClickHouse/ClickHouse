@@ -1,11 +1,13 @@
 #include <Processors/QueryPlan/BufferChunksTransform.h>
+
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
 
 BufferChunksTransform::BufferChunksTransform(
-    const Block & header_,
+    SharedHeader header_,
     size_t max_rows_to_buffer_,
     size_t max_bytes_to_buffer_,
     size_t limit_)
@@ -42,6 +44,13 @@ IProcessor::Status BufferChunksTransform::prepare()
             auto chunk = std::move(chunks.front());
             chunks.pop();
 
+            if (isVirtualRow(chunk))
+            {
+                output.push(std::move(chunk));
+                input.setNotNeeded();
+                return Status::PortFull;
+            }
+
             num_buffered_rows -= chunk.getNumRows();
             num_buffered_bytes -= chunk.bytes();
 
@@ -49,7 +58,7 @@ IProcessor::Status BufferChunksTransform::prepare()
         }
         else if (input.hasData())
         {
-            bool virtual_row;
+            bool virtual_row = false;
             auto chunk = pullChunk(virtual_row);
             output.push(std::move(chunk));
             if (virtual_row)
@@ -62,11 +71,11 @@ IProcessor::Status BufferChunksTransform::prepare()
 
     if (input.hasData() && (num_buffered_rows < max_rows_to_buffer || num_buffered_bytes < max_bytes_to_buffer))
     {
-        bool virtual_row;
+        bool virtual_row = false;
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {
-            output.push(std::move(chunk));
+            chunks.push(std::move(chunk));
             input.setNotNeeded();
             return Status::PortFull;
         }

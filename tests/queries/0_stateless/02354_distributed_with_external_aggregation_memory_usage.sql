@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage, no-random-merge-tree-settings, no-random-settings
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-coverage, no-object-storage, no-random-merge-tree-settings, no-random-settings
 
 SET max_rows_to_read = '101M';
 

@@ -80,11 +80,11 @@ def create_table(node, table_name, replicated, additional_settings):
 
 
 @pytest.mark.parametrize(
-    "allow_remote_fs_zero_copy_replication,replicated_engine",
-    [(False, False), (False, True), (True, True)],
+    "replicated_engine",
+    [False, True],
 )
 def test_alter_moving(
-    cluster, allow_remote_fs_zero_copy_replication, replicated_engine
+    cluster, replicated_engine
 ):
     """
     Test that we correctly move parts during ALTER TABLE
@@ -99,9 +99,6 @@ def test_alter_moving(
 
     # Different names for logs readability
     table_name = "test_table"
-    if allow_remote_fs_zero_copy_replication:
-        table_name = "test_table_zero_copy"
-        additional_settings["allow_remote_fs_zero_copy_replication"] = 1
     if replicated_engine:
         table_name = table_name + "_replicated"
 
@@ -235,7 +232,7 @@ def test_delete_race_leftovers(cluster):
     # and it can be race condition between removing from remote_data_paths and deleting blobs
     all_remote_paths = set()
     known_remote_paths = set()
-    for i in range(3):
+    for i in range(100):
         known_remote_paths = set(
             node.query(
                 f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"

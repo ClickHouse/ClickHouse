@@ -5,6 +5,7 @@
 /// for abortOnFailedAssertion() via chassert() (dependency chain looks odd)
 #include <Common/Exception.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -49,6 +50,8 @@ enum PollPidResult
         #define SYS_pidfd_open 434
     #elif defined(__loongarch64)
         #define SYS_pidfd_open 434
+    #elif defined(__e2k__)
+        #define SYS_pidfd_open 206
     #else
         #error "Unsupported architecture"
     #endif
@@ -56,12 +59,23 @@ enum PollPidResult
     #define SYS_pidfd_open __NR_pidfd_open
 #endif
 
+#if !defined(__NR_pidfd_send_signal)
+    #define SYS_pidfd_send_signal 424
+#else
+    #define SYS_pidfd_send_signal __NR_pidfd_send_signal
+#endif
+
 namespace DB
 {
 
-static int syscall_pidfd_open(pid_t pid)
+int syscall_pidfd_open(pid_t pid)
 {
     return static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
+}
+
+int syscall_pidfd_send_signal(int pidfd, int sig)
+{
+    return static_cast<int>(syscall(SYS_pidfd_send_signal, pidfd, sig, nullptr, 0));
 }
 
 static bool supportsPidFdOpen()
@@ -103,17 +117,29 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         }
     }
 
-    struct pollfd pollfd;
+    /// Releases pid_fd on every return path, including poll timeout and error.
+    SCOPE_EXIT(
+    {
+        [[maybe_unused]] int err = close(pid_fd);
+        chassert(!err || errno == EINTR);
+    });
+
+    struct pollfd pollfd{};
     pollfd.fd = pid_fd;
     pollfd.events = POLLIN;
 
-    int ready = HANDLE_EINTR(poll(&pollfd, 1, timeout_in_ms));
+    /// A signal interrupting `poll` must not restart with the full timeout; returning
+    /// RESTART lets `waitForPid` re-evaluate the deadline-bounded remaining budget.
+    int ready = poll(&pollfd, 1, timeout_in_ms);
 
+    if (ready < 0 && errno == EINTR)
+        return PollPidResult::RESTART;
+
+    /// `ready == 0` is a poll timeout; `ready < 0` (non-EINTR) is a real error.
+    /// Both return FAILED: `waitForPid`'s outer deadline loop treats either as
+    /// "stop waiting" — the timeout is re-evaluated there, not here.
     if (ready <= 0)
         return PollPidResult::FAILED;
-
-    [[maybe_unused]] int err = close(pid_fd);
-    chassert(!err || errno == EINTR);
 
     return PollPidResult::RESTART;
 }
@@ -134,6 +160,9 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (kq == -1)
         return PollPidResult::FAILED;
 
+    /// Releases the kqueue fd on every return path, including early filter-add errors.
+    SCOPE_EXIT({ close(kq); });
+
     struct kevent change{};
     change.ident = 0;
 
@@ -152,11 +181,53 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     event.ident = 0;
 
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};
-    int ready = HANDLE_EINTR(kevent(kq, nullptr, 0, &event, 1, &remaining_timespec));
-    PollPidResult result = ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;
 
-    close(kq);
+    /// A signal interrupting `kevent` must not restart with the full timeout; returning
+    /// RESTART lets `waitForPid` re-evaluate the deadline-bounded remaining budget.
+    int ret = kevent(kq, nullptr, 0, &event, 1, &remaining_timespec);
 
+    if (ret < 0 && errno == EINTR)
+        return PollPidResult::RESTART;
+
+    if (ret <= 0)
+        return PollPidResult::FAILED;
+
+    return PollPidResult::RESTART;
+}
+#elif defined(OS_SUNOS)
+
+#include <libproc.h>
+
+namespace DB
+{
+
+/// Grab the process, wait for it to change state, and check whether it's
+/// terminated.
+static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
+{
+    PollPidResult result = PollPidResult::FAILED;
+    int rc, perr;
+    struct ps_prochandle *hdl;
+
+    hdl = Pgrab(pid, PGRAB_RETAIN | PGRAB_FORCE | PGRAB_NOSTOP, &perr);
+    if (hdl == NULL)
+    {
+        if (perr == G_NOPROC)
+            return PollPidResult::RESTART;
+        return PollPidResult::FAILED;
+    }
+
+    rc = Pstopstatus(hdl, PCWSTOP, timeout_in_ms);
+    if (rc < 0 && errno == ENOENT)
+        result = PollPidResult::RESTART;
+    if (rc == 0)
+    {
+        int state = Pstate(hdl);
+        if (state == PS_DEAD || state == PS_UNDEAD)
+            result = PollPidResult::RESTART;
+    }
+
+    Pfree(hdl);
     return result;
 }
 #else
@@ -179,12 +250,15 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
         return process_terminated_normally;
     }
 
-    /// If timeout is positive try waitpid without block in loop until
-    /// process is normally terminated or waitpid return error
+    /// If timeout is positive, poll until the process exits or the total wall
+    /// clock since function entry exceeds the limit. The remaining budget is
+    /// derived from the `watch` started at function entry (never reset) so
+    /// that the `/proc/<pid>` fallback — whose directory fd is always instantly
+    /// ready, causing `pollPid` to return in ~0 ms — still subtracts real
+    /// elapsed time and cannot busy-spin until the child exits on its own.
 
-    /// NOTE: timeout cast to int, since poll() accept int for timeout
-    int timeout_in_ms = static_cast<int>(timeout_in_seconds * 1000);
-    while (timeout_in_ms > 0)
+    const Int64 total_timeout_ms = static_cast<Int64>(timeout_in_seconds * 1000);
+    while (true)
     {
         int waitpid_res = HANDLE_EINTR(waitpid(pid, &status, WNOHANG));
         bool process_terminated_normally = (waitpid_res == pid);
@@ -194,17 +268,14 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
         if (waitpid_res != 0)
             return false;
 
-        watch.restart();
-
-        PollPidResult result = pollPid(pid, timeout_in_ms);
-
-        if (result == PollPidResult::FAILED)
+        const Int64 remaining_ms = total_timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds());
+        if (remaining_ms <= 0)
             return false;
 
-        timeout_in_ms -= watch.elapsedMilliseconds();
+        PollPidResult result = pollPid(pid, static_cast<int>(remaining_ms));
+        if (result == PollPidResult::FAILED)
+            return false;
     }
-
-    return false;
 }
 
 }

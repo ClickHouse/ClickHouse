@@ -12,7 +12,7 @@ CREATE TABLE default.null_02230_ttl
     `date` Date,
     `key` Int32
 )
-ENGINE = Null
+ENGINE = `Null`
 CREATE TABLE default.data_02230_column_ttl
 (
     `date` Date,
@@ -29,4 +29,4 @@ CREATE TABLE default.null_02230_column_ttl
     `value` Int32,
     `key` Int32
 )
-ENGINE = Null
+ENGINE = `Null`

@@ -14,10 +14,16 @@ node1 = cluster.add_instance(
         "configs/remote_servers.xml",
         "configs/zookeeper_config_with_password.xml",
     ],
+    # During the initialization, the instance cannot authenticate with Keeper, causing it to fail to start.
+    with_remote_database_disk=False,
 )
 
 node2 = cluster.add_instance(
-    "node2", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
+    "node2",
+    with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    # During the initialization, the instance cannot authenticate with Keeper, causing it to fail to start.
+    with_remote_database_disk=False,
 )
 
 

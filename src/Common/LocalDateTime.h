@@ -16,30 +16,18 @@
 class LocalDateTime
 {
 private:
-    unsigned short m_year; /// NOLINT
-    unsigned char m_month;
-    unsigned char m_day;
-    unsigned char m_hour;
-    unsigned char m_minute;
-    unsigned char m_second;
+    unsigned short m_year{}; /// NOLINT
+    unsigned char m_month{};
+    unsigned char m_day{};
+    unsigned char m_hour{};
+    unsigned char m_minute{};
+    unsigned char m_second{};
 
     /// For struct to fill 8 bytes and for safe invocation of memcmp.
     /// NOTE We may use attribute packed instead, but it is less portable.
     unsigned char pad = 0;
 
-    void init(time_t time, const DateLUTImpl & time_zone)
-    {
-        DateLUTImpl::DateTimeComponents components = time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(time));
-
-        m_year = components.date.year;
-        m_month = components.date.month;
-        m_day = components.date.day;
-        m_hour = components.time.hour;
-        m_minute = components.time.minute;
-        m_second = components.time.second;
-
-        (void)pad;  /// Suppress unused private field warning.
-    }
+    void init(time_t time, const DateLUTImpl & time_zone);
 
     void init(const char * s, size_t length)
     {
@@ -106,10 +94,7 @@ public:
     LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
     LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const /// NOLINT
-    {
-        return time_zone.makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
-    }
+    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const;
 
     std::string toString() const
     {

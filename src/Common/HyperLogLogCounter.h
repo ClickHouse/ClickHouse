@@ -8,12 +8,10 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cmath>
-#include <cstring>
-
+#include <string>
 
 namespace DB
 {
@@ -39,7 +37,7 @@ namespace details
 template <UInt8 K>
 struct LogLUT
 {
-    LogLUT()
+    LogLUT() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in the body
     {
         log_table[0] = 0.0;
         for (size_t i = 1; i <= M; ++i)
@@ -56,7 +54,7 @@ struct LogLUT
 private:
     static constexpr size_t M = 1 << ((static_cast<unsigned int>(K) <= 12) ? K : 12);
 
-    double log_table[M + 1];
+    double log_table[M + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
 };
 
 template <UInt8 K> struct MinCounterTypeHelper;
@@ -184,7 +182,7 @@ public:
         long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0;
+            val /= 2.0L;
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
@@ -336,14 +334,14 @@ public:
 
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
-            in.readStrict(denominator_copy.begin(), denom_size);
+            in.readStrict(denominator_copy.data(), denom_size);
 
             for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
             {
                 UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
                 DB::transformEndianness<std::endian::native, std::endian::little>(*cur);
             }
-            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.begin(), denom_size);
+            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.data(), denom_size);
 
             in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
             DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
@@ -365,14 +363,14 @@ public:
 
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
-            memcpy(denominator_copy.begin(), reinterpret_cast<const char *>(&denominator), denom_size);
+            memcpy(denominator_copy.data(), reinterpret_cast<const char *>(&denominator), denom_size);
 
             for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
             {
                 UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
                 DB::transformEndianness<std::endian::little, std::endian::native>(*cur);
             }
-            out.write(denominator_copy.begin(), denom_size);
+            out.write(denominator_copy.data(), denom_size);
 
             auto zeros_copy = zeros;
             DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
@@ -398,7 +396,7 @@ public:
 
     static void skipText(DB::ReadBuffer & in)
     {
-        UInt8 dummy;
+        UInt8 dummy = 0;
         for (size_t i = 0; i < RankStore::size(); ++i)
         {
             if (i != 0)
@@ -430,7 +428,7 @@ private:
         if (unlikely(zeros_plus_one) > max_rank)
             return max_rank;
 
-        return zeros_plus_one;
+        return static_cast<UInt8>(zeros_plus_one);
     }
 
     HashValueType getHash(Value key) const
@@ -468,7 +466,7 @@ private:
         {
             static constexpr double pow2_32 = 4294967296.0;
 
-            double fixed_estimate;
+            double fixed_estimate = 0;
 
             if (raw_estimate > (pow2_32 / 30.0))
                 fixed_estimate = raw_estimate;
@@ -482,7 +480,7 @@ private:
 
     double applyCorrection(double raw_estimate) const
     {
-        double fixed_estimate;
+        double fixed_estimate = 0;
 
         if (BiasEstimator::isTrivial())
         {
@@ -511,7 +509,7 @@ private:
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
     double applyBiasCorrection(double raw_estimate) const
     {
-        double fixed_estimate;
+        double fixed_estimate = 0;
 
         if (raw_estimate <= (5 * bucket_count))
             fixed_estimate = raw_estimate - BiasEstimator::getBias(raw_estimate);
@@ -526,7 +524,7 @@ private:
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
     double applyLinearCorrection(double raw_estimate) const
     {
-        double fixed_estimate;
+        double fixed_estimate = 0;
 
         if (zeros != 0)
             fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));

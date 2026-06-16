@@ -27,6 +27,9 @@ public:
     bool isReadOnly() const override;
     bool isReadOnly(const UUID & id) const override;
 
+    bool isEphemeral() const override;
+    bool isEphemeral(const UUID & id) const override;
+
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
     void reload(ReloadMode reload_mode) override;
@@ -70,7 +73,7 @@ protected:
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
-    std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
+    std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, const ClientInfo & client_info, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
 
 private:
     using Storages = std::vector<StoragePtr>;

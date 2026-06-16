@@ -1,10 +1,12 @@
 #include <list>
+#include <iostream>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <boost/program_options.hpp>
 
 
+int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv)
 try
 {
@@ -18,7 +20,7 @@ try
     boost::program_options::variables_map options;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         std::cout << "Remove nodes in ZooKeeper by list passed in stdin." << std::endl;
         std::cout << "Usage: " << argv[0] << " [options] < list_of_nodes_on_each_line" << std::endl;
@@ -47,7 +49,7 @@ try
     {
         try
         {
-            future.get();
+            (void)future.get();
         }
         catch (...)
         {

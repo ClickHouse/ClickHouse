@@ -36,9 +36,22 @@ private:
         size_t detached_by_user;
     };
 
-    DetachedPartsStats detached_parts_stats{};
+    struct MutationStats
+    {
+        /// For keeping track of the number of pending mutations that are over the maximum execution time
+        /// which is controlled by the max_pending_mutations_execution_time_to_warn setting.
+        size_t pending_mutations_over_execution_time;
+        size_t pending_mutations;
+    };
 
-    void updateDetachedPartsStats();
+    DetachedPartsStats detached_parts_stats{};
+    MutationStats mutation_stats{};
+
+    /// Previous values for the ReaderExecutorModeledCostMsPerRequestedMiB interval delta.
+    UInt64 prev_reader_executor_cost_us = 0;
+    UInt64 prev_reader_executor_requested_bytes = 0;
+
+    void updateMutationAndDetachedPartsStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

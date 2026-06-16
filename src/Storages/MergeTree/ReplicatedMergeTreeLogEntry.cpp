@@ -1,6 +1,7 @@
 #include <Common/ZooKeeper/Types.h>
-#include "Access/IAccessEntity.h"
+#include <Access/IAccessEntity.h>
 
+#include <Common/Exception.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -10,6 +11,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <base/find_symbols.h>
+#include <fmt/ranges.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -32,6 +36,27 @@ enum FormatVersion : UInt8
 };
 
 
+String ReplicatedMergeTreeLogEntryData::typeToString(Type type)
+{
+    switch (type)
+    {
+        case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
+        case ReplicatedMergeTreeLogEntryData::ATTACH_PART:      return "ATTACH_PART";
+        case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
+        case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
+        case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
+        case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
+        case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
+        case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
+        case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
+        case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
+        case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
+        case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
+    }
+}
+
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
     UInt8 format_version = FORMAT_WITH_DEDUPLICATE;
@@ -47,10 +72,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     if (!log_entry_id.empty())
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
 
+    auto block_hashes_string = fmt::format("{}", fmt::join(deduplication_block_ids, ","));
+
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << '\n'
-        << "block_id: " << escape << block_id << '\n';
+        << "block_id: " << escape << block_hashes_string << '\n';
 
     if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
         out << "log_entry_id: " << escape << log_entry_id << '\n';
@@ -99,6 +126,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             if (cleanup)
                 out << "\ncleanup: " << cleanup;
 
+            if (!patch_parts.empty())
+            {
+                out << "\napply_patches: " << patch_parts.size();
+                for (const auto & s : patch_parts)
+                    out << "\n" << s;
+            }
             break;
 
         case DROP_RANGE:
@@ -199,7 +232,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
-        create_time = DateLUT::serverTimezoneInstance().makeDateTime(
+        create_time = makeDateTime(DateLUT::serverTimezoneInstance(),
             create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
             create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
     }
@@ -208,7 +241,11 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
     if (format_version >= FORMAT_WITH_BLOCK_ID)
     {
-        in >> "block_id: " >> escape >> block_id >> "\n";
+        std::string block_hashes_string;
+        in >> "block_id: " >> escape >> block_hashes_string >> "\n";
+
+        if (!block_hashes_string.empty())
+            splitInto<','>(deduplication_block_ids, block_hashes_string, true);
     }
 
     if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
@@ -252,12 +289,14 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                 if (checkString("merge_type: ", in))
                 {
-                    UInt32 value;
+                    UInt32 value = 0;
                     in >> value;
-                    merge_type = checkAndGetMergeType(value);
+                    merge_type = checkAndGetMergeType(static_cast<std::underlying_type_t<MergeType>>(value));
                 }
                 else if (checkString("into_uuid: ", in))
+                {
                     in >> new_part_uuid;
+                }
                 else if (checkString("deduplicate_by_columns: ", in))
                 {
                     Strings new_deduplicate_by_columns;
@@ -273,9 +312,28 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
                 else if (checkString("cleanup: ", in))
+                {
                     in >> cleanup;
+                }
+                else if (checkString("apply_patches:", in))
+                {
+                    size_t num_patches = 0;
+                    in >> " " >> num_patches >> "\n";
+
+                    for (size_t i = 0; i < num_patches; ++i)
+                    {
+                        String patch_name;
+                        in >> patch_name;
+                        patch_parts.push_back(std::move(patch_name));
+
+                        if (i + 1 != num_patches)
+                            in >> "\n";
+                    }
+                }
                 else
+                {
                     trailing_newline_found = true;
+                }
             }
         }
 
@@ -334,12 +392,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
         in >> "\nhave_mutation\n";
         in >> have_mutation;
         in >> "\ncolumns_str_size:\n";
-        size_t columns_size;
+        size_t columns_size = 0;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
         in.readStrict(columns_str.data(), columns_size);
         in >> "\nmetadata_str_size:\n";
-        size_t metadata_size;
+        size_t metadata_size = 0;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
         in.readStrict(metadata_str.data(), metadata_size);
@@ -425,7 +483,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
 
 bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
 {
-    assert(drop_range_info.getBlocksCount() != 0);
+    chassert(drop_range_info.getBlocksCount() != 0);
     return drop_range_info.getBlocksCount() == 1;
 }
 

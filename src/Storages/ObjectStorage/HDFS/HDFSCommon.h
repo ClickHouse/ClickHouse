@@ -10,7 +10,6 @@
 #include <hdfs/hdfs.h>
 #include <base/types.h>
 
-#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -77,7 +76,11 @@ public:
         return *this;
     }
 
-    hdfsBuilder * get() { return hdfs_builder; }
+    hdfsBuilder * get() const { return hdfs_builder; }
+
+    #if USE_KRB5
+    void runKinit() const;
+    #endif // USE_KRB5
 
 private:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
@@ -92,7 +95,6 @@ private:
     std::vector<std::pair<String, String>> config_stor;
 
     #if USE_KRB5
-    void runKinit();
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_security_kerberos_ticket_cache_path;

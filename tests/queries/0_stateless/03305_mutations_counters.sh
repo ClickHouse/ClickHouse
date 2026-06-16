@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,13 +9,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-value_before=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveDataMutations'"`
-
 function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
-        res=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveDataMutations'"`
-        if [[ $res == "$value_before" ]]; then
+        res=$($CLICKHOUSE_CLIENT --query "SELECT active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters'")
+        if [[ $res == "0" ]]; then
             break
         fi
         sleep 0.5
@@ -26,7 +23,7 @@ function wait_for_mutation_cleanup()
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_mutations_counters;
 
-    CREATE TABLE t_mutations_counters (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_mutations_counters (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     INSERT INTO t_mutations_counters VALUES (1, 2) (2, 3);
 
@@ -36,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE t_mutations_counters UPDATE b = 100 WHERE a = 1;
     ALTER TABLE t_mutations_counters UPDATE b = 200 WHERE a = 2;
 
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
+    SELECT 'active_on_fly_data_mutations (merges stopped)', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
     SYSTEM START MERGES t_mutations_counters;
 "
 
@@ -44,16 +41,16 @@ wait_for_mutation "t_mutations_counters" "mutation_3.txt"
 wait_for_mutation_cleanup
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
-    SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters' AND NOT is_done;
+    SELECT 'active_on_fly_data_mutations', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
+    SELECT 'mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters' AND NOT is_done;
     SELECT * FROM t_mutations_counters ORDER BY a;
 
     SYSTEM STOP MERGES t_mutations_counters;
     ALTER TABLE t_mutations_counters UPDATE b = 1000 WHERE a = 1;
 
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
-    KILL MUTATION WHERE mutation_id = 'mutation_4.txt' SYNC FORMAT Null;
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
+    SELECT 'active_on_fly_data_mutations (before kill)', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
+    KILL MUTATION WHERE database = currentDatabase() AND mutation_id = 'mutation_4.txt' SYNC FORMAT Null;
+    SELECT 'active_on_fly_data_mutations (after kill)', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
 
     DROP TABLE t_mutations_counters;
 "

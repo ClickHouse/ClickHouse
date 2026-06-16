@@ -1,6 +1,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
@@ -13,8 +14,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_DATABASE;
+extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_TABLE;
 }
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
@@ -75,6 +77,15 @@ bool StorageID::operator==(const StorageID & rhs) const
     return std::tie(database_name, table_name) == std::tie(rhs.database_name, rhs.table_name);
 }
 
+void StorageID::assertNotEmpty() const
+{
+    // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
+    if (empty())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
+    if (table_name.empty() && !database_name.empty())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty, but database name is not");
+}
+
 String StorageID::getFullTableName() const
 {
     return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
@@ -112,6 +123,16 @@ size_t StorageID::DatabaseAndTableNameHash::operator()(const StorageID & storage
     SipHash hash_state;
     hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
     hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
+    return hash_state.get64();
+}
+
+size_t StorageID::DatabaseAndTableNameAndUUIDHash::operator()(const StorageID & storage_id) const
+{
+    SipHash hash_state;
+    hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
+    hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
+    for (auto item : storage_id.uuid.toUnderType().items)
+        hash_state.update(item);
     return hash_state.get64();
 }
 

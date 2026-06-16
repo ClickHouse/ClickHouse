@@ -139,6 +139,7 @@ public:
                 not_function_result_type = makeNullable(not_function_result_type);
 
             auto not_function = std::make_shared<FunctionNode>("not");
+            not_function->markAsOperator();
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(nested_if_function_arguments_nodes[0]);
@@ -163,6 +164,7 @@ private:
     QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");
+        multiply_function_node->markAsOperator();
         auto & multiply_arguments_nodes = multiply_function_node->getArguments().getNodes();
         multiply_arguments_nodes.push_back(std::move(left));
         multiply_arguments_nodes.push_back(std::move(right));

@@ -4,9 +4,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/WriteHelpers.h>
 
-#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
@@ -14,6 +12,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -34,7 +33,33 @@ public:
         : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        assert(parameters == nested_func->getParameters());
+        if (parameters != nested_func->getParameters())
+        {
+            /// This invariant should always hold: the Array combinator does not transform
+            /// parameters, so the wrapped function must have been created with the same
+            /// parameter set. If this fires, it means some code path in
+            /// AggregateFunctionFactory or a combinator wrapper lost/modified parameters.
+            /// The diagnostic info below will identify the exact mismatch.
+            String outer_params_str;
+            String nested_params_str;
+            for (const auto & p : parameters)
+            {
+                if (!outer_params_str.empty()) outer_params_str += ", ";
+                outer_params_str += p.dump();
+            }
+            for (const auto & p : nested_func->getParameters())
+            {
+                if (!nested_params_str.empty()) nested_params_str += ", ";
+                nested_params_str += p.dump();
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "AggregateFunctionArray: parameters mismatch between Array wrapper '{}' "
+                "and nested function '{}'. Wrapper has {} parameter(s): [{}], "
+                "nested function has {} parameter(s): [{}]",
+                getName(), nested_func->getName(),
+                parameters.size(), outer_params_str,
+                nested_func->getParameters().size(), nested_params_str);
+        }
         for (const auto & type : arguments)
             if (!isArray(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
@@ -58,6 +83,24 @@ public:
     DataTypePtr getNormalizedStateType() const override
     {
         return nested_func->getNormalizedStateType();
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        chassert(rhs.getNestedFunction() != nullptr);
+
+        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        chassert(rhs.getNestedFunction() != nullptr);
+
+        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
     }
 
     bool isVersioned() const override
@@ -112,7 +155,15 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        /// Avoid `absl::InlinedVector`: its constructor zero-initializes the inline storage with 256-bit AVX stores on x86-64-v3,
+        /// which forces the compiler to insert `vzeroupper` before every call in this function, including the virtual call in
+        /// the inner loop below.
+        constexpr size_t max_inline_args = 5;
+        const IColumn * nested_inline[max_inline_args]; // NOLINT: intentionally uninitialized
+        std::unique_ptr<const IColumn *[]> nested_heap;
+        const IColumn ** nested = num_arguments <= max_inline_args
+            ? nested_inline
+            : (nested_heap = std::unique_ptr<const IColumn *[]>(new const IColumn *[num_arguments])).get();
 
         for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
@@ -134,7 +185,7 @@ public:
         }
 
         for (size_t i = begin; i < end; ++i)
-            nested_func->add(place, nested.data(), i, arena);
+            nested_func->add(place, nested, i, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -153,6 +204,11 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        nested_func->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

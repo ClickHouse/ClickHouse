@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} --query="
+DROP TABLE IF EXISTS t;
 CREATE TABLE t
 (
     item_id UInt64,
@@ -16,6 +17,7 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY item_id;
 
+DROP TABLE IF EXISTS t1;
 CREATE TABLE t1
 (
     item_id UInt64,
@@ -81,6 +83,7 @@ for parallel_replicas_prefer_local_join in 1 0; do
       for enable_parallel_replicas in {0..1}; do
         ${CLICKHOUSE_CLIENT} --query="
         set enable_analyzer=1;
+        set automatic_parallel_replicas_mode=0;
         set parallel_replicas_prefer_local_join=${parallel_replicas_prefer_local_join};
         set parallel_replicas_local_plan=${prefer_local_plan};
         set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;

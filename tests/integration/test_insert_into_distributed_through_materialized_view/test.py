@@ -4,6 +4,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -64,16 +65,16 @@ CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster',
             "CREATE TABLE local_source (d Date, x UInt32) ENGINE = Memory"
         )
         instance_test_inserts_local_cluster.query(
+            """
+CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
+"""
+        )
+        instance_test_inserts_local_cluster.query(
             "CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source"
         )
         instance_test_inserts_local_cluster.query(
             "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)",
             settings={"allow_deprecated_syntax_for_merge_tree": 1},
-        )
-        instance_test_inserts_local_cluster.query(
-            """
-CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
-"""
         )
 
         yield cluster
@@ -88,8 +89,7 @@ def test_reconnect(started_cluster):
     with PartitionManager() as pm:
         # Open a connection for insertion.
         instance.query("INSERT INTO local1_source VALUES (1)")
-        time.sleep(1)
-        assert remote.query("SELECT count(*) FROM local1").strip() == "1"
+        assert_eq_with_retry(remote, "SELECT count(*) FROM local1", "1")
 
         # Now break the connection.
         pm.partition_instances(
@@ -106,7 +106,8 @@ def test_reconnect(started_cluster):
         instance.query("INSERT INTO local1_source VALUES (3)")
         time.sleep(1)
 
-        assert remote.query("SELECT count(*) FROM local1").strip() == "3"
+        assert_eq_with_retry(remote, "SELECT count(*) FROM local1", "3")
+        remote.query("TRUNCATE local1 SYNC")
 
 
 def test_inserts_local(started_cluster):
@@ -114,3 +115,4 @@ def test_inserts_local(started_cluster):
     instance.query("INSERT INTO local_source VALUES ('2000-01-01', 1)")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM local").strip() == "1"
+    instance.query("TRUNCATE local SYNC")

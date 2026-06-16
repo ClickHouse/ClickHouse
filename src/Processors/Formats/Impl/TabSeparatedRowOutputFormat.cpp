@@ -1,14 +1,17 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
+
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 
 namespace DB
 {
 TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header_,
+    SharedHeader header_,
     bool with_names_,
     bool with_types_,
     bool is_raw_,
@@ -75,6 +78,7 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
     writeChar('\n', out);
 }
 
+void registerOutputFormatTabSeparated(FormatFactory & factory);
 void registerOutputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -84,12 +88,15 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [is_raw, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const FormatSettings & settings)
+                const FormatSettings & settings,
+                FormatFilterInfoPtr /*format_filter_info*/)
             {
-                return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, with_names, with_types, is_raw, settings);
+                return std::make_shared<TabSeparatedRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, is_raw, settings);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
+            /// https://www.iana.org/assignments/media-types/text/tab-separated-values
+            factory.setContentType(format_name, "text/tab-separated-values; charset=UTF-8");
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

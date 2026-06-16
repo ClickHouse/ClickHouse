@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
-#if USE_MULTITARGET_CODE && defined(__BMI2__)
+#if defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
 #endif
 
@@ -23,42 +23,28 @@ namespace ErrorCodes
 #define EXTRACT_VECTOR(INDEX) \
     const ColumnPtr & col##INDEX = non_const_arguments[(INDEX) + vectorStartIndex].column;
 
-#define ENCODE(ND, ...) \
-    if (nd == (ND)) \
-    { \
-        for (size_t i = 0; i < input_rows_count; i++) \
-        {               \
-            vec_res[i] = MortonND_##ND##D_Enc.Encode(__VA_ARGS__); \
-        } \
-        return col_res; \
-    }
-
 #define EXPAND(IDX, ...) \
-    (mask) ? expand(mask->getColumn(IDX).getUInt(0), __VA_ARGS__) : __VA_ARGS__
-
-#define MASK(ND, IDX, ...) \
-    (EXPAND(IDX, __VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
+    (mask ? expand(mask.read(IDX, i), __VA_ARGS__) : __VA_ARGS__)
 
 #define EXECUTE() \
     size_t nd = arguments.size(); \
     size_t vectorStartIndex = 0; \
-    const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get()); \
-    const ColumnTuple * mask; \
-    if (const_col) \
-        mask = typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get()); \
-    else \
-        mask = typeid_cast<const ColumnTuple *>(arguments[0].column.get()); \
+    auto mask = extractRangeMask(arguments); \
     if (mask) \
     { \
-        nd = mask->tupleSize(); \
+        nd = mask.tupleSize(); \
         vectorStartIndex = 1; \
-        for (size_t i = 0; i < nd; i++) \
+        const size_t rows_to_check_morton = mask.is_const ? 1 : input_rows_count; \
+        for (size_t row = 0; row < rows_to_check_morton; row++) \
         { \
-            auto ratio = mask->getColumn(i).getUInt(0); \
-            if (ratio > 8 || ratio < 1) \
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, \
-                                "Illegal argument {} of function {}, should be a number in range 1-8", \
-                                arguments[0].column->getName(), getName()); \
+            for (size_t i = 0; i < nd; i++) \
+            { \
+                auto ratio = mask.read(i, row); \
+                if (ratio > 8 || ratio < 1) \
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, \
+                                    "Illegal argument {} of function {}, should be a number in range 1-8", \
+                                    arguments[0].column->getName(), getName()); \
+            } \
         } \
     } \
      \
@@ -134,7 +120,21 @@ namespace ErrorCodes
                     "Illegal number of UInt arguments of function {}, max: 8", \
                     getName()); \
 
-DECLARE_DEFAULT_CODE(
+#if !defined(__BMI2__)
+
+#define ENCODE(ND, ...) \
+    if (nd == (ND)) \
+    { \
+        for (size_t i = 0; i < input_rows_count; i++) \
+        {               \
+            vec_res[i] = MortonND_##ND##D_Enc.Encode(__VA_ARGS__); \
+        } \
+        return col_res; \
+    }
+
+#define MASK(ND, IDX, ...) \
+    (EXPAND(IDX, __VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
+
 constexpr auto MortonND_2D_Enc = mortonnd::MortonNDLutEncoder<2, 32, 8>();
 constexpr auto MortonND_3D_Enc = mortonnd::MortonNDLutEncoder<3, 21, 8>();
 constexpr auto MortonND_4D_Enc = mortonnd::MortonNDLutEncoder<4, 16, 8>();
@@ -182,13 +182,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+
         EXECUTE()
     }
 };
-) // DECLARE_DEFAULT_CODE
 
-#if defined(MORTON_ND_BMI2_ENABLED)
-#undef ENCODE
+#else
+
 #define ENCODE(ND, ...) \
     if (nd == (ND)) \
     { \
@@ -199,11 +201,9 @@ public:
         return col_res; \
     }
 
-#undef MASK
 #define MASK(ND, IDX, ...) \
     (EXPAND(IDX, __VA_ARGS__))
 
-DECLARE_AVX2_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -212,9 +212,20 @@ using MortonND_6D = mortonnd::MortonNDBmi<6, uint64_t>;
 using MortonND_7D = mortonnd::MortonNDBmi<7, uint64_t>;
 using MortonND_8D = mortonnd::MortonNDBmi<8, uint64_t>;
 
-class FunctionMortonEncode : public TargetSpecific::Default::FunctionMortonEncode
+class FunctionMortonEncode : public FunctionSpaceFillingCurveEncode
 {
 public:
+    static constexpr auto name = "mortonEncode";
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionMortonEncode>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
     static UInt64 expand(UInt64 ratio, UInt64 value)
     {
         switch (ratio)
@@ -241,11 +252,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+
         EXECUTE()
     }
 };
-) // DECLARE_AVX2_SPECIFIC_CODE
-#endif // MORTON_ND_BMI2_ENABLED
+
+#endif
 
 #undef ENCODE
 #undef MASK
@@ -253,92 +267,101 @@ public:
 #undef EXPAND
 #undef EXECUTE
 
-class FunctionMortonEncode: public TargetSpecific::Default::FunctionMortonEncode
-{
-public:
-    explicit FunctionMortonEncode(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-                                        TargetSpecific::Default::FunctionMortonEncode>();
-
-#if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::AVX2,
-                                        TargetSpecific::AVX2::FunctionMortonEncode>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        if (input_rows_count == 0)
-            return ColumnUInt64::create();
-
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionMortonEncode>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
 REGISTER_FUNCTION(MortonEncode)
 {
-    factory.registerFunction<FunctionMortonEncode>(FunctionDocumentation{
-    .description=R"(
-Calculates Morton encoding (ZCurve) for a list of unsigned integers
+    FunctionDocumentation::Description description = R"(
+Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
 
 The function has two modes of operation:
-- Simple
-- Expanded
+- **Simple**
+- *Expanded**
 
-Simple: accepts up to 8 unsigned integers as arguments and produces a UInt64 code.
-[example:simple]
+**Simple mode**
 
-Expanded: accepts a range mask (tuple) as a first argument and up to 8 unsigned integers as other arguments.
-Each number in mask configures the amount of range expansion
-1 - no expansion
-2 - 2x expansion
-3 - 3x expansion
-....
-Up to 8x expansion.
-[example:range_expanded]
-Note: tuple size must be equal to the number of the other arguments
+Accepts up to 8 unsigned integers as arguments and produces a `UInt64` code.
 
-Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
-For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF)
+**Expanded mode**
 
-Morton encoding for one argument is always the argument itself.
-[example:identity]
-Produces: `1`
+Accepts a range mask ([Tuple](../data-types/tuple.md)) as the first argument and
+up to 8 [unsigned integers](../data-types/int-uint.md) as other arguments.
 
-You can expand one argument too:
-[example:identity_expanded]
-Produces: `32768`
+Each number in the mask configures the amount of range expansion:
+* 1 - no expansion
+* 2 - 2x expansion
+* 3 - 3x expansion
+⋮
+* Up to 8x expansion.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+-- Simplified mode
+mortonEncode(args)
 
-The function also accepts columns as arguments:
-[example:from_table]
+-- Expanded mode
+mortonEncode(range_mask, args)
+)";
+    FunctionDocumentation::Arguments arguments = {
+        {"args", "Up to 8 unsigned integers or columns of the aforementioned type.", {"UInt8/16/32/64"}},
+        {"range_mask", "For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers from `1` - `8`. Each number in the mask configures the amount of range shrink.", {"Tuple(UInt8/16/32/64)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` code.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Simple mode",
+            "SELECT mortonEncode(1, 2, 3)",
+            "53"
+        },
+        {
+            "Expanded mode",
+            R"(
+-- Range expansion can be beneficial when you need a similar distribution for
+-- arguments with wildly different ranges (or cardinality)
+-- For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
+-- Note: the Tuple size must be equal to the number of the other arguments.
+SELECT mortonEncode((1,2), 1024, 16)
+            )",
+            "1572864"
+        },
+        {
+            "Single argument",
+            R"(
+-- Morton encoding for one argument is always the argument itself
+SELECT mortonEncode(1)
+            )",
+            "1"
+        },
+        {
+            "Expanded single argument",
+            "SELECT mortonEncode(tuple(2), 128)",
+            "32768"
+        },
+        {
+            "Column usage",
+             R"(
+-- First create the table and insert some data
+CREATE TABLE morton_numbers(
+    n1 UInt32,
+    n2 UInt32,
+    n3 UInt16,
+    n4 UInt16,
+    n5 UInt8,
+    n6 UInt8,
+    n7 UInt8,
+    n8 UInt8
+)
+ENGINE=MergeTree()
+ORDER BY n1;
+INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 
-But the range tuple must still be a constant:
-[example:from_table_range]
+-- Use column names instead of constants as function arguments
+SELECT mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8) FROM morton_numbers;
+         )",
+         "2155374165"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-Please note that you can fit only so much bits of information into Morton code as UInt64 has.
-Two arguments will have a range of maximum 2^32 (64/2) each
-Three arguments: range of max 2^21 (64/3) each
-And so on, all overflow will be clamped to zero
-)",
-        .examples{
-            {"simple", "SELECT mortonEncode(1, 2, 3)", ""},
-            {"range_expanded", "SELECT mortonEncode((1,2), 1024, 16)", ""},
-            {"identity", "SELECT mortonEncode(1)", ""},
-            {"identity_expanded", "SELECT mortonEncode(tuple(2), 128)", ""},
-            {"from_table", "SELECT mortonEncode(n1, n2) FROM table", ""},
-            {"from_table_range", "SELECT mortonEncode((1,2), n1, n2) FROM table", ""},
-            },
-        .category {"Encoding"}
-    });
+    factory.registerFunction<FunctionMortonEncode>(documentation);
 }
-
 }

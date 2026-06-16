@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
 
 using namespace mysqlxx;
 
-auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
+static auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
 {
     return [weak_pool = pool, shareable](UInt64 interval_milliseconds)
     {
@@ -40,7 +40,7 @@ auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
                 if (interval_milliseconds >= 1000)
                     Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
             }
-            catch (...)
+            catch (const std::exception &)
             {
                 if (interval_milliseconds >= 1000)
                     Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed.");
@@ -121,13 +121,17 @@ PoolWithFailover::PoolWithFailover(
         const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
+        const std::string & ssl_ca,
+        const std::string & ssl_cert,
+        const std::string & ssl_key,
         unsigned default_connections_,
         unsigned max_connections_,
         size_t max_tries_,
         uint64_t wait_timeout_,
         size_t connect_timeout_,
         size_t rw_timeout_,
-        bool bg_reconnect_)
+        bool bg_reconnect_,
+        bool enable_compression_)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
@@ -137,12 +141,15 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : addresses)
     {
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database,
-            host, user, password, port,
+            host, user, password, port, ssl_ca, ssl_cert, ssl_key,
             /* socket_ = */ "",
             connect_timeout_,
             rw_timeout_,
             default_connections_,
-            max_connections_));
+            max_connections_,
+            MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
+            MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+            enable_compression_));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }

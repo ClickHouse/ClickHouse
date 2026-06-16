@@ -10,6 +10,7 @@
 #    include <Processors/Executors/PipelineExecutor.h>
 #    include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 #    include <Processors/ISource.h>
+#    include <Processors/Sources/SourceFromChunks.h>
 #    include <QueryPipeline/QueryPipelineBuilder.h>
 
 #    include <DataTypes/DataTypeNullable.h>
@@ -56,13 +57,14 @@ std::shared_ptr<ISource> multiColumnsSource(const std::vector<DataTypePtr> & typ
         chunk = Chunk(Columns{std::move(columns)}, values[0].size());
         chunks.push_back(std::move(chunk));
     }
-    return std::make_shared<SourceFromChunks>(header, std::move(chunks));
+    return std::make_shared<SourceFromChunks>(std::make_shared<const Block>(header), std::move(chunks));
 }
 
 void validatePageIndex(
     String path,
     std::optional<std::function<void(std::vector<bool>)>> validate_null_pages = std::nullopt,
-    std::optional<std::function<void(std::vector<int64_t>)>> validate_null_counts = std::nullopt)
+    std::optional<std::function<void(std::vector<int64_t>)>> validate_null_counts = std::nullopt,
+    bool expect_statistics_in_page_headers = true)
 {
     std::shared_ptr<::arrow::io::RandomAccessFile> source;
     PARQUET_ASSIGN_OR_THROW(source, ::arrow::io::ReadableFile::Open(path))
@@ -131,8 +133,11 @@ void validatePageIndex(
                 ASSERT_TRUE(header.type == parquet::format::PageType::DATA_PAGE);
                 if (!column_index->null_pages().at(l))
                 {
-                    ASSERT_EQ(header.data_page_header.statistics.min_value, column_index->encoded_min_values().at(l));
-                    ASSERT_EQ(header.data_page_header.statistics.max_value, column_index->encoded_max_values().at(l));
+                    if (expect_statistics_in_page_headers)
+                    {
+                        ASSERT_EQ(header.data_page_header.statistics.min_value, column_index->encoded_min_values().at(l));
+                        ASSERT_EQ(header.data_page_header.statistics.max_value, column_index->encoded_max_values().at(l));
+                    }
                     if (column_index->has_null_counts())
                         ASSERT_GT(header.data_page_header.num_values, column_index->null_counts().at(l));
                 }
@@ -154,7 +159,7 @@ void writeParquet(SourcePtr source, const FormatSettings & format_settings, Stri
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromFile write_buffer(parquet_path);
-    auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getHeader(), format_settings);
+    auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getSharedHeader(), format_settings, nullptr);
 
     pipeline.complete(output);
     CompletedPipelineExecutor executor(pipeline);
@@ -164,11 +169,11 @@ void writeParquet(SourcePtr source, const FormatSettings & format_settings, Stri
     write_buffer.finalize();
 }
 
-TEST(Parquet, WriteParquetPageIndexParrelel)
+TEST(Parquet, WriteParquetPageIndexParallel)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = true;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -205,11 +210,11 @@ TEST(Parquet, WriteParquetPageIndexParrelel)
         });
 }
 
-TEST(Parquet, WriteParquetPageIndexParrelelPlainEnconding)
+TEST(Parquet, WriteParquetPageIndexParallelPlainEnconding)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = true;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -246,11 +251,11 @@ TEST(Parquet, WriteParquetPageIndexParrelelPlainEnconding)
         });
 }
 
-TEST(Parquet, WriteParquetPageIndexParrelelAllNull)
+TEST(Parquet, WriteParquetPageIndexParallelAllNull)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = true;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -287,7 +292,7 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = false;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -321,6 +326,47 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
                 ASSERT_TRUE(null_count > 0);
             }
         });
+}
+
+/// Regression test for https://github.com/ClickHouse/ClickHouse/issues/103039
+/// When a page has a short min and a long max (exceeding max_statistics_size=4096),
+/// the column index must not be written because it would contain invalid bounds
+/// (e.g. min_value="a", max_value="" which violates min <= max).
+TEST(Parquet, WriteParquetPageIndexOversizedStringStats)
+{
+    FormatSettings format_settings;
+    format_settings.parquet.row_group_rows = 10000;
+    format_settings.parquet.parallel_encoding = false;
+    format_settings.parquet.write_page_index = true;
+    format_settings.parquet.data_page_size = 32;
+
+    std::vector<std::vector<String>> values;
+    std::vector<String> col;
+    col.push_back("a");
+    col.push_back(String(5000, 'z'));
+    values.push_back(col);
+
+    auto source = multiColumnsSource<String>(
+        {std::make_shared<DataTypeString>()}, values, 1);
+    String path = "/tmp/test_oversized_stats.parquet";
+    writeParquet(source, format_settings, path);
+
+    auto reader = parquet::ParquetFileReader::OpenFile(path);
+    auto metadata = reader->metadata();
+
+    ASSERT_EQ(metadata->num_row_groups(), 1);
+    auto row_group = metadata->RowGroup(0);
+    ASSERT_EQ(row_group->num_columns(), 1);
+
+    auto column_chunk = row_group->ColumnChunk(0);
+    auto column_index_location = column_chunk->GetColumnIndexLocation();
+    auto offset_index_location = column_chunk->GetOffsetIndexLocation();
+
+    ASSERT_FALSE(column_index_location.has_value());
+
+    ASSERT_TRUE(offset_index_location.has_value());
+    ASSERT_GT(offset_index_location.value().offset, 0);
+    ASSERT_GT(offset_index_location.value().length, 0);
 }
 }
 #endif

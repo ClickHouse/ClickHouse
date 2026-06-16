@@ -16,14 +16,14 @@ select '01547_query_log_current_database' from system.one format Null;
 set log_queries=0;
 set log_query_threads=0;
 
-system flush logs;
+system flush logs query_log, query_thread_log;
 
 select count()
 from system.query_log
 where
     query like 'select \'01547_query_log_current_database%'
     and current_database = currentDatabase()
-    and event_date >= yesterday();
+    and event_date >= yesterday() AND event_time >= now() - 600;
 
 -- at least two threads for processing
 -- (but one just waits for another, sigh)
@@ -32,4 +32,4 @@ from system.query_thread_log
 where
     query like 'select \'01547\_query\_log\_current\_database%'
     and current_database = currentDatabase()
-    and event_date >= yesterday()
+    and event_date >= yesterday() AND event_time >= now() - 600
