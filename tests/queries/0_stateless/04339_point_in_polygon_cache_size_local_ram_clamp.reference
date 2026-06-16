@@ -1,0 +1,6 @@
+-- generous ram ratio: 256 MiB default applied unclamped --
+268435456
+-- tiny ram ratio: default clamped below it but still positive --
+1
+-- pointInPolygon still works under the tiny cap --
+1
