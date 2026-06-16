@@ -120,6 +120,14 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
     return hash.get64();
 }
 
+/// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
+/// itself approximate. Capturing every input that can affect the collected input/output bytes is a
+/// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
+/// (e.g. the column-blind read hash on the input side, or result-affecting `JoinSettings` such as
+/// `join_any_take_last_row` that the physical `JoinStep` no longer carries). A resulting key
+/// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
+/// replicas sub-optimally - it never changes query results. We trade that small estimation
+/// imprecision for a simpler, cheaper key.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
@@ -269,6 +277,11 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(column.name);
                 frame.hash.update(column.type->getName());
             }
+            /// Result-affecting `JoinSettings` (e.g. `join_any_take_last_row`, which picks a different
+            /// right-side row for ANY joins) are NOT mixed in: they are baked into the `IJoin` algorithm
+            /// and the physical `JoinStep` no longer carries `JoinSettings`. This is the best-effort
+            /// trade-off documented on `calculateHashTableCacheKeys` - a collision only skews the
+            /// approximate estimate, never the result.
             frame.hash.update(a);
             frame.hash.update(b);
         }
