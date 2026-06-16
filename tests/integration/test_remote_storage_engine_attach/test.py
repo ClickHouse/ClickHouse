@@ -16,7 +16,7 @@ def started_cluster():
 
 
 def test_remote_engine_attaches_after_target_dropped(started_cluster):
-    # A `Remote` engine over a local-shard table-function target (`view(...)`) with explicit columns.
+    # A `Remote` engine over a local-shard table-function target (`merge(...)`) with explicit columns.
     #
     # At `CREATE` time the target function is analyzed under the user's context to validate access
     # to its underlying tables. This validation must NOT run again when the table is loaded from its
@@ -30,7 +30,7 @@ def test_remote_engine_attaches_after_target_dropped(started_cluster):
     node.query("INSERT INTO src VALUES (42)")
 
     node.query(
-        "CREATE TABLE t_remote (x UInt64) ENGINE = Remote('127.0.0.1', view(SELECT * FROM src))"
+        "CREATE TABLE t_remote (x UInt64) ENGINE = Remote('127.0.0.1', merge('default', '^src$'))"
     )
     assert node.query("SELECT x FROM t_remote ORDER BY x").strip() == "42"
 
