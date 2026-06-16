@@ -209,24 +209,18 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
 {
     const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
-    /// The merged part is written in the current on-disk format with the destination codec resolved
-    /// from the index definition, so the legacy lazy-codec fallback doesn't apply — pass `WithCodec`.
-    return PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(codec_type),
-        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
+
+    /// The merged part is written in the current on-disk format.
+    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
 }
 
-/// Builds a deserializer for a single source part using the codec and version persisted in its own
-/// header. This is required because source parts may use different codecs (the posting list codec is
-/// a mutable table setting), and decoding a compressed source with the wrong codec throws CORRUPTED_DATA.
 static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
 {
     header_stream.seekToStart();
     /// Only the version and codec are needed here, so skip deserializing the sparse index.
     auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
-    return PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(header.codec_type),
-        header.version);
+    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
 }
 
 MergeTextIndexesTask::MergeTextIndexesTask(
@@ -278,12 +272,14 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         }
     }
 
-    /// Resolve each source part's codec from its own header, so a part written with a different codec
-    /// (e.g. before/after `MODIFY SETTING text_index_posting_list_codec`) is decoded correctly.
+    /// Resolve each source part's codec from its own header.
     source_postings_serializations.reserve(segments.size());
+
     for (size_t i = 0; i < segments.size(); ++i)
-        source_postings_serializations.emplace_back(
-            createSourcePostingsSerialization(*input_streams[i].at(MergeTreeIndexSubstream::Type::Regular)));
+    {
+        auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
+        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
+    }
 }
 
 MergeTextIndexesTask::~MergeTextIndexesTask() noexcept
