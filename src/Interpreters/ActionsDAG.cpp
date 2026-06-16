@@ -1070,9 +1070,18 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
         {
             if (lhs.size() != arg_classes.size())
                 return false;
-            for (size_t i = 0; i < lhs.size(); ++i)
-                if (ec.find(lhs[i]) != ec.find(arg_classes[i]))
-                    return false;
+            if (look_through_aliases)
+            {
+                for (size_t i = 0; i < lhs.size(); ++i)
+                    if (ec.find(lhs[i]) != ec.find(arg_classes[i]))
+                        return false;
+            }
+            else
+            {
+                for (size_t i = 0; i < lhs.size(); ++i)
+                    if (lhs[i] != arg_classes[i])
+                        return false;
+            }
             return true;
         };
 
