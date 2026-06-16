@@ -4705,15 +4705,23 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// parseFromEngineAST throws for a non-MergeTree or unknown engine name.
         MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
 
-        /// Apply the in-flight column changes from the same ALTER so a column added before MODIFY ENGINE
-        /// (e.g. the sign/version column) is visible to the validation.
-        StorageInMemoryMetadata metadata_for_check = *getInMemoryMetadataPtr(local_context, false);
+        /// Apply the in-flight column and setting changes from the same ALTER so a column added before
+        /// MODIFY ENGINE (e.g. the sign/version column) is visible to the validation, and so a setting
+        /// changed in the same statement (e.g. allow_summing_columns_in_partition_or_order_key) is the
+        /// value MergingParams::check sees -- matching what registerStorageMergeTree would check on the
+        /// next load. Validating against the current settings instead would make this check disagree
+        /// with the reload path.
+        auto current_metadata_handle = getInMemoryMetadataPtr(local_context, false);
+        StorageInMemoryMetadata metadata_for_check = *current_metadata_handle;
         for (const auto & c : commands)
         {
             if (c.type != AlterCommand::MODIFY_ENGINE)
                 c.apply(metadata_for_check, local_context);
         }
-        new_merging_params.check(*getSettings(), metadata_for_check);
+        const SettingsChanges * setting_changes_for_check = metadata_for_check.settings_changes
+            ? &metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes
+            : nullptr;
+        new_merging_params.check(*getSettings(setting_changes_for_check), metadata_for_check);
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
