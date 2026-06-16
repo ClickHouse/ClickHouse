@@ -147,7 +147,7 @@ public:
 
     /// Call after loading `storage` from snapshot.
     /// Does preprocessRequest on log entries to populate storage's UncommittedState.
-    virtual void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> entries, bool lock_mutex) = 0;
+    virtual void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex) = 0;
 
 protected:
     CommitCallback commit_callback;
@@ -324,7 +324,7 @@ public:
 
     SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);
 
-    void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> entries, bool lock_mutex) override;
+    void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex) override;
 
 private:
     /// Main state machine logic

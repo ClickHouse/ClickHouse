@@ -208,14 +208,14 @@ void KeeperStateMachine<Storage>::init()
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> entries, bool lock_mutex)
+void KeeperStateMachine<Storage>::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex)
 {
     if (!log_store)
         /// We're in a unit test or a tool, not keeper server.
         return;
 
-    if (!entries)
-        entries = log_store->log_entries(start_idx, end_idx);
+    start_idx = std::min(start_idx, end_idx);
+    auto entries = log_store->log_entries(start_idx, end_idx);
 
     if (entries->size() != end_idx - std::min(start_idx, end_idx))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of log entries returned by log store: start_idx={}, end_idx={}, count={}", start_idx, end_idx, entries->size());
@@ -883,11 +883,8 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         auto preprocess_uncommitted_entries = [&](uint64_t last_uncommitted_log_idx)
         {
             uint64_t uncommitted_start_idx = s.get_last_log_idx() + 1;
-            uint64_t uncommitted_end_idx = std::max(last_uncommitted_log_idx + 1, uncommitted_start_idx);
-            auto uncommitted_entries = log_store ? log_store->log_entries(uncommitted_start_idx, uncommitted_end_idx) : nullptr;
-            if (uncommitted_entries && !uncommitted_entries->empty())
-                LOG_DEBUG(log, "There are {} uncommitted log entries to apply after the snapshot", uncommitted_entries->size());
-            preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, uncommitted_entries, /*lock_mutex=*/ false);
+            uint64_t uncommitted_end_idx = last_uncommitted_log_idx + 1;
+            preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, /*lock_mutex=*/ false);
         };
 
         if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
