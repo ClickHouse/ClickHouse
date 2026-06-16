@@ -319,19 +319,13 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
             /// `getParamsMapFromAST`. Evaluate it the same way, so an expression embedding credentials
             /// (e.g. url = concat('https://user:', 'password@host/bucket/backup')) is not persisted verbatim.
             if (!context)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot remove credentials from the non-literal `url` argument {}",
-                    kv_arg->formatForErrorMessage());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove credentials from the non-literal `url` argument");
 
             ASTPtr evaluated
                 = evaluateConstantExpressionOrIdentifierAsLiteral(kv_arg->as<const ASTFunction>()->arguments->children[1], context);
             const auto * literal = evaluated->as<const ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::Which::String)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The `url` argument {} must be a constant string expression",
-                    kv_arg->formatForErrorMessage());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url` argument must be a constant string expression");
             value = literal->value.safeGet<String>();
         }
 
