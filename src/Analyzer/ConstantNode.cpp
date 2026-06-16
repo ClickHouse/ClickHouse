@@ -145,7 +145,10 @@ template <typename F>
 boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) const
 {
     HashState hash_state;
-    hash_state.update(getTreeHashGlobal());
+    /// The generated AST depends only on the constant value. The value column is replaced, not
+    /// mutated, on changes (e.g. `convertToNullable`), so its pointer identifies the value and is
+    /// enough to invalidate the cache, without hashing the (possibly large) column content.
+    hash_state.update(reinterpret_cast<std::uintptr_t>(constant_value.getColumn().get()));
     /// ast_generator function's address is used as a key to uniquely define generated AST
     hash_state.update(reinterpret_cast<const std::uintptr_t>(&ast_generator));
     auto hash = getSipHash128AsPair(hash_state);
