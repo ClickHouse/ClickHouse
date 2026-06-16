@@ -1142,7 +1142,13 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
-    setPointInPolygonCacheMaxSizeInBytes(server_settings[ServerSetting::point_in_polygon_cache_size]);
+    size_t point_in_polygon_cache_size = server_settings[ServerSetting::point_in_polygon_cache_size];
+    if (point_in_polygon_cache_size > max_cache_size)
+    {
+        point_in_polygon_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered point in polygon cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(point_in_polygon_cache_size));
+    }
+    setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
