@@ -596,7 +596,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     this->enforce_final = next.isDeterministic();
     next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
     cv->set_is_temp(next.is_temp);
-    const auto replaceViewLambda = [&next](const SQLView & v) { return v.isAttached() && (v.isDeterministic() || !next.isDeterministic()); };
+    const auto replaceViewLambda
+        = [&next](const SQLView & v) { return v.isAttached() && (v.isDeterministic() || !next.isDeterministic()); };
     const bool replace = collectionCount<SQLView>(replaceViewLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {

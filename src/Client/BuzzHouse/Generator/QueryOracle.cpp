@@ -259,7 +259,17 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             gen.generateWherePredicate(rg, bexpr->mutable_lhs());
         }
 
-        gen.generateGroupBy(rg, 1, true, true, inner_ssc);
+        gen.generateGroupBy(rg, 1, false, false, inner_ssc);
+        BinaryExpr * bexpr = inner_ssc->mutable_groupby()
+                                 ->mutable_having_expr()
+                                 ->mutable_expr()
+                                 ->mutable_expr()
+                                 ->mutable_comp_expr()
+                                 ->mutable_binary_expr();
+        bexpr->set_op(BinaryOperator::BINOP_EQ);
+        bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+        gen.generateWherePredicate(rg, bexpr->mutable_lhs());
 
         /// Inner result: count() AS cnt
         ExprColAlias * inner_eca = inner_ssc->add_result_columns()->mutable_eca();

@@ -881,9 +881,12 @@ bool Client::buzzHouse()
                               {10 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
                               {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
-                              {2 * static_cast<uint32_t>(test_content),
+                              {2
+                                   * static_cast<uint32_t>(
+                                       test_content && !tbl.get().isAnyS3Engine(true) && !tbl.get().isAnyAzureEngine(true)),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::TRUNCATE_COUNT; }},
-                              {70, [&]() { /* REINSERT_TABLE is the default */ }}});
+                              {70 * static_cast<uint32_t>(!tbl.get().isNotTruncableEngine()),
+                               [&]() { /* REINSERT_TABLE is the default */ }}});
 
                          if (test_content)
                          {

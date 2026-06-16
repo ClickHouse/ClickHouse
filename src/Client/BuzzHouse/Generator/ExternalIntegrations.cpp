@@ -312,8 +312,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(
-        fmt::format("{} {}{};", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName()), truncateSuffix()));
+    return !performQuery(fmt::format("{} {}{};", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName()), truncateSuffix()));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)

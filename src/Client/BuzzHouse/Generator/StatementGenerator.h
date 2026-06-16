@@ -877,11 +877,11 @@ public:
     const std::function<bool(const SQLTable &)> has_mergeable_tables
         = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges; };
 
-    const std::function<bool(const SQLTable &)> attached_tables_to_test_format
-        = [](const SQLTable & t) { return t.isAttached() && t.engine.value != TableEngineValues::GenerateRandom; };
+    const std::function<bool(const SQLTable &)> attached_tables_to_test_format = [](const SQLTable & t)
+    { return t.isAttached() && !t.isNotTruncableEngine() && t.engine.value != TableEngineValues::GenerateRandom; };
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
-        return t.isAttached() && !t.isNotTruncableEngine() && t.engine.value != TableEngineValues::CollapsingMergeTree
+        return t.isAttached() && t.engine.value != TableEngineValues::CollapsingMergeTree
             && t.engine.value != TableEngineValues::VersionedCollapsingMergeTree && t.isDeterministic();
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle

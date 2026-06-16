@@ -2332,8 +2332,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
     const auto tableLikeLambda = [&next, &alltables](const SQLTable & t)
     { return t.isAttached() && (!t.is_temp || alltables) && (t.isDeterministic() || !next.isDeterministic()); };
-    const auto replaceTableLambda
-        = [&next](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer() && (t.isDeterministic() || !next.isDeterministic()); };
+    const auto replaceTableLambda = [&next](const SQLTable & t)
+    { return t.isAttached() && !t.hasDatabasePeer() && (t.isDeterministic() || !next.isDeterministic()); };
     const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
