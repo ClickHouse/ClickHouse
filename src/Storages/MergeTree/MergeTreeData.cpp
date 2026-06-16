@@ -10869,7 +10869,8 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
         return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
     }();
 
-#ifndef NDEBUG
+    /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     return std::make_shared<StorageInMemoryMetadata>(*base);
 #else
     return base;
