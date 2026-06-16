@@ -3960,7 +3960,20 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         from_table_identifier.getIdentifier().getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
 
-                resolved_identifier = resolved_identifier->clone();
+                /// Each reference to a CTE in the join tree is a distinct column source instance
+                /// (the same CTE may be self-joined, e.g. `FROM cte AS a, cte AS b`), and they all
+                /// resolve to the same shared CTE node. Mint fresh column source ids so the
+                /// references stay distinguishable; otherwise their columns would share ids and be
+                /// wrongly treated as the same source.
+                auto * cte_candidate_query_node = resolved_identifier->as<QueryNode>();
+                auto * cte_candidate_union_node = resolved_identifier->as<UnionNode>();
+                auto * cte_candidate_table_node = resolved_identifier->as<TableNode>();
+                bool resolved_to_cte = (cte_candidate_query_node && cte_candidate_query_node->isCTE())
+                    || (cte_candidate_union_node && cte_candidate_union_node->isCTE())
+                    || (cte_candidate_table_node && cte_candidate_table_node->isMaterializedCTE());
+
+                resolved_identifier = resolved_to_cte ? resolved_identifier->cloneWithFreshColumnSourceIds()
+                                                      : resolved_identifier->clone();
                 if (table_identifier_lookup.original_ast_node)
                     resolved_identifier->setOriginalAST(table_identifier_lookup.original_ast_node);
 
