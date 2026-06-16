@@ -198,7 +198,7 @@ public:
 
                     /// Empty node name is not allowed and leads to logical errors
                     if (result.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal and should not be used directly");
                     break;
                 }
                 else if (function_node.getFunctionName() == "exists")
@@ -794,7 +794,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & column_node = node->as<ColumnNode &>();
 
     const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
-    if (correlated_columns_set.contains(column_node_ptr))
+    if (!correlated_columns_set.empty() && correlated_columns_set.contains(column_node_ptr))
         return visitCorrelatedColumn(column_node_ptr);
 
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
