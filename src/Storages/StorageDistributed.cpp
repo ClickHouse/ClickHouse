@@ -1,7 +1,5 @@
 #include <Storages/StorageDistributed.h>
 
-#include <unordered_set>
-
 #include <Databases/IDatabase.h>
 
 #include <Disks/IDisk.h>
@@ -841,13 +839,8 @@ public:
   * different nodes would then share one alias in the same scope -> MULTIPLE_EXPRESSIONS_FOR_ALIAS.
   *
   * This visitor rewrites those sibling nodes to the wrapper as well, so a single (structurally identical)
-  * expression carries the alias everywhere in the scope. It deliberately:
-  *  - does not descend into nested subqueries/unions, which have their own alias scope;
-  *  - does not replace the top-level projection items themselves (only references to the alias). Those
-  *    are alias *definitions*: rewriting an earlier, unwrapped projection item that shares the alias and
-  *    the inlined body would re-merge it with the wrapped item and undo the projection disambiguation
-  *    (re-introducing the NUMBER_OF_COLUMNS_DOESNT_MATCH collapse). Their descendants are still visited,
-  *    so an alias reference nested inside a projection expression is handled.
+  * expression carries the alias everywhere in the scope. It deliberately does not descend into nested
+  * subqueries/unions, which have their own alias scope.
   */
 class RewriteDuplicateAliasSiblingsVisitor : public InDepthQueryTreeVisitor<RewriteDuplicateAliasSiblingsVisitor>
 {
@@ -859,14 +852,9 @@ public:
     };
 
     std::unordered_map<String, Target> alias_to_target;
-    std::unordered_set<const IQueryTreeNode *> projection_items;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        /// Never rewrite a projection item itself (alias definition), only references to its alias.
-        if (projection_items.contains(node.get()))
-            return;
-
         const auto & alias = node->getAlias();
         if (alias.empty())
             return;
@@ -1090,11 +1078,6 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             {
                 RewriteDuplicateAliasSiblingsVisitor rewrite_visitor;
                 rewrite_visitor.alias_to_target = std::move(alias_to_target);
-                /// Protect the top-level projection items (alias definitions) from being rewritten;
-                /// only references to the alias in other clauses (or nested inside projections) are.
-                rewrite_visitor.projection_items.reserve(projection_nodes.size());
-                for (const auto & projection_node : projection_nodes)
-                    rewrite_visitor.projection_items.insert(projection_node.get());
                 rewrite_visitor.visit(query_tree_to_modify);
             }
         }
