@@ -16,7 +16,9 @@ Compressed files are supported. Compression type is detected by the extension of
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'pigz'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+`'pigz'` produces the standard gzip format but deflates blocks in parallel, which is faster on multi-core machines for large outputs. Its result is a valid gzip stream and can be read back with either `'gzip'` or `'pigz'`.
 
 `level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `lz4` type, `1-22` for `zstd` type and `1-9` for other compression types.
 

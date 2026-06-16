@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
+#include <cstring>
 #include <exception>
 #include <iterator>
 
@@ -84,17 +85,18 @@ bool PigzInflatingReadBuffer::nextImpl()
 
     /// Split the raw-deflate stream on the full-flush markers emitted by the deflater
     /// (00 00 FF FF 00 00 00 FF FF) and schedule decompression of every complete segment.
+    static constexpr unsigned char flush_marker[] = {0, 0, 255, 255, 0, 0, 0, 255, 255};
     block_futures.clear();
     bool prev_sep_flag = false;
     size_t prev_sep = 0;
     size_t last_sep = 0;
-    for (size_t i = 0; i + 9 < in_len; ++i)
+    for (size_t i = 0; i + sizeof(flush_marker) < in_len; ++i)
     {
-        size_t j = i;
-        if (in_buf[j++] == 0 && in_buf[j++] == 0 && in_buf[j++] == 255 && in_buf[j++] == 255
-            && in_buf[j++] == 0 && in_buf[j++] == 0 && in_buf[j++] == 0 && in_buf[j++] == 255 && in_buf[j++] == 255)
+        if (memcmp(in_buf + i, flush_marker, sizeof(flush_marker)) != 0)
+            continue;
+
         {
-            const size_t curr_sep = j;
+            const size_t curr_sep = i + sizeof(flush_marker);
             last_sep = curr_sep;
 
             if (!prev_sep_flag)

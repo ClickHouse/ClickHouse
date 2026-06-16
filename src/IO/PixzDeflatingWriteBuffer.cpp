@@ -1,12 +1,13 @@
 #include <IO/PixzDeflatingWriteBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
 
+#include <algorithm>
 #include <cstring>
 #include <exception>
 #include <future>
-#include <vector>
 
 
 namespace DB
@@ -62,7 +63,7 @@ void PixzDeflatingWriteBuffer::nextImpl()
     }
 
     /// Encode every block on the shared IO thread pool.
-    std::vector<std::future<CompressedBuf>> futures(cnt_blocks);
+    VectorWithMemoryTracking<std::future<CompressedBuf>> futures(cnt_blocks);
     size_t scheduled = 0;
     std::exception_ptr exception;
     try
@@ -85,7 +86,7 @@ void PixzDeflatingWriteBuffer::nextImpl()
 
     /// Every scheduled task must be awaited before leaving this function, even on error,
     /// because the tasks reference memory owned by this buffer.
-    std::vector<CompressedBuf> results(scheduled);
+    VectorWithMemoryTracking<CompressedBuf> results(scheduled);
     for (size_t i = 0; i < scheduled; ++i)
     {
         try
@@ -213,7 +214,7 @@ PixzDeflatingWriteBuffer::CompressedBuf PixzDeflatingWriteBuffer::compressBlock(
     while (encode_ret == LZMA_OK)
         encode_ret = lzma_code(&stream, LZMA_FINISH);
 
-    size_t out_size;
+    size_t out_size = 0;
     if (encode_ret == LZMA_BUF_ERROR)
     {
         encodeUncompressible(&block, block_buf, block_len, out_data);
@@ -281,9 +282,7 @@ void PixzDeflatingWriteBuffer::encodeUncompressible(lzma_block * block, uint8_t 
 
     while (remain)
     {
-        size_t size = remain;
-        if (size > LZMA_CHUNK_MAX)
-            size = LZMA_CHUNK_MAX;
+        size_t size = std::min(remain, LZMA_CHUNK_MAX);
 
         *output++ = control_uncomp;
 

@@ -1,11 +1,11 @@
 #include <IO/PigzDeflatingWriteBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
 
 #include <exception>
 #include <future>
-#include <vector>
 
 
 namespace DB
@@ -150,7 +150,7 @@ void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t i
     }
 
     /// Schedule deflation of every block on the shared IO thread pool.
-    std::vector<std::future<CompressedBuf>> futures(cnt_blocks);
+    VectorWithMemoryTracking<std::future<CompressedBuf>> futures(cnt_blocks);
     size_t scheduled = 0;
     std::exception_ptr exception;
     try
@@ -179,7 +179,7 @@ void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t i
 
     /// Collect results in order. Every scheduled task must be awaited before leaving this function,
     /// even on error, because the tasks reference memory owned by this buffer.
-    std::vector<CompressedBuf> results(scheduled);
+    VectorWithMemoryTracking<CompressedBuf> results(scheduled);
     for (size_t i = 0; i < scheduled; ++i)
     {
         try

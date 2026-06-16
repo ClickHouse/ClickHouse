@@ -3,15 +3,15 @@
 #include <IO/ReadBuffer.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <zlib.h>
 
 #include <future>
-#include <list>
 #include <memory>
 #include <string>
-#include <vector>
 
 
 namespace DB
@@ -49,8 +49,8 @@ private:
     bool skipped_header_flag = false;
     bool eof_flag = false;
 
-    std::list<std::shared_ptr<CompressedBuf>> results;
-    std::list<std::shared_ptr<CompressedBuf>>::iterator curr_result_it;
+    ListWithMemoryTracking<std::shared_ptr<CompressedBuf>> results;
+    ListWithMemoryTracking<std::shared_ptr<CompressedBuf>>::iterator curr_result_it;
 
     std::shared_ptr<Memory<>> working_memory;
 
@@ -58,7 +58,7 @@ private:
 
     /// Runs block decompression on the shared IO thread pool (created lazily on first use).
     ThreadPoolCallbackRunnerUnsafe<CompressedBuf> runner;
-    std::vector<std::future<CompressedBuf>> block_futures;
+    VectorWithMemoryTracking<std::future<CompressedBuf>> block_futures;
 };
 
 }

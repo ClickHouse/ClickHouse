@@ -38,7 +38,7 @@ private:
     {
         std::shared_ptr<Memory<>> mem;
         size_t len = 0;
-        lzma_block block;
+        lzma_block block{};
     };
 
     static constexpr size_t LZMA_CHUNK_MAX = 1024;
@@ -63,8 +63,8 @@ private:
     size_t gBlockOutSize = 0;
     lzma_index * gIndex = nullptr;
     lzma_stream gStream = LZMA_STREAM_INIT;
-    lzma_options_lzma lzma_opts;
-    lzma_filter gFilters[LZMA_FILTERS_MAX + 1];
+    lzma_options_lzma lzma_opts{};
+    lzma_filter gFilters[LZMA_FILTERS_MAX + 1]{};
 
     /// Runs block encoding on the shared IO thread pool (created lazily on first use).
     ThreadPoolCallbackRunnerUnsafe<CompressedBuf> runner;
