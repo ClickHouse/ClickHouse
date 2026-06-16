@@ -35,6 +35,7 @@ extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsBool make_distributed_plan;
+extern const SettingsBool enable_cascades_optimizer;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
 }
@@ -239,7 +240,8 @@ public:
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
-        if (getSettings()[Setting::rewrite_in_to_join] || getSettings()[Setting::make_distributed_plan])
+        if (getSettings()[Setting::rewrite_in_to_join]
+            || (getSettings()[Setting::make_distributed_plan] && getSettings()[Setting::enable_cascades_optimizer]))
             return;
 
         /// We build an `IN` set from the dictionary subquery, which respects `max_rows_in_set`,
