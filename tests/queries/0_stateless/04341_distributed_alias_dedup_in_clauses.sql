@@ -39,5 +39,14 @@ SELECT a1, a2 FROM dist_alias_dedup ORDER BY a2;
 SELECT a1, a2 FROM dist_alias_dedup GROUP BY a1, a2 ORDER BY a1;
 SELECT a1, a2, count() AS c FROM dist_alias_dedup GROUP BY a1, a2 HAVING a2 = '7' ORDER BY a1;
 
+-- Direct expression written next to an ALIAS column with the same alias: both projection items inline
+-- to the same expression and carry alias 'a2', but they must remain two distinct shard outputs. The
+-- sibling rewrite must touch the ORDER BY key only, not the projection items themselves (otherwise the
+-- two outputs collapse into one -> NUMBER_OF_COLUMNS_DOESNT_MATCH).
+SELECT toString(x) AS a2, a2 FROM remote('127.0.0.1', currentDatabase(), local_alias_dedup) ORDER BY a2;
+
+-- Alias referenced inside a projection expression (not as a top-level projection item) must be rewritten.
+SELECT a1, concat(a2, a2) AS cc FROM remote('127.0.0.1', currentDatabase(), local_alias_dedup) ORDER BY a2;
+
 DROP TABLE dist_alias_dedup;
 DROP TABLE local_alias_dedup;
