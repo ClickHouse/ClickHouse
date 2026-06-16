@@ -937,15 +937,15 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    /// Capture data needed for Content-Disposition computation from the surrounding scope. Use the
-    /// base table name from the URL path (without the path's format/compression extension) as the
-    /// filename stem: the actual extension is appended from the *effective* format / compression
-    /// below, so an explicit `output_format` / `compression` override that changes the response bytes
-    /// is reflected in the attachment filename (e.g. `/hits.CSV?compression=gz` is `hits.CSV.gz`, and
-    /// `/hits.CSV?output_format=Native` is `hits.Native`).
-    String disposition_base = path_info.table;
+    /// Capture data needed for Content-Disposition computation from the surrounding scope. The
+    /// filename comes from the URL path component verbatim (preserving the case the user wrote, e.g.
+    /// `hits.CSV.gz`); when the path did not name a table it is empty and a `result.<format>.<compression>`
+    /// fallback is built below. If the response is compressed via the `compression` setting but the
+    /// path filename does not already carry that extension (e.g. `/hits.CSV?compression=gz`), the
+    /// compression extension is appended so the filename matches the bytes actually sent.
+    String disposition_filename = path_info.filename_for_disposition;
     String disposition_compression = settings[Setting::compression];
-    auto set_query_result = [&response, this, disposition_base, disposition_compression]
+    auto set_query_result = [&response, this, disposition_filename, disposition_compression]
         (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
@@ -971,18 +971,30 @@ void HTTPHandler::processQuery(
         bool response_is_compressed = !disposition_compression.empty();
         if (response_is_binary || response_is_compressed)
         {
-            /// `result` when the URL path did not name a table. The extension always reflects the
-            /// effective format / compression of the bytes actually sent, not the path's extension.
-            String filename = disposition_base.empty() ? "result" : disposition_base;
-            if (details.format)
+            String filename = disposition_filename;
+            if (filename.empty())
             {
-                filename += ".";
-                filename += *details.format;
+                /// No filename from the URL path: build `result.<format>[.<compression>]`.
+                filename = "result";
+                if (details.format)
+                {
+                    filename += ".";
+                    filename += *details.format;
+                }
+                if (response_is_compressed)
+                {
+                    filename += ".";
+                    filename += disposition_compression;
+                }
             }
-            if (response_is_compressed)
+            else if (response_is_compressed)
             {
-                filename += ".";
-                filename += disposition_compression;
+                /// The response is compressed (e.g. via `?compression=gz`); make sure the path-derived
+                /// filename ends with the effective compression extension instead of advertising bytes
+                /// it does not carry.
+                const String compression_suffix = "." + disposition_compression;
+                if (!filename.ends_with(compression_suffix))
+                    filename += compression_suffix;
             }
             /// Sanitize filename: strip control and quote characters to avoid header injection.
             String safe;
