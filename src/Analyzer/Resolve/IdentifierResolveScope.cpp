@@ -226,6 +226,12 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
     if (it == identifier_resolve_cache.end())
         return {};
 
+    /// There are 2 kinds of expressions:
+    /// 1. Does not contain any subquery -- it is safe to return by reference
+    /// 2. Contains subqueries -- it is required to make a deep copy becuase
+    ///    distributed queries may fail.
+    /// It could be simplified once StorageDistributed and Parallel Replicas
+    /// stop using AST to send task to the shards.
     const auto & entry = it->second;
     if (!entry.needs_clone_on_retrieval)
         return entry.result;
