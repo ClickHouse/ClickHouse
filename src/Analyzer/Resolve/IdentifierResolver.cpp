@@ -1143,14 +1143,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
-        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
+        /** The push/pop pair must be exception-safe. `tryResolveIdentifierFromJoinTreeNode`
+          * can throw `UNKNOWN_IDENTIFIER` from `tryResolveIdentifierFromStorage` (e.g. an
+          * alias-prefix lookup that misses), and the two-pass retry in
+          * `tryResolveIdentifierFromJoinTree` catches that throw so the second pass with
+          * `short_name_fallback_enabled` can try. Without `SCOPE_EXIT`, the pointer to
+          * this stack-local `join_using_column_name_to_column_node` would remain on
+          * `scope.join_using_columns` after the throw, and pass 2 — or any later code that
+          * iterates `scope.join_using_columns` via `tryBindIdentifierToJoinUsingColumn` —
+          * would dereference dangling stack memory.
+          * See https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3411043139
+          */
+        const bool pushed_using_columns = may_be_override_by_using_column && !join_using_column_name_to_column_node.empty();
+        if (pushed_using_columns)
             scope.join_using_columns.push_back(&join_using_column_name_to_column_node);
+        SCOPE_EXIT({
+            if (pushed_using_columns)
+                scope.join_using_columns.pop_back();
+        });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
-
-        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
-            scope.join_using_columns.pop_back();
-
         return std::move(res.resolved_identifier);
     };
 

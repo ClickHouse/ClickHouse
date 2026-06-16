@@ -185,6 +185,31 @@ SET analyzer_enable_short_column_names_from_subquery = 0;
 SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r; -- { serverError UNKNOWN_IDENTIFIER }
 SET analyzer_enable_short_column_names_from_subquery = 1;
 
+SELECT '-- on: pass-1 throw inside a JOIN ... USING (...) does not leave a dangling pointer';
+
+-- Bot finding (later report): `tryResolveIdentifierFromJoin` pushes a pointer to a
+-- stack-local USING-column map onto `scope.join_using_columns` before recursing into each
+-- side, and pops it on normal return. When the two-pass retry catches an
+-- `UNKNOWN_IDENTIFIER` thrown from a deeper alias-prefix miss, that pop would not run
+-- without `SCOPE_EXIT`, and pass 2 (or later code via `tryBindIdentifierToJoinUsingColumn`)
+-- would dereference a pointer to a deallocated stack frame.
+--
+-- Exercise the path: outer FROM is `l JOIN r USING (id)` (resolves cleanly with
+-- short-name disabled because both sides have a canonical `id`), then `SELECT l.f1` in
+-- the SELECT list goes through `tryResolveIdentifierFromJoin`'s push/pop lambda. The
+-- alias-prefix lookup `l.f1` misses canonically (l only exposes `b.f1` and `id`), so
+-- pass 1 throws, the two-pass retry catches, and pass 2 resolves `l.f1` via the
+-- short-name fallback to `b.f1`. Sanitizer builds in CI exercise the SCOPE_EXIT path;
+-- in non-sanitizer builds the query just succeeds and returns `1`.
+WITH l AS (
+    SELECT b.f1, 1 AS id
+    FROM (SELECT 1 AS f1) AS a
+    JOIN (SELECT 1 AS f1) AS b ON a.f1 = b.f1
+)
+SELECT l.f1
+FROM l
+JOIN (SELECT 1 AS id, 99 AS x) AS r USING (id);
+
 SELECT '-- on: explicit canonical alias shadows the short name';
 
 WITH t1 AS (SELECT 1 AS f1, 2 AS f2),

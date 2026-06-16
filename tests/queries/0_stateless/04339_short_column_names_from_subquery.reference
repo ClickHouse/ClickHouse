@@ -28,6 +28,8 @@ f1	b.f1
 -- on: alias-qualified short-name lookup is not hijacked by sibling literal column
 1
 -- default-off: same shape errors with master-equivalent UNKNOWN_IDENTIFIER
+-- on: pass-1 throw inside a JOIN ... USING (...) does not leave a dangling pointer
+1
 -- on: explicit canonical alias shadows the short name
 10
 -- on: explicit dotted projection in subquery (related: #94558)
