@@ -1,0 +1,16 @@
+vertical merge: kind before
+LowCardinality
+vertical merge: kind after, correctness
+LowCardinality
+4000	18
+order by encoded column: kind, correctness
+LowCardinality
+5000	20	k_0	k_9
+alter: kind before
+LowCardinality
+alter: kind after (LowCardinality dropped, type is no longer String), correctness
+Default
+UInt64	2000	9000
+mutation: kind after, correctness
+LowCardinality
+2000	10	1000
