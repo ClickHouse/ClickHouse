@@ -761,6 +761,21 @@ void StorageMergeTree::checkTableCanBeRenamed(const StorageID & /*new_name*/) co
     }
 }
 
+void StorageMergeTree::checkTableCanBeRenamedByDatabaseRename() const
+{
+    if (leader_election_ptr)
+    {
+        /// Same invariant as `checkTableCanBeRenamed`, reached via the `RENAME DATABASE` path:
+        /// the data directory lives on shared object storage and the lease path is fixed at
+        /// startup. Followers would keep tracking the old database name with no way to learn
+        /// the new one. Reject rather than silently diverge. Recreate the table to rename.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RENAME DATABASE is not supported for a `leader_election` table because the data "
+            "path is shared between nodes and the lease path is fixed at startup. Followers "
+            "would continue to track the old path. Drop and recreate the table instead.");
+    }
+}
+
 void StorageMergeTree::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     checkTableCanBeRenamed(new_table_id);

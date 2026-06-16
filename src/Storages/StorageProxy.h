@@ -106,6 +106,14 @@ public:
         getNested()->checkTableCanBeRenamed(new_name);
     }
 
+    /// Same reasoning as `checkTableCanBeRenamed`: materialize the nested storage so a
+    /// `RENAME DATABASE` cannot bypass the nested-storage guard (the `leader_election`
+    /// rejection) for a lazily loaded table.
+    void checkTableCanBeRenamedByDatabaseRename() const override
+    {
+        getNested()->checkTableCanBeRenamedByDatabaseRename();
+    }
+
     void renameInMemory(const StorageID & new_table_id) override
     {
         getNested()->renameInMemory(new_table_id);

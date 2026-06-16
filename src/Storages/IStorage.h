@@ -469,6 +469,18 @@ public:
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
+    /// Called for each table by `DatabaseAtomic::renameDatabase` (the `RENAME DATABASE` path).
+    /// Unlike a table rename, a database rename keeps each table's name and UUID and only changes
+    /// the database name, so the generic `checkTableCanBeRenamed` — which encodes table-rename
+    /// semantics (UUID transitions, moving between databases) — must not be reused here: it would
+    /// reject `ReplicatedMergeTree` with implicit `database`/`table` macros, `KeeperMap`, and
+    /// `ObjectStorageQueue`, none of which a database rename has ever been forbidden to carry
+    /// (this is also exercised by the Ordinary-to-Atomic startup conversion, which finishes with
+    /// `RENAME DATABASE`). The default is therefore a no-op. Only storages whose shared path is
+    /// fixed at startup and cannot be re-derived afterwards (`MergeTree` with `leader_election = 1`)
+    /// override this to reject.
+    virtual void checkTableCanBeRenamedByDatabaseRename() const {}
+
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.

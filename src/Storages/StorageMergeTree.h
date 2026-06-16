@@ -131,6 +131,13 @@ public:
     /// makes the `leader_election` rejection cover both paths.
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
+    /// `RENAME DATABASE` carries this table along via `renameInMemory` without ever calling
+    /// `checkTableCanBeRenamed` (and the generic check cannot be reused there — see
+    /// `IStorage::checkTableCanBeRenamedByDatabaseRename`). Reject the database-level rename too,
+    /// for the same reason as a table rename: the shared lease path is captured at startup and
+    /// there is no protocol to broadcast a new path to followers.
+    void checkTableCanBeRenamedByDatabaseRename() const override;
+
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     /// Reject metadata-mutating ALTERs under `leader_election` before the generic
