@@ -245,9 +245,13 @@ Octal literals are not supported to avoid accidental errors in interpretation.
 
 ### Compound {#compound}
 
-Arrays are constructed with `[]`: `[1, 2, 3]`. Tuples are constructed with `()`: `(1, 'Hello, world!', 2)`.
+Arrays are constructed with `[]`: `[1, 2, 3]`. As a PostgreSQL-compatible alternative, the `ARRAY[...]` constructor syntax is also accepted and is exactly equivalent: `ARRAY[1, 2, 3]`. Tuples are constructed with `()`: `(1, 'Hello, world!', 2)`.
 Technically these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
 An array must consist of at least one item, and a tuple must have at least two items.
+
+:::note
+`ARRAY` is treated as a reserved constructor keyword when followed by `[`. An identifier named `ARRAY` must be quoted to avoid being parsed as the array constructor: `` `ARRAY`[1] `` subscripts a column named `ARRAY`, while `ARRAY[1]` constructs a one-element array.
+:::
 
 :::note
 There is a separate case when tuples appear in the `IN` clause of a `SELECT` query. 
