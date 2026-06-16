@@ -17,6 +17,7 @@ namespace DB
 
 class Pipe;
 class ParallelReadingExtension;
+struct Settings;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
@@ -77,6 +78,27 @@ struct TopKFilterInfo
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
+/// Aggregates mark counts over a set of part ranges and derives the reading parameters
+/// that depend on them: `min_marks_for_concurrent_read`, uncompressed-cache eligibility, etc.
+/// Picks the remote-filesystem concurrency settings when all parts live on remote disk.
+struct PartRangesReadInfo
+{
+    std::vector<size_t> sum_marks_in_parts;
+
+    size_t sum_marks = 0;
+    size_t total_rows = 0;
+    size_t adaptive_parts = 0;
+    size_t index_granularity_bytes = 0;
+    size_t max_marks_to_use_cache = 0;
+    size_t min_marks_for_concurrent_read = 0;
+    bool use_uncompressed_cache = false;
+
+    PartRangesReadInfo(
+        const RangesInDataParts & parts,
+        const Settings & settings,
+        const MergeTreeSettings & data_settings);
+};
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.

@@ -307,46 +307,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
-/// Check two things to prevent undefined behavior further down in Usearch
-/// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
-template <typename T>
-void checkVectorIsSane(
-    const T * vector,
-    size_t dimension,
-    unum::usearch::scalar_kind_t scalar_kind,
-    int error_code,
-    std::string_view context)
-{
-    double magnitude_squared = 0.0;
-    for (size_t i = 0; i != dimension; ++i)
-    {
-        T casted = static_cast<T>(vector[i]);
-        if constexpr (std::is_same_v<T, BFloat16>)
-        {
-            if (!casted.isFinite())
-                throw Exception(error_code,
-                    "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
-        }
-        else
-        {
-            if (!std::isfinite(casted))
-                throw Exception(error_code,
-                    "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
-        }
-
-        if (scalar_kind == unum::usearch::scalar_kind_t::i8_k)
-        {
-            double v = static_cast<double>(vector[i]);
-            magnitude_squared += v * v;
-        }
-    }
-
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
-        throw Exception(error_code,
-            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
-}
-
 template <typename Column>
 void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & column_array_offsets, USearchIndexWithSerializationPtr & index, size_t dimensions, [[maybe_unused]] unum::usearch::scalar_kind_t scalar_kind, size_t rows)
 {

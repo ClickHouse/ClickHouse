@@ -414,7 +414,7 @@ void StorageMergeTreeIndex::readImpl(
 
 void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter);
+    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter, "part_name");
 
     LOG_DEBUG(log, "Reading index{}{} from {} parts of table {}",
         storage->with_marks ? " with marks" : "",

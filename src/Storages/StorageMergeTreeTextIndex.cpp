@@ -357,7 +357,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromMergeTreeTextIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter);
+    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter, "part_name");
 
     if (filtered_parts.empty())
     {
