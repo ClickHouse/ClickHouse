@@ -8,9 +8,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
@@ -482,15 +484,38 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 }
 
 
-void StorageTimeSeries::checkTableCanBeRenamed(const StorageID & /* new_name */) const
+void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
-}
+    auto old_table_id = getStorageID();
 
+    /// In an Atomic/Replicated database both ids carry a UUID; inner tables are addressed by the
+    /// outer table's UUID (the `.inner_id.<kind>.<uuid>` name), which is preserved by the rename, so
+    /// only the outer table id changes. In an Ordinary database the inner table names embed the old
+    /// outer table name, so each inner table has to be renamed too (same as StorageMaterializedView).
+    bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
-void StorageTimeSeries::renameInMemory(const StorageID & /* new_table_id */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+    if (!from_atomic_to_atomic_database && hasInnerTables())
+    {
+        for (auto target_kind : getTargetKinds())
+        {
+            if (!isInnerTable(target_kind))
+                continue;
+
+            auto inner_table = tryGetTargetTable(target_kind, getContext());
+            if (!inner_table)
+                continue;
+
+            auto inner_table_id = inner_table->getStorageID();
+            auto new_inner_table_name = getTimeSeriesInnerTableName(target_kind, new_table_id);
+
+            auto rename = make_intrusive<ASTRenameQuery>();
+            rename->addElement(inner_table_id.database_name, inner_table_id.table_name,
+                               new_table_id.database_name, new_inner_table_name);
+            InterpreterRenameQuery(rename, getContext()).execute();
+        }
+    }
+
+    IStorage::renameInMemory(new_table_id);
 }
 
 
