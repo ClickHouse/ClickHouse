@@ -11,7 +11,7 @@ SET allow_experimental_json_type = 0; -- avoid interference with JSON column typ
 -- ==========================================================================
 
 SELECT 'SelectWithUnionQuery_simple' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractString(j, 'union_mode') AS union_mode,
     JSONHas(j, 'list_of_selects') AS has_list
 FROM (SELECT parseQueryToJSON('SELECT 1') AS j);
@@ -135,7 +135,7 @@ FROM (SELECT parseQueryToJSON('SELECT 1 EXCEPT SELECT 2') AS j);
 -- ==========================================================================
 
 SELECT 'ExpressionList' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children') AS has_children
 FROM (SELECT parseQueryToJSON('SELECT 1, 2, 3') AS j);
 
@@ -214,7 +214,7 @@ FROM (SELECT parseQueryToJSON('SELECT a AS x') AS j);
 -- Simple table
 SELECT 'TableIdentifier_simple' AS t,
     JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression', 'database_and_table_name', 'name') AS name,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression', 'database_and_table_name', 'ast_type') AS tp
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression', 'database_and_table_name', 'type') AS tp
 FROM (SELECT parseQueryToJSON('SELECT 1 FROM t') AS j);
 
 -- Compound table (db.table) with name_parts
@@ -282,7 +282,7 @@ FROM (SELECT parseQueryToJSON('SELECT count(*) AS cnt FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'Subquery' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression', 'subquery', 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression', 'subquery', 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression', 'subquery', 'children') AS has_children
 FROM (SELECT parseQueryToJSON('SELECT * FROM (SELECT 1 AS x)') AS j);
 
@@ -307,7 +307,7 @@ FROM (SELECT parseQueryToJSON('SELECT {param:UInt64}') AS j);
 -- ==========================================================================
 
 SELECT 'Asterisk' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'ast_type') AS tp
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'type') AS tp
 FROM (SELECT parseQueryToJSON('SELECT * FROM t') AS j);
 
 -- Asterisk with APPLY transformer
@@ -321,7 +321,7 @@ FROM (SELECT parseQueryToJSON('SELECT * APPLY(toString) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'QualifiedAsterisk' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'qualifier') AS has_qual
 FROM (SELECT parseQueryToJSON('SELECT t.* FROM t') AS j);
 
@@ -336,7 +336,7 @@ FROM (SELECT parseQueryToJSON('SELECT t.* EXCEPT(a) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'ColumnsRegexpMatcher' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'type') AS tp,
     JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'pattern') AS pat
 FROM (SELECT parseQueryToJSON('SELECT COLUMNS(\'col.*\') FROM t') AS j);
 
@@ -346,7 +346,7 @@ FROM (SELECT parseQueryToJSON('SELECT COLUMNS(\'col.*\') FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'ColumnsListMatcher' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'column_list') AS has_cl
 FROM (SELECT parseQueryToJSON('SELECT COLUMNS(a, b) FROM t') AS j);
 
@@ -356,7 +356,7 @@ FROM (SELECT parseQueryToJSON('SELECT COLUMNS(a, b) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'QualifiedColumnsRegexpMatcher' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'type') AS tp,
     JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'pattern') AS pat,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'qualifier') AS has_qual
 FROM (SELECT parseQueryToJSON('SELECT t.COLUMNS(\'x.*\') FROM t') AS j);
@@ -367,7 +367,7 @@ FROM (SELECT parseQueryToJSON('SELECT t.COLUMNS(\'x.*\') FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'QualifiedColumnsListMatcher' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'qualifier') AS has_qual,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'column_list') AS has_cl
 FROM (SELECT parseQueryToJSON('SELECT t.COLUMNS(a, b) FROM t') AS j);
@@ -378,7 +378,7 @@ FROM (SELECT parseQueryToJSON('SELECT t.COLUMNS(a, b) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'ColumnsApplyTransformer' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'type') AS tp,
     JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'func_name') AS fn
 FROM (SELECT parseQueryToJSON('SELECT * APPLY(toString) FROM t') AS j);
 
@@ -390,7 +390,7 @@ FROM (SELECT parseQueryToJSON('SELECT * APPLY(toString) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'ColumnsExceptTransformer' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'children') AS has_ch
 FROM (SELECT parseQueryToJSON('SELECT * EXCEPT(a) FROM t') AS j);
 
@@ -404,7 +404,7 @@ FROM (SELECT parseQueryToJSON('SELECT * EXCEPT STRICT (a) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'ColumnsReplaceTransformer' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'ast_type') AS tp
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'transformers', 'children', 1, 'type') AS tp
 FROM (SELECT parseQueryToJSON('SELECT * REPLACE(a + 1 AS a) FROM t') AS j);
 
 -- ==========================================================================
@@ -413,7 +413,7 @@ FROM (SELECT parseQueryToJSON('SELECT * REPLACE(a + 1 AS a) FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'TablesInSelectQuery' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'tables', 'children') AS has_children
 FROM (SELECT parseQueryToJSON('SELECT 1 FROM t') AS j);
 
@@ -423,7 +423,7 @@ FROM (SELECT parseQueryToJSON('SELECT 1 FROM t') AS j);
 -- ==========================================================================
 
 SELECT 'TablesInSelectQueryElement' AS t,
-    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'type') AS tp,
     JSONHas(j, 'list_of_selects', 'children', 1, 'tables', 'children', 1, 'table_expression') AS has_te
 FROM (SELECT parseQueryToJSON('SELECT 1 FROM t') AS j);
 
@@ -549,7 +549,7 @@ FROM (SELECT parseQueryToJSON('SELECT a FROM t ORDER BY a WITH FILL FROM 1 TO 10
 -- ==========================================================================
 
 SELECT 'StorageOrderByElement' AS t,
-    JSONExtractString(j, 'storage', 'order_by', 'ast_type') AS tp
+    JSONExtractString(j, 'storage', 'order_by', 'type') AS tp
 FROM (SELECT parseQueryToJSON('CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a') AS j);
 
 -- ==========================================================================
@@ -622,7 +622,7 @@ FROM (SELECT parseQueryToJSON('SELECT a FROM t ORDER BY a COLLATE \'en\'') AS j)
 -- ==========================================================================
 
 SELECT 'SetQuery_standalone' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractBool(j, 'is_standalone') AS standalone,
     JSONExtractString(j, 'changes', 1, 'name') AS ch_name
 FROM (SELECT parseQueryToJSON('SET max_threads = 4') AS j);
@@ -770,7 +770,7 @@ FROM (SELECT parseQueryToJSON('CREATE TABLE t (a UInt64, d Date) ENGINE = MergeT
 -- ==========================================================================
 
 SELECT 'Columns_definition' AS t,
-    JSONExtractString(j, 'columns_list', 'ast_type') AS tp,
+    JSONExtractString(j, 'columns_list', 'type') AS tp,
     JSONHas(j, 'columns_list', 'columns') AS has_cols,
     JSONHas(j, 'columns_list', 'indices') AS has_idx,
     JSONHas(j, 'columns_list', 'constraints') AS has_con,
@@ -786,7 +786,7 @@ FROM (SELECT parseQueryToJSON('CREATE TABLE t (a UInt64, INDEX idx a TYPE minmax
 
 -- Basic CREATE TABLE
 SELECT 'CreateQuery_basic' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractString(j, 'database') AS db,
     JSONExtractString(j, 'table') AS tbl,
     JSONExtractBool(j, 'if_not_exists') AS ine
@@ -824,7 +824,7 @@ FROM (SELECT parseQueryToJSON('CREATE TABLE t ON CLUSTER my_cluster (a UInt64) E
 -- ==========================================================================
 
 SELECT 'DropQuery_table' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractString(j, 'kind') AS kind,
     JSONExtractString(j, 'table') AS tbl,
     JSONExtractBool(j, 'if_exists') AS ie
@@ -851,7 +851,7 @@ FROM (SELECT parseQueryToJSON('DROP VIEW IF EXISTS v') AS j);
 -- ==========================================================================
 
 SELECT 'InsertQuery_select' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'table') AS has_table,
     JSONHas(j, 'select') AS has_select
 FROM (SELECT parseQueryToJSON('INSERT INTO t SELECT 1, 2') AS j);
@@ -904,7 +904,7 @@ FROM (SELECT parseQueryToJSON('ALTER TABLE t DROP PARTITION 202301') AS j);
 -- ==========================================================================
 
 SELECT 'AlterQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractString(j, 'table') AS tbl,
     JSONExtractString(j, 'alter_object') AS obj,
     JSONHas(j, 'command_list') AS has_cl
@@ -916,7 +916,7 @@ FROM (SELECT parseQueryToJSON('ALTER TABLE t ADD COLUMN c UInt64') AS j);
 -- ==========================================================================
 
 SELECT 'RenameQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractBool(j, 'exchange') AS exch,
     JSONExtractString(j, 'elements', 1, 'from_table') AS from_tbl,
     JSONExtractString(j, 'elements', 1, 'to_table') AS to_tbl,
@@ -939,7 +939,7 @@ FROM (SELECT parseQueryToJSON('EXCHANGE TABLES a AND b') AS j);
 -- ==========================================================================
 
 SELECT 'NameTypePair' AS t,
-    JSONExtractString(j, 'columns_list', 'columns', 'children', 1, 'ast_type') AS col_tp
+    JSONExtractString(j, 'columns_list', 'columns', 'children', 1, 'type') AS col_tp
 FROM (SELECT parseQueryToJSON('CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a') AS j);
 
 -- ==========================================================================
@@ -965,7 +965,7 @@ FROM (SELECT parseQueryToJSON('CREATE TABLE t (a FixedString(10)) ENGINE = Merge
 
 -- Test via dictionary SOURCE
 SELECT 'FunctionWithKV' AS t,
-    JSONExtractString(j, 'dictionary', 'source', 'ast_type') AS tp,
+    JSONExtractString(j, 'dictionary', 'source', 'type') AS tp,
     JSONExtractString(j, 'dictionary', 'source', 'name') AS name,
     JSONExtractBool(j, 'dictionary', 'source', 'has_brackets') AS hb,
     JSONHas(j, 'dictionary', 'source', 'elements') AS has_el
@@ -978,7 +978,7 @@ FROM (SELECT parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, name String DE
 
 -- ASTPair appears inside FunctionWithKeyValueArguments elements
 SELECT 'Pair' AS t,
-    JSONExtractString(j, 'dictionary', 'source', 'elements', 'children', 1, 'ast_type') AS tp,
+    JSONExtractString(j, 'dictionary', 'source', 'elements', 'children', 1, 'type') AS tp,
     JSONExtractString(j, 'dictionary', 'source', 'elements', 'children', 1, 'first') AS first_val,
     JSONHas(j, 'dictionary', 'source', 'elements', 'children', 1, 'second') AS has_second
 FROM (SELECT parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, name String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)') AS j);
@@ -1083,7 +1083,7 @@ FROM (SELECT parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, start DateTime
 -- ==========================================================================
 
 SELECT 'SystemQuery_flush' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractString(j, 'query_type_name') AS qtn
 FROM (SELECT parseQueryToJSON('SYSTEM FLUSH LOGS') AS j);
 
@@ -1098,7 +1098,7 @@ FROM (SELECT parseQueryToJSON('SYSTEM STOP MERGES t') AS j);
 -- ==========================================================================
 
 SELECT 'ShowTablesQuery_from' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'from') AS has_from
 FROM (SELECT parseQueryToJSON('SHOW TABLES FROM db') AS j);
 
@@ -1116,7 +1116,7 @@ FROM (SELECT parseQueryToJSON('SHOW DATABASES') AS j);
 -- ==========================================================================
 
 SELECT 'ShowColumnsQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractString(j, 'table') AS tbl
 FROM (SELECT parseQueryToJSON('SHOW COLUMNS FROM t') AS j);
 
@@ -1131,7 +1131,7 @@ FROM (SELECT parseQueryToJSON('SHOW COLUMNS FROM t FROM db') AS j);
 -- ==========================================================================
 
 SELECT 'KillQueryQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'where_expression') AS has_where,
     JSONExtractBool(j, 'sync') AS sync_flag
 FROM (SELECT parseQueryToJSON('KILL QUERY WHERE query_id = \'abc\' SYNC') AS j);
@@ -1146,7 +1146,7 @@ FROM (SELECT parseQueryToJSON('KILL QUERY WHERE query_id = \'abc\' TEST') AS j);
 -- ==========================================================================
 
 SELECT 'OptimizeQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'table') AS has_table,
     JSONExtractBool(j, 'final') AS final_flag,
     JSONExtractBool(j, 'deduplicate') AS dedup
@@ -1158,7 +1158,7 @@ FROM (SELECT parseQueryToJSON('OPTIMIZE TABLE t FINAL DEDUPLICATE') AS j);
 -- ==========================================================================
 
 SELECT 'DeleteQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'table') AS has_table,
     JSONHas(j, 'predicate') AS has_pred
 FROM (SELECT parseQueryToJSON('DELETE FROM t WHERE id = 1') AS j);
@@ -1169,7 +1169,7 @@ FROM (SELECT parseQueryToJSON('DELETE FROM t WHERE id = 1') AS j);
 -- ==========================================================================
 
 SELECT 'UpdateQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'table') AS has_table,
     JSONHas(j, 'assignments') AS has_assign,
     JSONHas(j, 'predicate') AS has_pred
@@ -1181,7 +1181,7 @@ FROM (SELECT parseQueryToJSON('ALTER TABLE t UPDATE a = 1 WHERE b = 2') AS j);
 -- ==========================================================================
 
 SELECT 'UseQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONHas(j, 'database') AS has_db
 FROM (SELECT parseQueryToJSON('USE mydb') AS j);
 
@@ -1191,7 +1191,7 @@ FROM (SELECT parseQueryToJSON('USE mydb') AS j);
 -- ==========================================================================
 
 SELECT 'TransactionControl_begin' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractInt(j, 'action') AS action
 FROM (SELECT parseQueryToJSON('BEGIN TRANSACTION') AS j);
 
@@ -1209,7 +1209,7 @@ FROM (SELECT parseQueryToJSON('ROLLBACK') AS j);
 -- ==========================================================================
 
 SELECT 'CheckTableQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp
+    JSONExtractString(j, 'type') AS tp
 FROM (SELECT parseQueryToJSON('CHECK TABLE t') AS j);
 
 -- ==========================================================================
@@ -1218,7 +1218,7 @@ FROM (SELECT parseQueryToJSON('CHECK TABLE t') AS j);
 -- ==========================================================================
 
 SELECT 'BackupQuery' AS t,
-    JSONExtractString(j, 'ast_type') AS tp,
+    JSONExtractString(j, 'type') AS tp,
     JSONExtractInt(j, 'kind') AS kind,
     JSONHas(j, 'backup_name') AS has_bn
 FROM (SELECT parseQueryToJSON('BACKUP TABLE t TO Disk(\'default\', \'backup1\')') AS j);

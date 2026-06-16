@@ -1,4 +1,4 @@
-SelectWithUnionQuery_simple		UNION_DEFAULT	1
+SelectWithUnionQuery_simple	SelectWithUnionQuery	UNION_DEFAULT	1
 SelectWithUnionQuery_union	UNION_DEFAULT	["UNION_ALL","UNION_ALL"]
 SelectWithUnionQuery_distinct	["UNION_DISTINCT"]
 SelectQuery_distinct	1
@@ -17,7 +17,7 @@ SelectQuery_window	1
 SelectQuery_interpolate	1
 SelectIntersectExceptQuery_intersect	
 SelectIntersectExceptQuery_except	
-ExpressionList		1
+ExpressionList	ExpressionList	1
 Literal_uint64	UInt64	42
 Literal_string	String	hello
 Literal_null	Null
@@ -29,7 +29,7 @@ Literal_tuple
 Identifier_simple	a
 Identifier_compound	a.b.c	["a","b","c"]
 Identifier_alias	x
-TableIdentifier_simple	t	
+TableIdentifier_simple	t	TableIdentifier
 TableIdentifier_compound	["db","t"]
 Function_simple	count	1
 Function_operator	plus	1
@@ -39,23 +39,23 @@ Function_window_name	w
 Function_lambda	1	LAMBDA_FUNCTION
 Function_nulls_action	
 Function_alias	cnt
-Subquery		1
+Subquery	Subquery	1
 Subquery_alias	sub
 QueryParameter	param	UInt64
-Asterisk	
+Asterisk	Asterisk
 Asterisk_transformers	1
-QualifiedAsterisk		1
+QualifiedAsterisk	QualifiedAsterisk	1
 QualifiedAsterisk_tr	1
-ColumnsRegexpMatcher		col.*
-ColumnsListMatcher		1
-QualifiedColumnsRegexpMatcher		x.*	1
-QualifiedColumnsListMatcher		1	1
-ColumnsApplyTransformer		toString
-ColumnsExceptTransformer		1
+ColumnsRegexpMatcher	ColumnsRegexpMatcher	col.*
+ColumnsListMatcher	ColumnsListMatcher	1
+QualifiedColumnsRegexpMatcher	QualifiedColumnsRegexpMatcher	x.*	1
+QualifiedColumnsListMatcher	QualifiedColumnsListMatcher	1	1
+ColumnsApplyTransformer	ColumnsApplyTransformer	toString
+ColumnsExceptTransformer	ColumnsExceptTransformer	1
 ColumnsExceptTransformer_strict	1
-ColumnsReplaceTransformer	
-TablesInSelectQuery		1
-TablesInSelectQueryElement		1
+ColumnsReplaceTransformer	ColumnsReplaceTransformer
+TablesInSelectQuery	TablesInSelectQuery	1
+TablesInSelectQueryElement	TablesInSelectQueryElement	1
 TablesInSelectQueryElement_join	1	1
 TablesInSelectQueryElement_array_join	1
 TableExpression_table	1
@@ -73,14 +73,14 @@ ArrayJoin_left	Left
 OrderByElement_asc	1	1
 OrderByElement_desc_nulls	-1	1
 OrderByElement_fill	1	1	1	1
-StorageOrderByElement	
+StorageOrderByElement	Identifier
 WindowDefinition_full	1	1	ROWS	Unbounded	1	Current	0
 WindowDefinition_offset	Offset	1	Offset
 WindowListElement	w	1
 SampleRatio	1	10
 InterpolateElement	b	1
 Collation	1
-SetQuery_standalone		1	max_threads
+SetQuery_standalone	SetQuery	1	max_threads
 SetQuery_multi	2
 ExplainQuery_AST	EXPLAIN AST	1
 ExplainQuery_SYNTAX	EXPLAIN SYNTAX
@@ -98,18 +98,18 @@ ConstraintDeclaration_assume	ASSUME
 ProjectionDeclaration	p	1
 StatisticsDeclaration	0	0
 Storage_full	1	1	1	1	1	1	1
-Columns_definition		1	1	1	1
-CreateQuery_basic		db	t	1
+Columns_definition	Columns definition	1	1	1	1
+CreateQuery_basic	CreateQuery	db	t	1
 CreateQuery_view	1
 CreateQuery_matview	1
 CreateQuery_as_select	1
 CreateQuery_as_table	t
 CreateQuery_cluster	my_cluster
-DropQuery_table		Drop	t	1
+DropQuery_table	DropQuery	Drop	t	1
 DropQuery_database	Drop	db	1
 DropQuery_sync	1
 DropQuery_view	1
-InsertQuery_select		1	1
+InsertQuery_select	InsertQuery	1	1
 InsertQuery_columns	1
 InsertQuery_func	1
 AlterCommand_add	0	1
@@ -117,15 +117,15 @@ AlterCommand_drop	1
 AlterCommand_update	1	1
 AlterCommand_delete	1
 AlterCommand_partition	1
-AlterQuery		t	TABLE	1
-RenameQuery		0	a	b	0
+AlterQuery	AlterQuery	t	TABLE	1
+RenameQuery	RenameQuery	0	a	b	0
 RenameQuery_db	db1	db2
 RenameQuery_exchange	1
-NameTypePair	
+NameTypePair	ColumnDeclaration
 DataType_simple	UInt64
 DataType_parametric	FixedString	1
-FunctionWithKV		clickhouse	1	1
-Pair		table	1
+FunctionWithKV	FunctionWithKeyValueArguments	clickhouse	1	1
+Pair	Pair	table	1
 TTLElement	DELETE
 TTLElement_move	MOVE	DISK
 Partition_value	1	0
@@ -137,24 +137,24 @@ DictAttrDecl_flags	1	1
 DictionaryLifetime	0	1000
 DictionaryLayout	hashed	1
 DictionaryRange	start	end
-SystemQuery_flush		FLUSH LOGS
+SystemQuery_flush	SystemQuery	FLUSH LOGS
 SystemQuery_stop	STOP MERGES	1
-ShowTablesQuery_from		1
+ShowTablesQuery_from	ShowTablesQuery	1
 ShowTablesQuery_like	%test%
 ShowTablesQuery_databases	1
-ShowColumnsQuery		t
+ShowColumnsQuery	ShowColumnsQuery	t
 ShowColumnsQuery_db	db	t
-KillQueryQuery		1	1
+KillQueryQuery	KillQueryQuery	1	1
 KillQueryQuery_test	1
-OptimizeQuery		1	1	1
-DeleteQuery		1	1
-UpdateQuery		1	0	0
-UseQuery		1
-TransactionControl_begin		0
+OptimizeQuery	OptimizeQuery	1	1	1
+DeleteQuery	DeleteQuery	1	1
+UpdateQuery	AlterQuery	1	0	0
+UseQuery	UseQuery	1
+TransactionControl_begin	TransactionControl	0
 TransactionControl_commit	1
 TransactionControl_rollback	2
-CheckTableQuery	
-BackupQuery		0	1
+CheckTableQuery	CheckTableQuery
+BackupQuery	BackupQuery	0	1
 ViewTargets	0
 SQLSecurity	1
 RefreshStrategy	1
