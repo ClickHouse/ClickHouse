@@ -32,7 +32,12 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
 
 #include <algorithm>
 #include <limits>
@@ -294,7 +299,8 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -354,6 +360,9 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
+
+    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
+        return RelationStats{};
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
@@ -420,10 +429,15 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
         }
         return stats;
     }
+
 #if CLICKHOUSE_CLOUD
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
 #endif
+
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
+        transform && transform->getTransformTraits().preserves_number_of_rows)
+        return estimateReadRowsCount(*node.children.front(), filter);
 
     return {};
 }
@@ -507,6 +521,8 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
+    /// Distributed plan keeps logical joins steps. They are converted to physical steps afterwards, when plan fragment is executed by a worker.
+    keep_logical |= optimization_settings.make_distributed_plan;
     if (keep_logical)
         return false;
     if (!typeid_cast<JoinStepLogical *>(node.step.get()))
@@ -733,8 +749,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
 
     size_t total_inputs = query_graph.inputs.size();
-    if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
-        query_graph.join_kinds[0] = QueryGraph::OuterJoinRestriction{BitSet{}, BitSet{}, JoinKind::Cross};
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 

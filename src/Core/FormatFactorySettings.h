@@ -1246,6 +1246,11 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_always_write_decimal_point_in_float_and_decimal, false, R"(
+Always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number. For example, output `1.` instead of `1`.
+
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, output_format_float_precision, 0, R"(
 When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
 When 0 (the default), use the shortest round-trip representation.
@@ -1365,6 +1370,11 @@ Enabled by default
 )", 0) \
     DECLARE(Bool, output_format_pretty_row_numbers, true, R"(
 Add row numbers before each row for pretty output format
+)", 0) \
+    DECLARE(Bool, output_format_pretty_use_nbsp_for_padding, false, R"(
+If enabled, padding in `Pretty` output formats is rendered with `U+00A0` instead of an ASCII space.
+The output remains visually identical in monospace, but the padding survives tools that compress or trim runs of regular spaces.
+Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
 )", 0) \
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.
@@ -1538,6 +1548,28 @@ Set the quoting rule for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
+)", 0) \
+    DECLARE(UInt64, output_format_image_width, 1024, R"(
+The width of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(UInt64, output_format_image_height, 1024, R"(
+The height of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(String, output_format_image_terminal_mode, "", R"(
+For image output formats such as `PNG`, output the image directly to the terminal using an inline image protocol instead of writing the raw image bytes.
+
+Possible values:
+- `` (empty) — write the raw image bytes (the default).
+- `iterm` — use the iTerm2 inline image protocol.
+- `kitty` — use the Kitty graphics protocol.
+- `sixel` — use the Sixel protocol.
+- `auto` — if the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes.
+
+Default value: `` (empty).
 )", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
