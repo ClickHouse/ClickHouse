@@ -741,8 +741,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
 }
 
- /**
- * Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
+ /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
  *
  * This algorithm constructs optimal join trees by iterating over subsets of the relations in an ascending order
  * based on an integer bitmask (from 1 to 2^n - 2). This ordering ensures that for any relation subset S,
@@ -757,10 +756,20 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
  */
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
+    const size_t n = query_graph.relation_stats.size();
     using Bitvector = UInt64; // choose UInt64 or even UInt128 for larger sets
     // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
     // This budget cap is obtained from empirical testing using different queries and join graphs.
     static constexpr UInt64 max_nr_ccps = 60'000;
+
+    if (n > std::numeric_limits<Bitvector>::digits)
+    {
+        LOG_TRACE(log,
+            "Number of relations {} exceeds the DP threshold {}, skipping DP optimization invoking greedy algorithm",
+            n, std::numeric_limits<Bitvector>::digits);
+        return solveGreedy();
+    }
+
 
     struct DPEntry
     {
@@ -778,7 +787,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     using Checker = EnumeratorCheckerWithCosts<Dptable, JoinOrderOptimizer, Bitvector>;
     using Enumerator = EnumCcpSub<Checker, Dptable, QueryGraph, Bitvector>;
 
-    const size_t n = query_graph.relation_stats.size();
     Checker checker(n, *this);
     Enumerator enumerator(n, max_nr_ccps, log);
     enumerator.enumerate(checker, &Checker::accept, query_graph);
@@ -797,7 +805,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     if (!full_built)
     {
         LOG_TRACE(log, "DPsub: join graph is too complex or disconnected!");
-        return nullptr;
+        return solveGreedy();
     }
 
     return buildPhysicalPlan(dptable, full_set);

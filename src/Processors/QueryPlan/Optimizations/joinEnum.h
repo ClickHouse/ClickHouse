@@ -10,8 +10,7 @@
 namespace DB
 {
 
-/** 
-* This an efficient iterator that iterates over all (strict) non-empty subsets of a given 
+/** This an efficient iterator that iterates over all (strict) non-empty subsets of a given 
 * input set S (excluding the empty subset).
 */
 template <std::unsigned_integral TUint>
@@ -24,7 +23,7 @@ public:
     
     constexpr TUint getFullSet() const noexcept { return start; }
 
-    class Iterator 
+    class Iterator
     {
     public:
         using value_type = TUint;
@@ -37,7 +36,7 @@ public:
 
         constexpr Iterator& operator++() noexcept
         {
-            current = (start & (current - start)); 
+            current = (start & (current - start));
             return *this;
         }
 
@@ -59,8 +58,7 @@ public:
     };
 
     constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
-    constexpr Iterator end() const noexcept   { return Iterator(start, start); } 
-
+    constexpr Iterator end() const noexcept   { return Iterator(start, start); }
 private:
     Bitvector start;
 };
@@ -77,8 +75,8 @@ public:
     EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_);
     UInt64 n() const { return nr_relations; }
     void initDPTable(Dptable & dp_table, const Graph & query_graph);
-    bool isConnected(const Dptable & dp_table, const Uint S1, const Uint S2) const;
-    void setTableNeighbor(Dptable & dp_table, const Uint S1, const Uint S2) const;
+    bool isConnected(const Dptable & dp_table, Uint S1, Uint S2) const;
+    void setTableNeighbor(Dptable & dp_table, Uint S1, Uint S2) const;
     void enumerate(Consumer & consumer, AcceptorFn acceptor, const Graph & query_graph);
 private:
     UInt64 nr_relations{0};
@@ -153,14 +151,13 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, TUint>::enumerate(TConsumer & 
 
     initDPTable(consumer.dptable(), query_graph);
 
-    /**
-    * The integer `s` induces the current subset `S` via its binary representation. 
+    /** The integer `s` induces the current subset `S` via its binary representation. 
     * Taken as bitvectors, integers in the range [1, 2^n - 1] map exactly to all 
-    * non-empty subsets of {R_0, ..., R_{n-1}}. 
-    * Iterating in strictly ascending order guarantees a valid sequence for dynamic 
-    * programming: for any given subset, all of its proper subsets are guaranteed to 
+    * non-empty subsets of {R_0, ..., R_{n-1}}.
+    * Iterating in strictly ascending order guarantees a valid sequence for dynamic
+    * programming: for any given subset, all of its proper subsets are guaranteed to
     * be evaluated before the subset itself.
-    * This approach is highly performant because subset generation is driven by 
+    * This approach is highly performant because subset generation is driven by
     * a native CPU integer increment operation.
     */
     for (TUint s = 1; s <= full_set_mask; ++s)

@@ -51,9 +51,6 @@ DpTable<TEntry, TUint>::DpTable(size_t nrRelations_)
     : nr_relations(nrRelations_)
     , nr_ccp(0)
 {
-    /// The DPsub enumerator visits every connected subset, so the table can hold up to 2^n entries.
-    dp_tab.reserve(static_cast<size_t>(1) << n());
-
     for (TUint i = 0; i < n(); ++i)
         dp_tab[static_cast<TUint>(1) << i].count = 1;
 }
