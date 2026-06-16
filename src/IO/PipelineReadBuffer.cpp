@@ -28,9 +28,10 @@ bool PipelineReadBuffer::nextImpl()
     if (profile_callback)
         watch.emplace(clock_type);
 
-    /// Consume what the previous span exposed, then refill from the executor when the
-    /// current window's chain is exhausted. An empty window means EOF.
-    chain.advance(working_buffer.size());
+    /// Detach first: `advance` can free the buffer `working_buffer` / `pos` point into.
+    const size_t consumed = working_buffer.size();
+    detachBuffer();
+    chain.advance(consumed);
     if (chain.atEnd())
     {
         chain = executor->readNextWindow();
@@ -53,12 +54,17 @@ bool PipelineReadBuffer::nextImpl()
         profile_callback(info);
     }
 
-    /// The span points into a buffer `chain` owns; it stays valid until the next advance.
     internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
     read_position = span.logical_offset + span.size;
     return true;
+}
+
+void PipelineReadBuffer::detachBuffer()
+{
+    internal_buffer = working_buffer = Buffer(nullptr, nullptr);
+    pos = nullptr;
 }
 
 off_t PipelineReadBuffer::seek(off_t off, int whence)
@@ -85,7 +91,7 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
 
     LOG_DEBUG(log, "seek to {}", new_pos);
 
-    resetWorkingBuffer();
+    detachBuffer();
     chain = ChainedBuffers{};
     executor->seek(new_pos);
     read_position = new_pos;
@@ -108,7 +114,7 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
     if (position < read_position)
     {
         const size_t current = read_position - available();
-        resetWorkingBuffer();
+        detachBuffer();
         chain = ChainedBuffers{};
         executor->seek(current);
         read_position = current;

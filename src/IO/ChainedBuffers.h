@@ -108,9 +108,8 @@ public:
     /// True if there is no more data to read at-or-after the cursor.
     bool atEnd() const { return nodes.empty(); }
 
-    /// The span starting at the cursor (= unconsumed prefix of the front
-    /// node). Empty when `atEnd()`. Memory stays alive until the next
-    /// `advance` or `tryRewind`.
+    /// The span starting at the cursor (= unconsumed prefix of the front node),
+    /// empty when `atEnd()`. Valid only until the next `advance` / `tryRewind`.
     Span peek() const;
 
     /// Move the cursor forward by `bytes`. Releases nodes that fall

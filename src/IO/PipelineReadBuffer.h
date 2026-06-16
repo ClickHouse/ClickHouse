@@ -41,6 +41,10 @@ public:
 private:
     bool nextImpl() override;
 
+    /// Empty the base `ReadBuffer` fields so they don't dangle when `chain` storage
+    /// they point into is released.
+    void detachBuffer();
+
     std::unique_ptr<ReaderExecutor> executor;
     /// The chain-with-cursor currently being streamed; empty between windows.
     /// `nextImpl` advances it by `working_buffer.size()`, then refills from the
