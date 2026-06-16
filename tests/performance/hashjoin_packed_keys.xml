@@ -26,11 +26,13 @@
     <fill_query>INSERT INTO keys32_probe SELECT bitAnd(number % 10000000, 65535), bitShiftRight(number % 10000000, 16) FROM numbers_mt(50000000)</fill_query>
 
     <!-- keys64: (UInt32, UInt32) = 8 bytes (was keys128) -->
-    <query>SELECT l.a FROM keys64_probe AS l INNER JOIN keys64_build AS r ON l.a = r.a AND l.b = r.b FORMAT Null</query>
+    <query>SELECT l.a FROM keys64_probe AS l INNER JOIN keys64_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'hash' FORMAT Null</query>
     <!-- keys64 under parallel_hash: two_level_keys64 (was two_level_keys128) -->
     <query>SELECT l.a FROM keys64_probe AS l INNER JOIN keys64_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
     <!-- keys32: (UInt16, UInt16) = 4 bytes (was keys128) -->
-    <query>SELECT l.a FROM keys32_probe AS l INNER JOIN keys32_build AS r ON l.a = r.a AND l.b = r.b FORMAT Null</query>
+    <query>SELECT l.a FROM keys32_probe AS l INNER JOIN keys32_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'hash' FORMAT Null</query>
+    <!-- keys32 under parallel_hash -->
+    <query>SELECT l.a FROM keys32_probe AS l INNER JOIN keys32_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS keys64_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS keys64_probe</drop_query>
