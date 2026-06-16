@@ -468,10 +468,27 @@ public:
         /// For Graphite mode.
         Graphite::Params graphite_params;
 
+        /// For Summing, Coalescing and Aggregating modes.
+        bool allow_tuple_element_aggregation = false;
+
         /// Check that needed columns are present and have correct types.
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
+
+        /// True when both tables would merge a part with identical semantics, i.e. every
+        /// field that feeds the merge transforms matches. Used to decide whether an adopted
+        /// part's merge level may be preserved (see getLevelForAdoptedPart).
+        bool hasSameMergeSemantics(const MergingParams & rhs) const
+        {
+            return mode == rhs.mode
+                && sign_column == rhs.sign_column
+                && is_deleted_column == rhs.is_deleted_column
+                && columns_to_sum == rhs.columns_to_sum
+                && version_column == rhs.version_column
+                && allow_tuple_element_aggregation == rhs.allow_tuple_element_aggregation
+                && graphite_params == rhs.graphite_params;
+        }
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
@@ -643,7 +660,10 @@ public:
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
+    /// `refreshDataParts` is the background-task entry point: it reschedules itself afterwards.
+    /// `refreshDataPartsOnce` performs a single refresh and is also used by `SYSTEM RESTART DISK`.
     void refreshDataParts(UInt64 interval_milliseconds);
+    void refreshDataPartsOnce(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -987,7 +1007,8 @@ public:
     /// Change MergeTreeSettings
     void changeSettings(
         const ASTPtr & new_settings,
-        AlterLockHolder & table_lock_holder);
+        AlterLockHolder & table_lock_holder,
+        bool run_sanity_checks = true);
 
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
@@ -1110,6 +1131,15 @@ public:
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+
+    /// Level for a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM, CLONE AS,
+    /// MOVE PARTITION TO TABLE). Preserve the source level only when this table merges parts
+    /// identically; otherwise reset to 0 so FINAL/OPTIMIZE re-merge the lone part instead of
+    /// trusting it as already-merged (issue #106798).
+    UInt32 getLevelForAdoptedPart(const MergeTreeData & source_data, UInt32 source_level) const
+    {
+        return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
+    }
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
@@ -1335,6 +1365,10 @@ public:
     mutable StreamSubscriptionManager subscription_manager;
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
+
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165;
+    /// derived overrides are always picked in normal operation.
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
@@ -1646,7 +1680,6 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
-        bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
@@ -1889,6 +1922,12 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
+    /// Serializes refreshDataPartsOnce so the background refresh task and SYSTEM RESTART DISK
+    /// cannot scan and load the same new part concurrently (which would throw a duplicate-part
+    /// LOGICAL_ERROR, because the "is this part already present" check and the actual load are
+    /// not done under a single lock).
+    std::mutex refresh_parts_mutex;
+
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     mutable std::mutex stats_mutex;
@@ -1964,7 +2003,6 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key = false;
-    bool allow_reverse_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);

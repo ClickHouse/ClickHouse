@@ -154,19 +154,28 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
 
     /// There is a ExpressionStep before LimitBy. Skip it.
     QueryPlan::Node * expr_node = node.children.front();
-    if (!typeid_cast<ExpressionStep *>(expr_node->step.get()) || expr_node->children.size() != 1)
+    auto * expr_step = typeid_cast<ExpressionStep *>(expr_node->step.get());
+    if (!expr_step || expr_node->children.size() != 1)
         return;
 
     auto * sort = typeid_cast<SortingStep *>(expr_node->children.front()->step.get());
     if (!sort)
         return;
 
+    /// `arrayJoin` in the expression above sort changes row cardinality after the sort runs.
+    /// A per-stream `LimitByTransform` attached to the sort would truncate input rows BEFORE
+    /// `arrayJoin` expansion, silently dropping rows that should have produced output.
+    /// See issue #82279 for sibling guards in `liftUpFunctions`, `optimizeLazyMaterialization`,
+    /// `optimizeTopK`, and `topKThroughJoin`.
+    if (expr_step->getExpression().hasArrayJoin())
+        return;
+
     /// Pushing down `LIMIT BY` adds a parallel pre-cap before the final single-stream
     /// `LimitByStep`. Each stream can reduce its row count before the final merge to
     /// a single stream, so the final merge and later pipeline steps have less data to process.
     ///
-    /// We try to apply `LIMIT BY` per stream when each stream is sorted and `LIMIT BY` keys are a
-    /// prefix of the sort keys. This way we run the in-order variant of LIMIT BY, which is
+    /// We try to apply `LIMIT BY` per stream when each stream is sorted and the `LIMIT BY` keys, in any
+    /// order, form a prefix of the sort keys. This way we run the in-order variant of LIMIT BY, which is
     /// just a linear scan over the data with O(1) memory.
     ///
     /// TODO: When LIMIT BY prefix columns are a strict monotonic function of the ORDER BY key,
@@ -176,7 +185,8 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// by first applying an `ExpressionTransform`, and this will give quite a bit of speedup as well.
     /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
     /// whose size is the number of unique keys, and this can cause OOM.
-    if (!sort->getSortDescription().hasPrefix(limit_by->getColumns()))
+    const auto & limit_by_columns = limit_by->getColumns();
+    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns).size() != limit_by_columns.size())
         return;
 
     const UInt64 length = limit_by->getGroupLength();
