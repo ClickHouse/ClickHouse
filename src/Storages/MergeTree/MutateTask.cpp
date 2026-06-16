@@ -41,7 +41,6 @@
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -995,10 +994,6 @@ static NameSet collectFilesToSkip(
     const NameSet & updated_columns_in_patches)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
-
-    /// UK delete-bitmap sidecars are surfaced by getFileNamesWithoutChecksums but mutation
-    /// does not regenerate them; let the unchanged-files loop hardlink them across.
-    std::erase_if(files_to_skip, [](const String & name) { return DeleteBitmap::isDeleteBitmapFile(name); });
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
@@ -2109,14 +2104,6 @@ private:
                 if (!lightweight_delete_mode && ctx->source_part->checksums.has(projection.getDirectoryName()))
                     entries_to_hardlink.insert(projection.getDirectoryName());
             }
-        }
-
-        /// Preserve UK delete-bitmap sidecars across a full-rewrite mutation
-        /// (allowlist-based loop below would otherwise drop them).
-        for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
-        {
-            if (DeleteBitmap::isDeleteBitmapFile(it->name()))
-                entries_to_hardlink.insert(it->name());
         }
 
         NameSet hardlinked_files;
