@@ -290,8 +290,19 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             ArrowIPC::MessageReader::Message msg;
             if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a dictionary batch in the Arrow file");
+            /// The footer block fixes this message's body size; a message claiming a different (e.g. huge)
+            /// body length is corrupt and would otherwise force reading past the footer-declared boundary.
+            if (msg.body_length != block.body_length)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC dictionary batch body length {} does not match the footer block length {}",
+                    msg.body_length, block.body_length);
 
             const auto * dict_batch = msg.header->header_as_DictionaryBatch();
+            /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
+            /// than dereferencing null below.
+            if (!dict_batch->data())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
             const int64_t id = dict_batch->id();
             auto field_it = dictionary_value_fields.find(id);
             if (field_it == dictionary_value_fields.end())
@@ -436,7 +447,10 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
         String key = decoded[i].name;
         if (case_insensitive)
             boost::to_lower(key);
-        name_to_index.emplace(std::move(key), i);
+        /// With case-insensitive matching, names like `A` and `a` fold to the same key. Keep the last
+        /// occurrence (`insert_or_assign`, not `emplace`) so the native reader selects the same column the
+        /// Apache Arrow library path did for the same schema and setting.
+        name_to_index.insert_or_assign(std::move(key), i);
     }
 
     /// Cache of `Nested`/struct table extractors keyed by the (possibly lower-cased) nested table name.
@@ -632,6 +646,10 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     continue;
                 }
                 const auto * dict_batch = msg.header->header_as_DictionaryBatch();
+                /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
+                /// than dereferencing null below.
+                if (!dict_batch->data())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
                 const int64_t id = dict_batch->id();
                 auto field_it = dictionary_value_fields.find(id);
                 if (field_it == dictionary_value_fields.end())
@@ -666,6 +684,13 @@ Chunk ArrowIPCBlockInputFormat::readFile()
     ArrowIPC::MessageReader::Message msg;
     if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
+    /// The footer block fixes this message's body size; a message claiming a different (e.g. huge) body
+    /// length is corrupt and would otherwise force a large allocation reading past the block boundary.
+    if (msg.body_length != block.body_length)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC record batch body length {} does not match the footer block length {}",
+            msg.body_length, block.body_length);
 
     const auto * batch = msg.header->header_as_RecordBatch();
     if (batch->length() < 0)
