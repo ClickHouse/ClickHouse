@@ -1509,6 +1509,14 @@ class QueryResultElement extends HTMLElement
         this.style.outline = 'none';
     }
 
+    disconnectedCallback()
+    {
+        /// Multi-query results are transient elements that get removed from the DOM
+        /// (e.g. via `multiQueryContainer.innerHTML = ''`) without going through `clear`,
+        /// so revoke the image object URL here to avoid leaking the response blob.
+        this._clearImage();
+    }
+
     get rowCount() { return this._row_idx; }
     get elapsedNs() { return this._elapsed_ns; }
     set elapsedNs(v) { this._elapsed_ns = v; }
