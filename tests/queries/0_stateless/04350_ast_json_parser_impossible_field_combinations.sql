@@ -209,3 +209,20 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR COLUMN 
 -- parser-impossible and silently dropped on display.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT count() OVER (ORDER BY x ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)'), '"frame_end_type":"Current"', '"frame_end_type":"Current","frame_end_offset":{"type":"Literal","value":{"field_type":"UInt64","value":1}}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTInsertQuery` destinations: the parser produces exactly one destination form — `INSERT INTO
+-- FUNCTION f(...)` (`table_function`, the only branch that also carries `partition_by`), or
+-- `INSERT INTO [db.]t` (the `database`/`table` identifiers). `formatImpl` shows one by precedence
+-- (function > table_id > database/table) and hides `partition_by` for ordinary inserts, but
+-- `InterpreterInsertQuery` still applies the hidden clause / a second destination, so the displayed
+-- target (or clause) would diverge from the executed one. The single-destination forms round-trip:
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO t SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO db.t SELECT 1'));
+SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO FUNCTION null(\'x UInt8\') SELECT 1 AS x'));
+SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO FUNCTION file(\'data.parquet\') PARTITION BY x SELECT 1 AS x'));
+-- A hidden `partition_by` on an ordinary insert (no `table_function`) is parser-impossible.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('INSERT INTO t SELECT 1'), '"table":{"type":"Identifier","name":"t"}', '"table":{"type":"Identifier","name":"t"},"partition_by":{"type":"Identifier","name":"x"}')); -- { serverError BAD_ARGUMENTS }
+-- More than one destination form (here both `table_function` and `table`) is parser-impossible.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('INSERT INTO FUNCTION null(\'x UInt8\') SELECT 1 AS x'), '"table_function":', '"table":{"type":"Identifier","name":"t"},"table_function":')); -- { serverError BAD_ARGUMENTS }

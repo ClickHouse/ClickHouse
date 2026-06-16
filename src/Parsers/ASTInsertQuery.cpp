@@ -187,10 +187,31 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(compression);
     }
 
-    /// `formatImpl` falls through to the `chassert(table); table->format(...)` path when no other target is set.
-    /// Require at least one valid target so deserialized AST cannot crash on formatting.
-    if (!table_function && !table_id && !table)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`InsertQuery` must specify at least one of 'table_function', non-empty 'table_id', or 'table' during AST JSON deserialization");
+    /// `partition_by` is parser-produced only in the `INSERT INTO FUNCTION` branch
+    /// (`ParserInsertQuery`); `formatImpl` hides it for ordinary inserts, but
+    /// `InterpreterInsertQuery::execute` still applies it, so an ordinary insert carrying a hidden
+    /// `partition_by` would execute against a clause the formatted SQL cannot show. Reject it.
+    if (partition_by && !table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'partition_by' is only valid for INSERT INTO FUNCTION (requires 'table_function') during AST JSON deserialization");
+
+    /// The parser produces exactly one destination form: `INSERT INTO FUNCTION f(...)` (table_function)
+    /// or `INSERT INTO [db.]t` (the `database`/`table` identifiers; `table_id` is the normalized
+    /// equivalent populated later). `formatImpl` picks one by precedence (function > table_id >
+    /// database/table) while `getTable`/`getDatabase` and insertion context may read a different one,
+    /// so multiple forms would let the displayed target diverge from the executed one. Require exactly one.
+    const size_t destinations = (table_function ? 1 : 0)
+        + (table_id.empty() ? 0 : 1)
+        + ((database || table) ? 1 : 0);
+    if (destinations != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` must specify exactly one destination form ('table_function', 'table_id', or 'database'/'table') during AST JSON deserialization");
+
+    /// In the `database`/`table` form, `formatImpl` requires a table (`chassert(table)`); a bare
+    /// `database` without a `table` is not a valid target.
+    if (database && !table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` 'database' requires a 'table' during AST JSON deserialization");
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
