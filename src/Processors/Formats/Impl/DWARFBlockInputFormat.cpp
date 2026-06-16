@@ -786,8 +786,20 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 cols.push_back(std::exchange(col_linkage_name, nullptr));
                 break;
             case COL_DECL_FILE:
-                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
+            {
+                /// A unit may have no DW_AT_stmt_list (no .debug_line filename table), in which case
+                /// filename_table is null and all indexes are 0. Provide a minimal dictionary so we
+                /// don't construct a LowCardinality column with a null dictionary.
+                ColumnPtr filename_table = unit.filename_table;
+                if (filename_table == nullptr)
+                {
+                    auto dict = ColumnString::create();
+                    dict->insertDefault();
+                    filename_table = ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false);
+                }
+                cols.push_back(ColumnLowCardinality::create(filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
                 break;
+            }
             case COL_DECL_LINE:
                 cols.push_back(std::exchange(col_decl_line, nullptr));
                 break;
@@ -859,9 +871,10 @@ uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t 
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing .debug_addr section.");
     if (addr_base == UINT64_MAX)
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_addr_base");
+    uint64_t section_size = debug_addr_section->size();
+    if (addr_base > section_size || idx >= (section_size - addr_base) / 8)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: addr_base {}, idx {} vs {}.", addr_base, idx, section_size);
     uint64_t offset = addr_base + idx * 8;
-    if (offset + 8 > debug_addr_section->size())
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: {} vs {}.", offset, debug_addr_section->size());
     uint64_t res = 0;
     memcpy(&res, debug_addr_section->data() + offset, 8);
     return res;
@@ -900,9 +913,11 @@ void DWARFBlockInputFormat::parseRanges(
             if (unit.rnglists_base == UINT64_MAX)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_rnglists_base");
             uint64_t entry_size = unit.dwarf_unit->getFormParams().getDwarfOffsetByteSize();
+            uint64_t section_size = debug_rnglists_extractor->size();
+            if (entry_size == 0 || unit.rnglists_base > section_size
+                || offset >= (section_size - unit.rnglists_base) / entry_size)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: rnglists_base {}, idx {} vs {}", unit.rnglists_base, offset, section_size);
             uint64_t lists_offset = unit.rnglists_base + offset * entry_size;
-            if (lists_offset + entry_size > debug_rnglists_extractor->size())
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: {} vs {}", lists_offset, debug_rnglists_extractor->size());
 
             offset = 0;
             memcpy(&offset, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
@@ -1033,16 +1048,16 @@ void registerInputFormatDWARF(FormatFactory & factory)
 
 ## Description {#description}
 
-The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file). 
-It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL. 
-It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section 
+The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file).
+It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL.
+It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
 and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
 
 :::info
-`.debug_info` consists of *units*, which correspond to compilation units: 
-- Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root. 
-- Each DIE has a *tag* and a list of *attributes*. 
-- Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded). 
+`.debug_info` consists of *units*, which correspond to compilation units:
+- Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root.
+- Each DIE has a *tag* and a list of *attributes*.
+- Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded).
 
 The DIEs represent things from the source code, and their *tag* tells you what kind of thing it is. For example, there are:
 
