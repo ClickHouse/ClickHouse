@@ -30,7 +30,8 @@ SELECT 'replacing final', count() FROM t_engine FINAL;
 
 DROP TABLE t_engine;
 
--- MergeTree -> SummingMergeTree. FINAL sums the measure columns within each key.
+-- MergeTree -> SummingMergeTree. FINAL collapses the per-key rows into one summed row. Selecting v
+-- directly (not sum(v)) proves the engine changed: plain MergeTree FINAL would keep both rows for k=1.
 CREATE TABLE t_sum (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_sum VALUES (1, 10);
 INSERT INTO t_sum VALUES (1, 20);
@@ -38,7 +39,7 @@ INSERT INTO t_sum VALUES (2, 100);
 ALTER TABLE t_sum MODIFY ENGINE = SummingMergeTree;
 DETACH TABLE t_sum;
 ATTACH TABLE t_sum;
-SELECT 'summing', k, sum(v) FROM t_sum FINAL GROUP BY k ORDER BY k;
+SELECT 'summing', k, v FROM t_sum FINAL ORDER BY k;
 DROP TABLE t_sum;
 
 -- Adding the engine-required column in the same statement, before MODIFY ENGINE.
