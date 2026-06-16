@@ -21,7 +21,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event UniqueKeySSTWriteMicroseconds;
     extern const Event UniqueKeyLoadTimeSSTRebuildCount;
     extern const Event UniqueKeyLoadTimeSSTRebuildMicroseconds;
 }
@@ -83,15 +82,17 @@ UInt64 UniqueKeyDenseIndexOps::writeDenseIndex(
 
 
 void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
-    IDataPartStorage & storage,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Block & block,
-    const IColumn::Permutation * permutation,
-    UInt64 max_encoded_size,
-    ContextPtr context)
+    [[maybe_unused]] IDataPartStorage & storage,
+    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
+    [[maybe_unused]] const Block & block,
+    [[maybe_unused]] const IColumn::Permutation * permutation,
+    [[maybe_unused]] UInt64 max_encoded_size,
+    [[maybe_unused]] ContextPtr context)
 {
     /// Caller (`MergeTreeDataWriter`) ensures the table has a UNIQUE KEY.
-    ProfileEventTimeIncrement<Microseconds> sst_write_watch(ProfileEvents::UniqueKeySSTWriteMicroseconds);
+    /// `SSTIndexWriter` already accounts for `UniqueKeySSTWriteMicroseconds`.
+    /// No-op without RocksDB — the dense index needs it (the SST writer throws).
+#if USE_ROCKSDB
     writeDenseIndex(
         storage,
         block,
@@ -100,6 +101,7 @@ void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
         permutation,
         max_encoded_size,
         context);
+#endif
 }
 
 
@@ -162,7 +164,7 @@ void UniqueKeyDenseIndexOps::rebuildIfMissing(MutableDataPartPtr & part) const
     if (uk_names.empty())
         return;
 
-    auto & storage = const_cast<IDataPartStorage &>(part->getDataPartStorage());
+    auto & storage = part->getDataPartStorage();
     if (storage.existsFile(SSTIndexWriter::FILE_NAME))
         return;
 

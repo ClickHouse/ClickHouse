@@ -43,13 +43,11 @@
 
 using namespace DB;
 
-#if USE_ROCKSDB
 namespace ProfileEvents
 {
     extern const Event UniqueKeyLoadTimeSSTRebuildCount;
     extern const Event UniqueKeyLoadTimeSSTRebuildMicroseconds;
 }
-#endif
 
 namespace
 {
