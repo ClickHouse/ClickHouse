@@ -90,18 +90,12 @@ namespace
             return std::nullopt;
 
         if (!context)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot remove credentials from the base backup locator with the non-literal argument key {}",
-                ast->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove credentials from the base backup locator with a non-literal argument key");
 
         ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(list->children[0], context);
         const auto * literal = evaluated->as<const ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::Which::String)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The base backup locator argument key {} must be a constant string expression",
-                ast->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The base backup locator argument key must be a constant string expression");
         return literal->value.safeGet<String>();
     }
 
