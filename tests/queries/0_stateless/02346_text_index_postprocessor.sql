@@ -191,7 +191,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar');
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar'), (3, 'the the');
 
 -- 'hello' and 'world' are stored normally; 'foo' and 'bar' too.
 SELECT count() FROM tab WHERE hasToken(val, 'hello');
@@ -200,6 +200,12 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');
 -- hasAllTokens(val, 'hello the world') is equivalent to hasAllTokens(val, 'hello world').
 SELECT count() FROM tab WHERE hasAllTokens(val, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, 'hello the world');
+-- hasPhrase is hint-only and not postprocessed at row level: a phrase whose tokens are all dropped by
+-- the postprocessor ('the the') must still match via the row scan instead of pruning every granule.
+SELECT count() FROM tab WHERE hasPhrase(val, 'the the');
+SELECT count() FROM tab WHERE hasPhrase(val, 'foo bar');
+-- Tokens present but not in this adjacent order: granule kept, row-level rejects.
+SELECT count() FROM tab WHERE hasPhrase(val, 'world hello');
 
 DROP TABLE tab;
 
@@ -220,6 +226,11 @@ SELECT count() FROM tab WHERE hasToken(val, 'the');
 -- Non-stop-word tokens are unaffected.
 SELECT count() FROM tab WHERE hasToken(val, 'hello');
 SELECT count() FROM tab WHERE hasToken(val, 'quick');
+-- hasTokenOrNull is NOT postprocessed at row level (unlike hasToken), so the index must not be used:
+-- the dropped 'the' is still found literally in 'the quick'. Contrast hasToken('the') = 0 with this = 1.
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'the');
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'quick');
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');
 
 DROP TABLE tab;
 
@@ -244,6 +255,12 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']);
 SELECT count() FROM tab WHERE hasAllTokens(val, ['stop', 'hello']);
 -- hasAnyTokens(['stop', 'foo']) reduces to hasAnyTokens(['foo']).
 SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop', 'foo']);
+
+-- An OR keeps the granule alive so the empty search is evaluated directly (granule pruning no longer
+-- masks it); the empty search must still match nothing, so only id = 1 qualifies. Direct read previously
+-- leaked an always-true virtual column here and returned all rows.
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1;
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1;
 
 DROP TABLE tab;
 
@@ -817,68 +834,25 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['xyz', 'abc']) SETTINGS query_p
 
 DROP TABLE tab;
 
-SELECT '31. Empty postprocessed hasAllTokens / hasAnyTokens never match, even when an OR keeps the granule alive.';
-
+-- A boundary-changing postprocessor (concat appends ' x', emitting a separator): the index stores whole
+-- tokens like 'foo x'. On the row-scan fallback the haystack is the final-token array, which must be
+-- matched with 'array' semantics rather than re-split into 'foo','x'. Results stay independent of dr.
 CREATE TABLE tab
 (
     id  UInt64,
     val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'stop', '', val))
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = concat(val, ' x'))
 )
 ENGINE = MergeTree ORDER BY id;
 
--- Row 3 literally contains 'stop', but the postprocessor maps it to empty, so the search has no tokens.
-INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar'), (3, 'stop sign');
+INSERT INTO tab VALUES (1, 'foo'), (2, 'bar');
 
--- The empty search must match nothing; the 'OR id = 1' keeps the granule from being pruned, so the
--- result isolates the search predicate. Direct read previously leaked an always-true virtual column
--- here and returned all rows. Both paths must agree (only id = 1 matches → 1).
-SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
-SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
-SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
-SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
-
-DROP TABLE tab;
-
-SELECT '32. hasTokenOrNull with a postprocessor: the index must not be used (row-level is not postprocessed).';
-
-CREATE TABLE tab
-(
-    id  UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
-)
-ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, 'the quick'), (2, 'foo bar');
-
--- 'the' is dropped by the postprocessor in the index, but hasTokenOrNull is not rewritten on the
--- row-scan path, so it still searches the literal token and must find it in row 1 (not pruned to 0).
-SELECT count() FROM tab WHERE hasTokenOrNull(val, 'the');   -- 1
-SELECT count() FROM tab WHERE hasTokenOrNull(val, 'quick'); -- 1
-SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');   -- 0
-
-DROP TABLE tab;
-
-SELECT '33. hasPhrase whose tokens are all dropped by the postprocessor must not prune the granule.';
-
-CREATE TABLE tab
-(
-    id  UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
-)
-ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, 'the the'), (2, 'foo bar'), (3, 'baz qux');
-
--- 'the the' postprocesses to no tokens; hasPhrase is hint-only and not postprocessed at row level, so
--- it must still match row 1 instead of pruning every granule via an unsatisfiable all-empty hint.
-SELECT count() FROM tab WHERE hasPhrase(val, 'the the'); -- 1
--- A phrase with surviving tokens still uses the index hint and matches.
-SELECT count() FROM tab WHERE hasPhrase(val, 'foo bar'); -- 1
--- Tokens present but not as an adjacent phrase: granule kept, row-level rejects the order.
-SELECT count() FROM tab WHERE hasPhrase(val, 'qux baz'); -- 0
+SELECT count() FROM tab WHERE hasAnyTokens(val, 'foo') SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, 'foo') SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, 'foo') SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, 'foo') SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, 'zzz') SETTINGS query_plan_direct_read_from_text_index = 1; -- 0
+SELECT count() FROM tab WHERE hasAnyTokens(val, 'zzz') SETTINGS query_plan_direct_read_from_text_index = 0; -- 0
 
 DROP TABLE tab;
 

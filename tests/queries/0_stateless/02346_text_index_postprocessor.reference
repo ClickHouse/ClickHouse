@@ -57,13 +57,21 @@ started	1
 1
 1
 1
+1
+1
+0
 8. Stop-word postprocessor: empty-mapped tokens must never match vacuously.
 0
 1
 1
+1
+1
+0
 9. hasAllTokens / hasAnyTokens when all array elements are filtered out.
 0
 0
+1
+1
 1
 1
 10. Index-build path and row-scan path agree when postprocessor drops tokens.
@@ -195,16 +203,9 @@ wo	1
 1
 0
 0
-31. Empty postprocessed hasAllTokens / hasAnyTokens never match, even when an OR keeps the granule alive.
 1
 1
-1
-1
-32. hasTokenOrNull with a postprocessor: the index must not be used (row-level is not postprocessed).
 1
 1
 0
-33. hasPhrase whose tokens are all dropped by the postprocessor must not prune the granule.
-1
-1
 0
