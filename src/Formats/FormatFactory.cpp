@@ -206,6 +206,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.always_write_decimal_point_in_float_and_decimal = settings[Setting::output_format_always_write_decimal_point_in_float_and_decimal];
     format_settings.float_precision = settings[Setting::output_format_float_precision];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
@@ -948,6 +949,20 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     target = std::move(output_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
+}
+
+void FormatFactory::setDocumentation(const String & name, Documentation documentation)
+{
+    /// Attach documentation only to a format that is actually registered in this build.
+    /// Many formats depend on optional libraries (`Avro`, `Arrow`, `Parquet`, ...) and are
+    /// absent from some builds (for example, the fast-test build). We must not create a phantom
+    /// entry for such a format: it would make the format appear "known but not usable" (turning
+    /// an `UNKNOWN_FORMAT` error into `FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT`) and would pollute
+    /// `system.formats` with rows for formats that this build cannot read or write.
+    auto it = dict.find(boost::to_lower_copy(name));
+    if (it == dict.end())
+        return;
+    it->second.documentation = std::move(documentation);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
