@@ -21,7 +21,7 @@ namespace DB
 class QueryIdSwitcher : private boost::noncopyable
 {
 public:
-    explicit QueryIdSwitcher(const std::string & new_query_id) noexcept;
+    explicit QueryIdSwitcher(const std::string & new_query_id);
     ~QueryIdSwitcher();
 
 private:

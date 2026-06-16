@@ -7,7 +7,7 @@
 namespace DB
 {
 
-QueryIdSwitcher::QueryIdSwitcher(const std::string & new_query_id) noexcept
+QueryIdSwitcher::QueryIdSwitcher(const std::string & new_query_id)
 {
     if (!CurrentThread::isInitialized())
         return;
