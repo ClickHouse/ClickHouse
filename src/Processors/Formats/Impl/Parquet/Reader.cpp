@@ -953,22 +953,33 @@ std::optional<std::unordered_set<UInt64>> Reader::hashDictionaryValues(ColumnChu
         return std::nullopt;
     std::unordered_set<UInt64> value_hashes(hashes->begin(), hashes->end());
 
-    /// The dictionary holds only the non-null values. Under `input_format_null_as_default`, null
-    /// values in a non-nullable output column are decoded as the type's default value, which is not
-    /// in the dictionary; without accounting for it we'd wrongly skip a row group whose nulls match
-    /// the queried default (e.g. `WHERE x = 0` over an optional column read as non-nullable `UInt64`).
-    /// So when the chunk may contain nulls, add the default value's hash, mirroring the min/max path
-    /// in `adjustRangeFromIndexIfNeeded`.
-    bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
+    /// The dictionary holds only the non-null values of the column chunk, so we must account for how
+    /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
+    /// `adjustRangeFromIndexIfNeeded`.
+    bool nullable = column_info.levels.back().def > 0;
     bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
         || column.meta->meta_data.statistics.null_count != 0;
-    if (null_as_default && can_be_null)
+    if (nullable && can_be_null && !column_info.output_nullable)
     {
-        auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
-        /// If the default value can't be hashed, we can't rule out a match.
-        if (!default_hash.has_value())
+        if (options.format.null_as_default)
+        {
+            /// Under `input_format_null_as_default`, null values are decoded as the type's default
+            /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
+            /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
+            /// column read as non-nullable `UInt64`). So add the default value's hash.
+            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
+            /// If the default value can't be hashed, we can't rule out a match.
+            if (!default_hash.has_value())
+                return std::nullopt;
+            value_hashes.insert(*default_hash);
+        }
+        else
+        {
+            /// Reading a null into a non-nullable column raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
+            /// during decoding. Skipping the row group would suppress that error and change the query
+            /// result, so we must not prune: report that we can't rule out a match.
             return std::nullopt;
-        value_hashes.insert(*default_hash);
+        }
     }
 
     return value_hashes;
