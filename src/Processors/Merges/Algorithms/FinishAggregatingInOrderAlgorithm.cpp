@@ -20,26 +20,37 @@ FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortD
     if (!chunk)
         return;
 
-    sorting_columns.reserve(desc.size());
+    /// sorting_columns must be indexed by column_number (position in the header),
+    /// not by description iteration order, because less() uses elem.column_number
+    /// to index into this array. With the old code (emplace_back), sorting_columns
+    /// was indexed 0..desc.size()-1, but less() used column_number which is the
+    /// header position. When the sort description column order differed from the
+    /// header column order (e.g., GROUP BY a, b on a table ORDER BY b — header has
+    /// a at position 0 and b at position 1, but sort description is [b, a]),
+    /// the wrong columns were compared, corrupting merge group boundaries and
+    /// producing duplicate rows in the aggregation result.
+    sorting_columns.resize(all_columns.size(), nullptr);
     for (const auto & column_desc : desc)
-        sorting_columns.emplace_back(all_columns[column_desc.column_number].get());
+        sorting_columns[column_desc.column_number] = all_columns[column_desc.column_number].get();
 }
 
 FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     const SortDescription & description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_)
-    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
+    : num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
 {
     for (const auto & column_description : description_)
-        description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
+        description.emplace_back(column_description, header_->getPositionByName(column_description.column_name));
 }
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 {
+    removeReplicatedFromSortingColumns(inputs, description);
+    removeConstAndSparse(inputs);
     current_inputs = std::move(inputs);
     states.resize(num_inputs);
     for (size_t i = 0; i < num_inputs; ++i)
@@ -48,16 +59,16 @@ void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeReplicatedFromSortingColumns(input, description);
+    removeConstAndSparse(input);
     if (!input.chunk.hasRows())
         return;
 
-    const auto & info = input.chunk.getChunkInfo();
-    if (!info)
+    if (input.chunk.getChunkInfos().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
 
     Int64 allocated_bytes = 0;
-    /// Will be set by AggregatingInOrderTransform during local aggregation; will be nullptr during merging on initiator.
-    if (const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    if (auto arenas_info = input.chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
         allocated_bytes = arenas_info->allocated_bytes;
 
     states[source_num] = State{input.chunk, description, allocated_bytes};
@@ -113,7 +124,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     addToAggregation();
 
     /// At least one chunk should be fully aggregated.
-    assert(!inputs_to_update.empty());
+    chassert(!inputs_to_update.empty());
     Status status(inputs_to_update.back());
     inputs_to_update.pop_back();
 
@@ -126,6 +137,9 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
 Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 {
+    total_merged_rows += accumulated_rows;
+    total_merged_bytes += accumulated_bytes;
+
     accumulated_rows = 0;
     accumulated_bytes = 0;
 
@@ -134,7 +148,7 @@ Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
     info->chunk_num = chunk_num++;
 
     Chunk chunk;
-    chunk.setChunkInfo(std::move(info));
+    chunk.getChunkInfos().add(std::move(info));
     return chunk;
 }
 
@@ -161,11 +175,11 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
             chunks.emplace_back(std::move(new_columns), current_rows);
         }
 
-        chunks.back().setChunkInfo(std::make_shared<AggregatedChunkInfo>());
+        chunks.back().getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
         states[i].current_row = states[i].to_row;
 
         /// We assume that sizes in bytes of rows are almost the same.
-        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
+        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * static_cast<double>(current_rows) / static_cast<double>(states[i].num_rows));
         accumulated_rows += current_rows;
 
         if (!states[i].isValid())

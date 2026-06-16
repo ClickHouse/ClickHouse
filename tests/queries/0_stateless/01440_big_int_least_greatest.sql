@@ -30,5 +30,5 @@ SELECT  least(toUInt64('18446744073709551615'), toUInt256(0)) x, least(toUInt64(
         greatest(toUInt64('18446744073709551615'), toUInt256(0)) y, greatest(toUInt64('18446744073709551615'), toUInt256('18446744073709551616')) y2,
         toTypeName(x), toTypeName(y);
 
-SELECT least(toUInt32(0), toInt256(0)), greatest(toInt32(0), toUInt256(0)); -- { serverError 43 }
-SELECT least(toInt32(0), toUInt256(0)), greatest(toInt32(0), toUInt256(0)); -- { serverError 43 }
+SELECT least(toUInt32(0), toInt256(0)), greatest(toInt32(0), toUInt256(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT least(toInt32(0), toUInt256(0)), greatest(toInt32(0), toUInt256(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -72,12 +71,12 @@ struct AggregateFunctionSimpleLinearRegressionData final
 
     Float64 getK() const
     {
-        Float64 divisor = sum_xx * count - sum_x * sum_x;
+        Float64 divisor = sum_xx * static_cast<Float64>(count) - sum_x * sum_x;
 
         if (divisor == 0)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return (sum_xy * count - sum_x * sum_y) / divisor;
+        return (sum_xy * static_cast<Float64>(count) - sum_x * sum_y) / divisor;
     }
 
     Float64 getB(Float64 k) const
@@ -85,7 +84,7 @@ struct AggregateFunctionSimpleLinearRegressionData final
         if (count == 0)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return (sum_y - k * sum_x) / count;
+        return (sum_y - k * sum_x) / static_cast<Float64>(count);
     }
 };
 
@@ -123,22 +122,22 @@ public:
         Float64 x = columns[0]->getFloat64(row_num);
         Float64 y = columns[1]->getFloat64(row_num);
 
-        this->data(place).add(x, y);
+        data(place).add(x, y);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        data(place).deserialize(buf);
     }
 
     static DataTypePtr createResultType()
@@ -168,8 +167,8 @@ public:
         IColumn & to,
         Arena *) const override
     {
-        Float64 k = this->data(place).getK();
-        Float64 b = this->data(place).getB(k);
+        Float64 k = data(place).getK();
+        Float64 b = data(place).getB(k);
 
         auto & col_tuple = assert_cast<ColumnTuple &>(to);
         auto & col_k = assert_cast<ColumnVector<Float64> &>(col_tuple.getColumn(0));
@@ -200,9 +199,50 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
 
 }
 
+void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("simpleLinearRegression", createAggregateFunctionSimpleLinearRegression);
+    FunctionDocumentation::Description description_simpleLinearRegression = R"(
+Performs simple (unidimensional) linear regression.
+    )";
+    FunctionDocumentation::Syntax syntax_simpleLinearRegression = R"(
+simpleLinearRegression(x, y)
+    )";
+    FunctionDocumentation::Parameters parameters_simpleLinearRegression = {};
+    FunctionDocumentation::Arguments arguments_simpleLinearRegression = {
+        {"x", "Column with explanatory variable values.", {"Float64"}},
+        {"y", "Column with dependent variable values.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_simpleLinearRegression = {"Returns constants `(k, b)` of the resulting line `y = k*x + b`.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples_simpleLinearRegression = {
+    {
+        "Perfect linear fit",
+        R"(
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3]);
+        )",
+        R"(
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Linear fit with offset",
+        R"(
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
+        )",
+        R"(
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_simpleLinearRegression = {20, 1};
+    FunctionDocumentation::Category category_simpleLinearRegression = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_simpleLinearRegression = {description_simpleLinearRegression, syntax_simpleLinearRegression, arguments_simpleLinearRegression, parameters_simpleLinearRegression, returned_value_simpleLinearRegression, examples_simpleLinearRegression, introduced_in_simpleLinearRegression, category_simpleLinearRegression};
+
+    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, documentation_simpleLinearRegression});
 }
 
 }

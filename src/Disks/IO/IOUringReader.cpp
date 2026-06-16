@@ -1,18 +1,22 @@
-#include "IOUringReader.h"
-#include <memory>
+#include <Disks/IO/IOUringReader.h>
+#include <Common/ErrnoException.h>
 
 #if USE_LIBURING
 
-#include <base/errnoToString.h>
-#include <Common/assert_cast.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Common/logger_useful.h>
-#include <future>
+#    include <future>
+#    include <memory>
+#    include <base/MemorySanitizer.h>
+#    include <base/errnoToString.h>
+#    include <Common/CurrentMetrics.h>
+#    include <Common/CurrentMemoryTracker.h>
+#    include <Common/MemoryTracker.h>
+#    include <Common/MemoryTrackerSwitcher.h>
+#    include <Common/ProfileEvents.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/ThreadPool.h>
+#    include <Common/assert_cast.h>
+#    include <Common/logger_useful.h>
+#    include <Common/setThreadName.h>
 
 namespace ProfileEvents
 {
@@ -22,7 +26,8 @@ namespace ProfileEvents
     extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event IOUringSQEsSubmitted;
-    extern const Event IOUringSQEsResubmits;
+    extern const Event IOUringSQEsResubmitsAsync;
+    extern const Event IOUringSQEsResubmitsSync;
     extern const Event IOUringCQEsCompleted;
     extern const Event IOUringCQEsFailed;
 }
@@ -79,13 +84,37 @@ IOUringReader::IOUringReader(uint32_t entries_)
     if (ret < 0)
         ErrnoException::throwWithErrno(ErrorCodes::IO_URING_INIT_FAILED, -ret, "Failed initializing io_uring");
 
+    ssize_t ring_size = io_uring_mlock_size_params(entries_, &params);
+    if (ring_size > 0)
+    {
+        tracked_ring_size = static_cast<size_t>(ring_size);
+        /// The io_uring ring is a process-wide singleton, attribute its memory to global tracker
+        /// rather than the query that happens to trigger lazy initialization.
+        MemoryTrackerSwitcher switcher{&total_memory_tracker};
+        [[maybe_unused]] auto trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_ring_size));
+    }
+
     cq_entries = params.cq_entries;
-    ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
+    try
+    {
+        ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
+    }
+    catch (...)
+    {
+        io_uring_queue_exit(&ring);
+        if (tracked_ring_size)
+        {
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
+            tracked_ring_size = 0;
+        }
+        throw;
+    }
 }
 
 std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
 {
-    assert(request.size);
+    chassert(request.size);
 
     // take lock here because we're modifying containers and submitting to the ring,
     // the monitor thread can also do the same
@@ -120,19 +149,15 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
             }
             return (kv->second).promise.get_future();
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            return makeFailedResult(Exception(
-                ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
-        }
+
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        return makeFailedResult(
+            Exception(ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
     }
-    else
-    {
-        CurrentMetrics::add(CurrentMetrics::IOUringPendingEvents);
-        pending_requests.push_back(std::move(enqueued_request));
-        return pending_requests.back().promise.get_future();
-    }
+
+    CurrentMetrics::add(CurrentMetrics::IOUringPendingEvents);
+    pending_requests.push_back(std::move(enqueued_request));
+    return pending_requests.back().promise.get_future();
 }
 
 int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
@@ -149,10 +174,12 @@ int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
     io_uring_prep_read(sqe, fd, request.buf, static_cast<unsigned>(request.size - enqueued.bytes_read), request.offset + enqueued.bytes_read);
     int ret = 0;
 
-    do
+    ret = io_uring_submit(&ring);
+    while (ret == -EINTR || ret == -EAGAIN)
     {
+        ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsSync);
         ret = io_uring_submit(&ring);
-    } while (ret == -EINTR || ret == -EAGAIN);
+    }
 
     if (ret > 0 && !enqueued.resubmitting)
     {
@@ -209,7 +236,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 
 void IOUringReader::monitorRing()
 {
-    setThreadName("IOUringMonitor");
+    DB::setThreadName(ThreadName::IO_URING_MONITOR);
 
     while (!cancelled.load(std::memory_order_relaxed))
     {
@@ -266,7 +293,7 @@ void IOUringReader::monitorRing()
         if (cqe->res == -EAGAIN || cqe->res == -EINTR)
         {
             enqueued.resubmitting = true;
-            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmits);
+            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsAsync);
 
             ret = submitToRing(enqueued);
             if (ret <= 0)
@@ -310,6 +337,7 @@ void IOUringReader::monitorRing()
             // potential short read, re-submit
             enqueued.resubmitting = true;
             enqueued.bytes_read += bytes_read;
+            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsAsync);
 
             ret = submitToRing(enqueued);
             if (ret <= 0)
@@ -321,7 +349,7 @@ void IOUringReader::monitorRing()
         else
         {
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
-            enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore });
+            enqueued.promise.set_value(Result{ .buf = enqueued.request.buf, .size = total_bytes_read, .offset = enqueued.request.ignore, .file_offset_of_buffer_end = enqueued.request.offset + total_bytes_read });
             finalizeRequest(it);
         }
 
@@ -332,6 +360,9 @@ void IOUringReader::monitorRing()
 
 IOUringReader::~IOUringReader()
 {
+    if (!is_supported)
+        return;
+
     cancelled.store(true, std::memory_order_relaxed);
 
     // interrupt the monitor thread by sending a noop event
@@ -347,6 +378,12 @@ IOUringReader::~IOUringReader()
     ring_completion_monitor->join();
 
     io_uring_queue_exit(&ring);
+    if (tracked_ring_size)
+    {
+        MemoryTrackerSwitcher switcher{&total_memory_tracker};
+        [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
+        tracked_ring_size = 0;
+    }
 }
 
 }

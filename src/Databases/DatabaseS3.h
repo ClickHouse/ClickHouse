@@ -6,7 +6,7 @@
 
 #include <mutex>
 #include <Databases/IDatabase.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 
@@ -51,16 +51,15 @@ public:
 
     bool isReadOnly() const override { return true; }
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     void shutdown() override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const override;
 
     static Configuration parseArguments(ASTs engine_args, ContextPtr context);
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
     void addTable(const std::string & table_name, StoragePtr table_storage) const;

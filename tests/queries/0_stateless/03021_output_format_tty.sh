@@ -21,12 +21,6 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --query 'SELECT 1'"
-expect "│ 1 │"
-expect "└───┘"
-expect eof
-
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --query 'SELECT 2'"
-expect "│ 2 │"
-expect "└───┘"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --query 'SELECT 1, 2'"
+expect "1\t2"
 expect eof

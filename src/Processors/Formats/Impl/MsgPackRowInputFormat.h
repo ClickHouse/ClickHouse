@@ -6,7 +6,6 @@
 
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <msgpack.hpp>
 #include <stack>
@@ -61,18 +60,18 @@ private:
     bool null_as_default;
 };
 
-class MsgPackRowInputFormat : public IRowInputFormat
+class MsgPackRowInputFormat final : public IRowInputFormat
 {
 public:
-    MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
+    MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
-    String getName() const override { return "MagPackRowInputFormat"; }
+    String getName() const override { return "MsgPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
 
 private:
-    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
+    MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
@@ -88,7 +87,7 @@ private:
     const DataTypes data_types;
 };
 
-class MsgPackSchemaReader : public IRowSchemaReader
+class MsgPackSchemaReader final : public IRowSchemaReader
 {
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

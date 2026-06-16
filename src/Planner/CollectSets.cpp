@@ -1,27 +1,40 @@
 #include <Planner/CollectSets.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/PreparedSets.h>
-
 #include <Storages/StorageSet.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedSetJoin.h>
+#endif
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ColumnNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Interpreters/Set.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <TableFunctions/TableFunctionFactory.h>
+
+#include <unordered_set>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool transform_null_in;
+    extern const SettingsBool validate_enum_literals_in_operators;
+}
 
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -36,9 +49,45 @@ public:
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
+        if (const auto * table_node = node->as<TableFunctionNode>())
+        {
+            const auto & table_function_name = table_node->getTableFunctionName();
+            const auto & context = planner_context.getQueryContext();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, context);
+            auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
+
+            const auto & table_function_arguments = table_node->getArguments().getNodes();
+            size_t table_function_arguments_size = table_function_arguments.size();
+
+            for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+            {
+                const auto & table_function_argument = table_function_arguments[table_function_argument_index];
+
+                auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
+                if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+                {
+                    skip_children.insert(table_function_argument);
+                    continue;
+                }
+            }
+        }
+
+        if (const auto * constant_node = node->as<ConstantNode>())
+            /// Collect sets from source expression as well.
+            /// Most likely we will not build them, but those sets could be requested during analysis.
+            if (constant_node->hasSourceExpression())
+                collectSets(constant_node->getSourceExpression(), planner_context);
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
+
+        if (function_node->getArguments().getNodes().size() < 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function '{}' is expected to have at least 2 arguments, got {}",
+                function_node->getFunctionName(),
+                function_node->getArguments().getNodes().size());
 
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
@@ -54,64 +103,64 @@ public:
         if (storage_set)
         {
             /// Handle storage_set as ready set.
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findStorage(set_key))
                 return;
-
-            sets.addFromStorage(set_key, storage_set->getSet());
+            auto ast = in_second_argument->toAST();
+            sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(),
-                constant_node->getValue(),
-                constant_node->getResultType(),
-                settings.transform_null_in);
-            DataTypes set_element_types = {in_first_argument->getResultType()};
-            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-            if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-                set_element_types = left_tuple_type->getElements();
+                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
+                GetSetElementParams{
+                    .transform_null_in = settings[Setting::transform_null_in],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                });
 
-            set_element_types = Set::getElementTypes(std::move(set_element_types), settings.transform_null_in);
-            auto set_key = in_second_argument->getTreeHash();
+            if (set.empty())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Function '{}' second argument evaluated to Block with no columns",
+                    function_node->getFunctionName());
+
+            DataTypes set_element_types;
+            set_element_types.reserve(set.size());
+            /// Get the `set_element_types` from `set` instead of `in_first_argument` because
+            /// inside `getSetElementsForConstantValue`, we already do necessary transformation including
+            /// getting `dictionaryType` from `DataTypeLowCardinality`. Therefore, we can skip some steps here if
+            /// we directly use `set` to get the `set_element_types`.
+            for (const auto & elem : set)
+                set_element_types.push_back(elem.type);
+
+            set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
-            sets.addFromTuple(set_key, std::move(set), settings);
+            auto ast = in_second_argument->toAST();
+#if CLICKHOUSE_CLOUD
+            if (storage_set->getName() == "SharedSet")
+                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
+            else
+#endif
+            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findSubquery(set_key))
                 return;
 
             auto subquery_to_execute = in_second_argument;
-            if (auto * table_node = in_second_argument->as<TableNode>())
-            {
-                auto storage_snapshot = table_node->getStorageSnapshot();
-                auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
-                size_t columns_to_select_size = columns_to_select.size();
-                auto column_nodes_to_select = std::make_shared<ListNode>();
-                column_nodes_to_select->getNodes().reserve(columns_to_select_size);
-                NamesAndTypes projection_columns;
-                projection_columns.reserve(columns_to_select_size);
-                for (auto & column : columns_to_select)
-                {
-                    column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, subquery_to_execute));
-                    projection_columns.emplace_back(column.name, column.type);
-                }
-                auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(planner_context.getQueryContext()));
-                subquery_for_table->setIsSubquery(true);
-                subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
-                subquery_for_table->getJoinTree() = std::move(subquery_to_execute);
-                subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
-                subquery_to_execute = std::move(subquery_for_table);
-            }
+            if (in_second_argument->as<TableNode>())
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
+            auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
+            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else
         {
@@ -121,14 +170,21 @@ public:
         }
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
+        if (skip_children.contains(child_node))
+        {
+            skip_children.erase(child_node);
+            return false;
+        }
+
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
 private:
     PlannerContext & planner_context;
+    std::unordered_set<QueryTreeNodePtr> skip_children;
 };
 
 }

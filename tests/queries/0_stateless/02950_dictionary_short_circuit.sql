@@ -79,6 +79,10 @@ SELECT dictGetOrDefault('hashed_array_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
 SELECT dictGetOrDefault('hashed_array_dictionary', 'v3', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
+-- Fuzzer
+SELECT dictGetOrDefault('hashed_array_dictionary', ('v1', 'v2'), toUInt128(0), (materialize(toNullable(NULL)), intDiv(1, id), intDiv(1, id))) FROM dictionary_source_table; -- { serverError TYPE_MISMATCH }
+SELECT materialize(materialize(toLowCardinality(15))), dictGetOrDefault('hashed_array_dictionary', ('v1', 'v2'), 0, (intDiv(materialize(NULL), id), intDiv(1, id), intDiv(1, id))) FROM dictionary_source_table; -- { serverError TYPE_MISMATCH }
+SELECT dictGetOrDefault('hashed_array_dictionary', ('v1', 'v2'), 0, (toNullable(NULL), intDiv(1, id), intDiv(1, id))) FROM dictionary_source_table; -- { serverError TYPE_MISMATCH }
 DROP DICTIONARY hashed_array_dictionary;
 
 
@@ -189,15 +193,15 @@ LIFETIME(3600);
 SELECT 'IP TRIE dictionary';
 SELECT dictGetOrDefault('ip_dictionary', 'cca2', toIPv4('202.79.32.10'), intDiv(0, id))
 FROM ip_dictionary_source_table;
-SELECT dictGetOrDefault('ip_dictionary', ('asn', 'cca2'), IPv6StringToNum('2a02:6b8:1::1'), 
+SELECT dictGetOrDefault('ip_dictionary', ('asn', 'cca2'), IPv6StringToNum('2a02:6b8:1::1'),
 (intDiv(1, id), intDiv(1, id))) FROM ip_dictionary_source_table;
 DROP DICTIONARY ip_dictionary;
 
 
 DROP TABLE IF EXISTS polygon_dictionary_source_table;
-CREATE TABLE polygon_dictionary_source_table 
+CREATE TABLE polygon_dictionary_source_table
 (
-    key Array(Array(Array(Tuple(Float64, Float64)))), 
+    key Array(Array(Array(Tuple(Float64, Float64)))),
     name Nullable(String)
 ) ENGINE=TinyLog;
 
@@ -237,12 +241,12 @@ CREATE TABLE regexp_dictionary_source_table
     values Array(String),
 ) ENGINE=TinyLog;
 
-INSERT INTO regexp_dictionary_source_table VALUES (1, 0, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1'])
-INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
-INSERT INTO regexp_dictionary_source_table VALUES (3, 2, '33/tclwebkit', ['version'], ['13'])
-INSERT INTO regexp_dictionary_source_table VALUES (4, 2, '3[12]/tclwebkit', ['version'], ['12'])
-INSERT INTO regexp_dictionary_source_table VALUES (5, 2, '3[12]/tclwebkit', ['version'], ['11'])
-INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10'])
+INSERT INTO regexp_dictionary_source_table VALUES (1, 0, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1']);
+INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2']);
+INSERT INTO regexp_dictionary_source_table VALUES (3, 2, '33/tclwebkit', ['version'], ['13']);
+INSERT INTO regexp_dictionary_source_table VALUES (4, 2, '3[12]/tclwebkit', ['version'], ['12']);
+INSERT INTO regexp_dictionary_source_table VALUES (5, 2, '3[12]/tclwebkit', ['version'], ['11']);
+INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10']);
 
 DROP DICTIONARY IF EXISTS regexp_dict;
 create dictionary regexp_dict
@@ -258,7 +262,9 @@ LIFETIME(0)
 LAYOUT(regexp_tree);
 
 SELECT 'Regular Expression Tree dictionary';
-SELECT dictGetOrDefault('regexp_dict', 'name', concat(toString(number), '/tclwebkit', toString(number)), 
+SELECT dictGetOrDefault('regexp_dict', 'name', concat(toString(number), '/tclwebkit', toString(number)),
 intDiv(1,number)) FROM numbers(2);
+-- Fuzzer
+SELECT dictGetOrDefault('regexp_dict', 'name', concat('/tclwebkit', toString(number)), intDiv(1, number)) FROM numbers(2); -- { serverError ILLEGAL_DIVISION }
 DROP DICTIONARY regexp_dict;
 DROP TABLE regexp_dictionary_source_table;

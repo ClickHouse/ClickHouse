@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/ZooKeeper/Common.h>
 
+#include <boost/noncopyable.hpp>
 
 namespace zkutil
 {
@@ -8,7 +9,7 @@ namespace zkutil
 class ZooKeeperCachingGetter : boost::noncopyable
 {
 public:
-    enum class SessionStatus
+    enum class SessionStatus : uint8_t
     {
         New,
         Cached

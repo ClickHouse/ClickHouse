@@ -1,6 +1,8 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
 import logging
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -31,7 +33,7 @@ def test_distibuted_settings(start_cluster):
         DETACH TABLE dist_1;
     """
     )
-    assert "flush_on_detach = 1" in node.query("SHOW CREATE dist_1")
+    assert "flush_on_detach = true" in node.query("SHOW CREATE dist_1")
     # flush_on_detach=true, so data_1 should have 1 row
     assert int(node.query("SELECT count() FROM data_1")) == 1
 

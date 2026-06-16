@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
 
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -14,6 +16,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -28,7 +31,7 @@ namespace
 void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UInt64 & total_size)
 {
     /// Files or directories of detached part may not exist. Only count the size of existing files.
-    if (disk->isFile(from))
+    if (disk->existsFile(from))
     {
         total_size += disk->getFileSize(from);
     }
@@ -84,10 +87,10 @@ struct WorkerState
     std::atomic<size_t> next_task = {0};
 };
 
-class DetachedPartsSource : public ISource
+class DetachedPartsSource final : public ISource
 {
 public:
-    DetachedPartsSource(Block header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
+    DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
         : ISource(std::move(header_))
         , state(state_)
         , columns_mask(std::move(columns_mask_))
@@ -162,25 +165,16 @@ private:
             worker_state.tasks.push_back({part.disk, relative_path, &parts_sizes.at(p_id - begin)});
         }
 
-        std::vector<std::future<void>> futures;
-        SCOPE_EXIT_SAFE({
-            /// Cancel all workers
-            worker_state.next_task.store(worker_state.tasks.size());
-            /// Exceptions are not propagated
-            for (auto & future : futures)
-                if (future.valid())
-                    future.wait();
-            futures.clear();
-        });
-
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
-        futures.reserve(max_thread_to_run);
+
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::DETACHED_PARTS_BYTES);
 
         for (size_t i = 0; i < max_thread_to_run; ++i)
         {
             if (worker_state.next_task.load() >= worker_state.tasks.size())
                 break;
 
+            /// Passing a reference to worker_state is safe, because the variable outlives runner
             auto worker = [&worker_state] ()
             {
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
@@ -191,16 +185,10 @@ private:
                 }
             };
 
-            futures.push_back(
-                        scheduleFromThreadPool<void>(
-                            std::move(worker),
-                            getIOThreadPool().get(),
-                            "DP_BytesOnDisk"));
+            runner.enqueueAndKeepTrack(std::move(worker));
         }
 
-        /// Exceptions are propagated
-        for (auto & future : futures)
-            future.get();
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 
     void generateRows(MutableColumns & new_columns, size_t max_rows)
@@ -226,7 +214,7 @@ private:
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(current_info.table);
             if (columns_mask[src_index++])
-                new_columns[res_index++]->insert(p.valid_name ? p.partition_id : Field());
+                new_columns[res_index++]->insert(p.valid_name ? p.getPartitionId() : Field());
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.dir_name);
             if (columns_mask[src_index++])
@@ -269,7 +257,7 @@ private:
 }
 
 StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
@@ -286,7 +274,16 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
         {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemDetachedParts::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 class ReadFromSystemDetachedParts : public SourceStepWithFilter
@@ -303,7 +300,7 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -322,14 +319,15 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    ActionsDAGPtr filter;
+    std::optional<ActionsDAG> filter;
     const size_t max_block_size;
     const size_t num_streams;
 };
 
 void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
     {
         const auto * predicate = filter_actions_dag->getOutputs().at(0);
@@ -341,13 +339,13 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
 
-        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter)
-            VirtualColumnUtils::buildSetsForDAG(filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
 }
 
-void StorageSystemDetachedParts::read(
+void StorageSystemDetachedParts::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -373,13 +371,13 @@ void StorageSystemDetachedParts::read(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(nullptr, filter, context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
 
     Pipe pipe;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DetachedPartsSource>(getOutputStream().header, state, columns_mask, max_block_size);
+        auto source = std::make_shared<DetachedPartsSource>(getOutputHeader(), state, columns_mask, max_block_size);
         pipe.addSource(std::move(source));
     }
 

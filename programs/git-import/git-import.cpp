@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 #include <unordered_set>
 #include <unordered_map>
 #include <list>
@@ -14,12 +15,12 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
+#include <Common/shellQuote.h>
 #include <base/find_symbols.h>
 
-#include <IO/copyData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -233,7 +234,7 @@ struct Commit
 };
 
 
-enum class FileChangeType
+enum class FileChangeType : uint8_t
 {
     Add,
     Delete,
@@ -243,7 +244,7 @@ enum class FileChangeType
     Type,
 };
 
-void writeText(FileChangeType type, WriteBuffer & out)
+static void writeText(FileChangeType type, WriteBuffer & out)
 {
     switch (type)
     {
@@ -291,7 +292,7 @@ struct FileChange
 };
 
 
-enum class LineType
+enum class LineType : uint8_t
 {
     Empty,
     Comment,
@@ -299,7 +300,7 @@ enum class LineType
     Code,
 };
 
-void writeText(LineType type, WriteBuffer & out)
+static void writeText(LineType type, WriteBuffer & out)
 {
     switch (type)
     {
@@ -334,7 +335,7 @@ struct LineChange
       */
     void setLineInfo(std::string full_line)
     {
-        uint32_t num_spaces = 0;
+        UInt8 num_spaces = 0;
 
         const char * pos = full_line.data();
         const char * end = pos + full_line.size();
@@ -350,7 +351,7 @@ struct LineChange
             ++pos;
         }
 
-        indent = std::min(255U, num_spaces);
+        indent = std::min<UInt8>(255U, num_spaces);
         line.assign(pos, end);
 
         if (pos == end)
@@ -429,7 +430,7 @@ using CommitDiff = std::map<std::string /* path */, FileDiff>;
 
 /** Parsing helpers */
 
-void skipUntilWhitespace(ReadBuffer & buf)
+static void skipUntilWhitespace(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -444,7 +445,7 @@ void skipUntilWhitespace(ReadBuffer & buf)
     }
 }
 
-void skipUntilNextLine(ReadBuffer & buf)
+static void skipUntilNextLine(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -462,7 +463,7 @@ void skipUntilNextLine(ReadBuffer & buf)
     }
 }
 
-void readStringUntilNextLine(std::string & s, ReadBuffer & buf)
+static void readStringUntilNextLine(std::string & s, ReadBuffer & buf)
 {
     s.clear();
     while (!buf.eof())
@@ -529,6 +530,13 @@ struct ResultWriter
             }
         }
     }
+
+    void finalize()
+    {
+        commits.finalize();
+        file_changes.finalize();
+        line_changes.finalize();
+    }
 };
 
 
@@ -550,24 +558,24 @@ struct Options
         skip_commits_without_parents = options["skip-commits-without-parents"].as<bool>();
         skip_commits_with_duplicate_diffs = options["skip-commits-with-duplicate-diffs"].as<bool>();
         threads = options["threads"].as<size_t>();
-        if (options.count("skip-paths"))
+        if (options.contains("skip-paths"))
         {
             skip_paths.emplace(options["skip-paths"].as<std::string>());
         }
-        if (options.count("skip-commits-with-messages"))
+        if (options.contains("skip-commits-with-messages"))
         {
             skip_commits_with_messages.emplace(options["skip-commits-with-messages"].as<std::string>());
         }
-        if (options.count("skip-commit"))
+        if (options.contains("skip-commit"))
         {
             auto vec = options["skip-commit"].as<std::vector<std::string>>();
             skip_commits.insert(vec.begin(), vec.end());
         }
-        if (options.count("diff-size-limit"))
+        if (options.contains("diff-size-limit"))
         {
             diff_size_limit = options["diff-size-limit"].as<size_t>();
         }
-        if (options.count("stop-after-commit"))
+        if (options.contains("stop-after-commit"))
         {
             stop_after_commit = options["stop-after-commit"].as<std::string>();
         }
@@ -603,6 +611,8 @@ struct FileBlame
     /// This is important when file was copied or renamed.
     FileBlame & operator=(const FileBlame & rhs)
     {
+        if (&rhs == this)
+            return *this;
         lines = rhs.lines;
         it = lines.begin();
         current_idx = 1;
@@ -673,7 +683,7 @@ using Snapshot = std::map<std::string /* path */, FileBlame>;
   * - the author, time and commit of the previous change to every found line (blame).
   * And update the snapshot.
   */
-void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & file_changes)
+static void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & file_changes)
 {
     /// Renames and copies.
     for (auto & elem : file_changes)
@@ -748,7 +758,7 @@ void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & fil
   */
 using DiffHashes = std::unordered_set<UInt128>;
 
-UInt128 diffHash(const CommitDiff & file_changes)
+static UInt128 diffHash(const CommitDiff & file_changes)
 {
     SipHash hasher;
 
@@ -784,7 +794,7 @@ UInt128 diffHash(const CommitDiff & file_changes)
   * :100644 100644 828dedf6b5 828dedf6b5 R100       dbms/src/Functions/GeoUtils.h   dbms/src/Functions/PolygonUtils.h
   * according to the output of 'git show --raw'
   */
-void processFileChanges(
+static void processFileChanges(
     ReadBuffer & in,
     const Options & options,
     Commit & commit,
@@ -801,11 +811,11 @@ void processFileChanges(
             skipWhitespaceIfAny(in);
         }
 
-        char change_type;
+        char change_type = {};
         readChar(change_type, in);
 
         /// For rename and copy there is a number called "score". We ignore it.
-        int score;
+        int score = {};
 
         switch (change_type)
         {
@@ -876,7 +886,7 @@ void processFileChanges(
   * - we expect some specific format of the diff; but it may actually depend on git config;
   * - non-ASCII file names are not processed correctly (they will not be found and will be ignored).
   */
-void processDiffs(
+static void processDiffs(
     ReadBuffer & in,
     std::optional<size_t> size_limit,
     Commit & commit,
@@ -1039,16 +1049,14 @@ void processDiffs(
         }
 
         if (size_limit && diff_size > *size_limit)
-        {
             return;
-        }
     }
 }
 
 
 /** Process the "git show" result for a single commit. Append the result to tables.
   */
-void processCommit(
+static void processCommit(
     ReadBuffer & in,
     const Options & options,
     size_t commit_num,
@@ -1061,7 +1069,7 @@ void processCommit(
     Commit commit;
     commit.hash = hash;
 
-    time_t commit_time;
+    time_t commit_time = {};
     readText(commit_time, in);
     commit.time = LocalDateTime(commit_time);
     assertChar('\0', in);
@@ -1116,11 +1124,14 @@ void processCommit(
 /** Runs child process and allows to read the result.
   * Multiple processes can be run for parallel processing.
   */
-auto gitShow(const std::string & hash)
+static auto gitShow(const std::string & hash)
 {
+    /// `hash` is parsed from `git log --pretty=%H` output, which is hex-only today,
+    /// but quote it anyway so a future format change or a hand-crafted hash list
+    /// cannot inject shell syntax through `/bin/sh -c`.
     std::string command = fmt::format(
         "git show --raw --pretty='format:%ct%x00%aN%x00%P%x00%s%x00' --patch --unified=0 {}",
-        hash);
+        shellQuote(hash));
 
     return ShellCommand::execute(command);
 }
@@ -1128,7 +1139,7 @@ auto gitShow(const std::string & hash)
 
 /** Obtain the list of commits and process them.
   */
-void processLog(const Options & options)
+static void processLog(const Options & options)
 {
     ResultWriter result;
 
@@ -1170,7 +1181,9 @@ void processLog(const Options & options)
 
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        ReadBuffer & show_in = show_commands[i % num_threads]->out;
+        processCommit(show_in, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        show_in.ignoreAll();
 
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;
@@ -1178,17 +1191,20 @@ void processLog(const Options & options)
         if (i + num_threads < num_commits)
             show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
+
+    result.finalize();
 }
 
 
 }
 
+int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv)
 try
 {
     using namespace DB;
 
-    po::options_description desc("Allowed options", getTerminalWidth());
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
@@ -1214,14 +1230,14 @@ try
     po::variables_map options;
     po::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         std::cout << documentation << '\n'
-            << "Usage: " << argv[0] << '\n'
+            << "Usage: clickhouse git-import\n"
             << desc << '\n'
             << "\nExample:\n"
             << "\nclickhouse git-import --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
-        return 1;
+        return 0;
     }
 
     processLog(Options(options));

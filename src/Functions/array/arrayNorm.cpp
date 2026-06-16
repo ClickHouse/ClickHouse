@@ -1,12 +1,12 @@
 #include <cmath>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -25,19 +25,19 @@ struct L1Norm
     struct ConstParams {};
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return result + fabs(value);
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -50,19 +50,19 @@ struct L2Norm
     struct ConstParams {};
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return result + value * value;
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return sqrt(result);
     }
@@ -73,7 +73,7 @@ struct L2SquaredNorm : L2Norm
     static constexpr auto name = "L2Squared";
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -91,19 +91,19 @@ struct LpNorm
     };
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
     {
         return result + static_cast<ResultType>(std::pow(fabs(value), params.power));
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams & params)
+    static ResultType finalize(ResultType result, const ConstParams & params)
     {
         return static_cast<ResultType>(std::pow(result, params.inverted_power));
     }
@@ -116,27 +116,72 @@ struct LinfNorm
     struct ConstParams {};
 
     template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return fmax(result, fabs(value));
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return fmax(result, other_result);
     }
 
     template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
+    static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
 };
 
 
+/// Auto-vectorized norm reduction kernel, modeled after the `arrayDotProduct` kernel. Manual unrolling
+/// with independent accumulators breaks the FP dependency chain so the compiler can keep several SIMD
+/// registers in flight and (for `L2`/`L2Squared`) fuse `a*b + c` into FMA.
+///
+/// The whole row loop lives inside this single multitarget call: an `x86_64_v4` (AVX-512) specialisation
+/// cannot be inlined into the `v2`-baseline caller, so a per-row call would impose a hard boundary every
+/// ~150 elements that interrupts the hardware prefetcher's stream. Batching all rows into one call keeps
+/// the load stream continuous across row boundaries, which matters for the bandwidth-bound `Float64` paths.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename Kernel, typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    normBatchImpl,
+    MULTITARGET_FUNCTION_BODY((
+        const ArgumentType * __restrict data,
+        const ColumnArray::Offset * __restrict offsets,
+        ResultType * __restrict result_data,
+        size_t input_rows_count,
+        const typename Kernel::ConstParams & params)
+    {
+        constexpr size_t unroll_count = 16;
+        ColumnArray::Offset prev = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const size_t count = offsets[row] - prev;
+            const ArgumentType * __restrict row_data = data + prev;
+
+            ResultType partial_results[unroll_count]{};
+            size_t i = 0;
+            const size_t unrolled_end = count / unroll_count * unroll_count;
+            for (; i < unrolled_end; i += unroll_count)
+                for (size_t s = 0; s < unroll_count; ++s)
+                    partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], static_cast<ResultType>(row_data[i + s]), params);
+
+            ResultType result = 0;
+            for (auto & partial_result : partial_results)
+                result = Kernel::template combine<ResultType>(result, partial_result, params);
+
+            for (; i < count; ++i)
+                result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(row_data[i]), params);
+
+            result_data[row] = Kernel::finalize(result, params);
+            prev = offsets[row];
+        }
+    }))
+
+
 template <class Kernel>
-class FunctionArrayNorm : public IFunction
+class FunctionArrayNorm final : public IFunction
 {
 public:
     String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
@@ -154,24 +199,26 @@ public:
 
         switch (array_type->getNestedType()->getTypeId())
         {
+            case TypeIndex::BFloat16:
+            case TypeIndex::Float32:
+                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt8:
             case TypeIndex::UInt16:
             case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
-            case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    getName(), array_type->getNestedType()->getName());
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    getName(),
+                    array_type->getNestedType()->getName());
         }
     }
 
@@ -205,6 +252,7 @@ private:
     action(Int16)   \
     action(Int32)   \
     action(Int64)   \
+    action(BFloat16) \
     action(Float32) \
     action(Float64)
 
@@ -225,8 +273,8 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Arguments of function {} have nested type {}. "
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(), nested_type->getName());
         }
     }
@@ -242,31 +290,16 @@ private:
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-        ColumnArray::Offset prev = 0;
-        size_t row = 0;
-        for (auto off : offsets)
-        {
-            /// Process chunks in vectorized manner
-            static constexpr size_t VEC_SIZE = 4;
-            ResultType results[VEC_SIZE] = {0};
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
-            {
-                for (size_t s = 0; s < VEC_SIZE; ++s)
-                    results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + s]), kernel_params);
-            }
-
-            ResultType result = 0;
-            for (const auto & other_state : results)
-                result = Kernel::template combine<ResultType>(result, other_state, kernel_params);
-
-            /// Process the tail
-            for (; prev < off; ++prev)
-            {
-                result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev]), kernel_params);
-            }
-            result_data[row] = Kernel::finalize(result, kernel_params);
-            row++;
-        }
+        /// The entire row loop is handled in a single multitarget call (runtime-dispatched to AVX-512 when
+        /// available, else the baseline variant), keeping the load stream continuous across rows. The kernel
+        /// widens each element to `ResultType` internally, so `BFloat16` (-> Float32) and integers (-> Float64)
+        /// take the same vectorized path as `Float32`/`Float64` (see `normBatchImpl`).
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+            normBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+#endif
+            normBatchImpl<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         return result_col;
     }
 
@@ -294,7 +327,7 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
                     "Argument p of function {} must be numeric constant",
                     getName());
 
-    if (!isColumnConst(*arguments[1].column) && arguments[1].column->size() != 1)
+    if (!isColumnConst(*arguments[1].column))
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Second argument for function {} must be either constant Float64 or constant UInt",
@@ -312,6 +345,11 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
 
 
 /// These functions are used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
+FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
+FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
+FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
+FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_) { return FunctionArrayNorm<L2SquaredNorm>::create(context_); }

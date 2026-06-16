@@ -1,17 +1,22 @@
-#include "QueryProfiler.h"
+#include <Common/QueryProfiler.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <base/phdr_cache.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
-#include <Common/thread_local_rng.h>
+#include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
-#include <base/phdr_cache.h>
-#include <base/errnoToString.h>
+#include <Common/thread_local_rng.h>
+#include <csignal>
 
-#include <random>
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -24,6 +29,7 @@ namespace ProfileEvents
     extern const Event QueryProfilerSignalOverruns;
     extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
+    extern const Event QueryProfilerErrors;
 }
 
 namespace DB
@@ -54,12 +60,15 @@ namespace
             return;
         }
 
-        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+        const auto saved_errno = errno; /// We must restore previous value of errno in signal handler.
 
 #if defined(OS_LINUX)
         if (info)
         {
-            int overrun_count = info->si_overrun;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+            const int overrun_count = info->si_overrun;
+#pragma clang diagnostic pop
 
             /// Quickly drop if signal handler is called too frequently.
             /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
@@ -82,16 +91,35 @@ namespace
         UNUSED(info);
 #endif
 
+        std::optional<StackTrace> stack_trace;
+
+#if defined(THREAD_SANITIZER)
+        /// Under TSan, use abseil's frame-pointer-based unwinding (via the default
+        /// StackTrace constructor) instead of the ucontext_t constructor which uses libunwind.
+        UNUSED(context);
+        stack_trace.emplace();
+#else
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        const StackTrace stack_trace(signal_context);
+        asynchronous_stack_unwinding = true;
+        if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        {
+            stack_trace.emplace(signal_context);
+        }
+        else
+        {
+            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
+        }
+        asynchronous_stack_unwinding = false;
+#endif
 
-        TraceSender::send(trace_type, stack_trace, {});
+        if (stack_trace)
+            TraceSender::send(trace_type, *stack_trace, {});
+
         ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
-
         errno = saved_errno;
     }
 
-    [[maybe_unused]] constexpr UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] constexpr UInt64 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
@@ -103,7 +131,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#ifndef __APPLE__
+#if defined(SIGEV_THREAD_ID)
 Timer::Timer()
     : log(getLogger("Timer"))
 {}
@@ -119,11 +147,14 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 #if defined(OS_FREEBSD)
         sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
 #elif defined(USE_MUSL)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
+#pragma clang diagnostic pop
 #else
         sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
-        timer_t local_timer_id;
+        timer_t local_timer_id = nullptr;
         if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
@@ -148,19 +179,18 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
     }
 }
 
-void Timer::set(UInt32 period)
+void Timer::set(UInt64 period)
 {
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    if (period < 1000000)
-        period = 1000000;
+    period = std::max<UInt64>(period, 1000000);
     /// Randomize offset as uniform random value from 0 to period - 1.
     /// It will allow to sample short queries even if timer period is large.
     /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
     /// It also helps to avoid interference (moire).
-    UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(thread_local_rng);
+    UInt64 period_rand = std::uniform_int_distribution<UInt64>(0, period)(thread_local_rng);
 
-    struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
-    struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
+    struct timespec interval{.tv_sec = time_t(period / TIMER_PRECISION), .tv_nsec = int64_t(period % TIMER_PRECISION)};
+    struct timespec offset{.tv_sec = time_t(period_rand / TIMER_PRECISION), .tv_nsec = int64_t(period_rand % TIMER_PRECISION)};
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
@@ -210,29 +240,24 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
-    : log(getLogger("QueryProfiler"))
-    , pause_signal(pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
+    [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt64 period, [[maybe_unused]] int pause_signal_)
+    : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
-#if defined(SANITIZER)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif defined(__APPLE__)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
-#else
-    /// Sanity check.
+#if defined(SIGEV_THREAD_ID)
+    /// Under TSan we use frame-pointer-based unwinding (via abseil) which does not
+    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed for
+    /// stack capture. Symbolization happens later in a normal thread context.
+#if !defined(THREAD_SANITIZER)
     if (!hasPHDRCache())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache in this build");
+#endif
 
+    /// `sigaction` is `#define sigaction __sigaction` on some platforms, and
+    /// `sigemptyset` / `sigaddset` are similarly macro-defined in <signal.h>,
+    /// so all three trigger `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     struct sigaction sa{};
     sa.sa_sigaction = ProfilerImpl::signalHandler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -242,6 +267,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 
     if (sigaddset(&sa.sa_mask, pause_signal))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
+#pragma clang diagnostic pop
 
     if (sigaction(pause_signal, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
@@ -257,6 +283,19 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         timer.cleanup();
         throw;
     }
+#else
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");
+#endif
+}
+
+
+template <typename ProfilerImpl>
+void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
+{
+#if defined(SIGEV_THREAD_ID)
+    timer.set(period_);
+#else
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");
 #endif
 }
 
@@ -276,7 +315,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
-#ifndef __APPLE__
+#if defined(SIGEV_THREAD_ID)
     timer.stop();
     signal_handler_disarmed = true;
 #endif
@@ -285,8 +324,8 @@ void QueryProfilerBase<ProfilerImpl>::cleanup()
 template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCPU>;
 
-QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt32 period)
-    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
+QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt64 period)
+    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, PAUSE_SIGNAL)
 {}
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
@@ -298,8 +337,8 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
-QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt32 period)
-    : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
+QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt64 period)
+    : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, PAUSE_SIGNAL)
 {}
 
 void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)

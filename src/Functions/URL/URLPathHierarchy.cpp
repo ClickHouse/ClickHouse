@@ -30,7 +30,7 @@ public:
             {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
     static constexpr auto strings_argument_position = 0uz;
@@ -63,13 +63,14 @@ public:
              * (http, file - fit, mailto, magnet - do not fit), and after two slashes still at least something is there
              * For the rest, simply return the full URL as the only element of the hierarchy.
              */
-            if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+            if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
             {
                 pos = end;
                 token_begin = begin;
                 token_end = end;
                 return true;
             }
+            pos += 3;
 
             /// The domain for simplicity is everything that after the protocol and two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -109,7 +110,20 @@ using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
 
 REGISTER_FUNCTION(URLHierarchy)
 {
-    factory.registerFunction<FunctionURLHierarchy>();
+    FunctionDocumentation::Description description = R"(
+Returns an array containing the URL, truncated at the end by the symbols `/`, `?` and `#` in the path and query string. Consecutive separator characters are counted as one. The result includes the protocol and host as the first element, with progressively longer paths forming a hierarchy.
+    )";
+    FunctionDocumentation::Syntax syntax = "URLHierarchy(url)";
+    FunctionDocumentation::Arguments arguments = {
+        {"url", "The URL to process.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of progressively longer URLs forming a hierarchy.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT URLHierarchy('https://example.com/a/b?c=1')", "['https://example.com/','https://example.com/a/','https://example.com/a/b','https://example.com/a/b?c=1']"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1,1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionURLHierarchy>(documentation);
 }
 
 }

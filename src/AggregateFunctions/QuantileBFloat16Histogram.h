@@ -115,6 +115,19 @@ private:
     using Pair = PairNoInit<Float32, Weight>;
 
     template <typename T>
+    static T safeCast(Float32 x)
+    {
+        if constexpr (!std::is_floating_point_v<T>)
+        {
+            if (x >= static_cast<Float32>(std::numeric_limits<T>::max())) [[unlikely]]
+                return std::numeric_limits<T>::max();
+            if (x <= std::numeric_limits<T>::min()) [[unlikely]]
+                return std::numeric_limits<T>::min();
+        }
+        return static_cast<T>(x);
+    }
+
+    template <typename T>
     T getImpl(Float64 level) const
     {
         size_t size = data.size();
@@ -129,7 +142,7 @@ private:
         Pair * arr_it = array;
         for (const auto & pair : data)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
@@ -141,13 +154,13 @@ private:
 
         for (const Pair * p = array; p != (array + size); ++p)
         {
-            accumulated += p->second;
+            accumulated += static_cast<Float64>(p->second);
 
             if (accumulated >= threshold)
-                return static_cast<T>(p->first);
+                return safeCast<T>(p->first);
         }
 
-        return static_cast<T>(array[size - 1].first);
+        return safeCast<T>(array[size - 1].first);
     }
 
     template <typename T>
@@ -170,7 +183,7 @@ private:
         Pair * arr_it = array;
         for (const auto & pair : data)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
@@ -183,11 +196,11 @@ private:
 
         for (const Pair * p = array; p != (array + size); ++p)
         {
-            accumulated += p->second;
+            accumulated += static_cast<Float64>(p->second);
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = static_cast<T>(p->first);
+                result[indices[level_index]] = safeCast<T>(p->first);
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -199,7 +212,7 @@ private:
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = static_cast<T>(array[size - 1].first);
+            result[indices[level_index]] = safeCast<T>(array[size - 1].first);
             ++level_index;
         }
     }

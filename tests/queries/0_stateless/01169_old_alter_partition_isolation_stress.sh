@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-ordinary-database
+# Tags: long, no-replicated-database, no-ordinary-database, zookeeper
 
 # shellcheck disable=SC2015
 
@@ -19,7 +19,7 @@ function thread_insert()
     set -e
     val=1
     while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
         INSERT INTO src VALUES /* ($val, 2) */ ($val, 2);
@@ -40,7 +40,7 @@ function thread_partition_src_to_dst()
     sum=0
     for i in {1..20}; do
         out=$(
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($i, 3) */ ($i, 3);
         INSERT INTO dst SELECT * FROM src;
@@ -49,7 +49,7 @@ function thread_partition_src_to_dst()
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=3) != ($count + 1, $sum + $i)) FORMAT Null;
         COMMIT;" 2>&1) ||:
 
-        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --multiquery --query "
+        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --query "
                                                                                    begin transaction;
                                                                                    set transaction snapshot 3;
                                                                                    select $i, 'src', type, n, _part from src order by type, n;
@@ -68,7 +68,7 @@ function thread_partition_dst_to_src()
         if (( i % 2 )); then
             action="COMMIT"
         fi
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         SYSTEM STOP MERGES dst;
         ALTER TABLE dst DROP PARTITION ID 'nonexistent';  -- STOP MERGES doesn't wait for started merges to finish, so we use this trick
         SYSTEM SYNC TRANSACTION LOG;
@@ -87,7 +87,7 @@ function thread_select()
 {
     set -e
     while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         -- no duplicates
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM src GROUP BY type FORMAT Null;
@@ -110,8 +110,8 @@ wait $PID_3 && wait $PID_4
 
 kill -TERM $PID_1
 kill -TERM $PID_2
-wait
-wait_for_queries_to_finish
+wait ||:
+wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT --implicit_transaction=1 --throw_on_unsupported_query_inside_transaction=0 -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
 $CLICKHOUSE_CLIENT --implicit_transaction=1 --throw_on_unsupported_query_inside_transaction=0 -q "SELECT DISTINCT arraySort(groupArrayIf(n, type=1)) = arraySort(groupArrayIf(n, type=2)) FROM merge(currentDatabase(), '') GROUP BY _table ORDER BY _table"

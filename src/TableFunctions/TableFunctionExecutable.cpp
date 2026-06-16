@@ -1,19 +1,24 @@
 
-#include <Common/Exception.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ExecutableSettings.h>
 #include <Storages/StorageExecutable.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <boost/algorithm/string.hpp>
-#include "registerTableFunctions.h"
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
+#include <boost/program_options/parsers.hpp>
+#include <boost/token_functions.hpp>
+#include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -48,35 +53,35 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "Executable"; }
+    const char * getStorageEngineName() const override { return "Executable"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String script_name;
-    std::vector<String> arguments;
+    VectorWithMemoryTracking<String> arguments;
     String format;
     String structure;
-    std::vector<ASTPtr> input_queries;
+    VectorWithMemoryTracking<ASTPtr> input_queries;
     ASTPtr settings_query = nullptr;
 };
 
 
-std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
-    if (table_function_node_arguments_size <= 2)
+    if (table_function_node_arguments_size <= 3)
         return {};
 
-    std::vector<size_t> result_indexes;
-    result_indexes.reserve(table_function_node_arguments_size - 2);
-    for (size_t i = 2; i < table_function_node_arguments_size; ++i)
+    VectorWithMemoryTracking<size_t> result_indexes;
+    result_indexes.reserve(table_function_node_arguments_size - 3);
+    for (size_t i = 3; i < table_function_node_arguments_size; ++i)
         result_indexes.push_back(i);
 
     return result_indexes;
@@ -103,10 +108,11 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         if (!args[i]->as<ASTIdentifier>() &&
             !args[i]->as<ASTLiteral>() &&
             !args[i]->as<ASTQueryParameter>() &&
-            !args[i]->as<ASTSubquery>())
+            !args[i]->as<ASTSubquery>() &&
+            !args[i]->as<ASTFunction>())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal",
-                argument_name, getName());
+                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal, but got: {}",
+                argument_name, getName(), args[i]->formatForErrorMessage());
     };
 
     check_argument(0, "script_name");
@@ -118,12 +124,24 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
 
-    std::vector<String> script_name_with_arguments;
-    boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
+    auto script_name_with_arguments = [&]()
+    {
+        try
+        {
+            return boost::program_options::split_unix(script_name_with_arguments_value);
+        }
+        catch (const boost::escaped_list_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse script name and arguments: {}", e.what());
+        }
+    }();
+
+    if (script_name_with_arguments.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Script name cannot be empty");
 
     script_name = std::move(script_name_with_arguments[0]);
     script_name_with_arguments.erase(script_name_with_arguments.begin());
-    arguments = std::move(script_name_with_arguments);
+    arguments.assign(script_name_with_arguments.begin(), script_name_with_arguments.end());
     format = checkAndGetLiteralArgument<String>(args[1], "format");
     structure = checkAndGetLiteralArgument<String>(args[2], "structure");
 
@@ -170,7 +188,14 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     if (settings_query != nullptr)
         settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
-    auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context, is_insert_query), ConstraintsDescription{});
+    auto storage = std::make_shared<StorageExecutable>(
+        storage_id,
+        format,
+        settings,
+        input_queries,
+        getActualTableStructure(context, is_insert_query),
+        ConstraintsDescription{},
+        /* comment = */ "");
     storage->startup();
     return storage;
 }
@@ -179,7 +204,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
 
 void registerTableFunctionExecutable(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExecutable>();
+    factory.registerFunction<TableFunctionExecutable>({});
 }
 
 }

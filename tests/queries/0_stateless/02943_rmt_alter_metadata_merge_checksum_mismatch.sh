@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-shared-merge-tree
 # Tag no-parallel: failpoint is in use
+# Tag no-shared-merge-tree: looks like it tests a specific behaviour of ReplicatedMergeTree with failpoints
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,16 +26,18 @@ function wait_part()
 
 function restore_failpoints()
 {
+    if [ -z "$failed_replica" ]; then
+        return
+    fi
+
     # restore entry error with failpoints (to avoid endless errors in logs)
-    $CLICKHOUSE_CLIENT -nm -q "
-        system enable failpoint replicated_queue_unfail_entries;
-        system sync replica $failed_replica;
-        system disable failpoint replicated_queue_unfail_entries;
-    "
+    $CLICKHOUSE_CLIENT -q "system enable failpoint replicated_queue_unfail_entries" ||:
+    $CLICKHOUSE_CLIENT -q "system sync replica $failed_replica" ||:
+    $CLICKHOUSE_CLIENT -q "system disable failpoint replicated_queue_unfail_entries" ||:
 }
 trap restore_failpoints EXIT
 
-$CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
+$CLICKHOUSE_CLIENT -m --insert_keeper_fault_injection_probability=0 -q "
     drop table if exists data_r1;
     drop table if exists data_r2;
 
@@ -42,10 +45,16 @@ $CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
     create table data_r2 (key Int, value Int, index value_idx value type minmax) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/data', '{table}') order by key;
 
     insert into data_r1 (key) values (1); -- part all_0_0_0
+
+    -- Sync both replicas before enabling the failpoint, to ensure there are
+    -- no pending queue entries (e.g. GET_PART for data_r2) that could consume
+    -- the ONCE failpoint instead of the intended ALTER_METADATA entry.
+    system sync replica data_r1;
+    system sync replica data_r2;
 "
 
 # will fail ALTER_METADATA on one of replicas
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     system enable failpoint replicated_queue_fail_next_entry;
     alter table data_r1 drop index value_idx settings alter_sync=0; -- part all_0_0_0_1
 
@@ -75,13 +84,16 @@ esac
 mutations_on_failed_replica="$($CLICKHOUSE_CLIENT -q "select count() from system.mutations where database = '$CLICKHOUSE_DATABASE' and table = '$failed_replica' and is_done = 0")"
 if [[ $mutations_on_failed_replica != 1 ]]; then
     echo "Wrong number of mutations on failed replica $failed_replica, mutations $mutations_on_failed_replica" >&2
+    exit 1
 fi
 
 # This will create MERGE_PARTS, on failed replica it will be fetched from source replica (since it does not have all parts to execute merge)
 $CLICKHOUSE_CLIENT -q "optimize table $success_replica final settings optimize_throw_if_noop=1, alter_sync=1" # part all_0_0_1_1
 
-$CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
+$CLICKHOUSE_CLIENT -m --insert_keeper_fault_injection_probability=0 -q "
     insert into $success_replica (key) values (2); -- part all_2_2_0
+    -- Avoid 'Cannot select parts for optimization: Entry for part all_2_2_0 hasn't been read from the replication log yet'
+    system sync replica $success_replica pull;
     optimize table $success_replica final settings optimize_throw_if_noop=1, alter_sync=1; -- part all_0_2_2_1
     system sync replica $failed_replica pull;
 "
@@ -93,6 +105,6 @@ wait_part "$failed_replica" all_0_2_2_1
 restore_failpoints
 trap '' EXIT
 
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs part_log"
 # check for error "Different number of files: 5 compressed (expected 3) and 2 uncompressed ones (expected 2). (CHECKSUM_DOESNT_MATCH)"
-$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"
+$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"

@@ -1,17 +1,20 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Types.h>
 
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
 {
 class IAST;
 struct Settings;
-enum class UserDefinedSQLObjectType;
+enum class UserDefinedSQLObjectType : uint8_t;
 
 /// Interface for a storage of user-defined SQL objects.
 /// Implementations: UserDefinedSQLObjectsDiskStorage, UserDefinedSQLObjectsZooKeeperStorage
@@ -37,10 +40,10 @@ public:
     virtual bool has(const String & object_name) const = 0;
 
     /// Get all user defined object names.
-    virtual std::vector<String> getAllObjectNames() const = 0;
+    virtual Strings getAllObjectNames() const = 0;
 
     /// Get all user defined objects.
-    virtual std::vector<std::pair<String, ASTPtr>> getAllObjects() const = 0;
+    virtual VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const = 0;
 
     /// Check whether any UDFs have been stored.
     virtual bool empty() const = 0;

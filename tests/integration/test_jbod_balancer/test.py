@@ -7,6 +7,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
 
@@ -19,7 +20,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
+    tmpfs=["/test_jbod_balancer_jbod1:size=100M", "/test_jbod_balancer_jbod2:size=100M", "/test_jbod_balancer_jbod3:size=100M"],
     macros={"shard": 0, "replica": 1},
 )
 
@@ -29,7 +30,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
+    tmpfs=["/test_jbod_balancer_jbod1:size=100M", "/test_jbod_balancer_jbod2:size=100M", "/test_jbod_balancer_jbod3:size=100M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -77,7 +78,7 @@ def check_balance(node, table):
 
 
 def wait_until_fully_merged(node, table):
-    for i in range(20):
+    for i in range(200):
         # Wait in-flight merges to finish
         merges_count_query = (
             f"select count() from system.merges where table = '{table}'"
@@ -90,7 +91,7 @@ def wait_until_fully_merged(node, table):
         except:
             return
 
-    raise Exception(f"There are still merges on-going after {retry} assignments")
+    raise Exception(f"There are still merges on-going after {i} assignments")
 
 
 def test_jbod_balanced_merge(start_cluster):

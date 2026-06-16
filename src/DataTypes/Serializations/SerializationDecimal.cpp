@@ -1,4 +1,6 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
 #include <IO/ReadHelpers.h>
@@ -59,7 +61,7 @@ void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_n
 template <typename T>
 void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    T x;
+    T x{};
     readText(x, istr);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 
@@ -70,7 +72,7 @@ void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & ist
 template <typename T>
 bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
 {
-    T x;
+    T x{};
     if (!tryReadText(x, istr) || (whole && !istr.eof()))
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -80,7 +82,7 @@ bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & 
 template <typename T>
 void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    T x;
+    T x{};
     readText(x, istr, true);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -88,7 +90,7 @@ void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & 
 template <typename T>
 bool SerializationDecimal<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    T x;
+    T x{};
     if (!tryReadText(x, istr, true))
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -120,7 +122,7 @@ template <typename T>
 bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     bool have_quotes = checkChar('"', istr);
-    T x;
+    T x{};
     if (!tryReadText(x, istr) || (have_quotes && !checkChar('"', istr)))
         return false;
 
@@ -128,6 +130,23 @@ bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     return true;
 }
 
+
+template <typename T>
+UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
+{
+    SipHash hash;
+    hash.update("Decimal");
+    hash.update(TypeName<T>);
+    hash.update(precision_);
+    hash.update(scale_);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationDecimal<T>::create(UInt32 precision_, UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(precision_, scale_), [=] { return new SerializationDecimal(precision_, scale_); });
+}
 
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;

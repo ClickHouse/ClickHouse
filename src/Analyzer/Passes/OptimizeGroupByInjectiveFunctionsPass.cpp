@@ -1,34 +1,21 @@
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/IQueryTreeNode.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
+#include <Analyzer/QueryNode.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool optimize_injective_functions_in_group_by;
+    extern const SettingsBool allow_suspicious_types_in_group_by;
+}
 
 namespace
 {
-
-const std::unordered_set<String> possibly_injective_function_names
-{
-        "dictGet",
-        "dictGetString",
-        "dictGetUInt8",
-        "dictGetUInt16",
-        "dictGetUInt32",
-        "dictGetUInt64",
-        "dictGetInt8",
-        "dictGetInt16",
-        "dictGetInt32",
-        "dictGetInt64",
-        "dictGetFloat32",
-        "dictGetFloat64",
-        "dictGetDate",
-        "dictGetDateTime"
-};
 
 class OptimizeGroupByInjectiveFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByInjectiveFunctionsVisitor>
 {
@@ -40,14 +27,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_injective_functions_in_group_by)
+        if (!getSettings()[Setting::optimize_injective_functions_in_group_by])
             return;
 
         /// Don't optimize injective functions when group_by_use_nulls=true,
         /// because in this case we make initial group by keys Nullable
         /// and eliminating some functions can cause issues with arguments Nullability
         /// during their execution. See examples in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2008181143
-        if (getSettings().group_by_use_nulls)
+        if (getSettings()[Setting::group_by_use_nulls])
             return;
 
         auto * query = node->as<QueryNode>();
@@ -60,63 +47,19 @@ public:
         if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
+        bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
+
         auto & group_by = query->getGroupBy().getNodes();
         if (query->isGroupByWithGroupingSets())
         {
             for (auto & set : group_by)
             {
                 auto & grouping_set = set->as<ListNode>()->getNodes();
-                optimizeGroupingSet(grouping_set);
+                grouping_set = unwrapInjectiveFunctionsInKeys(grouping_set, allow_suspicious_types);
             }
         }
         else
-            optimizeGroupingSet(group_by);
-    }
-
-private:
-    void optimizeGroupingSet(QueryTreeNodes & grouping_set)
-    {
-        auto context = getContext();
-
-        QueryTreeNodes new_group_by_keys;
-        new_group_by_keys.reserve(grouping_set.size());
-        for (auto & group_by_elem : grouping_set)
-        {
-            std::queue<QueryTreeNodePtr> nodes_to_process;
-            nodes_to_process.push(group_by_elem);
-
-            while (!nodes_to_process.empty())
-            {
-                auto node_to_process = nodes_to_process.front();
-                nodes_to_process.pop();
-
-                auto const * function_node = node_to_process->as<FunctionNode>();
-                if (!function_node)
-                {
-                    // Constant aggregation keys are removed in PlannerExpressionAnalysis.cpp
-                    new_group_by_keys.push_back(node_to_process);
-                    continue;
-                }
-
-                // Aggregate functions are not allowed in GROUP BY clause
-                auto function = function_node->getFunctionOrThrow();
-                bool can_be_eliminated = function->isInjective(function_node->getArgumentColumns());
-
-                if (can_be_eliminated)
-                {
-                    for (auto const & argument : function_node->getArguments())
-                    {
-                        // We can skip constants here because aggregation key is already not a constant.
-                        if (argument->getNodeType() != QueryTreeNodeType::CONSTANT)
-                            nodes_to_process.push(argument);
-                    }
-                }
-                else
-                    new_group_by_keys.push_back(node_to_process);
-            }
-        }
-
-        grouping_set = std::move(new_group_by_keys);
+            group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
     }
 };
 

@@ -109,11 +109,7 @@ $CLICKHOUSE_CLIENT --config $CONFIG --connection test_port -q 'select tcpPort()'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_port --port $TEST_PORT -q 'select tcpPort()'
 echo 'secure'
 
-if [ "`uname -m`" == 's390x' ]; then
-    $CLICKHOUSE_CLIENT --config $CONFIG --connection test_secure -q 'select tcpPort()' |& grep -c -F -o -e 'SSL routines::wrong version number' -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.'
-else
-    $CLICKHOUSE_CLIENT --config $CONFIG --connection test_secure -q 'select tcpPort()' |& grep -c -F -o -e OPENSSL_internal:WRONG_VERSION_NUMBER -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.'
-fi
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_secure -q 'select tcpPort()' |& grep -c -F -o -e 'SSL routines::wrong version number' -e 'tcp_secure protocol is disabled because poco library was built without NetSSL support.'
 
 echo 'database'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_database -q 'select currentDatabase()'
@@ -121,7 +117,7 @@ echo 'user'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_user -q 'select currentUser()' |& grep -F -o 'MySQL: Authentication failed'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_user --user default -q 'select currentUser()'
 echo 'password'
-$CLICKHOUSE_CLIENT --config $CONFIG --connection test_password -q 'select currentUser()' |& grep -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_password -q 'select currentUser()' |& grep -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_password --password "" -q 'select currentUser()'
 echo 'history_file'
 $CLICKHOUSE_CLIENT --progress off --interactive --config $CONFIG --connection test_history_file -q 'select 1' </dev/null |& grep -F -o 'Cannot create file: /no/such/dir/.history'
@@ -129,10 +125,11 @@ $CLICKHOUSE_CLIENT --progress off --interactive --config $CONFIG --connection te
 # Just in case
 unset CLICKHOUSE_USER
 unset CLICKHOUSE_PASSWORD
+unset CLICKHOUSE_HOST
 echo 'root overrides'
-$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth --user "default" --password "" -q 'select currentUser()'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default -q 'select currentUser()'
-$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default --user foo -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default --user foo -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name'
 
 rm -f "${CONFIG:?}"

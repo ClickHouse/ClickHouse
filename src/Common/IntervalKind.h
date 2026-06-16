@@ -7,19 +7,20 @@ namespace DB
 /// Kind of a temporal interval.
 struct IntervalKind
 {
-    enum class Kind
+    /// note: The order and numbers are important and used in binary encoding, append new interval kinds to the end of list.
+    enum class Kind : uint8_t
     {
-        Nanosecond,
-        Microsecond,
-        Millisecond,
-        Second,
-        Minute,
-        Hour,
-        Day,
-        Week,
-        Month,
-        Quarter,
-        Year,
+        Nanosecond = 0x00,
+        Microsecond = 0x01,
+        Millisecond = 0x02,
+        Second = 0x03,
+        Minute = 0x04,
+        Hour = 0x05,
+        Day = 0x06,
+        Week = 0x07,
+        Month = 0x08,
+        Quarter = 0x09,
+        Year = 0x0A,
     };
     Kind kind = Kind::Second;
 
@@ -65,6 +66,13 @@ struct IntervalKind
     /// For example, `IntervalKind{IntervalKind::Day}.getExtractTimePartFunctionName()`
     /// returns "toDayOfMonth".
     const char * toNameOfFunctionExtractTimePart() const;
+
+    /// Inverse of `toNameOfFunctionExtractTimePart`: given a function name like
+    /// "toYear", "toMonth", "toDayOfMonth", ... sets `result` to the matching
+    /// `IntervalKind` and returns true. Returns false for any other name.
+    /// Used to recognise calendar-field extractor functions whose `EXTRACT`-style
+    /// dispatch can be redirected onto an `Interval` operand.
+    static bool tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result);
 
     /// Converts the string representation of an interval kind to its IntervalKind equivalent.
     /// Returns false if the conversion did not succeed.

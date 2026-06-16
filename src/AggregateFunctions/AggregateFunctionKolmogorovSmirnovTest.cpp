@@ -7,22 +7,21 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/ReadHelpers.h>
 
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-}
+#include <numeric>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int BAD_ARGUMENTS;
+}
 
 struct Settings;
 
@@ -31,7 +30,7 @@ namespace
 
 struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 {
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,
@@ -48,12 +47,12 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         Float64 now_s = 0;
         UInt64 pos_x = 0;
         UInt64 pos_y = 0;
-        UInt64 pos_tmp;
+        UInt64 pos_tmp = 0;
         UInt64 n1 = x.size();
         UInt64 n2 = y.size();
 
-        const Float64 n1_d = 1. / n1;
-        const Float64 n2_d = 1. / n2;
+        const Float64 n1_d = 1. / static_cast<Float64>(n1);
+        const Float64 n2_d = 1. / static_cast<Float64>(n2);
         const Float64 tol = 1e-7;
 
         // reference: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
@@ -77,18 +76,18 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                 pos_tmp = pos_x + 1;
                 while (pos_tmp < x.size() && unlikely(fabs(x[pos_tmp] - x[pos_x]) <= tol))
                     pos_tmp++;
-                now_s += n1_d * (pos_tmp - pos_x);
+                now_s += n1_d * static_cast<Float64>(pos_tmp - pos_x);
                 pos_x = pos_tmp;
                 pos_tmp = pos_y + 1;
                 while (pos_tmp < y.size() && unlikely(fabs(y[pos_tmp] - y[pos_y]) <= tol))
                     pos_tmp++;
-                now_s -= n2_d * (pos_tmp - pos_y);
+                now_s -= n2_d * static_cast<Float64>(pos_tmp - pos_y);
                 pos_y = pos_tmp;
             }
             max_s = std::max(max_s, now_s);
             min_s = std::min(min_s, now_s);
         }
-        now_s += n1_d * (x.size() - pos_x) - n2_d * (y.size() - pos_y);
+        now_s += n1_d * static_cast<Float64>(x.size() - pos_x) - n2_d * static_cast<Float64>(y.size() - pos_y);
         min_s = std::min(min_s, now_s);
         max_s = std::max(max_s, now_s);
 
@@ -100,7 +99,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         else if (alternative == Alternative::Greater)
             d = max_s;
 
-        UInt64 g = std::__gcd(n1, n2);
+        UInt64 g = std::gcd(n1, n2);
         UInt64 nx_g = n1 / g;
         UInt64 ny_g = n2 / g;
 
@@ -136,22 +135,22 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 
             c[0] = 0;
             for (UInt64 j = 1; j <= n1; j++)
-                if (check(k_d, 0., j / f_n1))
+                if (check(k_d, 0., static_cast<Float64>(j) / f_n1))
                     c[j] = 1.;
                 else
                     c[j] = c[j - 1];
 
             for (UInt64 i = 1; i <= n2; i++)
             {
-                if (check(k_d, i / f_n2, 0.))
+                if (check(k_d, static_cast<Float64>(i) / f_n2, 0.))
                     c[0] = 1.;
                 for (UInt64 j = 1; j <= n1; j++)
-                    if (check(k_d, i / f_n2, j / f_n1))
+                    if (check(k_d, static_cast<Float64>(i) / f_n2, static_cast<Float64>(j) / f_n1))
                         c[j] = 1.;
                     else
                     {
-                        Float64 v = i / static_cast<Float64>(i + j);
-                        Float64 w = j / static_cast<Float64>(i + j);
+                        Float64 v = static_cast<Float64>(i) / static_cast<Float64>(i + j);
+                        Float64 w = static_cast<Float64>(j) / static_cast<Float64>(i + j);
                         c[j] = v * c[j] + w * c[j - 1];
                     }
             }
@@ -159,8 +158,8 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         }
         else if (method == "asymp" || method == "asymptotic")
         {
-            Float64 n = std::min(n1, n2);
-            Float64 m = std::max(n1, n2);
+            Float64 n = static_cast<Float64>(std::min(n1, n2));
+            Float64 m = static_cast<Float64>(std::max(n1, n2));
             Float64 p = sqrt((n * m) / (n + m)) * d;
 
             if (alternative == Alternative::TwoSided)
@@ -169,7 +168,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val, old_val, s, w, z;
+                Float64 new_val = 0;
+                Float64 old_val = 0;
+                Float64 s = 0;
+                Float64 w = 0;
+                Float64 z = 0;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)
@@ -178,7 +181,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                     w = log(p);
                     s = 0;
                     for (UInt64 k = 1; k < k_max; k += 2)
-                        s += exp(k * k * z - w);
+                        s += exp(static_cast<Float64>(k) * static_cast<Float64>(k) * z - w);
                     p = s / 0.398942280401432677939946059934;
                 }
                 else
@@ -191,7 +194,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                     while (fabs(old_val - new_val) > tol)
                     {
                         old_val = new_val;
-                        new_val += 2 * s * exp(z * k * k);
+                        new_val += 2 * s * exp(z * static_cast<Float64>(k) * static_cast<Float64>(k));
                         s *= -1;
                         k++;
                     }
@@ -226,6 +229,7 @@ private:
     String method = "auto";
 
 public:
+    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionKolmogorovSmirnov(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<KolmogorovSmirnov, AggregateFunctionKolmogorovSmirnov> ({arguments}, {}, createResultType())
     {
@@ -238,7 +242,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
-        const auto & param = params[0].get<String>();
+        const auto & param = params[0].safeGet<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -255,7 +259,7 @@ public:
         if (params[1].getType() != Field::Types::String)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a String", getName());
 
-        method = params[1].get<String>();
+        method = params[1].safeGet<String>();
         if (method != "auto" && method != "exact" && method != "asymp" && method != "asymptotic")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown method in aggregate function {}. "
                     "It must be one of: 'auto', 'exact', 'asymp' (or 'asymptotic')", getName());
@@ -291,34 +295,34 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
+        bool is_second = columns[1]->getUInt(row_num);
         if (is_second)
-            this->data(place).addY(value, arena);
+            data(place).addY(value, arena);
         else
-            this->data(place).addX(value, arena);
+            data(place).addX(value, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        data(place).merge(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (!this->data(place).size_x || !this->data(place).size_y)
+        if (!data(place).size_x || !data(place).size_y)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
-        auto [d_statistic, p_value] = this->data(place).getResult(alternative, method);
+        auto [d_statistic, p_value] = data(place).getResult(alternative, method);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
@@ -348,9 +352,80 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 }
 
+void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("kolmogorovSmirnovTest", createAggregateFunctionKolmogorovSmirnovTest, AggregateFunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = R"(
+Applies Kolmogorov-Smirnov's test to samples from two populations.
+
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
+Samples must belong to continuous, one-dimensional probability distributions.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+kolmogorovSmirnovTest([alternative, computation_method])(sample_data, sample_index)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"sample_data", "Sample data.", {"(U)Int*", "Float*", "Decimal"}},
+        {"sample_index", "Sample index.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"alternative", "Alternative hypothesis. (Optional, default: 'two-sided'.) Let `F(x) and G(x)` be the CDFs of the first and second distributions respectively. 'two-sided': The null hypothesis is that samples come from the same distribution, e.g. `F(x) = G(x)` for all x. And the alternative is that the distributions are not identical. 'greater': The null hypothesis is that values in the first sample are stochastically smaller than those in the second one, e.g. the CDF of first distribution lies above and hence to the left of that for the second one. Which in fact means that `F(x) >= G(x)` for all x. And the alternative in this case is that `F(x) < G(x)` for at least one x. 'less': The null hypothesis is that values in the first sample are stochastically greater than those in the second one, e.g. the CDF of first distribution lies below and hence to the right of that for the second one. Which in fact means that `F(x) <= G(x)` for all x. And the alternative in this case is that `F(x) > G(x)` for at least one x.", {"String"}},
+        {"computation_method", "The method used to compute p-value. (Optional, default: 'auto'.) 'exact': calculation is performed using precise probability distribution of the test statistics. Compute intensive and wasteful except for small samples. 'asymp' ('asymptotic'): calculation is performed using an approximation. For large sample sizes, the exact and asymptotic p-values are very similar. 'auto': the 'exact' method is used when a maximum number of samples is less than 10'000.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with two elements: a calculated statistic and a calculated p-value.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Same distribution test",
+        R"(
+SELECT kolmogorovSmirnovTest('less', 'exact')(value, num)
+FROM
+(
+    SELECT
+        randNormal(0, 10) AS value,
+        0 AS num
+    FROM numbers(10000)
+    UNION ALL
+    SELECT
+        randNormal(0, 10) AS value,
+        1 AS num
+    FROM numbers(10000)
+)
+        )",
+        R"(
+┌─kolmogorovSmirnovTest('less', 'exact')(value, num)─┐
+│ (0.009899999999999996,0.37528595205132287)         │
+└────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Different distributions test",
+        R"(
+SELECT kolmogorovSmirnovTest('two-sided', 'exact')(value, num)
+FROM
+(
+    SELECT
+        randStudentT(10) AS value,
+        0 AS num
+    FROM numbers(100)
+    UNION ALL
+    SELECT
+        randNormal(0, 10) AS value,
+        1 AS num
+    FROM numbers(100)
+)
+        )",
+        R"(
+┌─kolmogorovSmirnovTest('two-sided', 'exact')(value, num)─┐
+│ (0.4100000000000002,6.61735760482795e-8)                │
+└─────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("kolmogorovSmirnovTest", {createAggregateFunctionKolmogorovSmirnovTest, documentation}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

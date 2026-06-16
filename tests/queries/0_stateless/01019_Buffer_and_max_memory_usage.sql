@@ -30,7 +30,7 @@ SET max_insert_threads=1;
 -- Check that max_memory_usage is ignored only on flush and not on squash
 SET min_insert_block_size_bytes=9e6;
 SET min_insert_block_size_rows=0;
-INSERT INTO buffer_ SELECT toUInt64(number) FROM system.numbers LIMIT toUInt64(10e6+1); -- { serverError 241 }
+INSERT INTO buffer_ SELECT toUInt64(number) FROM system.numbers LIMIT toUInt64(10e6+1); -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 OPTIMIZE TABLE buffer_; -- flush just in case
 

@@ -43,6 +43,8 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
 
+    void cancel() noexcept override;
+
     /// Supported compression methods.
     static constexpr const char kStore[] = "store";
     static constexpr const char kDeflate[] = "deflate";
@@ -52,7 +54,7 @@ public:
     static constexpr const char kXz[] = "xz";
 
     /// Some compression levels.
-    enum class CompressionLevels
+    enum class CompressionLevels : int8_t
     {
         kDefault = kDefaultCompressionLevel,
         kFast = 2,
@@ -88,6 +90,10 @@ private:
     void endWritingFile();
 
     void checkResultCode(int code) const;
+
+    /// Re-throws a stored exception from a minizip C callback, if any.
+    void rethrowStoredException();
+    void rethrowStoredExceptionLocked() TSA_REQUIRES(mutex);
 
     const String path_to_archive;
     std::unique_ptr<StreamInfo> TSA_GUARDED_BY(mutex) stream_info;

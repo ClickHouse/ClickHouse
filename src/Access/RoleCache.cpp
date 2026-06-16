@@ -45,7 +45,7 @@ namespace
 
         roles_info.names_of_roles[role_id] = role->getName();
         roles_info.access.makeUnion(role->access);
-        roles_info.settings_from_enabled_roles.merge(role->settings);
+        roles_info.settings_from_enabled_roles.merge(role->settings, /* normalize= */ false);
 
         for (const auto & granted_role : role->granted_roles.getGranted())
             collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, false);
@@ -57,7 +57,7 @@ namespace
 
 
 RoleCache::RoleCache(const AccessControl & access_control_, int expiration_time_seconds)
-    : access_control(access_control_), cache(expiration_time_seconds * 1000 /* 10 minutes by default*/)
+    : access_control(access_control_), cache(expiration_time_seconds * 1000ll /* 10 minutes by default*/)
 {
 }
 
@@ -68,10 +68,20 @@ RoleCache::~RoleCache() = default;
 std::shared_ptr<const EnabledRoles>
 RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UUID> & roles_with_admin_option)
 {
+    auto role_set = boost::container::flat_set<UUID>(roles.begin(), roles.end());
+    auto role_with_admin_option_set = boost::container::flat_set<UUID>(roles_with_admin_option.begin(), roles_with_admin_option.end());
+
+    return getEnabledRoles(std::move(role_set), std::move(role_with_admin_option_set));
+}
+
+
+std::shared_ptr<const EnabledRoles>
+RoleCache::getEnabledRoles(boost::container::flat_set<UUID> roles, boost::container::flat_set<UUID> roles_with_admin_option)
+{
     std::lock_guard lock{mutex};
     EnabledRoles::Params params;
-    params.current_roles.insert(roles.begin(), roles.end());
-    params.current_roles_with_admin_option.insert(roles_with_admin_option.begin(), roles_with_admin_option.end());
+    params.current_roles = std::move(roles);
+    params.current_roles_with_admin_option = std::move(roles_with_admin_option);
     auto it = enabled_roles_by_params.find(params);
     if (it != enabled_roles_by_params.end())
     {
@@ -120,7 +130,7 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, SubscriptionsO
     SubscriptionsOnRoles new_subscriptions_on_roles;
     new_subscriptions_on_roles.reserve(subscriptions_on_roles.size());
 
-    auto get_role_function = [this, &subscriptions_on_roles](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id, subscriptions_on_roles); };
+    auto get_role_function = [this, &new_subscriptions_on_roles](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id, new_subscriptions_on_roles); };
 
     for (const auto & current_role : enabled_roles.params.current_roles)
         collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);

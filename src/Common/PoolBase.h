@@ -134,13 +134,11 @@ public:
                     {
                         return Entry(*item);
                     }
-                    else
-                    {
-                        expireObject(item->object);
-                        item->object = allocObject();
-                        item->is_expired = false;
-                        return Entry(*item);
-                    }
+
+                    expireObject(item->object);
+                    item->object = allocObject();
+                    item->is_expired = false;
+                    return Entry(*item);
                 }
             }
             if (items.size() < max_items)
@@ -174,7 +172,7 @@ public:
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
     }
 
-    inline size_t size()
+    size_t size()
     {
         std::lock_guard lock(mutex);
         return items.size();

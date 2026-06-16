@@ -311,6 +311,7 @@ select bitmapToArray(subBitmap(bitmapBuild([
 SELECT bitmapMin(bitmapBuild(emptyArrayUInt8()));
 SELECT bitmapMin(bitmapBuild(emptyArrayUInt16()));
 SELECT bitmapMin(bitmapBuild(emptyArrayUInt32()));
+SELECT bitmapMin(bitmapBuild(emptyArrayUInt64()));
 ---- Small
 select bitmapMin(bitmapBuild([1,5,7,9]));
 ---- Large

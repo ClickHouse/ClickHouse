@@ -5,17 +5,19 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <limits>
+
 namespace DB
 {
 
-enum class VolumeType
+enum class VolumeType : uint8_t
 {
     JBOD,
     SINGLE_DISK,
     UNKNOWN
 };
 
-enum class VolumeLoadBalancing
+enum class VolumeLoadBalancing : uint8_t
 {
     ROUND_ROBIN,
     LEAST_USED,
@@ -66,6 +68,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override = 0;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override = 0;
+
     /// This is a volume.
     bool isVolume() const override { return true; }
 
@@ -81,6 +85,9 @@ public:
     Disks & getDisks() { return disks; }
     const Disks & getDisks() const { return disks; }
 
+    /// Returns true if all disks are readonly.
+    virtual bool isReadOnly() const;
+
     /// Returns effective value of whether merges are allowed on this volume (false) or not (true).
     virtual bool areMergesAvoided() const { return false; }
 
@@ -93,7 +100,7 @@ protected:
 
 public:
     /// Volume priority. Maximum UInt64 value by default (lowest possible priority)
-    UInt64 volume_priority;
+    UInt64 volume_priority = std::numeric_limits<UInt64>::max();
     /// Max size of reservation, zero means unlimited size
     UInt64 max_data_part_size = 0;
     /// Should a new data part be synchronously moved to a volume according to ttl on insert

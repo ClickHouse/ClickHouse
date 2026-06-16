@@ -125,15 +125,15 @@ public:
 
     void convertToNullable() override
     {
-        column.type = makeNullableSafe(column.type);
+        column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

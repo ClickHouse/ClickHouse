@@ -1,17 +1,20 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
+
+#include <Core/Settings.h>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_aggregators_of_group_by_keys;
+}
 
 namespace ErrorCodes
 {
@@ -32,7 +35,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_aggregators_of_group_by_keys)
+        if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
         /// Collect group by keys.
@@ -52,18 +55,28 @@ public:
         else
         {
             QueryTreeNodePtrWithHashSet group_by_keys;
+            bool first_grouping_set = true;
             for (auto & group_key : query_node->getGroupBy().getNodes())
             {
                 /// For grouping sets case collect only keys that are presented in every set.
                 if (auto * list = group_key->as<ListNode>())
                 {
-                    QueryTreeNodePtrWithHashSet common_keys_set;
-                    for (auto & group_elem : list->getNodes())
+                    if (first_grouping_set)
                     {
-                        if (group_by_keys.contains(group_elem))
-                            common_keys_set.insert(group_elem);
+                        for (auto & group_elem : list->getNodes())
+                            group_by_keys.insert(group_elem);
+                        first_grouping_set = false;
                     }
-                    group_by_keys = std::move(common_keys_set);
+                    else
+                    {
+                        QueryTreeNodePtrWithHashSet common_keys_set;
+                        for (auto & group_elem : list->getNodes())
+                        {
+                            if (group_by_keys.contains(group_elem))
+                                common_keys_set.insert(group_elem);
+                        }
+                        group_by_keys = std::move(common_keys_set);
+                    }
                 }
                 else
                 {
@@ -77,7 +90,7 @@ public:
     /// Now we visit all nodes in QueryNode, we should remove group_by_keys from stack.
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_aggregators_of_group_by_keys)
+        if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
         if (node->getNodeType() == QueryTreeNodeType::FUNCTION)

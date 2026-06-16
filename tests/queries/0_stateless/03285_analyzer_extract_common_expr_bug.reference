@@ -1,0 +1,166 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: or, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: greater, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
+            FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 12, nodes: 2
+                        COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 16, nodes: 2
+                        COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 19, nodes: 1
+          CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 21, nodes: 1
+      FUNCTION id: 22, function_name: or, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 23, nodes: 2
+            FUNCTION id: 24, function_name: greater, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 25, nodes: 2
+                  COLUMN id: 26, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 27, constant_value: UInt64_10, constant_value_type: UInt8
+            FUNCTION id: 28, function_name: and, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 29, nodes: 2
+                  FUNCTION id: 30, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 31, nodes: 2
+                        COLUMN id: 32, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 33, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 34, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 35, nodes: 2
+                        COLUMN id: 36, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 37, constant_value: UInt64_10, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 38, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 39, nodes: 2
+          FUNCTION id: 40, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 41, nodes: 2
+                COLUMN id: 42, column_name: number, result_type: UInt64, source_id: 7
+                CONSTANT id: 43, constant_value: UInt64_10, constant_value_type: UInt8
+          FUNCTION id: 44, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 45, nodes: 2
+                FUNCTION id: 46, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 47, nodes: 2
+                      COLUMN id: 48, column_name: number, result_type: UInt64, source_id: 7
+                      CONSTANT id: 49, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 50, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 51, nodes: 2
+                      COLUMN id: 52, column_name: number, result_type: UInt64, source_id: 7
+                      CONSTANT id: 53, constant_value: UInt64_10, constant_value_type: UInt8
+  SETTINGS optimize_extract_common_expressions=0
+
+SELECT (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10)) AS a
+FROM numbers(10) AS __table1
+GROUP BY (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
+HAVING (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
+SETTINGS optimize_extract_common_expressions = 0
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: or, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: greater, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
+            FUNCTION id: 9, function_name: and, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 12, nodes: 2
+                        COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 15, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 16, nodes: 2
+                        COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 19, nodes: 1
+          CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 21, nodes: 1
+      FUNCTION id: 22, function_name: or, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 23, nodes: 2
+            FUNCTION id: 24, function_name: greater, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 25, nodes: 2
+                  COLUMN id: 26, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 27, constant_value: UInt64_10, constant_value_type: UInt8
+            FUNCTION id: 28, function_name: and, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 29, nodes: 2
+                  FUNCTION id: 30, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 31, nodes: 2
+                        COLUMN id: 32, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 33, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 34, function_name: greater, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 35, nodes: 2
+                        COLUMN id: 36, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 37, constant_value: UInt64_10, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 38, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 39, nodes: 2
+          FUNCTION id: 40, function_name: greater, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 41, nodes: 2
+                COLUMN id: 42, column_name: number, result_type: UInt64, source_id: 7
+                CONSTANT id: 43, constant_value: UInt64_10, constant_value_type: UInt8
+          FUNCTION id: 44, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 45, nodes: 2
+                FUNCTION id: 46, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 47, nodes: 2
+                      COLUMN id: 48, column_name: number, result_type: UInt64, source_id: 7
+                      CONSTANT id: 49, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 50, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 51, nodes: 2
+                      COLUMN id: 52, column_name: number, result_type: UInt64, source_id: 7
+                      CONSTANT id: 53, constant_value: UInt64_10, constant_value_type: UInt8
+  SETTINGS optimize_extract_common_expressions=1
+
+SELECT (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10)) AS a
+FROM numbers(10) AS __table1
+GROUP BY (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
+HAVING (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
+SETTINGS optimize_extract_common_expressions = 1

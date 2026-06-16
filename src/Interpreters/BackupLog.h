@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Backups/BackupOperationInfo.h>
 #include <Storages/ColumnsDescription.h>
@@ -34,9 +33,6 @@ struct BackupLogElement
 class BackupLog : public SystemLog<BackupLogElement>
 {
     using SystemLog<BackupLogElement>::SystemLog;
-
-public:
-    static const char * getDefaultOrderBy() { return "event_date, event_time_microseconds"; }
 };
 
 }

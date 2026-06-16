@@ -1,38 +1,84 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
-
-#include <unordered_set>
-
+#include <Storages/IPartitionStrategy.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
+class Block;
+class Chunk;
 class NamesAndTypesList;
+class ColumnsDescription;
 
+class ExpressionActions;
+class IMergeTreeDataPart;
+using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace VirtualColumnUtils
 {
 
-/// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
+/// The filtering functions are tricky to use correctly.
+/// There are 2 ways:
+///  1. Call filterBlockWithPredicate() or filterBlockWithExpression() inside SourceStepWithFilter::applyFilters().
+///  2. Call splitFilterDagForAllowedInputs() and buildSetsForDAG() inside SourceStepWithFilter::applyFilters().
+///     Then call filterBlockWithPredicate() or filterBlockWithExpression() in initializePipeline().
+///
+/// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
+/// if there are subqueries.
+///
+/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...)))./// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
 /// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
-void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
+/// If allow_filtering_with_partial_predicate is true, then the filtering will be done even if some part of the predicate
+/// cannot be evaluated using the columns from the block.
+void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context, bool allow_filtering_with_partial_predicate = true);
+
 
 /// Just filters block. Block should contain all the required columns.
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
+ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
+void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context);
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
-/// Recursively checks if all functions used in DAG are deterministic in scope of query.
+/// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
+/// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
+/// Those sets need external tables set up by ReadFromRemote before they can be built.
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
+
+/// Builds ordered sets used by ActionsDAG inplace.
+void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+
+/// Checks if all functions used in DAG are deterministic.
+bool isDeterministic(const ActionsDAG::Node * node);
+
+/// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
+/// When allow_partial_result is false, then the result will be empty if any part of if cannot be evaluated deterministically
+/// on the given inputs.
+/// allow_partial_result must be false when we are going to use the result to filter parts in
+/// MergeTreeData::totalRowsByPartitionPredicateImp. For example, if the query is
+/// `SELECT count() FROM table  WHERE _partition_id = '0' AND rowNumberInBlock() = 1`
+/// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
+/// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
+/// count optimization will be mistakenly applied to the query.
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(
+    const ActionsDAG::Node * predicate,
+    const Block * allowed_inputs,
+    const ContextPtr & context,
+    bool allow_partial_result = true);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -42,21 +88,46 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     const ColumnWithTypeAndName & data = block.getByName(name);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
-        res.insert((*data.column)[i].get<T>());
+        res.insert((*data.column)[i].safeGet<T>());
     return res;
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    std::optional<PartitionStrategyFactory::StrategyType> partition_strategy = std::nullopt,
+    const std::string & path = "");
 
-ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
+std::optional<ActionsDAG> createPathAndFileFilterDAG(
+    const ActionsDAG::Node * predicate,
+    const NamesAndTypesList & virtual_columns,
+    const ContextPtr & context,
+    const NamesAndTypesList & hive_columns = {});
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+/// Extracts constant values expected for `_path` input from the query filter DAG.
+std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
+
+ColumnPtr getFilterByPathAndFileIndexes(
+    const std::vector<String> & paths,
+    const ExpressionActionsPtr & actions,
+    const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+void filterByPathOrFile(
+    std::vector<T> & sources,
+    const std::vector<String> & paths,
+    const ExpressionActionsPtr & actions,
+    const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, dag, virtual_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -68,8 +139,57 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
     sources = std::move(filtered_sources);
 }
 
-void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
+struct VirtualsForFileLikeStorage
+{
+    const String & path;
+    const StorageID & storage_id;
+    std::optional<size_t> size { std::nullopt };
+    const String * filename { nullptr };
+    std::optional<Poco::Timestamp> last_modified { std::nullopt };
+    const String * etag { nullptr };
+    const std::map<String, String> * tags { nullptr };
+    std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
+    /// Original file path as stored in Iceberg metadata (before resolution to storage path).
+    /// Used by Iceberg position deletes to reference data files in the metadata path format.
+    const String * iceberg_metadata_file_path { nullptr };
+};
+
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
+
+/// Returns true if the requested virtual columns contain columns that depend on
+/// per-row information (e.g. _row_number). Such columns are incompatible with
+/// the "need only count" optimization that skips actual row parsing.
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
+
+/// Append virtual columns to a physical columns list for expression analysis.
+/// Virtual columns that already exist in the list are skipped.
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns);
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns);
+
+/// Find hive partitioning part inside path
+/// /a/b/c/d=e/f=g/h.i => d=e/f=g
+std::string_view findHivePartitioningInPath(const String & path);
+
+/// Filter data parts by part_name using a precomputed filter expression.
+/// Returns all parts if virtual_columns_filter is null.
+DataPartsVector filterDataPartsWithExpression(
+    const DataPartsVector & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+
+/// Filter out common virtual column names (marked with is_common) from the given list.
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter);
+
+/// Splits requested column names into physical and virtual.
+/// Returns {physical_names, virtual_names}. Always includes at least one physical column.
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
+
 }
 
 }

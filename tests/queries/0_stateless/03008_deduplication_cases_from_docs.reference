@@ -1,0 +1,41 @@
+Different materialized view insert into one underlayed table equal data.
+first attempt
+from dst	1	A	all_1_1_0
+from mv_dst	0	A	all_1_1_0
+from mv_dst	0	A	all_2_2_0
+second attempt
+from dst	1	A	all_1_1_0
+from mv_dst	0	A	all_1_1_0
+from mv_dst	0	A	all_2_2_0
+Different insert operations generate the same data after transformation in underlied table of materialized view.
+first attempt
+from dst	1	A	all_1_1_0
+from mv_dst	0	A	all_1_1_0
+second attempt
+from dst	1	A	all_1_1_0
+from dst	2	A	all_2_2_0
+from mv_dst	0	A	all_1_1_0
+from mv_dst	0	A	all_2_2_0
+Indentical blocks in insertion with `insert_deduplication_token`
+first attempt
+from dst	0	A	all_1_1_0
+from dst	0	A	all_2_2_0
+second attempt
+from dst	0	A	all_1_1_0
+from dst	0	A	all_2_2_0
+third attempt
+from dst	0	A	all_1_1_0
+from dst	0	A	all_2_2_0
+Indentical blocks in insertion
+from dst	0	A	all_1_1_0
+Indentical blocks after materialised view`s transformation
+first attempt
+from dst	1	B	all_1_1_0
+from dst	2	B	all_2_2_0
+from mv_dst	0	B	all_1_1_0
+from mv_dst	0	B	all_2_2_0
+second attempt
+from dst	1	B	all_1_1_0
+from dst	2	B	all_2_2_0
+from mv_dst	0	B	all_1_1_0
+from mv_dst	0	B	all_2_2_0

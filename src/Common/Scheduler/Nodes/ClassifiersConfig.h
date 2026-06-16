@@ -10,6 +10,7 @@ namespace DB
 /// Mapping of resource name into path string (e.g. "disk1" -> "/path/to/class")
 struct ClassifierDescription : std::unordered_map<String, String>
 {
+    ClassifierDescription() = default;
     ClassifierDescription(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 };
 

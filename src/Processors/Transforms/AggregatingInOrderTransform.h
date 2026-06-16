@@ -5,6 +5,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -12,26 +13,37 @@ namespace DB
 struct InputOrderInfo;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
-struct ChunkInfoWithAllocatedBytes : public ChunkInfo
+struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllocatedBytes>
 {
+    ChunkInfoWithAllocatedBytes(const ChunkInfoWithAllocatedBytes & other) = default;
     explicit ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
         : allocated_bytes(allocated_bytes_) {}
+
     Int64 allocated_bytes;
 };
 
-class AggregatingInOrderTransform : public IProcessor
+class AggregatingInOrderTransform final : public IProcessor
 {
 public:
-    AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_,
-                                ManyAggregatedDataPtr many_data, size_t current_variant);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        ManyAggregatedDataPtr many_data,
+        size_t current_variant,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
-    AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     ~AggregatingInOrderTransform() override;
 
@@ -42,6 +54,7 @@ public:
     void work() override;
 
     void consume(Chunk chunk);
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 private:
     void generate();
@@ -62,7 +75,7 @@ private:
     SortDescription sort_description;
     SortDescriptionWithPositions group_by_description;
     bool group_by_key = false;
-    Block group_by_block;
+    Chunk group_by_chunk;
     ColumnRawPtrs key_columns_raw;
 
     Aggregator::AggregateColumns aggregate_columns;
@@ -83,14 +96,18 @@ private:
     Chunk current_chunk;
     Chunk to_push_chunk;
 
+    RowsBeforeStepCounterPtr rows_before_aggregation;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
+
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };
 
 
-class FinalizeAggregatedTransform : public ISimpleTransform
+class FinalizeAggregatedTransform final : public ISimpleTransform
 {
 public:
-    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_);
+    FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_);
 
     void transform(Chunk & chunk) override;
     String getName() const override { return "FinalizeAggregatedTransform"; }

@@ -6,9 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -19,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionArrayJaccardIndex : public IFunction
+class FunctionArrayJaccardIndex final : public IFunction
 {
 private:
     using ResultType = Float64;
@@ -33,8 +31,8 @@ private:
     template <bool left_is_const, bool right_is_const>
     static LeftAndRightSizes getArraySizes(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t i)
     {
-        size_t left_size;
-        size_t right_size;
+        size_t left_size = 0;
+        size_t right_size = 0;
 
         if constexpr (left_is_const)
             left_size = left_offsets[0];
@@ -56,7 +54,7 @@ private:
         {
             LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            res[i] = static_cast<ResultType>(intersect_size) / (sizes.left_size + sizes.right_size - intersect_size);
+            res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(sizes.left_size + sizes.right_size - intersect_size);
         }
     }
 
@@ -76,7 +74,10 @@ public:
     static constexpr auto name = "arrayJaccardIndex";
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
-    explicit FunctionArrayJaccardIndex(ContextPtr context_) : context(context_) {}
+    explicit FunctionArrayJaccardIndex(ContextPtr context_)
+        : array_intersect(FunctionFactory::instance().get("arrayIntersect", context_))
+    {
+    }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -87,7 +88,7 @@ public:
             {"array_1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
             {"array_2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
@@ -97,23 +98,23 @@ public:
         {
             if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col.column.get()))
             {
-                const ColumnArray * col_const_array = checkAndGetColumn<ColumnArray>(col_const->getDataColumnPtr().get());
-                return {col_const_array, true};
+                const ColumnArray & col_const_array = checkAndGetColumn<ColumnArray>(*col_const->getDataColumnPtr());
+                return {&col_const_array, true};
             }
-            else if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
+            if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
                 return {col_non_const_array, false};
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
         };
 
         const auto & [left_array, left_is_const] = cast_to_array(arguments[0]);
         const auto & [right_array, right_is_const] = cast_to_array(arguments[1]);
 
-        auto intersect_array = FunctionFactory::instance().get("arrayIntersect", context)->build(arguments);
+        auto intersect_array = array_intersect->build(arguments);
 
         ColumnWithTypeAndName intersect_column;
         intersect_column.type = intersect_array->getResultType();
-        intersect_column.column = intersect_array->execute(arguments, intersect_column.type, input_rows_count);
+        intersect_column.column = intersect_array->execute(arguments, intersect_column.type, input_rows_count, /* dry_run = */ false);
 
         const auto * intersect_column_type = checkAndGetDataType<DataTypeArray>(intersect_column.type.get());
         if (!intersect_column_type)
@@ -128,8 +129,8 @@ public:
         vectorWithEmptyIntersect<left_is_const, right_is_const>(left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     else \
     { \
-        const ColumnArray * intersect_column_array = checkAndGetColumn<ColumnArray>(intersect_column.column.get()); \
-        vector<left_is_const, right_is_const>(intersect_column_array->getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
+        const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column); \
+        vector<left_is_const, right_is_const>(intersect_column_array.getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     }
 
         if (!left_is_const && !right_is_const)
@@ -147,12 +148,24 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr array_intersect;
 };
 
 REGISTER_FUNCTION(ArrayJaccardIndex)
 {
-    factory.registerFunction<FunctionArrayJaccardIndex>();
+    FunctionDocumentation::Description description = "Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.";
+    FunctionDocumentation::Syntax syntax = "arrayJaccardIndex(arr_x, arr_y)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr_x", "First array.", {"Array(T)"}},
+        {"arr_y", "Second array.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Jaccard index of `arr_x` and `arr_y`", {"Float64"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res", "0.3333333333333333"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayJaccardIndex>(documentation);
 }
 
 }

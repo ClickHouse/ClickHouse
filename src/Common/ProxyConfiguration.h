@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 struct ProxyConfiguration
 {
-    enum class Protocol
+    enum class Protocol : uint8_t
     {
         HTTP,
         HTTPS
@@ -25,12 +25,15 @@ struct ProxyConfiguration
         {
             return Protocol::HTTP;
         }
-        else if (str == "https")
+        if (str == "https")
         {
             return Protocol::HTTPS;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown proxy protocol: {}", str);
+        if (str.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty protocol in the URL");
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown protocol in the URL: {}", str);
     }
 
     static auto protocolToString(Protocol protocol)
@@ -44,11 +47,18 @@ struct ProxyConfiguration
         }
     }
 
+    static bool useTunneling(Protocol request_protocol, Protocol proxy_protocol, bool disable_tunneling_for_https_requests_over_http_proxy)
+    {
+        bool is_https_request_over_http_proxy = request_protocol == Protocol::HTTPS && proxy_protocol == Protocol::HTTP;
+        return is_https_request_over_http_proxy && !disable_tunneling_for_https_requests_over_http_proxy;
+    }
+
     std::string host = std::string{};
     Protocol protocol = Protocol::HTTP;
     uint16_t port = 0;
     bool tunneling = false;
     Protocol original_request_protocol = Protocol::HTTP;
+    std::string no_proxy_hosts = std::string{};
 
     bool isEmpty() const { return host.empty(); }
 };

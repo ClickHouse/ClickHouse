@@ -8,9 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
-#include <Poco/String.h>
 
 #include <Parsers/ParserSetQuery.h>
 
@@ -23,7 +21,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserLiteral literal_p;
     ParserKeyValuePairsList key_value_pairs_p;
     ASTPtr ast_lifetime;
-    auto res = std::make_shared<ASTDictionaryLifetime>();
+    auto res = make_intrusive<ASTDictionaryLifetime>();
 
     /// simple lifetime with only maximum value e.g. LIFETIME(300)
     if (literal_p.parse(pos, ast_lifetime, expected))
@@ -33,7 +31,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (literal.value.getType() != Field::Types::UInt64)
             return false;
 
-        res->max_sec = literal.value.get<UInt64>();
+        res->max_sec = literal.value.safeGet<UInt64>();
         node = res;
         return true;
     }
@@ -58,10 +56,10 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             return false;
 
         if (pair.first == "min")
-            res->min_sec = literal->value.get<UInt64>();
+            res->min_sec = literal->value.safeGet<UInt64>();
         else if (pair.first == "max")
         {
-            res->max_sec = literal->value.get<UInt64>();
+            res->max_sec = literal->value.safeGet<UInt64>();
             initialized_max = true;
         }
         else
@@ -87,7 +85,7 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (expr_list.children.size() != 2)
         return false;
 
-    auto res = std::make_shared<ASTDictionaryRange>();
+    auto res = make_intrusive<ASTDictionaryRange>();
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
@@ -118,7 +116,7 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     const ASTFunctionWithKeyValueArguments & func = ast_func->as<const ASTFunctionWithKeyValueArguments &>();
-    auto res = std::make_shared<ASTDictionaryLayout>();
+    auto res = make_intrusive<ASTDictionaryLayout>();
     /// here must be exactly one argument - layout_type
     if (func.children.size() > 1)
         return false;
@@ -154,7 +152,7 @@ bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             return false;
     }
 
-    auto query = std::make_shared<ASTDictionarySettings>();
+    auto query = make_intrusive<ASTDictionarySettings>();
     query->changes = std::move(changes);
 
     node = query;
@@ -188,7 +186,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_settings;
 
     /// Primary is required to be the first in dictionary definition
-    if (primary_key_keyword.ignore(pos))
+    if (primary_key_keyword.ignore(pos, expected))
     {
         bool was_open = false;
 
@@ -208,13 +206,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ast_source && source_keyword.ignore(pos, expected))
         {
 
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!key_value_pairs_p.parse(pos, ast_source, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -222,13 +220,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_lifetime && lifetime_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!lifetime_p.parse(pos, ast_lifetime, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -236,13 +234,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_layout && layout_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!layout_p.parse(pos, ast_layout, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -250,13 +248,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_range && range_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!range_p.parse(pos, ast_range, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -264,13 +262,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_settings && settings_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!settings_p.parse(pos, ast_settings, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -279,7 +277,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         break;
     }
 
-    auto query = std::make_shared<ASTDictionary>();
+    auto query = make_intrusive<ASTDictionary>();
     node = query;
     if (primary_key)
         query->set(query->primary_key, primary_key);

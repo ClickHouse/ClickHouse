@@ -1,9 +1,10 @@
 #pragma once
 
-#include "protocol.h"
+#include <Common/StringUtils.h>
+#include <Functions/URL/protocol.h>
 #include <base/find_symbols.h>
+
 #include <cstring>
-#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -25,6 +26,9 @@ inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos,
 /// @return empty string view if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
 inline std::string_view getURLHostRFC(const char * data, size_t size)
 {
+    if (size < 2)
+        return std::string_view{};
+
     Pos pos = data;
     Pos end = data + size;
 
@@ -171,7 +175,7 @@ inline std::string_view getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (*pos == '/' && *(pos + 1) == '/')
+    if (size >= 2 && *pos == '/' && *(pos + 1) == '/')
     {
         pos += 2;
     }
@@ -276,7 +280,7 @@ struct ExtractDomain
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
+            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4)) /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 host = { host.data() + 4, host.size() - 4 };
 
             res_data = host.data();

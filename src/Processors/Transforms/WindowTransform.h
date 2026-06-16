@@ -1,10 +1,10 @@
 #pragma once
 
+#include <AggregateFunctions/WindowFunction.h>
+#include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
-
 #include <Processors/IProcessor.h>
-
-#include <Common/AlignedBuffer.h>
+#include <Processors/Port.h>
 
 #include <deque>
 
@@ -21,33 +21,12 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
-// Runtime data for computing one window function.
-struct WindowFunctionWorkspace
-{
-    AggregateFunctionPtr aggregate_function;
-
-    // Cached value of aggregate function isState virtual method
-    bool is_aggregate_function_state = false;
-
-    // This field is set for pure window functions. When set, we ignore the
-    // window_function.aggregate_function, and work through this interface
-    // instead.
-    IWindowFunction * window_function_impl = nullptr;
-
-    std::vector<size_t> argument_column_indices;
-
-    // Will not be initialized for a pure window function.
-    mutable AlignedBuffer aggregate_function_state;
-
-    // Argument columns. Be careful, this is a per-block cache.
-    std::vector<const IColumn *> argument_columns;
-    UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
-};
 
 struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
+    Columns cast_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;
@@ -81,8 +60,8 @@ class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
-            const Block & input_header_,
-            const Block & output_header_,
+            SharedHeader input_header_,
+            SharedHeader output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
                 functions);
@@ -124,36 +103,22 @@ public:
     void updateAggregationState();
     void writeOutCurrentRow();
 
-    Columns & inputAt(const RowNumber & x)
-    {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
-        return blocks[x.block - first_block_number].input_columns;
-    }
-
+    Columns & inputAt(const RowNumber & x);
     const Columns & inputAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->inputAt(x);
     }
 
-    auto & blockAt(const UInt64 block_number)
-    {
-        assert(block_number >= first_block_number);
-        assert(block_number - first_block_number < blocks.size());
-        return blocks[block_number - first_block_number];
-    }
-
-    const auto & blockAt(const UInt64 block_number) const
+    WindowTransformBlock & blockAt(UInt64 block_number);
+    const WindowTransformBlock & blockAt(UInt64 block_number) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(block_number);
     }
-
-    auto & blockAt(const RowNumber & x)
+    WindowTransformBlock & blockAt(const RowNumber & x)
     {
         return blockAt(x.block);
     }
-
-    const auto & blockAt(const RowNumber & x) const
+    const WindowTransformBlock & blockAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(x);
     }
@@ -162,21 +127,15 @@ public:
     {
         return blockAt(x).rows;
     }
-
-    MutableColumns & outputAt(const RowNumber & x)
-    {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
-        return blocks[x.block - first_block_number].output_columns;
-    }
+    MutableColumns & outputAt(const RowNumber & x);
 
     void advanceRowNumber(RowNumber & x) const
     {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
+        chassert(x.block >= first_block_number);
+        chassert(x.block - first_block_number < blocks.size());
 
         const auto block_rows = blockAt(x).rows;
-        assert(x.row < block_rows);
+        chassert(x.row < block_rows);
 
         ++x.row;
         if (x.row < block_rows)
@@ -187,7 +146,6 @@ public:
         x.row = 0;
         ++x.block;
     }
-
     RowNumber nextRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -208,18 +166,17 @@ public:
         }
 
         --x.block;
-        assert(x.block >= first_block_number);
-        assert(x.block < first_block_number + blocks.size());
-        assert(blockAt(x).rows > 0);
+        chassert(x.block >= first_block_number);
+        chassert(x.block < first_block_number + blocks.size());
+        chassert(blockAt(x).rows > 0);
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto advanced_retreated_x = x;
         advanceRowNumber(advanced_retreated_x);
-        assert(advanced_retreated_x == original_x);
+        chassert(advanced_retreated_x == original_x);
 #endif
     }
-
     RowNumber prevRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -232,18 +189,16 @@ public:
 
     void assertValid(const RowNumber & x) const
     {
-        assert(x.block >= first_block_number);
+        chassert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
-            assert(x.row == 0);
+            chassert(x.row == 0);
         else
-            assert(x.row < blockRowsNumber(x));
+            chassert(x.row < blockRowsNumber(x));
     }
-
     RowNumber blocksEnd() const
     {
         return RowNumber{first_block_number + blocks.size(), 0};
     }
-
     RowNumber blocksBegin() const
     {
         return RowNumber{first_block_number, 0};

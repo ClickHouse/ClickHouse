@@ -22,7 +22,7 @@ namespace DB
   */
 
 /// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
-enum class PoolMode
+enum class PoolMode : uint8_t
 {
     /// Return exactly one connection.
     GET_ONE = 0,
@@ -42,6 +42,7 @@ public:
             size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT);
 
     using Entry = IConnectionPool::Entry;
+    using PoolWithFailoverBase<IConnectionPool>::getValidTryResult;
 
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts) override;
@@ -97,11 +98,16 @@ public:
 
     std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {}, bool use_slowdown_count = false);
 
-    size_t getMaxErrorCup() const { return Base::max_error_cap; }
+    size_t getMaxErrorCap() const { return Base::max_error_cap; }
 
     void updateSharedError(std::vector<ShuffledPool> & shuffled_pools)
     {
         Base::updateSharedErrorCounts(shuffled_pools);
+    }
+
+    void incrementErrorCount(ConnectionPoolPtr pool)
+    {
+        Base::incrementErrorCount(pool);
     }
 
     size_t getPoolSize() const { return Base::getPoolSize(); }
@@ -125,7 +131,8 @@ private:
             std::string & fail_message,
             const Settings & settings,
             const QualifiedTableName * table_to_check = nullptr,
-            AsyncCallback async_callback = {});
+            AsyncCallback async_callback = {},
+            bool force_connected = false);
 
     GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 

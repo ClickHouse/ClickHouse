@@ -41,10 +41,10 @@ INSERT INTO test SELECT number from numbers(6);
 SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6) ORDER BY number) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) PASTE JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7)))) PASTE JOIN (SELECT number FROM numbers(6) PASTE JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
-SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS c) SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS a) SETTINGS allow_experimental_analyzer = 1; -- { serverError AMBIGUOUS_COLUMN_NAME }
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS c) SETTINGS enable_analyzer = 1;
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS a) SETTINGS enable_analyzer = 1; -- { serverError AMBIGUOUS_COLUMN_NAME }
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 CREATE TABLE test1 (a Int32) engine=MergeTree order by a;
 INSERT INTO test1 SELECT * FROM numbers(2);
 CREATE TABLE test2 (a Int32) engine=MergeTree order by a;

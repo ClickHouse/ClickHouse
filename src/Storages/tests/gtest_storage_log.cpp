@@ -5,6 +5,7 @@
 #include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/StorageLog.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
@@ -23,7 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 
-DB::StoragePtr createStorage(DB::DiskPtr & disk)
+static DB::StoragePtr createStorage(DB::DiskPtr & disk)
 {
     using namespace DB;
 
@@ -65,10 +66,10 @@ private:
 
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
+static std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
     std::string data;
 
@@ -105,10 +106,10 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
+static std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, context);
 
     Names column_names;
@@ -122,8 +123,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     table->read(plan, column_names, storage_snapshot, query_info, context, stage, 8192, 1);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context))));
+        QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context))));
 
     Block sample;
     {

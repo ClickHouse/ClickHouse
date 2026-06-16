@@ -5,6 +5,7 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
@@ -15,6 +16,7 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
+struct CreateQueryUUIDs;
 
 
 class ASTStorage : public IAST
@@ -26,26 +28,33 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
+    IAST * unique_key = nullptr;
     ASTSetQuery * settings = nullptr;
 
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     bool isExtendedStorageDefinition() const;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    /// Rebuild `children` in canonical order (engine, partition_by, primary_key, order_by, ...).
+    /// Needed after moving primary_key from columns_list because `set()` always appends.
+    void normalizeChildrenOrder();
+
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&engine));
-        f(reinterpret_cast<void **>(&partition_by));
-        f(reinterpret_cast<void **>(&primary_key));
-        f(reinterpret_cast<void **>(&order_by));
-        f(reinterpret_cast<void **>(&sample_by));
-        f(reinterpret_cast<void **>(&ttl_table));
-        f(reinterpret_cast<void **>(&settings));
+        f(reinterpret_cast<IAST **>(&engine), nullptr);
+        f(&partition_by, nullptr);
+        f(&primary_key, nullptr);
+        f(&order_by, nullptr);
+        f(&sample_by, nullptr);
+        f(&ttl_table, nullptr);
+        f(&unique_key, nullptr);
+        f(reinterpret_cast<IAST **>(&settings), nullptr);
     }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -65,23 +74,24 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
     }
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&columns));
-        f(reinterpret_cast<void **>(&indices));
-        f(reinterpret_cast<void **>(&primary_key));
-        f(reinterpret_cast<void **>(&constraints));
-        f(reinterpret_cast<void **>(&projections));
-        f(reinterpret_cast<void **>(&primary_key_from_columns));
+        f(reinterpret_cast<IAST **>(&columns), nullptr);
+        f(reinterpret_cast<IAST **>(&indices), nullptr);
+        f(&primary_key, nullptr);
+        f(reinterpret_cast<IAST **>(&constraints), nullptr);
+        f(reinterpret_cast<IAST **>(&projections), nullptr);
+        f(&primary_key_from_columns, nullptr);
     }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -89,54 +99,56 @@ public:
 class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
-    bool if_not_exists{false};
-    bool is_ordinary_view{false};
-    bool is_materialized_view{false};
-    bool is_live_view{false};
-    bool is_window_view{false};
-    bool is_populate{false};
-    bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
-    bool replace_view{false}; /// CREATE OR REPLACE VIEW
-    bool has_uuid{false}; // CREATE TABLE x UUID '...'
-
+    /// Pointers (8 bytes each, grouped for alignment)
     ASTColumns * columns_list = nullptr;
-
-    StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
-    UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
-    ASTStorage * inner_storage = nullptr;      /// For window view with inner table
+    ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
-    ASTPtr watermark_function;
-    ASTPtr lateness_function;
-    String as_database;
-    String as_table;
+    IAST * watermark_function = nullptr;
+    IAST * lateness_function = nullptr;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
+    ASTViewTargets * targets = nullptr;
     IAST * comment = nullptr;
-    ASTPtr sql_security = nullptr;
-
+    IAST * sql_security = nullptr;
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
-
-    bool is_dictionary{false}; /// CREATE DICTIONARY
-    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
+    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
+    ASTRefreshStrategy * refresh_strategy = nullptr; /// For CREATE MATERIALIZED VIEW ... REFRESH ...
 
-    ASTRefreshStrategy * refresh_strategy = nullptr; // For CREATE MATERIALIZED VIEW ... REFRESH ...
+    /// Strings
+    String as_database;
+    String as_table;
+    String attach_from_path;
 
-    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
-    bool allowed_lateness{false}; /// ALLOWED LATENESS FOR WINDOW VIEW
+    /// Optional bool (3 states)
+    std::optional<bool> attach_as_replicated = std::nullopt;
 
-    bool attach_short_syntax{false};
-
-    std::optional<String> attach_from_path = std::nullopt;
-
-    bool replace_table{false};
-    bool create_or_replace{false};
+    /// Bit-packed bools (20 bools packed into ~3 bytes instead of 20 bytes)
+    bool attach : 1 = false;               /// Query ATTACH TABLE, not CREATE TABLE.
+    bool if_not_exists : 1 = false;
+    bool is_ordinary_view : 1 = false;
+    bool is_materialized_view : 1 = false;
+    bool is_window_view : 1 = false;
+    bool is_time_series_table : 1 = false; /// CREATE TABLE ... ENGINE=TimeSeries() ...
+    bool is_populate : 1 = false;
+    bool is_create_empty : 1 = false;      /// CREATE TABLE ... EMPTY AS SELECT ...
+    bool is_clone_as : 1 = false;          /// CREATE TABLE ... CLONE AS ...
+    bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
+    bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...' with a non-`Nil` value (see `has_uuid_clause` for clause-presence tracking)
+    bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
+    bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
+    bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
+    bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_bounded : 1 = false;            /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
+    bool allowed_lateness : 1 = false;     /// ALLOWED LATENESS FOR WINDOW VIEW
+    bool attach_short_syntax : 1 = false;
+    bool replace_table : 1 = false;
+    bool create_or_replace : 1 = false;
+    bool has_attach_from_path : 1 = false; /// Whether attach_from_path is set
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + getDatabase()) + delim + getTable(); }
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
 
@@ -145,38 +157,56 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_window_view; }
 
     bool isParameterizedView() const;
 
+    NameToNameMap getQueryParameters() const;
+
+    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
+
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
-    struct UUIDs
-    {
-        UUID uuid = UUIDHelpers::Nil;
-        UUID to_inner_uuid = UUIDHelpers::Nil;
-        UUIDs() = default;
-        explicit UUIDs(const ASTCreateQuery & query);
-        String toString() const;
-        static UUIDs fromString(const String & str);
-    };
-    UUIDs generateRandomUUID(bool always_generate_new_uuid = false);
-    void setUUID(const UUIDs & uuids);
+    /// Generates a random UUID for this create query if it's not specified already.
+    /// The function also generates random UUIDs for inner target tables if this create query implies that
+    /// (for example, if it's a `CREATE MATERIALIZED VIEW` query with an inner storage).
+    void generateRandomUUIDs();
+
+    /// Removes UUID from this create query.
+    /// The function also removes UUIDs for inner target tables from this create query (see also generateRandomUUID()).
+    void resetUUIDs();
+
+    /// Returns information about a target table.
+    /// If that information isn't specified in this create query (or even not allowed) then the function returns an empty value.
+    StorageID getTargetTableID(ViewTarget::Kind target_kind) const;
+    bool hasTargetTableID(ViewTarget::Kind target_kind) const;
+    UUID getTargetInnerUUID(ViewTarget::Kind target_kind) const;
+    bool hasInnerUUIDs() const;
+    ASTStorage * getTargetInnerEngine(ViewTarget::Kind target_kind) const;
+    void setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def);
+    ASTColumns * getTargetInnerColumns(ViewTarget::Kind target_kind) const;
+    void setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast);
+
+    bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ViewTarget::To); }
+    bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }
+
+    bool isCreateQueryWithImmediateInsertSelect() const;
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&columns_list));
-        f(reinterpret_cast<void **>(&inner_storage));
-        f(reinterpret_cast<void **>(&storage));
-        f(reinterpret_cast<void **>(&as_table_function));
-        f(reinterpret_cast<void **>(&select));
-        f(reinterpret_cast<void **>(&comment));
-        f(reinterpret_cast<void **>(&table_overrides));
-        f(reinterpret_cast<void **>(&dictionary_attributes_list));
-        f(reinterpret_cast<void **>(&dictionary));
+        f(reinterpret_cast<IAST **>(&columns_list), nullptr);
+        f(reinterpret_cast<IAST **>(&aliases_list), nullptr);
+        f(reinterpret_cast<IAST **>(&storage), nullptr);
+        f(reinterpret_cast<IAST **>(&targets), nullptr);
+        f(&as_table_function, nullptr);
+        f(reinterpret_cast<IAST **>(&select), nullptr);
+        f(&comment, nullptr);
+        f(reinterpret_cast<IAST **>(&table_overrides), nullptr);
+        f(reinterpret_cast<IAST **>(&dictionary_attributes_list), nullptr);
+        f(reinterpret_cast<IAST **>(&dictionary), nullptr);
     }
 };
 

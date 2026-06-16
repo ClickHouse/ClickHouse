@@ -1,23 +1,24 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <QueryPipeline/Chain.h>
-#include <QueryPipeline/SizeLimits.h>
 
+#include <functional>
 
 namespace DB
 {
 
+class Chain;
 class EnabledQuota;
 struct StreamLocalLimits;
 
 class Pipe;
-using Pipes = std::vector<Pipe>;
+using Pipes = std::vector<Pipe>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class ReadProgressCallback;
 
-using OutputPortRawPtrs = std::vector<OutputPort *>;
+using OutputPortRawPtrs = std::vector<OutputPort *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Pipe is a set of processors which represents the part of pipeline.
 /// Pipe contains a list of output ports, with specified port for totals and specified port for extremes.
@@ -41,7 +42,8 @@ public:
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
 
-    const Block & getHeader() const { return header; }
+    const Block & getHeader() const { return *header; }
+    const SharedHeader & getSharedHeader() const { return header; }
     bool empty() const { return processors->empty(); }
     size_t numOutputPorts() const { return output_ports.size(); }
     size_t maxParallelStreams() const { return max_parallel_streams; }
@@ -74,27 +76,27 @@ public:
         InputPort * totals_in, InputPort * extremes_in,
         OutputPort * totals_out, OutputPort * extremes_out);
 
-    enum class StreamType
+    enum class StreamType : uint8_t
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
         Totals,  /// Stream for totals. No more than one.
         Extremes, /// Stream for extremes. No more than one.
     };
 
-    using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
-    using ProcessorGetterWithStreamKind = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
+    using ProcessorGetterSharedHeader = std::function<ProcessorPtr(const SharedHeader & header)>;
+    using ProcessorGetterSharedHeaderWithStreamKind = std::function<ProcessorPtr(const SharedHeader & header, StreamType stream_type)>;
 
     /// Add transform with single input and single output for each port.
-    void addSimpleTransform(const ProcessorGetter & getter);
-    void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
+    void addSimpleTransform(const ProcessorGetterSharedHeader & getter);
+    void addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & getter);
 
     /// Add chain to every output port.
-    void addChains(std::vector<Chain> chains);
+    void addChains(VectorWithMemoryTracking<Chain> chains);
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
-    void resize(size_t num_streams, bool force = false, bool strict = false);
+    void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
-    using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
+    using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 
     /// Transform Pipe in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
@@ -111,7 +113,7 @@ public:
 
 private:
     /// Header is common for all output below.
-    Block header;
+    SharedHeader header;
     std::shared_ptr<Processors> processors;
 
     /// Output ports. Totals and extremes are allowed to be empty.
@@ -131,7 +133,8 @@ private:
     /// So, we may be sure that Pipe always has output port if not empty.
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
-    void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
+    void addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, bool strict);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

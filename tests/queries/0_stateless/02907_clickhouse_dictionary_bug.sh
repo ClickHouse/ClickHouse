@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
     DROP DICTIONARY IF EXISTS 02907_dictionary;
     DROP TABLE IF EXISTS 02907_table;
 

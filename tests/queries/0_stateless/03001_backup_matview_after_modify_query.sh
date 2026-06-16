@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database
-# Tag no-ordinary-database: TO DO
+# Tags: no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,7 +9,7 @@ db="$CLICKHOUSE_DATABASE"
 db_2="${db}_2"
 backup_name="${db}_backup"
 
-${CLICKHOUSE_CLIENT} --multiquery "
+${CLICKHOUSE_CLIENT} "
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 CREATE TABLE src(Timestamp DateTime64(9), c1 String, c2 String) ENGINE=MergeTree ORDER BY Timestamp;
