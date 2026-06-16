@@ -69,7 +69,7 @@ public:
 
     bool materializeTTLRecalculateOnly() const;
 
-    bool hasLightweightDeletedMask() const override
+    bool hasLightweightDeletedMask() const
     {
         return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }

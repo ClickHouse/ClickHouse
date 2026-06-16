@@ -220,8 +220,8 @@ StorageFileLog::StorageFileLog(
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
-        assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-        assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+        chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+        chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
@@ -418,7 +418,7 @@ void StorageFileLog::deserialize()
 
 UInt64 StorageFileLog::getInode(const String & file_name)
 {
-    struct stat file_stat;
+    struct stat file_stat{};
     if (stat(file_name.c_str(), &file_stat))
     {
         throw Exception(ErrorCodes::CANNOT_STAT, "Can not get stat info of file {}", file_name);
@@ -534,8 +534,8 @@ void StorageFileLog::openFilesAndSetPos()
 
 void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 {
-    assert(start < end);
-    assert(end <= file_infos.file_names.size());
+    chassert(start < end);
+    chassert(end <= file_infos.file_names.size());
 
     for (size_t i = start; i < end; ++i)
     {
@@ -554,8 +554,8 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
 void StorageFileLog::storeMetas(size_t start, size_t end)
 {
-    assert(start < end);
-    assert(end <= file_infos.file_names.size());
+    chassert(start < end);
+    chassert(end <= file_infos.file_names.size());
 
     for (size_t i = start; i < end; ++i)
     {
@@ -590,11 +590,11 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     }
 
     auto read_settings = getReadSettings();
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode;
-    UInt64 last_written_pos;
+    UInt64 inode = 0;
+    UInt64 last_written_pos = 0;
 
     if (in->eof()) /// File is empty.
     {
@@ -821,6 +821,7 @@ void StorageFileLog::wakeUp()
     cv.notify_one();
 }
 
+void registerStorageFileLog(StorageFactory & factory);
 void registerStorageFileLog(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
@@ -906,22 +907,145 @@ void registerStorageFileLog(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+This engine allows processing of application log files as a stream of records.
+
+`FileLog` lets you:
+
+- Subscribe to log files.
+- Process new records as they are appended to subscribed log files.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = FileLog('path_to_logs', 'format_name') SETTINGS
+    [poll_timeout_ms = 0,]
+    [poll_max_batch_size = 0,]
+    [max_block_size = 0,]
+    [max_threads = 0,]
+    [poll_directory_watch_events_backoff_init = 500,]
+    [poll_directory_watch_events_backoff_max = 32000,]
+    [poll_directory_watch_events_backoff_factor = 2,]
+    [handle_error_mode = 'default']
+```
+
+Engine arguments:
+
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. Note that ClickHouse allows only paths inside `user_files` directory.
+- `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
+
+Optional parameters:
+
+- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
+- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
+- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
+- `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
+- `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
+- `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
+- `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
+- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+
+## Description {#description}
+
+The delivered records are tracked automatically, so each record in a log file is only counted once.
+
+`SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
+
+1.  Use the engine to create a FileLog table and consider it a data stream.
+2.  Create a table with the desired structure.
+3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
+
+When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive records from log files and convert them to the required format using `SELECT`.
+One FileLog table can have as many materialized views as you like, they do not read data from the table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).
+
+Example:
+
+```sql
+CREATE TABLE logs (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+
+CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM logs GROUP BY day, level;
+
+SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+To stop receiving streams data or to change the conversion logic, detach the materialized view:
+
+```sql
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
+```
+
+If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+
+## Virtual columns {#virtual-columns}
+
+- `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
+- `_offset` - Offset in the log file. Data type: `UInt64`.
+
+Additional virtual columns when `handle_error_mode='stream'`:
+
+- `_raw_record` - Raw record that couldn't be parsed successfully. Data type: `Nullable(String)`.
+- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
+
+Note: `_raw_record` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
+)DOCS_MD",
+            .syntax = "ENGINE = FileLog('path_to_logs', 'format') SETTINGS ...",
+            .related = {"Kafka", "RabbitMQ", "NATS"}});
+}
+
+void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
+{
+    auto it = file_infos.context_by_name.find(file_name);
+    if (it == file_infos.context_by_name.end())
+    {
+        file_infos.file_names.push_back(file_name);
+        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+        return;
+    }
+    if (it->second.inode != inode)
+    {
+        if (auto meta = file_infos.meta_by_inode.find(it->second.inode);
+            meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
+        {
+            file_infos.meta_by_inode.erase(meta);
+            disk->removeFileIfExists(getFullMetaPath(file_name));
+        }
+    }
+    it->second = FileContext{.inode = inode};
 }
 
 bool StorageFileLog::updateFileInfos()
 {
-    if (file_infos.file_names.empty())
-        return false;
-
     if (!directory_watch)
     {
+        if (file_infos.file_names.empty())
+            return false;
+
         /// For table just watch one file, we can not use directory monitor to watch it
         if (!path_is_directory)
         {
-            assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-            assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-            assert(file_infos.file_names.size() == 1);
+            chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+            chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
+            chassert(file_infos.file_names.size() == 1);
 
             if (auto it = file_infos.context_by_name.find(file_infos.file_names[0]); it != file_infos.context_by_name.end())
             {
@@ -931,6 +1055,12 @@ bool StorageFileLog::updateFileInfos()
         }
         return false;
     }
+
+    /// We process directory watcher events even when `file_names` is empty. After
+    /// the only watched file is removed the cleanup loop empties `file_names`;
+    /// without consuming the watcher's queue here we would miss a subsequent
+    /// `DW_ITEM_ADDED`/`DW_ITEM_MOVED_TO` and never observe the recreated file.
+
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
     auto error = directory_watch->getErrorAndReset();
@@ -938,90 +1068,83 @@ bool StorageFileLog::updateFileInfos()
         LOG_ERROR(log, "Error happened during watching directory {}: {}", directory_watch->getPath(), error.error_msg);
 
     /// These file infos should always have same size(one for one) before update and after update
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+    chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     auto events = directory_watch->getEventsAndReset();
 
-    for (const auto & [file_name, event_infos] : events)
+    /// Walk events in the order the kernel emitted them. Rename pairs
+    /// (`DW_ITEM_MOVED_FROM` on one name + `DW_ITEM_MOVED_TO` on another) must
+    /// be observed before any later `DW_ITEM_ADDED` for the source name, so
+    /// that `onFileAppeared`'s filename-ownership guard sees the post-rename
+    /// `file_name` in `meta_by_inode` rather than the stale pre-rename one.
+    for (const auto & [file_name, event_info] : events)
     {
         String file_path = getFullDataPath(file_name);
-        for (const auto & event_info : event_infos.file_events)
+        LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
+
+        switch (event_info.type)
         {
-            switch (event_info.type)
+            case DirectoryWatcherBase::DW_ITEM_ADDED:
             {
-                case DirectoryWatcherBase::DW_ITEM_ADDED:
+                /// Check if it is a regular file, and new file may be renamed or removed
+                if (std::filesystem::is_regular_file(file_path))
                 {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-                    /// Check if it is a regular file, and new file may be renamed or removed
-                    if (std::filesystem::is_regular_file(file_path))
+                    auto inode = getInode(file_path);
+
+                    onFileAppeared(file_name, inode);
+
+                    if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
+                        it->second = FileMeta{.file_name = file_name};
+                    else
+                        file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                }
+                break;
+            }
+
+            case DirectoryWatcherBase::DW_ITEM_MODIFIED:
+            {
+                /// When new file added and appended, it has two event: DW_ITEM_ADDED
+                /// and DW_ITEM_MODIFIED, since the order of these two events in the
+                /// sequence is uncentain, so we may can not find it in file_infos, just
+                /// skip it, the file info will be handled in DW_ITEM_ADDED case.
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                    it->second.status = FileStatus::UPDATED;
+                break;
+            }
+
+            case DirectoryWatcherBase::DW_ITEM_REMOVED:
+            /// The file **left** the directory
+            case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
+            {
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                    it->second.status = FileStatus::REMOVED;
+                break;
+            }
+            /// The file **arrived** in this directory
+            case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
+            {
+                /// Similar to DW_ITEM_ADDED, but if it removed from an old file
+                /// should obtain old meta file and rename meta file
+                if (std::filesystem::is_regular_file(file_path))
+                {
+                    auto inode = getInode(file_path);
+
+                    onFileAppeared(file_name, inode);
+
+                    /// File has been renamed, we should also rename meta file
+                    if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                     {
-                        auto inode = getInode(file_path);
-
-                        file_infos.file_names.push_back(file_name);
-
-                        if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
-                            it->second = FileMeta{.file_name = file_name};
-                        else
-                            file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-
-                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
-                        else
-                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+                        auto old_name = it->second.file_name;
+                        it->second.file_name = file_name;
+                        if (std::filesystem::exists(getFullMetaPath(old_name)))
+                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
-                    break;
+                    /// May move from other place, adding new meta info
+                    else
+                        file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }
-
-                case DirectoryWatcherBase::DW_ITEM_MODIFIED:
-                {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-                    /// When new file added and appended, it has two event: DW_ITEM_ADDED
-                    /// and DW_ITEM_MODIFIED, since the order of these two events in the
-                    /// sequence is uncentain, so we may can not find it in file_infos, just
-                    /// skip it, the file info will be handled in DW_ITEM_ADDED case.
-                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                        it->second.status = FileStatus::UPDATED;
-                    break;
-                }
-
-                case DirectoryWatcherBase::DW_ITEM_REMOVED:
-                case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
-                {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                        it->second.status = FileStatus::REMOVED;
-                    break;
-                }
-                case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
-                {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-
-                    /// Similar to DW_ITEM_ADDED, but if it removed from an old file
-                    /// should obtain old meta file and rename meta file
-                    if (std::filesystem::is_regular_file(file_path))
-                    {
-                        file_infos.file_names.push_back(file_name);
-                        auto inode = getInode(file_path);
-
-                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second = FileContext{.inode = inode};
-                        else
-                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
-
-                        /// File has been renamed, we should also rename meta file
-                        if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
-                        {
-                            auto old_name = it->second.file_name;
-                            it->second.file_name = file_name;
-                            if (std::filesystem::exists(getFullMetaPath(old_name)))
-                                std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
-                        }
-                        /// May move from other place, adding new meta info
-                        else
-                            file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-                    }
-                }
+                break;
             }
         }
     }
@@ -1043,8 +1166,7 @@ bool StorageFileLog::updateFileInfos()
                     meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
                     file_infos.meta_by_inode.erase(meta);
 
-                if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    (void)std::filesystem::remove(getFullMetaPath(file_name));
+                disk->removeFileIfExists(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else
@@ -1056,8 +1178,8 @@ bool StorageFileLog::updateFileInfos()
     file_infos.file_names.swap(valid_files);
 
     /// These file infos should always have same size(one for one)
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+    chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
 }

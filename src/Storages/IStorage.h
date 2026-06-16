@@ -22,6 +22,7 @@
 
 #include <expected>
 #include <optional>
+#include <list>
 
 
 namespace DB
@@ -41,7 +42,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
@@ -124,6 +125,9 @@ public:
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
+    virtual bool supportsStreaming() const { return false; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
@@ -239,9 +243,6 @@ public:
     /// the place to kick off that work (and it should be paused when IStorage is created with
     /// is_restore_from_backup = true in StorageFactory::Arguments).
     virtual void finalizeRestoreFromBackup() {}
-
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
 
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
@@ -452,6 +453,10 @@ public:
     virtual void drop() {}
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
+
+    /// Return true if the storage supports TRUNCATE operation.
+    /// Storages without their own data (e.g. View) return false.
+    virtual bool supportsTruncate() const { return true; }
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).

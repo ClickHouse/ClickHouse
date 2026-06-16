@@ -35,7 +35,9 @@ public:
         MergeTreeAllRangesCallback all_callback_,
         MergeTreeReadTaskCallback callback_,
         size_t number_of_current_replica_,
-        size_t total_nodes_count_);
+        size_t total_nodes_count_,
+        String stream_id_
+    );
 
     void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
 
@@ -51,6 +53,7 @@ private:
     MergeTreeReadTaskCallback callback;
     const size_t number_of_current_replica;
     const size_t total_nodes_count;
+    const String stream_id;
 };
 
 using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
@@ -179,6 +182,11 @@ private:
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+
+    StorageID storage_id = StorageID::createEmpty();
+    size_t prewhere_step_offset = 0;
+
+    void logPredicateStatistics() const;
 
     /// For per-block virtual row generation (read-in-order optimization).
     ExpressionActionsPtr virtual_row_conversions;

@@ -1,11 +1,17 @@
 #include <Functions/FunctionBaseAI.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RemoteHostFilter.h>
+#include <Poco/URI.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -46,7 +52,7 @@ namespace
 {
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeTextForAI(const String & input)
+String sanitizeTextForAI(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -62,45 +68,72 @@ String sanitizeTextForAI(const String & input)
 
 }
 
-FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
+FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
 {
     if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
-FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg)
 {
-    ResolvedConfig config;
-
-    const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+    const auto * col_const = typeid_cast<const ColumnConst *>(first_arg.get());
     if (!col_const)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
-    String collection_name = col_const->getValue<String>();
-    const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
+    AINamedCollectionConfig config;
+    config.collection_name = col_const->getValue<String>();
+
+    context->checkAccess(AccessType::NAMED_COLLECTION, config.collection_name);
+
+    const auto & named_collection = NamedCollectionFactory::instance().get(config.collection_name);
 
     config.provider = named_collection->getOrDefault<String>("provider", "");
     config.endpoint = named_collection->getOrDefault<String>("endpoint", "");
     config.model = named_collection->getOrDefault<String>("model", "");
     config.api_key = named_collection->getOrDefault<String>("api_key", "");
     config.api_version = named_collection->getOrDefault<String>("api_version", "");
-    config.max_tokens = named_collection->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
+
+    if (config.provider.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", config.collection_name);
+    if (config.endpoint.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", config.collection_name);
+    if (config.model.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", config.collection_name);
+
+    context->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
+
+    return config;
+}
+
+UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt)
+{
+    constexpr UInt64 max_retry_delay_ms = 60'000;
+    UInt64 delay_ms = std::min(initial_delay_ms, max_retry_delay_ms);
+    for (UInt64 i = 0; i < attempt && delay_ms < max_retry_delay_ms; ++i)
+        delay_ms = std::min(delay_ms * 2, max_retry_delay_ms);
+    return delay_ms;
+}
+
+FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+{
+    auto base = resolveAINamedCollection(getContext(), arguments[0].column);
+
+    ResolvedConfig config;
+    config.provider = std::move(base.provider);
+    config.endpoint = std::move(base.endpoint);
+    config.model = std::move(base.model);
+    config.api_key = std::move(base.api_key);
+    config.api_version = std::move(base.api_version);
     config.temperature = defaultTemperature();
+
+    const auto & named_collection = NamedCollectionFactory::instance().get(base.collection_name);
+    config.max_tokens = named_collection->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
 
     /// Poco JSON does not support UInt64, so providers cast max_tokens to Int64 for serialization.
     if (config.max_tokens > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}': max_tokens exceeds maximum ({})",
-            collection_name, std::numeric_limits<Int64>::max());
-
-    if (config.provider.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", collection_name);
-    if (config.endpoint.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
-    if (config.model.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", collection_name);
-    if (config.api_key.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", collection_name);
+            base.collection_name, std::numeric_limits<Int64>::max());
 
     return config;
 }
@@ -118,10 +151,31 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
     return config.temperature;
 }
 
-ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     auto config = resolveConfig(arguments);
+
+    /// Row-independent validation must run before the zero-row fast path so malformed constant
+    /// arguments fail consistently regardless of source size.
+    checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
+    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
+    auto response_format = buildResponseFormat(arguments);
     auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
+
+    if (input_rows_count == 0)
+        return result_type->createColumn();
+
+    /// A Nullable prompt can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
+    /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
+    size_t prompt_idx = promptArgumentIndex();
+    ColumnPtr prompt_column;
+    const ColumnNullable * prompt_nullable = nullptr;
+    if (prompt_idx < arguments.size() && arguments[prompt_idx].type->isNullable())
+    {
+        prompt_column = arguments[prompt_idx].column->convertToFullColumnIfConst();
+        prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
+    }
+
     float temperature = resolveTemperature(arguments, config);
 
     const auto & settings = getContext()->getSettingsRef();
@@ -140,10 +194,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
-    auto response_format = buildResponseFormat(arguments);
-
     auto result_col = ColumnString::create();
+    auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
     UInt64 total_api_calls = 0;
     UInt64 total_input_tokens = 0;
@@ -153,6 +205,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
+        if (prompt_nullable && prompt_nullable->getNullMapData()[i])
+        {
+            result_col->insertDefault();
+            null_map_col->getData()[i] = 1;
+            continue;
+        }
+
         if (quota.checkQuotas())
         {
             result_col->insertDefault();
@@ -176,10 +235,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = config.max_tokens;
 
-                auto ai_response = provider->call(ai_request, timeouts);
+                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
+                quota.recordAttempt();
 
-                quota.recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                auto ai_response = provider->call(ai_request, timeouts);
+
+                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 
@@ -191,7 +253,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             {
                 if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << std::min(attempt, UInt64(63)))));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
 
@@ -222,6 +284,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
     ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
+    if (result_type->isNullable())
+    {
+        if (!null_map_col)
+            null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        return ColumnNullable::create(std::move(result_col), std::move(null_map_col));
+    }
     return result_col;
 }
 

@@ -87,7 +87,7 @@ void validateFilters(const QueryTreeNodePtr & query_node)
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
 }
 
-bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
 {
     using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
     std::vector<NodePair> nodes_to_process;
@@ -152,8 +152,12 @@ namespace
 class ValidateGroupByColumnsVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsVisitor>
 {
 public:
-    explicit ValidateGroupByColumnsVisitor(const QueryTreeNodes & group_by_keys_nodes_, const QueryTreeNodePtr & query_node_)
+    explicit ValidateGroupByColumnsVisitor(
+        const QueryTreeNodes & group_by_keys_nodes_,
+        const QueryTreeNodes & original_group_by_keys_nodes_,
+        const QueryTreeNodePtr & query_node_)
         : group_by_keys_nodes(group_by_keys_nodes_)
+        , original_group_by_keys_nodes(original_group_by_keys_nodes_)
         , query_node(query_node_)
     {}
 
@@ -176,7 +180,10 @@ public:
             {
                 bool found_argument_in_group_by_keys = false;
 
-                for (const auto & group_by_key_node : group_by_keys_nodes)
+                /// Arguments of the `grouping` function only identify GROUP BY keys, so they are
+                /// not converted to Nullable when `group_by_use_nulls` is enabled and must be
+                /// compared with the keys in their original form.
+                for (const auto & group_by_key_node : original_group_by_keys_nodes)
                 {
                     if (grouping_function_arguments_node->isEqual(*group_by_key_node))
                     {
@@ -213,6 +220,14 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
+        /// Arguments of the `grouping` function are validated in visitImpl against the keys
+        /// in the original form. They must not be visited as ordinary expressions: when
+        /// `group_by_use_nulls` is enabled, they are not converted to Nullable and would not
+        /// match the converted GROUP BY keys.
+        if (auto * parent_function_node = parent_node->as<FunctionNode>())
+            if (parent_function_node->getFunctionName() == "grouping")
+                return false;
+
         if (nodeIsAggregateFunctionOrInGroupByKeys(parent_node))
             return false;
 
@@ -238,6 +253,7 @@ private:
     }
 
     const QueryTreeNodes & group_by_keys_nodes;
+    const QueryTreeNodes & original_group_by_keys_nodes;
     const QueryTreeNodePtr & query_node;
 };
 
@@ -307,8 +323,13 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             assertNoWindowFunctionNodes(window_function_node_typed.getWindowNode(), "inside window definition");
     }
 
+    /// GROUP BY keys in the form in which expressions equal to them appear in the query tree
+    /// (converted to Nullable when `group_by_use_nulls` is enabled), and in the original form
+    /// (for `grouping` function arguments, which are never converted).
     QueryTreeNodes group_by_keys_nodes;
+    QueryTreeNodes original_group_by_keys_nodes;
     group_by_keys_nodes.reserve(query_node_typed.getGroupBy().getNodes().size());
+    original_group_by_keys_nodes.reserve(query_node_typed.getGroupBy().getNodes().size());
 
     for (const auto & node : query_node_typed.getGroupBy().getNodes())
     {
@@ -320,6 +341,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
                 if (grouping_set_key->as<ConstantNode>())
                     continue;
 
+                original_group_by_keys_nodes.push_back(grouping_set_key);
                 group_by_keys_nodes.push_back(grouping_set_key->clone());
                 if (params.group_by_use_nulls)
                     group_by_keys_nodes.back()->convertToNullable();
@@ -330,6 +352,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             if (node->as<ConstantNode>())
                 continue;
 
+            original_group_by_keys_nodes.push_back(node);
             group_by_keys_nodes.push_back(node->clone());
             if (params.group_by_use_nulls)
                 group_by_keys_nodes.back()->convertToNullable();
@@ -351,7 +374,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
     if (has_aggregation)
     {
-        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, query_node);
+        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, original_group_by_keys_nodes, query_node);
 
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());

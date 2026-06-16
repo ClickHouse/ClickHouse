@@ -103,6 +103,7 @@ Config can be YAML or XML.
 | `pipeline_depth` | integer | `1` | In-flight async requests per worker (`>= 1`) |
 | `warmup_seconds` | float | `0` | Measurement warmup window |
 | `enable_tracing` | bool | `false` | Attach OpenTelemetry trace context |
+| `use_remove_recursive` | bool | `true` | Use the native `RemoveRecursive` Keeper request for cleanup; falls back to a manual recursive traversal if the server does not advertise the `REMOVE_RECURSIVE` feature flag or if this is set to `false` (needed for ZooKeeper or older Keeper versions) |
 | `connections` | object | required if `--hosts` absent | Keeper endpoints and connection settings |
 | `setup` | object | optional | Data tree created before run |
 | `generator` | object | optional | Request generator (enables generated mode) |
@@ -200,6 +201,10 @@ warmup_seconds: 5
 
 # attach OpenTelemetry tracing context to requests (default: false)
 enable_tracing: false
+
+# use the native `RemoveRecursive` Keeper request to wipe setup roots; set to
+# false for ZooKeeper or older Keeper servers that do not support it (default: true)
+use_remove_recursive: true
 ```
 
 ---

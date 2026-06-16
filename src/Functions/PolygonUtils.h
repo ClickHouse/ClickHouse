@@ -9,6 +9,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -202,7 +203,7 @@ public:
 
 private:
     MultiPolygon multi_polygon;
-    std::vector<PointInPolygonImpl> polygon_impls;
+    VectorWithMemoryTracking<PointInPolygonImpl> polygon_impls;
 
     /// Boost.Geometry split policy choices
     ///   linear     — quick to build, queries slowest
@@ -219,7 +220,7 @@ private:
     {
         polygon_impls.reserve(multi_polygon.size());
 
-        std::vector<PolyBox> boxes; // bulk-build container
+        VectorWithMemoryTracking<PolyBox> boxes; // bulk-build container
         boxes.reserve(multi_polygon.size());
 
         std::size_t idx = 0;
@@ -312,15 +313,15 @@ private:
         static const int max_stored_half_planes = 2;
 
         HalfPlane half_planes[max_stored_half_planes];
-        size_t index_of_inner_polygon;
+        size_t index_of_inner_polygon{};
         CellType type;
     };
 
     const UInt16 grid_size;
 
     Polygon polygon;
-    std::vector<Cell> cells;
-    std::vector<MultiPolygon> polygons;
+    VectorWithMemoryTracking<Cell> cells;
+    VectorWithMemoryTracking<MultiPolygon> polygons;
 
     CoordinateType cell_width;
     CoordinateType cell_height;
@@ -353,7 +354,7 @@ private:
     inline void addCell(size_t index, const Box & box, const Polygon & first, const Polygon & second);
 
     /// Returns a list of half-planes were formed from intersection edges without box edges.
-    inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
+    inline VectorWithMemoryTracking<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
     /// Check that polygon.outer() is convex.
     inline bool isConvex(const Polygon & polygon);
@@ -519,12 +520,12 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
 }
 
 template <typename CoordinateType>
-std::vector<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
+VectorWithMemoryTracking<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
 PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType>::Box & box,
         const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
 {
-    std::vector<HalfPlane> half_planes;
+    VectorWithMemoryTracking<HalfPlane> half_planes;
     const auto & outer = intersection.outer();
 
     for (auto i : collections::range(0, outer.size() - 1))

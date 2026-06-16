@@ -20,12 +20,13 @@ class SplitFileCachePriority : public IFileCachePriority
 public:
     class SplitIterator;
     using CachePriorityCreatorFunction
-        = std::function<IFileCachePriorityPtr(size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
+        = std::function<IFileCachePriorityPtr(QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
     using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
     using SegmentType = FileSegmentKeyType;
-    using PriorityPerType = std::unordered_map<SegmentType, IFileCachePriorityPtr>;
+    using PriorityPerType = std::array<IFileCachePriorityPtr, 3>;
 
     SplitFileCachePriority(
+        QueueType queue_type_,
         CachePriorityCreatorFunction creator_function,
         size_t max_size_,
         size_t max_elements_,
@@ -33,7 +34,7 @@ public:
         double system_segment_size_ratio_,
         const std::string & description_ = "none");
 
-    Type getType() const override { return priorities_holder.at(SegmentType::Data)->getType(); }
+    Type getType() const override { return getPriority(SegmentType::Data).getType(); }
 
     size_t getSize(const CacheStateGuard::Lock &) const override;
     size_t getSizeApprox() const override;
@@ -124,6 +125,9 @@ protected:
 
 private:
     SegmentType getPriorityType(const SegmentType & segment_type) const;
+
+    IFileCachePriority & getPriority(SegmentType type) { return *priorities_holder[static_cast<uint8_t>(type)]; }
+    const IFileCachePriority & getPriority(SegmentType type) const { return *priorities_holder[static_cast<uint8_t>(type)]; }
 
     PriorityPerType priorities_holder;
     double system_segment_size_ratio;

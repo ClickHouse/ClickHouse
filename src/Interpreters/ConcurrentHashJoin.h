@@ -42,12 +42,18 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
+    /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
+    /// when this instance is wrapped. It bounds statistics-driven preallocation so the
+    /// reserve cannot blow past the wrapper's spill threshold. Pass 0 for standalone use
+    /// (`join_algorithm = 'parallel_hash'`); the user-visible `max_bytes_before_external_join`
+    /// setting deliberately does NOT apply to standalone instances.
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
         SharedHeader right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
-        bool any_take_last_row_ = false);
+        bool any_take_last_row_ = false,
+        size_t external_join_threshold_ = 0);
 
     ~ConcurrentHashJoin() override;
 
@@ -62,6 +68,13 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
+
+    /// Number of internal hash join slots.
+    size_t getNumSlots() const { return slots; }
+
+    /// Extract all stored blocks from a specific slot.
+    /// The slot's HashJoin data is reset afterwards.
+    BlocksList releaseSlotBlocks(size_t slot_idx);
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -79,7 +92,8 @@ public:
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
+        return std::make_shared<ConcurrentHashJoin>(
+            table_join_, slots, right_sample_block_, stats_collecting_params, any_take_last_row, external_join_threshold);
     }
 
     std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
@@ -107,6 +121,7 @@ private:
     bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
+    const size_t external_join_threshold;
 
     std::mutex totals_mutex;
     Block totals;
