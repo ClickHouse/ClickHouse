@@ -173,3 +173,13 @@ ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
 
+## Cursor Cloud specific instructions {#cursor-cloud-specific-instructions}
+
+The VM snapshot already has the full build toolchain installed: `clang-21`/`clang++-21`, `ld.lld-21`, `ninja`, `nasm`, `yasm`, `ccache`, plus the pinned Rust toolchain `nightly-2026-03-22` (with `rust-src`). The `contrib/` git submodules are already checked out (~9 GB), and the startup update script runs `git submodule update --init --jobs 8` to keep them in sync with the pulled code. Do not reinstall any of this.
+
+Build (Debug) is the configured dev build. It is pre-configured in `build/` using `clang-21`. Compile with `ninja -C build clickhouse` (a clean full build takes well over an hour on this VM and produces a ~6.6 GB debug binary; incremental rebuilds are fast). See `docs/en/development/build.md` for full reference; if `cmake` ever complains it cannot find the Rust toolchain, run `rustup toolchain install nightly-2026-03-22 && rustup component add rust-src --toolchain nightly-2026-03-22`. To reconfigure from scratch: `CC=clang-21 CXX=clang++-21 cmake -S . -B build -G Ninja -D CMAKE_BUILD_TYPE=Debug`.
+
+Non-obvious run caveat: `cmake` does not copy a `config.xml`/`users.xml` into `build/programs/server/`. Run the server against the source config with an explicit writable data path, e.g. from `build/programs`: `./clickhouse server --config-file=/workspace/programs/server/config.xml -- --path=/workspace/tmp/ch-data/ --logger.log=/workspace/tmp/ch-logs/server.log`. Everything (`server`, `client`, `local`, `keeper`) is the one multi-call `clickhouse` binary; Keeper is built in and starts embedded with the default config. Connect with `./clickhouse client --host 127.0.0.1` (HTTP on `8123`, native on `9000`), or run queries without a server via `./clickhouse local --query "..."`.
+
+Functional (stateless) tests: run `tests/clickhouse-test --binary /workspace/build/programs/clickhouse <test_names>` against a running server. Pass `--binary` (the harness derives the client as `<binary> client`); do not also pass `--client`. C++ style/lint check: `bash ci/jobs/scripts/check_style/check_cpp.sh` (no output and rc=0 means clean). Docker is not installed, so the `python -m ci.praktika run ...` containerized build/test flow and integration tests are unavailable unless Docker is set up first.
+
