@@ -75,3 +75,24 @@ ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.metrics.ts\`"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.ts"
 
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${ORD} SYNC" 2>/dev/null || true
+
+# With lazy_load_tables=1 a reloaded TimeSeries table is materialized as a StorageTableProxy. The
+# proxy must not hide the TimeSeries type from the cross-database move guard -- otherwise a
+# cross-database RENAME would move only the outer table and orphan its inner tables in the old
+# database. The outer TimeSeries table is loaded eagerly so the guard sees it.
+LZ="${CLICKHOUSE_DATABASE}_lazy"
+LZ2="${CLICKHOUSE_DATABASE}_lazy2"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${LZ} SYNC; DROP DATABASE IF EXISTS ${LZ2} SYNC"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${LZ} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${LZ2} ENGINE = Atomic"
+${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${LZ}.ts ENGINE = TimeSeries"
+# Reattach so the table is recreated as a lazy proxy.
+${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${LZ}; ATTACH DATABASE ${LZ}"
+# The cross-database move is rejected before any inner table is moved.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "RENAME TABLE ${LZ}.ts TO ${LZ2}.ts" 2>&1 | grep -q -F "Cannot move TimeSeries table with inner tables" && echo "rejected"
+# Every inner table stayed in the source database (none orphaned in the target).
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${LZ}' AND name LIKE '.inner_id.%'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${LZ2}' AND name LIKE '.inner_id.%'"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${LZ}.ts"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${LZ} SYNC" 2>/dev/null || true
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${LZ2} SYNC" 2>/dev/null || true
