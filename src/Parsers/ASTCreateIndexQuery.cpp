@@ -91,10 +91,20 @@ void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_decl' during AST JSON deserialization");
     children.push_back(index_decl);
 
+    /// The parser sets `index_decl->name = index_name->name()`, and `formatQueryImpl` prints
+    /// `index_name` while `convertToASTAlterCommand`/`validateCreateIndexQuery` operate on
+    /// `index_decl->name`. Reject malformed `clickhouse_json` whose two names disagree, so the
+    /// displayed DDL cannot name one index while the executed operation targets another.
+    if (index_name->as<ASTIdentifier &>().name() != index_decl->as<ASTIndexDeclaration &>().name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateIndexQuery` 'index_name' must match 'index_decl' name during AST JSON deserialization");
+
     /// Prefer the parameterized identifier ASTs (which can represent query parameters);
     /// otherwise fall back to the plain string names. `setDatabase`/`setTable` register
-    /// the created identifier in `children`, so do not push again on that path.
-    if (auto database_child = r.readChild("database_ast"))
+    /// the created identifier in `children`, so do not push again on that path. These slots are
+    /// parser-produced identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`,
+    /// so reject other node types here.
+    if (auto database_child = r.readIdentifierChild("database_ast"))
     {
         database = database_child;
         children.push_back(database);
@@ -102,7 +112,7 @@ void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
     else
         setDatabase(r.getString("database"));
 
-    if (auto table_child = r.readChild("table_ast"))
+    if (auto table_child = r.readIdentifierChild("table_ast"))
     {
         table = table_child;
         children.push_back(table);

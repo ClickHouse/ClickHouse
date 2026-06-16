@@ -527,10 +527,12 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     /// The full ASTs take precedence over the string form: parameterized targets like
     /// `{tbl:Identifier}` have an empty `getTable()` and can only be restored from the AST.
     /// `setOrReplace` keeps `children` consistent regardless of whether the string form above
-    /// already populated the member.
-    if (auto database_ast = r.readChild("database_ast"))
+    /// already populated the member. These slots are parser-produced identifiers;
+    /// `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`, so reject other node
+    /// types here.
+    if (auto database_ast = r.readIdentifierChild("database_ast"))
         setOrReplace(database, database_ast);
-    if (auto table_ast = r.readChild("table_ast"))
+    if (auto table_ast = r.readIdentifierChild("table_ast"))
         setOrReplace(table, table_ast);
 
     if (r.getBool("is_temporary"))
@@ -607,8 +609,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         set(targets, child);
 
     /// `comment` is parsed by `ParserStringLiteral`; `StorageFactory::get`/`DatabaseFactory::get`
-    /// read `comment->as<ASTLiteral &>().value`, so reject any other node type here.
-    child = r.readChildOfType<ASTLiteral>("comment");
+    /// read `comment->as<ASTLiteral &>().value.safeGet<String>()`, so require a string literal here.
+    child = r.readStringLiteralChild("comment");
     if (child)
         set(comment, child);
 

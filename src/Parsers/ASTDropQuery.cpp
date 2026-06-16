@@ -96,13 +96,15 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
         setTable(tbl);
 
     /// Prefer the full identifier ASTs when present (they preserve parameterized names
-    /// like `{tbl:Identifier}` that the string form above cannot represent).
-    if (auto database_child = r.readChild("database_ast"))
+    /// like `{tbl:Identifier}` that the string form above cannot represent). These slots are
+    /// parser-produced identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`,
+    /// so reject other node types here.
+    if (auto database_child = r.readIdentifierChild("database_ast"))
     {
         database = database_child;
         children.push_back(database);
     }
-    if (auto table_child = r.readChild("table_ast"))
+    if (auto table_child = r.readIdentifierChild("table_ast"))
     {
         table = table_child;
         children.push_back(table);

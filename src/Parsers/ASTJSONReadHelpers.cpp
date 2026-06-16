@@ -1,5 +1,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
@@ -11,6 +13,27 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
+{
+    ASTPtr child = readChild(key);
+    if (child && !dynamic_cast<const ASTIdentifier *>(child.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected an identifier for key '{}' during AST JSON deserialization", key);
+    return child;
+}
+
+ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const
+{
+    ASTPtr child = readChild(key);
+    if (!child)
+        return nullptr;
+    const auto * literal = child->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected a string literal for key '{}' during AST JSON deserialization", key);
+    return child;
 }
 
 namespace
@@ -185,7 +208,9 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         if (!json_arr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Array field during AST JSON deserialization");
         Array arr;
-        arr.reserve(json_arr->size());
+        /// Bound the reserve by the remaining element budget so an untrusted array length cannot force
+        /// a large allocation before `countJSONDeserializationElement` rejects the payload below.
+        arr.reserve(std::min<size_t>(json_arr->size(), getJSONDeserializationRemainingElements()));
         for (unsigned int i = 0; i < json_arr->size(); ++i)
         {
             auto elem = json_arr->getObject(i);
@@ -201,7 +226,7 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         if (!json_arr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Tuple field during AST JSON deserialization");
         Tuple tup;
-        tup.reserve(json_arr->size());
+        tup.reserve(std::min<size_t>(json_arr->size(), getJSONDeserializationRemainingElements()));
         for (unsigned int i = 0; i < json_arr->size(); ++i)
         {
             auto elem = json_arr->getObject(i);
@@ -217,7 +242,7 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         if (!json_arr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Map field during AST JSON deserialization");
         Map map;
-        map.reserve(json_arr->size());
+        map.reserve(std::min<size_t>(json_arr->size(), getJSONDeserializationRemainingElements()));
         for (unsigned int i = 0; i < json_arr->size(); ++i)
         {
             auto elem = json_arr->getObject(i);

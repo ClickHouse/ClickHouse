@@ -1,6 +1,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -816,14 +817,18 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
 #endif
-    database = r.readChild("database");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here.
+    database = r.readIdentifierChild("database");
     if (database)
         children.push_back(database);
-    table = r.readChild("table");
+    table = r.readIdentifierChild("table");
     if (table)
         children.push_back(table);
     if_exists = r.getBool("if_exists");
-    query_settings = r.readChild("query_settings");
+    /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
+    /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.
+    query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
         children.push_back(query_settings);
     target_model = r.getString("target_model");
@@ -881,17 +886,25 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     backup_source = r.readChild("backup_source");
     if (backup_source)
         children.push_back(backup_source);
-    /// `scheduled_merge_parts` is an `ASTExpressionList` of string `ASTLiteral`s; `scheduleMerge`
-    /// iterates its children and does `child->as<ASTLiteral &>().value`, so validate both layers.
+    /// `scheduled_merge_parts` is a non-empty `ASTExpressionList` of string `ASTLiteral`s
+    /// (`SYSTEM SCHEDULE MERGE ... PARTS 'p1', ...`); `scheduleMerge` iterates its children and does
+    /// `child->as<ASTLiteral &>().value.safeGet<String>()`, so validate the node type, every child's
+    /// value category, and (for `SCHEDULE_MERGE`) that the list is present and non-empty.
     scheduled_merge_parts = r.readChildOfType<ASTExpressionList>("scheduled_merge_parts");
     if (scheduled_merge_parts)
     {
         for (const auto & part : scheduled_merge_parts->children)
-            if (!part || !part->as<ASTLiteral>())
+        {
+            const auto * literal = part ? part->as<ASTLiteral>() : nullptr;
+            if (!literal || literal->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`SystemQuery` 'scheduled_merge_parts' must contain only string literals during AST JSON deserialization");
+        }
         children.push_back(scheduled_merge_parts);
     }
+    if (type == Type::SCHEDULE_MERGE && (!scheduled_merge_parts || scheduled_merge_parts->children.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SYSTEM SCHEDULE MERGE` requires a non-empty 'scheduled_merge_parts' list during AST JSON deserialization");
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");

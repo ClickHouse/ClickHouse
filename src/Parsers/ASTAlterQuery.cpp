@@ -257,8 +257,13 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (!assignment || !assignment->as<ASTAssignment>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE 'update_assignments' must contain only assignments during AST JSON deserialization");
     /// `comment` (COMMENT COLUMN / MODIFY COMMENT / MODIFY DATABASE COMMENT) is parsed by
-    /// `ParserStringLiteral`; `AlterCommands` reads `comment->as<ASTLiteral &>().value`, so type it.
-    readTypedChild.operator()<ASTLiteral>("comment", comment);
+    /// `ParserStringLiteral`; `AlterCommands` reads `comment->as<ASTLiteral &>().value.safeGet<String>()`,
+    /// so require a string literal (not merely an `ASTLiteral`) here.
+    if (auto comment_child = r.readStringLiteralChild("comment"))
+    {
+        comment = comment_child.get();
+        children.push_back(std::move(comment_child));
+    }
     readRawChild("ttl", ttl);
     readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
     /// `settings_resets` is an `ASTExpressionList` of `ASTIdentifier` (the reset setting names).
@@ -1139,8 +1144,10 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
 
     /// Prefer the full AST form of the database/table targets when present, so that
     /// parameterized targets such as `ALTER TABLE {tbl:Identifier} ...` are preserved.
-    /// Fall back to the plain-identifier string form otherwise.
-    if (auto database_ast = r.readChild("database_ast"))
+    /// Fall back to the plain-identifier string form otherwise. These slots are parser-produced
+    /// identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`, so reject
+    /// other node types here.
+    if (auto database_ast = r.readIdentifierChild("database_ast"))
         set(database, database_ast);
     else
     {
@@ -1149,7 +1156,7 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
             setDatabase(db);
     }
 
-    if (auto table_ast = r.readChild("table_ast"))
+    if (auto table_ast = r.readIdentifierChild("table_ast"))
         set(table, table_ast);
     else
     {

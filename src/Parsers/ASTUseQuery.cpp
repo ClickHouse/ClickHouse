@@ -20,7 +20,9 @@ void ASTUseQuery::writeJSON(WriteBuffer & out) const
 void ASTUseQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    auto db_child = r.readChild("database");
+    /// `database` is a parser-produced identifier; `getDatabase` reads it via
+    /// `tryGetIdentifierNameInto`, so reject any other node type here.
+    auto db_child = r.readIdentifierChild("database");
     if (!db_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'database' in UseQuery JSON");
     set(database, db_child);

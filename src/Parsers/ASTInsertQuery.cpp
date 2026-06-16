@@ -94,14 +94,16 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     table_id.database_name = r.getString("database_name");
     table_id.table_name = r.getString("table_name");
 
-    auto db_child = r.readChild("database");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here.
+    auto db_child = r.readIdentifierChild("database");
     if (db_child)
     {
         database = db_child;
         children.push_back(database);
     }
 
-    auto tbl_child = r.readChild("table");
+    auto tbl_child = r.readIdentifierChild("table");
     if (tbl_child)
     {
         table = tbl_child;

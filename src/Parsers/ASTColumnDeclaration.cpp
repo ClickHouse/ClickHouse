@@ -248,7 +248,7 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
     /// `data_type` is left untyped (a type can be `ASTDataType`/`ASTEnumDataType`/`ASTTupleDataType`/...),
     /// and `ttl`/`default_expression` are arbitrary expressions.
-    setComment(r.readChildOfType<ASTLiteral>("comment"));
+    setComment(r.readStringLiteralChild("comment"));
     setCodec(r.readChildOfType<ASTFunction>("codec"));
     setStatisticsDesc(r.readChildOfType<ASTFunction>("statistics_desc"));
     setTTL(r.readChild("ttl"));

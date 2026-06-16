@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Core/Field.h>
@@ -8,6 +9,8 @@
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -137,6 +140,23 @@ public:
         return child;
     }
 
+    /// Read a child AST node and require it to be an identifier (`ASTIdentifier` or a subclass such
+    /// as `ASTTableIdentifier`; this also accepts a parameterized identifier, which the parser
+    /// produces as an `ASTIdentifier` carrying an `ASTQueryParameter` child). Database/table target
+    /// slots are parser-produced identifiers, and `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto` (which returns empty for non-identifiers); a foreign node type from
+    /// malformed `clickhouse_json` would otherwise format as one target while execution resolves a
+    /// different/empty one. Uses `dynamic_cast` rather than the exact-typeid `readChildOfType` so the
+    /// `ASTIdentifier` subclasses are accepted. Returns nullptr when the key is absent.
+    ASTPtr readIdentifierChild(const char * key) const;
+
+    /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the
+    /// `Field` value category). Slots like `COMMENT`/`COLLATE` are parser-produced via
+    /// `ParserStringLiteral`; downstream code reads them as `child->as<ASTLiteral &>().value.safeGet<String>()`,
+    /// and formatting a non-string literal would emit parser-impossible SQL (e.g. `COMMENT 123`). Reject
+    /// any other node type or value category here. Returns nullptr when the key is absent.
+    ASTPtr readStringLiteralChild(const char * key) const;
+
     /// Read the "children" array.
     ASTs readChildren() const
     {
@@ -146,10 +166,11 @@ public:
         auto arr = obj.getArray("children");
         if (!arr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
-        /// Cap the preallocation: `arr->size()` is untrusted and the per-element budget
-        /// (`countJSONDeserializationElement`, via `createFromJSON`) only rejects inside the loop, so a
-        /// huge array would otherwise force a large up-front allocation proportional to the JSON length.
-        result.reserve(arr->size() < 1024 ? arr->size() : 1024);
+        /// Cap the preallocation against the remaining element budget: `arr->size()` is untrusted and
+        /// the per-element budget (`countJSONDeserializationElement`, via `createFromJSON`) only rejects
+        /// inside the loop, so a huge array would otherwise force a large up-front allocation
+        /// proportional to the JSON length before `max_ast_elements` can reject the payload.
+        result.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto child_obj = arr->getObject(i);

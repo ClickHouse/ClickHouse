@@ -414,6 +414,15 @@ void countJSONDeserializationElement()
     ++json_deser_current_elements;
 }
 
+size_t getJSONDeserializationRemainingElements()
+{
+    if (!json_deser_max_elements)
+        return std::numeric_limits<size_t>::max();
+    if (json_deser_current_elements >= json_deser_max_elements)
+        return 0;
+    return json_deser_max_elements - json_deser_current_elements;
+}
+
 bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size)
 {
     /// In the `clickhouse_json` dialect, a leading `SET` query is an escape hatch back to a

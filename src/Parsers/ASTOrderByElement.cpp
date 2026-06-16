@@ -144,8 +144,8 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     children.push_back(std::move(expression));
 
     /// `collation` is parser-produced as a string `ASTLiteral`; sort-list building does
-    /// `getCollation()->as<ASTLiteral &>().value`, so reject any other node type here.
-    if (auto child = r.readChildOfType<ASTLiteral>("collation"))
+    /// `getCollation()->as<ASTLiteral &>().value.safeGet<String>()`, so require a string literal here.
+    if (auto child = r.readStringLiteralChild("collation"))
         setCollation(child);
 
     if (auto child = r.readChild("fill_from"))

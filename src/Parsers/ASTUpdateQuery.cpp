@@ -92,13 +92,15 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     cluster = r.getString("cluster");
-    database = r.readChild("database");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here.
+    database = r.readIdentifierChild("database");
     if (database)
         children.push_back(database);
     /// `table`, `assignments`, and `predicate` are required: `formatQueryImpl` dereferences
     /// `assignments` and `predicate` unconditionally and always formats the table name. Reject
     /// malformed JSON that omits them instead of producing an AST that crashes later.
-    table = r.readChild("table");
+    table = r.readIdentifierChild("table");
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`Update` AST requires 'table' during AST JSON deserialization");

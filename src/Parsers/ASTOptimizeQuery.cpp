@@ -86,10 +86,13 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     cluster = r.getString("cluster");
-    database = r.readChild("database");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here (a foreign node would format as one
+    /// target while execution resolves a different/empty one).
+    database = r.readIdentifierChild("database");
     if (database)
         children.push_back(database);
-    table = r.readChild("table");
+    table = r.readIdentifierChild("table");
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'table' field in `OptimizeQuery` during AST JSON deserialization");
     children.push_back(table);

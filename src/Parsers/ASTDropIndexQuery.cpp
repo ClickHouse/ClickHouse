@@ -78,8 +78,10 @@ void ASTDropIndexQuery::readJSON(const Poco::JSON::Object & json)
 
     /// Prefer the parameterized identifier ASTs (which can represent query parameters);
     /// otherwise fall back to the plain string names. `setDatabase`/`setTable` register
-    /// the created identifier in `children`, so do not push again on that path.
-    if (auto database_child = r.readChild("database_ast"))
+    /// the created identifier in `children`, so do not push again on that path. These slots are
+    /// parser-produced identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`,
+    /// so reject other node types here.
+    if (auto database_child = r.readIdentifierChild("database_ast"))
     {
         database = database_child;
         children.push_back(database);
@@ -87,7 +89,7 @@ void ASTDropIndexQuery::readJSON(const Poco::JSON::Object & json)
     else
         setDatabase(r.getString("database"));
 
-    if (auto table_child = r.readChild("table_ast"))
+    if (auto table_child = r.readIdentifierChild("table_ast"))
     {
         table = table_child;
         children.push_back(table);
