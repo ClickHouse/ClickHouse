@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
+#include <base/scope_guard.h>
 
 #include <exception>
 #include <future>
@@ -99,6 +100,17 @@ ParallelGzipDeflatingWriteBuffer::CompressedBuf ParallelGzipDeflatingWriteBuffer
     if (rc != Z_OK)
         throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
 
+    /// deflateInit2 allocated the zlib stream state; release it on every path. Without this guard a
+    /// throw between here and the end of the function (deflateEngine on a zlib error, or an out_buf
+    /// resize hitting the query memory tracker) would leak one zlib stream per failed block, and there
+    /// can be up to `max_generic_compression_threads` blocks in flight.
+    /// deflateEnd legitimately returns Z_DATA_ERROR for the non-final, flush-terminated blocks (the
+    /// stream is intentionally not finished), so its result is not an error condition here.
+    /// The call is wrapped in a lambda because zlib-ng defines `deflateEnd` as a self-referential
+    /// macro, which `-Wdisabled-macro-expansion` rejects when expanded inside the `SCOPE_EXIT` macro.
+    auto end_deflate_stream = [&strm] { deflateEnd(&strm); };
+    SCOPE_EXIT({ end_deflate_stream(); });
+
     strm.next_in = in_buf;
     strm.avail_in = static_cast<unsigned>(in_len);
 
@@ -114,8 +126,6 @@ ParallelGzipDeflatingWriteBuffer::CompressedBuf ParallelGzipDeflatingWriteBuffer
     {
         deflateEngine(strm, out_buf, Z_FINISH);
     }
-
-    deflateEnd(&strm);
 
     /// out_buf wrote directly into `mem`; finalize() is a no-op flush here but is required by the
     /// WriteBuffer contract before the buffer is destroyed.
