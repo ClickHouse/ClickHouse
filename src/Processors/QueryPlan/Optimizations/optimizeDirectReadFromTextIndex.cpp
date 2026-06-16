@@ -616,6 +616,19 @@ private:
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
 
+            /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
+            /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,
+            /// re-splitting tokens the index stores whole (e.g. a postprocessor that emits separators like
+            /// concat(val, ' x')). Match the elements verbatim by switching the tokenizer argument to 'array'.
+            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
+            {
+                chassert(new_children.size() == 3);
+                DataTypePtr arg_type = std::make_shared<DataTypeString>();
+                const String array_tokenizer_desc = ArrayTokenizer::getName();
+                MutableColumnConstPtr arg_column = arg_type->createColumnConst(0, Field(array_tokenizer_desc));
+                new_children[2] = &actions_dag.addColumn(std::move(arg_column), arg_type, quoteString(array_tokenizer_desc));
+            }
+
             /// hasToken takes a String haystack, so rejoin the postprocessed tokens with a separator;
             /// its boundary scan re-splits them. hasAnyTokens/hasAllTokens accept the Array(String) directly.
             if (function_name == "hasToken")
