@@ -12,13 +12,10 @@
 #include <Common/getRandomASCIIString.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
-#include <azure/storage/files/datalake/datalake_file_client.hpp>
-#include <azure/storage/files/datalake/datalake_options.hpp>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -226,19 +223,9 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool restrict_seek) const
+    std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
-
-    BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.remote_fs_settings.enable_blob_storage_log)
-    {
-        blob_storage_log = BlobStorageLogWriter::create(name);
-        if (blob_storage_log)
-            blob_storage_log->local_path = object.local_path;
-    }
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(),
@@ -246,11 +233,9 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         patchSettings(read_settings),
         settings_ptr->max_single_read_retries,
         settings_ptr->max_single_download_retries,
-        use_external_buffer,
-        restrict_seek,
-        /* read_until_position */0,
-        std::move(blob_storage_log),
-        connection_params.getContainer());
+        read_settings.remote_read_buffer_use_external_buffer,
+        read_settings.remote_read_buffer_restrict_seek,
+        /* read_until_position */0);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -270,17 +255,7 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
-std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>
-AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
-{
-    return std::make_unique<Azure::Storage::Files::DataLake::DataLakeFileClient>(
-        makeAdlsGen2FileClient(
-            connection_params.endpoint,
-            auth_method,
-            connection_params.client_options,
-            blob_path));
-}
-
+/// Open the file for write and return WriteBufferFromFileBase object.
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
@@ -293,27 +268,13 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
-    auto blob_storage_log = BlobStorageLogWriter::create(name);
-    if (blob_storage_log)
-        blob_storage_log->local_path = object.local_path;
-
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.azure_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
-    if (isAdlsGen2Endpoint(connection_params.endpoint))
-    {
-        return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
-            connection_params.endpoint,
-            auth_method,
-            connection_params.client_options,
-            object.remote_path,
-            write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
-            patchSettings(write_settings),
-            settings.get(),
-            connection_params.getContainer(),
-            std::move(blob_storage_log));
-    }
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
 
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
@@ -345,20 +306,12 @@ void AzureObjectStorage::removeObjectImpl(
     bool success = false;
     try
     {
-        if (isAdlsGen2Endpoint(connection_params.endpoint))
-        {
-            buildDataLakeFileClient(path)->Delete();
-            success = true;
-        }
-        else
-        {
-            auto delete_info = client_ptr->GetBlobClient(path).Delete();
-            success = delete_info.Value.Deleted;
-            if (!if_exists && !delete_info.Value.Deleted)
-                throw Exception(
-                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
-                    path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
-        }
+        auto delete_info = client_ptr->GetBlobClient(path).Delete();
+        success = delete_info.Value.Deleted;
+        if (!if_exists && !delete_info.Value.Deleted)
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+                path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
     }
     catch (const Azure::Storage::StorageException & e)
     {
@@ -506,13 +459,6 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     auto blob_storage_log = BlobStorageLogWriter::create(name);
 
-    if (isAdlsGen2Endpoint(connection_params.endpoint))
-    {
-        for (const auto & object : objects)
-            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
-        return;
-    }
-
     removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
 }
 
@@ -560,7 +506,6 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
-    result.etag = properties.ETag.ToString();
     if (!properties.Metadata.empty())
     {
         result.attributes.emplace();
