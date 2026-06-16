@@ -57,9 +57,10 @@ FORMAT Null SETTINGS log_comment = 'test_04201_with_filter_vrow', read_in_order_
 
 SYSTEM FLUSH LOGS query_log;
 
--- With `read_in_order_use_virtual_row`, deferred sources within the read-ahead window
--- (bounded by `max_threads`) read one chunk ahead of the merge to keep reading parallel,
--- so all 4 parts contribute a granule even though the merge itself only needs 3 of them.
+-- With `read_in_order_use_virtual_row`, the merge advances through the parts in key order.
+-- Once it has finished with a part and still needs another, a bounded read-ahead window
+-- (sized by `max_threads`) lets the deferred parts read one chunk ahead to keep reading
+-- parallel, so all 4 parts contribute a granule even though the merge itself only needs 3.
 SELECT
     log_comment,
     if(read_rows <= 8192 * expected_granules, 'Ok', format('Fail: {} rows read in query {}', read_rows, query_id)),

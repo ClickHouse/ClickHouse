@@ -83,6 +83,12 @@ private:
     std::vector<SourceDeferralState> source_deferral_state;
     /// Sources to report for read-ahead with the next `merge` status.
     std::vector<size_t> sources_to_prefetch;
+    /// Whether the merge has already finished with at least one source (read its real data
+    /// or exhausted it without any). Read-ahead is only started after this: the first source
+    /// the merge asks for is the front source being resolved from its virtual row, and the
+    /// sources deferred behind it may never be reached under a limit (e.g. the front part
+    /// alone satisfies it).
+    bool merge_advanced_past_source = false;
 
     /// Chunks currently being merged.
     Inputs current_inputs;
@@ -100,9 +106,11 @@ private:
     Status mergeBatchImpl(TSortingQueue & queue);
 
     bool hasFilter() const { return filter_column_position != -1; }
+    /// Issue read-ahead for the next deferred sources up to the window size.
     void topUpPrefetch();
     /// Mark a deferred source as no longer reading ahead (its real data arrived or it
-    /// finished without any), freeing a read-ahead slot and refilling the window.
+    /// finished without any), freeing a read-ahead slot. The window is refilled separately
+    /// from `merge`, once the merge actually needs to advance to another source.
     void releaseDeferredSource(size_t source_num);
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
