@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <base/arithmeticOverflow.h>
+#include <base/scope_guard.h>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -67,6 +68,11 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
         if (!dir)
             continue;
 
+        /// Release the handle on every path, including an exception thrown while
+        /// building `children_path` or opening the `ifstream` under a memory limit;
+        /// otherwise the swallowed sample failure would leak a directory fd.
+        SCOPE_EXIT(::closedir(dir));
+
         struct dirent * entry = nullptr;
         /// NOLINTNEXTLINE(concurrency-mt-unsafe) -- `dir` is a local `DIR *` not shared across threads.
         while ((entry = ::readdir(dir)) != nullptr)
@@ -101,8 +107,6 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
             if (result.size() >= MAX_PIDS)
                 break;
         }
-
-        ::closedir(dir);
     }
 #endif
 
@@ -262,7 +266,7 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
     bool walk_truncated = false;
     auto pids = UDFProcfs::walkSubtree(root_pid, walk_truncated);
     if (walk_truncated)
-        subtree_truncated_any = true;
+        subtree_truncated_any.store(true, std::memory_order_relaxed);
     for (pid_t pid : pids)
     {
         pre_walk_pids.insert(pid);
@@ -338,7 +342,7 @@ void UDFProcessSubtreeSampler::recordReleased()
     bool walk_truncated = false;
     auto pids = UDFProcfs::walkSubtree(root_pid, walk_truncated);
     if (walk_truncated)
-        subtree_truncated_any = true;
+        subtree_truncated_any.store(true, std::memory_order_relaxed);
 
     UInt64 post_utime_sum = 0;
     UInt64 post_stime_sum = 0;
@@ -381,7 +385,7 @@ void UDFProcessSubtreeSampler::recordReleased()
         if (UDFProcfs::readPeakRss(pid, hwm_bytes))
             peak_rss = std::max(peak_rss, hwm_bytes);
         else
-            read_peak_rss_failed_any = true;
+            read_peak_rss_failed_any.store(true, std::memory_order_relaxed);
     }
 
     if (post_utime_sum >= pre_utime_sum)
@@ -408,6 +412,121 @@ void UDFProcessSubtreeSampler::recordReleased()
         peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
     else
         peak_memory_byte_seconds = product / 1000000ULL;
+}
+
+
+void UDFProcessSubtreeSampler::recordExecutablePid(pid_t root_pid_) noexcept
+{
+    executable_root_pid = root_pid_;
+}
+
+
+void UDFProcessSubtreeSampler::sampleExecutablePeak([[maybe_unused]] bool is_final) noexcept
+{
+    if (executable_root_pid <= 0)
+        return;
+
+#if defined(OS_LINUX)
+    /// Called on every IO buffer fill; a 4 KiB read buffer would otherwise trigger
+    /// a subtree walk per fill while streaming large output. VmHWM is monotonic, so
+    /// the running max survives sparse sampling: throttle to at most one walk per
+    /// ~5 ms. The first call always samples (last_sample_us == 0) so a
+    /// short-lived child is measured at least once. The final (EOF) call bypasses
+    /// the throttle to ensure the tail sample always executes.
+    if (!is_final)
+    {
+        static constexpr UInt64 sample_interval_us = 5000;
+
+        const UInt64 now_us = entry_watch.elapsedMicroseconds();
+        UInt64 last = last_sample_us.load(std::memory_order_relaxed);
+        if (last != 0 && now_us < last + sample_interval_us)
+            return;
+        if (!last_sample_us.compare_exchange_strong(last, now_us, std::memory_order_relaxed))
+            return;
+    }
+
+    /// walkSubtree and readPeakRss allocate (path strings, ifstream); an exception
+    /// thrown under a memory limit must not cross this noexcept boundary.
+    try
+    {
+        bool walk_truncated = false;
+        const auto pids = UDFProcfs::walkSubtree(executable_root_pid, walk_truncated);
+        if (walk_truncated)
+            subtree_truncated_any.store(true, std::memory_order_relaxed);
+
+        for (pid_t pid : pids)
+        {
+            UInt64 hwm_bytes = 0;
+            if (!UDFProcfs::readPeakRss(pid, hwm_bytes))
+            {
+                /// A read can fail because the pid exited since `walkSubtree` (a
+                /// short-lived child, or the root after it closed stdout) or because
+                /// a sandbox denies `/proc`. The executable path cannot tell these
+                /// apart — the child's lifetime is not under our control — so it does
+                /// not raise the degradation flag here, unlike the pool path where the
+                /// borrowed worker is provably alive during sampling.
+                continue;
+            }
+
+            UInt64 current = executable_peak_rss_bytes.load(std::memory_order_relaxed);
+            while (hwm_bytes > current)
+            {
+                if (executable_peak_rss_bytes.compare_exchange_weak(
+                        current, hwm_bytes,
+                        std::memory_order_relaxed, std::memory_order_relaxed))
+                    break;
+            }
+        }
+    }
+    catch (...)
+    {
+        /// Dropping a sample is ok: the peak is a best-effort monotonic high-water mark.
+        return;
+    }
+#endif
+}
+
+
+void UDFProcessSubtreeSampler::recordExecutableElapsed() noexcept
+{
+    if (executable_finished)
+        return;
+
+    /// Wall time from sampler construction to `ShellCommandSource` cleanup (includes
+    /// spawn, output parsing, and IO). The executable path spawns a fresh child per
+    /// invocation, so there is no pool-wait interval to subtract.
+    elapsed_us = entry_watch.elapsedMicroseconds();
+
+    /// Peak RSS comes from /proc VmHWM sampled during IO into executable_peak_rss_bytes.
+    /// The send-data threads are joined before cleanup reaches this point, and the
+    /// read side ran on this same (cleanup) thread, so the relaxed load sees all
+    /// sampled writes.
+    const UInt64 peak_rss_bytes = executable_peak_rss_bytes.load(std::memory_order_relaxed);
+
+    UInt64 product = 0;
+    if (common::mulOverflow(peak_rss_bytes, elapsed_us, product))
+        peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
+    else
+        peak_memory_byte_seconds = product / 1000000ULL;
+
+    executable_finished = true;
+}
+
+
+void UDFProcessSubtreeSampler::recordExecutableFinished(
+    UInt64 user_time_us_, UInt64 system_time_us_) noexcept
+{
+    if (executable_rusage_recorded)
+        return;
+
+    /// Stamp elapsed first; `recordExecutableElapsed` is idempotent so calling
+    /// it here is safe even if the caller already invoked it.
+    recordExecutableElapsed();
+
+    user_time_us = user_time_us_;
+    system_time_us = system_time_us_;
+
+    executable_rusage_recorded = true;
 }
 
 }
