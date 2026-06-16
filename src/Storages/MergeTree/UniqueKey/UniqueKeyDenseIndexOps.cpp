@@ -43,12 +43,20 @@ namespace
 
 /// True when the sorted SST writer can take `block` as-is — UK columns
 /// form a non-Nullable prefix of ORDER BY.
-bool isPrefixWriterEligible(const Names & uk_names, const Names & sort_names, const Block & block)
+bool isPrefixWriterEligible(
+    const Names & uk_names, const Names & sort_names,
+    const std::vector<bool> & sort_reverse_flags, const Block & block)
 {
     if (uk_names.size() > sort_names.size())
         return false;
     for (size_t i = 0; i < uk_names.size(); ++i)
         if (uk_names[i] != sort_names[i])
+            return false;
+    /// The prefix writer trusts the block's physical order; a descending ORDER BY
+    /// column on the UK prefix would feed RocksDB decreasing keys. Fall back to the
+    /// unsorted writer (it re-sorts ascending) whenever any prefix column is DESC.
+    for (size_t i = 0; i < uk_names.size(); ++i)
+        if (i < sort_reverse_flags.size() && sort_reverse_flags[i])
             return false;
     for (const auto & name : uk_names)
         if (block.getByName(name).type->isNullable())
@@ -68,6 +76,7 @@ UInt64 UniqueKeyDenseIndexOps::writeDenseIndex(
     const Block & block,
     const Names & uk_names,
     const Names & sort_names,
+    const std::vector<bool> & sort_reverse_flags,
     const IColumn::Permutation * permutation,
     UInt64 max_encoded_size,
     ContextPtr context)
@@ -75,33 +84,34 @@ UInt64 UniqueKeyDenseIndexOps::writeDenseIndex(
     if (uk_names.empty())
         return 0;
 
-    if (isPrefixWriterEligible(uk_names, sort_names, block))
+    if (isPrefixWriterEligible(uk_names, sort_names, sort_reverse_flags, block))
         return SSTIndexWriter::writeFromBlock(storage, block, uk_names, permutation, max_encoded_size, context);
     return SSTIndexWriter::writeFromBlockUnsorted(storage, block, uk_names, permutation, max_encoded_size, context);
 }
 
 
 void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
-    [[maybe_unused]] IDataPartStorage & storage,
-    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] const Block & block,
-    [[maybe_unused]] const IColumn::Permutation * permutation,
-    [[maybe_unused]] UInt64 max_encoded_size,
-    [[maybe_unused]] ContextPtr context)
+    IDataPartStorage & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Block & block,
+    const IColumn::Permutation * permutation,
+    UInt64 max_encoded_size,
+    ContextPtr context)
 {
     /// Caller (`MergeTreeDataWriter`) ensures the table has a UNIQUE KEY.
-    /// `SSTIndexWriter` already accounts for `UniqueKeySSTWriteMicroseconds`.
-    /// No-op without RocksDB — the dense index needs it (the SST writer throws).
-#if USE_ROCKSDB
+    /// `SSTIndexWriter` accounts for `UniqueKeySSTWriteMicroseconds` itself, and
+    /// throws SUPPORT_IS_DISABLED without RocksDB: a UNIQUE KEY INSERT that cannot
+    /// build the dense index fails closed rather than publishing a part with no
+    /// `unique_key_index.sst`. (UK-INSERT stateless tests carry `no-fasttest`.)
     writeDenseIndex(
         storage,
         block,
         metadata_snapshot->getUniqueKeyColumns(),
         metadata_snapshot->getSortingKeyColumns(),
+        metadata_snapshot->getSortingKeyReverseFlags(),
         permutation,
         max_encoded_size,
         context);
-#endif
 }
 
 
@@ -201,6 +211,7 @@ void UniqueKeyDenseIndexOps::rebuildIfMissing(MutableDataPartPtr & part) const
             accumulated,
             uk_names,
             metadata_snapshot->getSortingKeyColumns(),
+            metadata_snapshot->getSortingKeyReverseFlags(),
             /*permutation=*/nullptr,
             max_encoded_size,
             data.getContext());
