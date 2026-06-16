@@ -330,8 +330,10 @@ String canonicalizeCompressionExtension(const String & ext)
         return "bz2";
     if (lower == "deflate")
         return "deflate";
-    if (lower == "snappy")
-        return "snappy";
+    /// NOTE: Snappy is intentionally not listed: it has only a read wrapper
+    /// (`HadoopSnappyReadBuffer`), and `wrapWriteBufferWithCompressionMethod` throws
+    /// `NOT_IMPLEMENTED` for it. Advertising `.snappy` as a response-compression extension would let
+    /// `/table.CSV.snappy` parse as valid and then fail only at response-buffer setup.
     return {};
 }
 

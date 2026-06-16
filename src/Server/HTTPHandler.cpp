@@ -183,6 +183,11 @@ static bool hasUrlPrefixWithSegmentBoundary(std::string_view url, std::string_vi
         return false;
     if (url.size() == prefix.size())
         return true;
+    /// A prefix that already ends in a boundary character (e.g. `/api/v1/`) is itself
+    /// segment-aligned, so any non-empty continuation is a valid child path: `/api/v1/db/hits`
+    /// must match prefix `/api/v1/` even though `url[prefix.size()]` is `d`.
+    if (!prefix.empty() && (prefix.back() == '/' || prefix.back() == '?' || prefix.back() == '#'))
+        return true;
     const char next = url[prefix.size()];
     return next == '/' || next == '?' || next == '#';
 }
@@ -308,11 +313,11 @@ void HTTPHandler::processQuery(
         /// `database` and `default_format` are NOT here — they are now proper settings and flow through the
         /// settings pipeline (with `changeable_in_readonly` constraints in the default profile so they remain
         /// settable on read-only HTTP methods).
-        /// `filter` is also a setting, but multiple URL params named `filter` must be combined; this is
-        /// handled separately below.
+        /// `filter` is NOT here either: it is collected as a construction filter only after
+        /// `customizeQueryParam` has had a chance to bind it (e.g. a `predefined_query_handler` with a
+        /// `{filter:String}` query parameter); see the parameter loop below.
         static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
-            "filter"};
+            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
 
         if (reserved_param_names.contains(name))
             return true;
@@ -359,14 +364,19 @@ void HTTPHandler::processQuery(
     for (const auto & [key, value] : params)
     {
         if (param_could_be_skipped(key))
-        {
-            /// Specially handle `filter` URL params: collect them all (multiple allowed).
-            if (key == "filter")
-                url_filters_from_params.push_back("(" + value + ")");
             continue;
-        }
         if (customizeQueryParam(context, key, value))
             continue;
+        /// `filter` is a construction setting, but the HTTP interface allows multiple `?filter=`
+        /// parameters combined with AND, so collect them here rather than letting the single-valued
+        /// `is_known_setting` path apply only the last one. This runs after `customizeQueryParam`, so
+        /// a configured handler that binds a `filter` query parameter (e.g. a `predefined_query_handler`
+        /// with `{filter:String}`) still receives it.
+        if (key == "filter")
+        {
+            url_filters_from_params.push_back("(" + value + ")");
+            continue;
+        }
         /// Recognized as a setting if it has a known setting name or starts with allowed prefixes.
         /// Otherwise, defer for possible filter treatment.
         if (is_known_setting(key))
@@ -441,16 +451,30 @@ void HTTPHandler::processQuery(
     /// matching configured HTTP handler path (e.g. `/dashboard`) so a user who typed `/sashbord`
     /// sees both the closest-handler suggestion and the closest-database-name suggestion.
     {
-        const String & database_setting = settings[Setting::database];
-        String resolved_database = database_setting;
+        /// The database explicitly supplied by *this request* via the `database` URL parameter or the
+        /// `X-ClickHouse-Database` header — it was collected into `settings_changes` and already
+        /// validated/applied above. A profile *default* for `database` is deliberately not treated as
+        /// request-supplied, so a path like `/db2/table` does not spuriously conflict with (and is not
+        /// blocked by) an inherited default — the path simply takes precedence over the default.
+        const Field * explicit_database_field = settings_changes.tryGet("database");
+        const String explicit_database = explicit_database_field ? explicit_database_field->safeGet<String>() : "";
+
+        String resolved_database = settings[Setting::database];
         if (!path_info.database.empty())
         {
-            if (resolved_database.empty())
-                resolved_database = path_info.database;
-            else if (resolved_database != path_info.database)
+            if (!explicit_database.empty() && explicit_database != path_info.database)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Conflicting database specification: '{}' in URL path vs '{}' in `database` setting.",
-                    path_info.database, resolved_database);
+                    path_info.database, explicit_database);
+
+            /// A database from the URL path bypasses the `database` URL-parameter/header pipeline, so
+            /// run it through `checkSettingsConstraints` here too — otherwise a `database` constraint
+            /// (e.g. marked `const`, or restricted values) would protect the URL-parameter/header form
+            /// but not the `/database/table` path form. The path takes precedence over a profile default.
+            SettingsChanges database_change;
+            database_change.setSetting("database", path_info.database);
+            context->checkSettingsConstraints(database_change, SettingSource::QUERY);
+            resolved_database = path_info.database;
         }
         if (!resolved_database.empty())
         {
@@ -513,7 +537,11 @@ void HTTPHandler::processQuery(
     if (!path_info.compression.empty())
     {
         const String & current_compression = settings[Setting::compression];
-        if (!current_compression.empty() && current_compression != path_info.compression)
+        /// Compare the resolved `CompressionMethod`, not the raw strings: `chooseCompressionMethod`
+        /// treats `gzip`/`gz`, `zstd`/`zst`, `lzma`/`xz`, `brotli`/`br` etc. as aliases, so
+        /// `/hits.CSV.gz?compression=gzip` must not be rejected as a conflict.
+        if (!current_compression.empty()
+            && chooseCompressionMethod({}, current_compression) != chooseCompressionMethod({}, path_info.compression))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Conflicting compression: '{}' in URL path vs '{}' in `compression` setting.",
                 path_info.compression, current_compression);
@@ -703,30 +731,42 @@ void HTTPHandler::processQuery(
     /// `sort` and `page` are already regular settings applied from the URL parameters, so the engine
     /// reads them directly.
     {
-        std::vector<String> all_filters;
-        if (!settings[Setting::filter].value.empty())
-            all_filters.push_back("(" + settings[Setting::filter].value + ")");
+        /// The filters that the HTTP request *adds* on top of the existing `filter` setting: filters
+        /// from the URL path, repeated `?filter=` parameters, and (when enabled) unrecognized URL
+        /// parameters.
+        std::vector<String> added_filters;
         for (const auto & f : path_info.path_filters)
-            all_filters.push_back(f);
+            added_filters.push_back(f);
         for (const auto & f : url_filters_from_params)
-            all_filters.push_back(f);
+            added_filters.push_back(f);
         for (const auto & f : url_filters_from_unrecognized)
-            all_filters.push_back(f);
+            added_filters.push_back(f);
 
-        String combined_filter;
-        for (const auto & f : all_filters)
+        /// Only re-apply the `filter` setting when the request actually adds filters. Otherwise the
+        /// existing `filter` setting (e.g. a profile default) is left untouched and applied as-is by
+        /// `applyQueryConstructionSettings`. Re-applying it unconditionally would re-submit the
+        /// already-applied value (wrapped in parentheses) through `checkSettingsConstraints`, which
+        /// rejects a `filter` constrained as `const` even when the request changes nothing.
+        if (!added_filters.empty())
         {
-            if (!combined_filter.empty())
-                combined_filter += " AND ";
-            combined_filter += f;
-        }
+            std::vector<String> all_filters;
+            if (!settings[Setting::filter].value.empty())
+                all_filters.push_back("(" + settings[Setting::filter].value + ")");
+            for (const auto & f : added_filters)
+                all_filters.push_back(f);
 
-        /// Setting the combined value as the `filter` setting also routes the URL-path / repeated
-        /// `?filter=` / unrecognized-parameter filters through `checkSettingsConstraints`, so a
-        /// profile that constrains `filter` (e.g. marks it `const`) is enforced for every source
-        /// instead of being bypassed by `?filter=`.
-        if (!combined_filter.empty())
-        {
+            String combined_filter;
+            for (const auto & f : all_filters)
+            {
+                if (!combined_filter.empty())
+                    combined_filter += " AND ";
+                combined_filter += f;
+            }
+
+            /// Setting the combined value as the `filter` setting also routes the URL-path / repeated
+            /// `?filter=` / unrecognized-parameter filters through `checkSettingsConstraints`, so a
+            /// profile that constrains `filter` (e.g. marks it `const`) is enforced for every source
+            /// instead of being bypassed by `?filter=`.
             SettingsChanges filter_change;
             filter_change.setSetting("filter", combined_filter);
             context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
@@ -739,11 +779,25 @@ void HTTPHandler::processQuery(
 
     if (!path_info.table.empty())
     {
+        /// `qualified_table` is SQL text spliced into a generated query (`SELECT * FROM …`), so it
+        /// must be back-quoted. `implicit_table_identifier` is the value of the
+        /// `implicit_table_at_top_level` setting, which the analyzer consumes as a raw `Identifier`
+        /// (it splits on `.` and does NOT strip SQL quoting — see `QueryTreeBuilder::buildJoinTree`),
+        /// so it must be the unquoted name parts. Back-quoting it here would push the backticks into
+        /// the identifier name parts and break FROM-less queries for databases/tables whose names
+        /// need quoting (e.g. `/weird-db/my-table?query=SELECT+*`).
         String qualified_table;
+        String implicit_table_identifier;
         if (!path_info.database.empty())
+        {
             qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
+            implicit_table_identifier = path_info.database + "." + path_info.table;
+        }
         else
+        {
             qualified_table = backQuoteIfNeed(path_info.table);
+            implicit_table_identifier = path_info.table;
+        }
 
         /// Validate up-front that the table from the URL path actually exists, so a typo like
         /// `/sashboards` produces a single clean response that combines the closest table-name
@@ -798,7 +852,7 @@ void HTTPHandler::processQuery(
         /// Always set implicit_table_at_top_level so a FROM-less SELECT (whether user-supplied
         /// or auto-generated) picks up the table from the URL path.
         SettingsChanges implicit_change;
-        implicit_change.setSetting("implicit_table_at_top_level", qualified_table);
+        implicit_change.setSetting("implicit_table_at_top_level", implicit_table_identifier);
         context->checkSettingsConstraints(implicit_change, SettingSource::QUERY);
         context->applySettingsChanges(implicit_change);
 
@@ -873,10 +927,15 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    /// Capture data needed for Content-Disposition computation from the surrounding scope.
-    String disposition_filename = path_info.filename_for_disposition;
+    /// Capture data needed for Content-Disposition computation from the surrounding scope. Use the
+    /// base table name from the URL path (without the path's format/compression extension) as the
+    /// filename stem: the actual extension is appended from the *effective* format / compression
+    /// below, so an explicit `output_format` / `compression` override that changes the response bytes
+    /// is reflected in the attachment filename (e.g. `/hits.CSV?compression=gz` is `hits.CSV.gz`, and
+    /// `/hits.CSV?output_format=Native` is `hits.Native`).
+    String disposition_base = path_info.table;
     String disposition_compression = settings[Setting::compression];
-    auto set_query_result = [&response, this, disposition_filename, disposition_compression]
+    auto set_query_result = [&response, this, disposition_base, disposition_compression]
         (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
@@ -902,20 +961,18 @@ void HTTPHandler::processQuery(
         bool response_is_compressed = !disposition_compression.empty();
         if (response_is_binary || response_is_compressed)
         {
-            String filename = disposition_filename;
-            if (filename.empty())
+            /// `result` when the URL path did not name a table. The extension always reflects the
+            /// effective format / compression of the bytes actually sent, not the path's extension.
+            String filename = disposition_base.empty() ? "result" : disposition_base;
+            if (details.format)
             {
-                filename = "result";
-                if (details.format)
-                {
-                    filename += ".";
-                    filename += *details.format;
-                }
-                if (response_is_compressed)
-                {
-                    filename += ".";
-                    filename += disposition_compression;
-                }
+                filename += ".";
+                filename += *details.format;
+            }
+            if (response_is_compressed)
+            {
+                filename += ".";
+                filename += disposition_compression;
             }
             /// Sanitize filename: strip control and quote characters to avoid header injection.
             String safe;
