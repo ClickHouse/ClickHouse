@@ -173,4 +173,21 @@ void ACLMap::removeUsage(ACLId acl_id)
     num_to_acl.erase(it);
 }
 
+void ACLMap::removeUnusedACLs()
+{
+    std::lock_guard lock(map_mutex);
+
+    for (auto it = num_to_acl.begin(); it != num_to_acl.end();)
+    {
+        if (it->second.usage.load(std::memory_order_relaxed) == 0)
+        {
+            bool erased = acl_to_num.erase(it->second.acls);
+            chassert(erased);
+            it = num_to_acl.erase(it);
+        }
+        else
+            ++it;
+    }
+}
+
 }

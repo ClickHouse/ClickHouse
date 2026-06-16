@@ -590,6 +590,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
 
+    /// The snapshot's ACL map may contain ACLs that are not referenced by any node, e.g. ACLs
+    /// that were referenced only by uncommitted nodes.
+    storage.acl_map.removeUnusedACLs();
+
     if constexpr (use_rocksdb)
     {
         LOG_TRACE(getLogger("KeeperSnapshotManager"), "Update node stats");

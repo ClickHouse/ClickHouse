@@ -220,6 +220,50 @@ TEST(ACLMapTest, OverflowWraparound)
     EXPECT_EQ(id3, 2);
 }
 
+TEST(ACLMapTest, RemoveUnusedACLs)
+{
+    DB::ACLMap acl_map;
+
+    /// Simulate snapshot deserialization: mappings are added with usage counter 0.
+    acl_map.addMapping(1, {{1, "digest", "used:pwd"}});
+    acl_map.addMapping(2, {{1, "digest", "unused:pwd"}});
+    acl_map.addMapping(3, {{1, "digest", "also_used:pwd"}});
+
+    /// Simulate reading nodes that reference only ids 1 and 3.
+    acl_map.addUsage(1);
+    acl_map.addUsage(3);
+    acl_map.addUsage(3);
+
+    acl_map.removeUnusedACLs();
+
+    /// Only the referenced ACLs (ids 1 and 3) remain.
+    auto mapping = acl_map.getMapping();
+    EXPECT_EQ(mapping.size(), 2);
+
+    bool has1 = false;
+    bool has2 = false;
+    bool has3 = false;
+    for (const auto & [id, acls] : mapping)
+    {
+        has1 |= (id == 1);
+        has2 |= (id == 2);
+        has3 |= (id == 3);
+    }
+    EXPECT_TRUE(has1);
+    EXPECT_FALSE(has2);
+    EXPECT_TRUE(has3);
+
+    /// Referenced ACLs keep their content.
+    EXPECT_EQ(acl_map.convertNumber(1), (Coordination::ACLs{{1, "digest", "used:pwd"}}));
+    EXPECT_EQ(acl_map.convertNumber(3), (Coordination::ACLs{{1, "digest", "also_used:pwd"}}));
+
+    /// The unused ACL was also removed from the ACL-to-number map, so converting the same ACLs
+    /// allocates a fresh id instead of returning the old (now dangling) one.
+    auto new_id = acl_map.convertACLs({{1, "digest", "unused:pwd"}});
+    EXPECT_NE(new_id, 2);
+    EXPECT_EQ(acl_map.convertNumber(new_id), (Coordination::ACLs{{1, "digest", "unused:pwd"}}));
+}
+
 TYPED_TEST(CoordinationTest, SnapshotableHashMapSimple)
 {
     DB::SnapshotableHashTable<IntNode> hello;

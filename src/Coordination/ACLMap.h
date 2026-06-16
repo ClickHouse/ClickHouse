@@ -66,6 +66,10 @@ public:
     /// Add/remove usage of some id. Used to remove unused ACLs.
     void addUsage(ACLId acl_id);
     void removeUsage(ACLId acl_id);
+
+    /// Remove all mappings whose usage counter is 0. Used after snapshot deserialization
+    /// to drop ACLs that are present in the snapshot's ACL map but not referenced by any node.
+    void removeUnusedACLs();
 };
 
 }
