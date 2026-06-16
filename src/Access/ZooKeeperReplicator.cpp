@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
-#include <Core/UUID.h>
 
 
 namespace
@@ -24,11 +23,6 @@ String makeWatchIdFromId(const DB::UUID & id)
     return "ZooKeeperReplicator::" + toString(id);
 }
 
-}
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredReplicatedAccessControl;
 }
 
 namespace DB
@@ -238,7 +232,7 @@ bool ZooKeeperReplicator::insertZooKeeper(
             }
         }
 
-        chassert(replace_if_exists);
+        assert(replace_if_exists);
         Coordination::Requests replace_ops;
         if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
         {
@@ -577,10 +571,7 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
     Coordination::Stat stat;
-    const auto entity_uuid_strs = zookeeper->getChildrenWatch(
-        zookeeper_uuids_path,
-        &stat,
-        Coordination::WatchCallbackPtrOrEventPtr{watch_entities_list, ProfileEvents::ZooKeeperWatchTriggeredReplicatedAccessControl});
+    const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
 
     std::vector<UUID> entity_uuids;
     entity_uuids.reserve(entity_uuid_strs.size());
@@ -649,7 +640,6 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
                 [[maybe_unused]] bool push_result = my_watched_queue->push(id);
         };
     });
-    watch.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredReplicatedAccessControl);
 
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);

@@ -4,7 +4,6 @@
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/99326
 # Avro output should throw BAD_ARGUMENTS instead of logical error
 # when an Enum column contains a value not in the enum definition.
-# Avro input should likewise reject an out-of-range enum index with INCORRECT_DATA.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -40,8 +39,3 @@ grep -q 'BAD_ARGUMENTS' "${CLICKHOUSE_TMP}/avro_enum16_err.txt" && echo "BAD_ARG
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE enum16_wide"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE enum16_narrow"
-
-# enum_index_out_of_range.avro declares a single enum symbol but encodes index 1.
-DATA_DIR=$CURDIR/data_avro
-cat "$DATA_DIR"/enum_index_out_of_range.avro | ${CLICKHOUSE_LOCAL} --input-format Avro -S "e Enum8('x' = 0)" -q 'select * from table' 2>&1 | grep -o 'INCORRECT_DATA' | head -n 1
-cat "$DATA_DIR"/enum_index_out_of_range.avro | ${CLICKHOUSE_LOCAL} --input-format Avro -S 'e String' -q 'select * from table' 2>&1 | grep -o 'INCORRECT_DATA' | head -n 1

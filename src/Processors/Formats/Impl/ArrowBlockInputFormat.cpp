@@ -153,7 +153,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 
     if (in.available() >= sizeof(int32_t))
     {
-        int32_t first_int = 0;
+        int32_t first_int;
         memcpy(&first_int, in.position(), sizeof(int32_t));
         /// Arrow IPC uses little-endian byte order on the wire.
         first_int = DB::fromLittleEndian(first_int);
@@ -175,10 +175,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     return *stream_reader_status;
 }
 
-static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
-    ReadBuffer & in,
-    const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped)
+static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadBuffer & in, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Arrow", ARROW_MAGIC_BYTES);
     if (is_stopped)
@@ -287,7 +284,6 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
     return *rows;
 }
 
-void registerInputFormatArrow(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -311,7 +307,6 @@ void registerInputFormatArrow(FormatFactory & factory)
         });
 }
 
-void registerArrowSchemaReader(FormatFactory & factory);
 void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -344,8 +339,6 @@ void registerArrowSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatArrow(FormatFactory &);
-void registerArrowSchemaReader(FormatFactory &);
 void registerInputFormatArrow(FormatFactory &)
 {
 }
