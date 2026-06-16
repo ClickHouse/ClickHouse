@@ -31,7 +31,7 @@ enum class ShiftRotateDirection : uint8_t
 };
 
 template <typename Impl, typename Name>
-class FunctionArrayShiftRotate final : public IFunction
+class FunctionArrayShiftRotate : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
