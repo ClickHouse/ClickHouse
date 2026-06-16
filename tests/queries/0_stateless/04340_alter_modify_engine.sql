@@ -62,3 +62,27 @@ SET allow_deprecated_syntax_for_merge_tree = 1;
 CREATE TABLE t_old (d Date, k UInt32, v UInt32) ENGINE = MergeTree(d, k, 8192);
 ALTER TABLE t_old MODIFY ENGINE = ReplacingMergeTree(v); -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_old;
+
+-- allow_tuple_element_aggregation (Summing/Aggregating/Coalescing only) is derived from the table's
+-- final MergeTree settings, not from the engine clause. MODIFY ENGINE must validate the candidate
+-- against it, otherwise a table with a Tuple sorting key would pass the ALTER and fail on next ATTACH.
+
+-- (a) setting already on the table: switching to Summing makes the Tuple sorting key illegal.
+CREATE TABLE t_tea (k Tuple(UInt32, UInt32), v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_tea MODIFY ENGINE = SummingMergeTree; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE t_tea;
+
+-- (b) setting flipped on in the same statement: validated against the in-flight value.
+CREATE TABLE t_tea (k Tuple(UInt32, UInt32), v UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_tea MODIFY ENGINE = AggregatingMergeTree, MODIFY SETTING allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE t_tea;
+
+-- (c) the flag is ignored for non-aggregating engines, so switching to Replacing stays allowed.
+CREATE TABLE t_tea (k Tuple(UInt32, UInt32), v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_tea MODIFY ENGINE = ReplacingMergeTree(v);
+DETACH TABLE t_tea;
+ATTACH TABLE t_tea;
+SELECT 'tuple-key replacing', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_tea';
+DROP TABLE t_tea;
