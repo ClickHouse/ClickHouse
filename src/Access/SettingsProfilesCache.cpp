@@ -37,6 +37,8 @@ void SettingsProfilesCache::ensureAllProfilesRead()
                 profileRemoved(id);
         });
 
+    batch_subscription = access_control.subscribeForBatchFinished([this] { mergeSettingsAndConstraintsIfNeeded(); });
+
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
         auto profile = access_control.tryRead<SettingsProfile>(id);
@@ -67,7 +69,7 @@ void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const
         profiles_by_name[new_profile->getName()] = profile_id;
     }
     profile_infos_cache.clear();
-    mergeSettingsAndConstraints();
+    need_recalculate = true;
 }
 
 
@@ -80,7 +82,18 @@ void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
     profiles_by_name.erase(it->second->getName());
     all_profiles.erase(it);
     profile_infos_cache.clear();
+    need_recalculate = true;
+}
+
+
+void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
+{
+    std::lock_guard lock{mutex};
+    if (!need_recalculate)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     mergeSettingsAndConstraints();
+    need_recalculate = false;
 }
 
 

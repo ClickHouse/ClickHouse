@@ -82,6 +82,14 @@ std::shared_ptr<const EnabledRoles>
 RoleCache::getEnabledRoles(boost::container::flat_set<UUID> roles, boost::container::flat_set<UUID> roles_with_admin_option)
 {
     std::lock_guard lock{mutex};
+
+    /// Lazy (not in the ctor): `changes_notifier` is constructed after the caches in `AccessControl`.
+    if (!batch_subscribed)
+    {
+        batch_subscription = access_control.subscribeForBatchFinished([this] { collectEnabledRolesIfNeeded(); });
+        batch_subscribed = true;
+    }
+
     EnabledRoles::Params params;
     params.current_roles = std::move(roles);
     params.current_roles_with_admin_option = std::move(roles_with_admin_option);
@@ -199,9 +207,6 @@ RolePtr RoleCache::getRole(const UUID & role_id, SubscriptionsOnRoles & subscrip
 
 void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
-
     std::lock_guard lock{mutex};
 
     auto role_from_cache = cache.get(role_id);
@@ -213,22 +218,33 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
     }
 
     /// An enabled role for some users has been changed, we need to recalculate the access rights.
-    collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
+    need_recalculate = true;
 }
 
 
 void RoleCache::roleRemoved(const UUID & role_id)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
-
     std::lock_guard lock{mutex};
 
     /// If a cache entry with the role has expired already, that remove() will do nothing.
     cache.remove(role_id);
 
     /// An enabled role for some users has been removed, we need to recalculate the access rights.
+    need_recalculate = true;
+}
+
+
+void RoleCache::collectEnabledRolesIfNeeded()
+{
+    /// Declared before `lock` to send notifications after the mutex will be unlocked.
+    scope_guard notifications;
+
+    std::lock_guard lock{mutex};
+    if (!need_recalculate)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
+    need_recalculate = false;
 }
 
 }

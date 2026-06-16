@@ -150,6 +150,8 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
                 rowPolicyRemoved(id);
         });
 
+    batch_subscription = access_control.subscribeForBatchFinished([this] { mixFiltersIfNeeded(); });
+
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
         auto policy = access_control.tryRead<RowPolicy>(id);
@@ -177,7 +179,7 @@ void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPo
 
     auto & info = it->second;
     info.setPolicy(new_policy);
-    mixFilters();
+    need_mix_filters = true;
 }
 
 
@@ -185,7 +187,18 @@ void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 {
     std::lock_guard lock{mutex};
     all_policies.erase(policy_id);
+    need_mix_filters = true;
+}
+
+
+void RowPolicyCache::mixFiltersIfNeeded()
+{
+    std::lock_guard lock{mutex};
+    if (!need_mix_filters)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
     mixFilters();
+    need_mix_filters = false;
 }
 
 

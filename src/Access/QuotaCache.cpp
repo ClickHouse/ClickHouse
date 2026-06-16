@@ -293,6 +293,8 @@ void QuotaCache::ensureAllQuotasRead()
                 quotaRemoved(id);
         });
 
+    batch_subscription = access_control.subscribeForBatchFinished([this] { chooseQuotaToConsumeIfNeeded(); });
+
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(quota_id);
@@ -318,7 +320,7 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
     auto & info = it->second;
     info.setQuota(new_quota, quota_id);
-    chooseQuotaToConsume();
+    need_rechoose_quotas = true;
 }
 
 
@@ -326,7 +328,18 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
     std::lock_guard lock{mutex};
     all_quotas.erase(quota_id);
+    need_rechoose_quotas = true;
+}
+
+
+void QuotaCache::chooseQuotaToConsumeIfNeeded()
+{
+    std::lock_guard lock{mutex};
+    if (!need_rechoose_quotas)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     chooseQuotaToConsume();
+    need_rechoose_quotas = false;
 }
 
 
