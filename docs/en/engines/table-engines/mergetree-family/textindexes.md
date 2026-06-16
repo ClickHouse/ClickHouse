@@ -1426,10 +1426,12 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 ## Related content {#related-content}
 
-- Presentation: [Inside ClickHouse full-text search: fast, native and columnar](https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf)
-- Presentation: [Inverted database indexes: The why, the what, and the how, FOSDEM 2026](https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf)
+- Blog: [Announcing General Availability of ClickHouse Full-text Search](https://clickhouse.com/blog/full-text-search-ga-release)
+- Blog: [Building high-performance full-text search for object storage](https://clickhouse.com/blog/clickhouse-full-text-search-object-storage)
 - Video: [Intro to Full-Text Search in ClickHouse](https://www.youtube.com/watch?v=9zPmf1a_heU)
 - Video: [Under the Hood: Full Text Search at ClickHouse scale and speed](https://www.youtube.com/watch?v=8JbqE_ubfkU)
+- Presentation: [Inside ClickHouse full-text search: fast, native and columnar](https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf)
+- Presentation: [Inverted database indexes: The why, the what, and the how, FOSDEM 2026](https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf)
 
 **Outdated material**
 
