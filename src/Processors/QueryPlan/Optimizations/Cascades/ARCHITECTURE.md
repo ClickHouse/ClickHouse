@@ -253,10 +253,8 @@ A Pareto frontier is maintained: when a new implementation is added, dominated e
 
 **Implementation rules** (generate physical expressions with properties):
 - `HashJoinImplementation` — creates local, broadcast, and shuffle hash join strategies
-- `AggregationImplementation` — creates local, shuffle, partial, and streaming
-  aggregation strategies (streaming requires sorted input by GROUP BY keys)
-- `ParallelReadImplementation` — parallel N-way read, plus sorted-read variant
-  (`SortedReadImplementation`) that preserves MergeTree primary key order
+- `AggregationImplementation` — creates local, shuffle, and partial aggregation strategies
+- `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
 - `DefaultImplementation` — wraps any step at `{1 node}` as fallback
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps

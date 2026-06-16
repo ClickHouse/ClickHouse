@@ -54,12 +54,6 @@ struct PartialAggregationStrategy final : IAggregationStrategy
     String getName() const override { return "PartialAggregation"; }
 };
 
-/// Streaming aggregation on sorted input — O(1) memory per group.
-struct StreamingAggregationStrategy final : IAggregationStrategy
-{
-    String getName() const override { return "StreamingAggregation"; }
-};
-
 /// --- Read strategies ---
 
 struct ParallelReadStrategy final : IReadStrategy
@@ -73,12 +67,6 @@ struct ParallelReadStrategy final : IReadStrategy
 struct ReplicatedReadStrategy final : IReadStrategy
 {
     String getName() const override { return "ReplicatedRead"; }
-};
-
-/// Sorted read: reads in primary key order, eliminating explicit Sort.
-struct SortedReadStrategy final : IReadStrategy
-{
-    String getName() const override { return "SortedRead"; }
 };
 
 using ImplementationStrategyPtr = std::shared_ptr<const IImplementationStrategy>;

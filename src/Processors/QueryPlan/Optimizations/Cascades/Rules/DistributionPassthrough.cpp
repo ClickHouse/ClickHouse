@@ -104,7 +104,7 @@ static bool isDistributionPassthrough(const IQueryPlanStep * step)
 /// Implementation rule for stateless per-row steps. Propagates distribution to the
 /// input and creates speculative multi-node variants at each candidate node count.
 /// Also creates sorted passthrough variants that delegate sorting to the child group,
-/// enabling `SortedRead` to eliminate explicit Sort steps for PK-aligned ORDER BY.
+/// so the sort can be placed below the passthrough step when that is cheaper.
 class DistributionPassthrough : public IOptimizationRule
 {
 public:
@@ -149,7 +149,6 @@ protected:
 
         /// Sorted passthrough: delegate sorting to the child (column names translated
         /// through the DAG).  Competes with unsorted variant + `SortingEnforcer`.
-        /// When child has `SortedRead` matching PK, eliminates Sort entirely.
         if (!required_properties.sorting.empty())
         {
             const ActionsDAG * dag = tryGetActionsDAG(expression->getQueryPlanStep());

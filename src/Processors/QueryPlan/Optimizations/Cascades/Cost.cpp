@@ -231,16 +231,6 @@ ExpressionCost CostEstimator::estimateReadCost(
         };
     }
 
-    if (dynamic_cast<const SortedReadStrategy *>(strategy) != nullptr)
-    {
-        /// Same IO + small overhead for N-way merge of pre-sorted parts.
-        Float64 rows = this_step_statistics.estimated_row_count;
-        return ExpressionCost{
-            .cost = Cost{.work = rows * bytes_per_row / distribution_node_count + rows * 0.1 / distribution_node_count},
-            .subtree_cost = {},
-        };
-    }
-
     if (dynamic_cast<const ReplicatedReadStrategy *>(strategy) != nullptr)
     {
         /// Shared storage: every node reads full table from S3. No network.
@@ -267,16 +257,10 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     const bool is_local = dynamic_cast<const LocalAggregationStrategy *>(strategy) != nullptr;
     const bool is_shuffle = dynamic_cast<const ShuffleAggregationStrategy *>(strategy) != nullptr;
     const bool is_partial = dynamic_cast<const PartialAggregationStrategy *>(strategy) != nullptr;
-    const bool is_streaming = dynamic_cast<const StreamingAggregationStrategy *>(strategy) != nullptr;
 
     ExpressionCost aggregation_cost;
 
-    if (is_streaming)
-    {
-        /// Sorted input, no hash table.
-        aggregation_cost.cost.work += input_statistics.estimated_row_count / parallelism;
-    }
-    else if (is_local)
+    if (is_local)
     {
         /// Hash table build + probe + output materialization.
         aggregation_cost.cost.work +=
