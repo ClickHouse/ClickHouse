@@ -1625,6 +1625,13 @@ namespace ErrorCodes
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
     )", 0) \
+    DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
+    When enabled, individual elements within Tuple columns participate in
+    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+    leaf elements are aggregated independently. This setting is immutable
+    and must be specified at table creation time.
+    )", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
     Allow to create a table with sampling expression not in primary key. This is
     needed only to temporarily allow to run the server with wrong tables for
@@ -1898,7 +1905,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    Supported statistics types: basic, tdigest, countmin, minmax, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -2014,36 +2021,6 @@ namespace ErrorCodes
     Possible values:
     - `true`
     - `false`
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, R"(
-    Enables support for descending sort order in MergeTree sorting keys. This
-    setting is particularly useful for time series analysis and Top-N queries,
-    allowing data to be stored in reverse chronological order to optimize query
-    performance.
-
-    With `allow_experimental_reverse_key` enabled, you can define descending sort
-    orders within the `ORDER BY` clause of a MergeTree table. This enables the
-    use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder`
-    for descending queries.
-
-    **Example**
-
-    ```sql
-    CREATE TABLE example
-    (
-    time DateTime,
-    key Int32,
-    value String
-    ) ENGINE = MergeTree
-    ORDER BY (time DESC, key)  -- Descending order on 'time' field
-    SETTINGS allow_experimental_reverse_key = 1;
-
-    SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-    ```
-
-    By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-    **Default Value:** false
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_commit_order_projection, false, R"(
     Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
@@ -2235,6 +2212,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2849,6 +2827,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;
 }
