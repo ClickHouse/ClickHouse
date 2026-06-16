@@ -103,9 +103,12 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
-if (USE_MUSL)
-    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
-endif ()
+get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
+if (CXX_PUBLIC_DEFS)
+    list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
+    list(JOIN CXX_PUBLIC_DEFS " " CXX_PUBLIC_DEFS)
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXX_PUBLIC_DEFS}")
+endif()
 
 if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
@@ -293,7 +296,7 @@ function(clickhouse_config_crate_flags target_name)
 
         add_custom_target(localize_rust_c_${target_name}
             COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
-                "${_rust_lib_path}" "${CMAKE_OBJCOPY}"
+                "${_rust_lib_path}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
             COMMENT "Localizing C-namespace symbols in ${target_name}"
             VERBATIM
         )

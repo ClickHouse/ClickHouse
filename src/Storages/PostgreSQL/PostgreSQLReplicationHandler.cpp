@@ -597,7 +597,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
-    assert(!result.empty());
+    chassert(!result.empty());
     return result[0][0].as<std::string>() == "t";
 }
 
@@ -683,7 +683,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
-    assert(temporary || !user_managed_slot);
+    chassert(temporary || !user_managed_slot);
 
     String query_str;
     String slot_name;
@@ -711,7 +711,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
 void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx, bool temporary)
 {
-    assert(temporary || !user_managed_slot);
+    chassert(temporary || !user_managed_slot);
 
     std::string slot_name;
     if (temporary)
@@ -845,7 +845,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 {
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
-    bool publication_exists_before_startup;
+    bool publication_exists_before_startup = false;
 
     {
         pqxx::nontransaction tx(connection.getRef());
@@ -1167,9 +1167,9 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
 
 void PostgreSQLReplicationHandler::execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const
 {
-    if (fault_injection_probability > 0.)
+    if (fault_injection_probability > 0.f)
     {
-        std::bernoulli_distribution fault(fault_injection_probability);
+        std::bernoulli_distribution fault(static_cast<double>(fault_injection_probability));
         if (fault(thread_local_rng))
             throw pqxx::broken_connection("Fault injected");
     }

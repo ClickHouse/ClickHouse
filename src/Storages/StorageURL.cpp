@@ -1,9 +1,12 @@
 #include <Storages/StorageURL.h>
+#include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
+#include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -18,6 +21,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -492,7 +496,9 @@ Chunk StorageURLSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -506,7 +512,8 @@ Chunk StorageURLSource::generate()
                         ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
                         : std::nullopt,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
@@ -540,6 +547,8 @@ Chunk StorageURLSource::generate()
     return {};
 }
 
+void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
+
 std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
@@ -560,7 +569,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
-        bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
+        bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
         for (const auto & [param, value] : params)
@@ -1178,6 +1187,12 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
+
+    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+        prepareEagerKeyConditionSets(
+            filter_actions_dag,
+            storage_snapshot, info.source_header,
+            query_info.prewhere_info, query_info.row_level_filter, getContext());
 
     createIterator(predicate);
 }
@@ -1990,6 +2005,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 }
 
 
+void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -2024,7 +2040,128 @@ void registerStorageURL(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
+
+Syntax: `URL(URL [,Format] [,CompressionMethod])`
+
+- The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
+
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
+
+    If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
+
+- `CompressionMethod` indicates that whether the HTTP body should be compressed. If the compression is enabled, the HTTP packets sent by the URL engine contain 'Content-Encoding' header to indicate which compression method is used.
+
+To enable compression, please first make sure the remote HTTP endpoint indicated by the `URL` parameter supports corresponding compression algorithm.
+
+The supported `CompressionMethod` should be one of following:
+- gzip or gz
+- deflate
+- brotli or br
+- lzma or xz
+- zstd or zst
+- lz4
+- bz2
+- snappy
+- none
+- auto
+
+If `CompressionMethod` is not specified, it defaults to `auto`. This means ClickHouse detects compression method from the suffix of `URL` parameter automatically. If the suffix matches any of compression method listed above, corresponding compression is applied or there won't be any compression enabled.
+
+For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` compression method is applied, but for `URL('http://localhost/test.fr')`, no compression is enabled because the suffix `fr` does not match any compression methods above.
+
+## Usage {#using-the-engine-in-the-clickhouse-server}
+
+`INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
+respectively. For processing `POST` requests, the remote server must support
+[Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
+
+## Example {#example}
+
+**1.** Create a `url_engine_table` table on the server :
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** Create a basic HTTP server using the standard Python 3 tools and
+start it:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** Request data:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+## Details of Implementation {#details-of-implementation}
+
+- Reads and writes can be parallel
+- Not supported:
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
+
+## Virtual columns {#virtual-columns}
+
+- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
+- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [url_base](/operations/settings/settings.md#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](../../../sql-reference/table-functions/url.md#resolving-relative-urls).
+
+**Example**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+## Storage settings {#storage-settings}
+
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [url_base](/operations/settings/settings.md#url_base) - base URL for resolving relative URLs passed to the engine.
+)DOCS_MD",
+            .syntax = "ENGINE = URL(url[, format[, compression]])",
+            .related = {"File"}});
 }
 
 }

@@ -36,6 +36,8 @@ struct StorageInMemoryMetadata
     bool add_minmax_index_for_numeric_columns = false;
     bool add_minmax_index_for_string_columns = false;
     bool add_minmax_index_for_temporal_columns = false;
+    bool add_minmax_index_for_block_number_column = false;
+    bool add_minmax_index_for_block_offset_column = false;
     /// Needed for compatibility
     bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
@@ -331,6 +333,9 @@ struct StorageInMemoryMetadata
 
     void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
     void dropImplicitIndicesForColumn(const String & column_name);
+
+    void addImplicitIndicesForVirtualColumns(ContextPtr context);
+    void dropImplicitIndicesForVirtualColumns();
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

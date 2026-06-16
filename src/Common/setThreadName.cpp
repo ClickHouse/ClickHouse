@@ -61,7 +61,7 @@ std::string_view toString(ThreadName name)
     }
 }
 
-ThreadName parseThreadName(const std::string_view & name)
+static ThreadName parseThreadName(const std::string_view & name)
 {
     if (auto it = str_to_thread_name.find(name); it != str_to_thread_name.end())
         return it->second;

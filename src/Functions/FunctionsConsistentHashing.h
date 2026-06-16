@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionConsistentHashImpl : public IFunction
+class FunctionConsistentHashImpl final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -50,9 +50,10 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} accepts {}-bit integers at most, got {}",
                     getName(), sizeof(HashType) * 8, arguments[0]->getName());
 
-        if (!isInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}",
-                arguments[1]->getName(), getName());
+        if (!isNativeInteger(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The second argument of function {} (number of buckets) must be a native integer (up to 64-bit), got {}",
+                getName(), arguments[1]->getName());
 
         return std::make_shared<DataTypeNumber<ResultType>>();
     }

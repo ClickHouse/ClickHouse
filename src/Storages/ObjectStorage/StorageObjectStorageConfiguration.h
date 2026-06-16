@@ -149,6 +149,7 @@ public:
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
+    virtual bool isIcebergConfiguration() const { return false; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
@@ -236,6 +237,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
+        StoragePtr /*storage_ptr*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
@@ -243,12 +245,12 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/)
+    virtual void checkMutationIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const MutationCommands & /*commands*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
 
-    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    virtual void checkAlterIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const AlterCommands & commands)
     {
         for (const auto & command : commands)
         {
@@ -258,7 +260,12 @@ public:
         }
     }
 
-    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
+    virtual void alter(
+        ObjectStoragePtr /*object_storage*/,
+        const AlterCommands & /*params*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
@@ -275,7 +282,7 @@ public:
         return nullptr;
     }
 
-    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
     }
@@ -311,6 +318,10 @@ public:
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
+    /// Tracks whether `partition_columns_in_data_file` was explicitly provided by the user.
+    /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
+    /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
+    bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:

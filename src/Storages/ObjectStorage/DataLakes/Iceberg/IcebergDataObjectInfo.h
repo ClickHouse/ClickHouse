@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
 #include <Core/Field.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 
@@ -22,9 +21,9 @@ String computePartitionId(const Row & partition_key_value);
 struct IcebergObjectSerializableInfo
 {
     IcebergPathFromMetadata data_object_file_path_key;
-    Int32 underlying_format_read_schema_id;
-    Int32 schema_id_relevant_to_iterator;
-    Int64 sequence_number;
+    Int32 underlying_format_read_schema_id{};
+    Int32 schema_id_relevant_to_iterator{};
+    Int64 sequence_number{};
     String file_format;
     String manifest_file;
     String partition_id;
@@ -50,6 +49,10 @@ private:
 
 namespace DB
 {
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
 struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
@@ -70,6 +73,13 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         ContextPtr context_);
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
+
+    std::optional<size_t> getFileSizeHint() const override
+    {
+        if (info.file_size_in_bytes.has_value())
+            return static_cast<size_t>(*info.file_size_in_bytes);
+        return std::nullopt;
+    }
 
     void addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path);
 

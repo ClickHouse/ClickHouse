@@ -728,7 +728,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes evicted from filesystem cache
 - `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/sql-reference/data-types/int-uint)) — Number of created key directories
 - `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache
-- `ProfileEvent_FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)
+- `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.
 - `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments sent for background download in filesystem cache
 - `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in unreleasable state
 - `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in evicting state
@@ -1584,6 +1584,8 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_FilesystemCacheSize` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache size in bytes
 - `CurrentMetric_FilesystemCacheSizeLimit` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache size limit in bytes
 - `CurrentMetric_FilesystemCacheElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements (file segments)
+- `CurrentMetric_FilesystemCachePriorityQueueElements` ([Int64](/sql-reference/data-types/int-uint)) — Total number of entries in the filesystem cache priority queue, including invalidated entries pending removal
+- `CurrentMetric_FilesystemCacheInvalidatedElements` ([Int64](/sql-reference/data-types/int-uint)) — Number of invalidated (zero size, pending removal) entries in the filesystem cache priority queue
 - `CurrentMetric_FilesystemCacheDownloadQueueElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements in download queue
 - `CurrentMetric_FilesystemCacheDelayedCleanupElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements in background cleanup queue
 - `CurrentMetric_FilesystemCacheHoldFileSegments` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache file segment which are currently hold as unreleasable
@@ -1789,6 +1791,21 @@ CurrentMetric_DistributedFilesToInsert:                          0
 This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `wide`, where each metric or profile event is stored as a separate column. This schema is the most performant and efficient for single-column reads.
 
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
+
+**Histograms**
+
+Each row also carries a snapshot of every registered histogram metric in a `histograms` Nested column with fields `metric`, `labels`, `histogram`, `count`, and `sum`. Bucket counts are cumulative since server startup. By default, histograms whose total `count` is zero are not emitted, and zero-counter buckets within an emitted histogram are omitted from the `histogram` map; set `system_metric_log_show_zero_values_in_histograms = 1` (in the default user profile) to keep all histograms and all buckets.
+
+Example query:
+
+```sql
+SELECT h.metric, h.labels, h.histogram, h.count, h.sum
+FROM system.metric_log
+ARRAY JOIN histograms AS h
+WHERE h.metric = 'keeper_response_time_ms' AND h.labels['operation_type'] = 'readonly'
+ORDER BY event_time DESC
+LIMIT 1;
+```
 
 ## See Also {#see-also}
 

@@ -183,6 +183,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::SYNC_MERGES:
         {
             if (table)
             {
@@ -193,6 +194,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
+            break;
+        }
+        case Type::SCHEDULE_MERGE:
+        {
+            chassert(table);
+            ostr << ' ';
+            print_database_table();
+            print_keyword(" PARTS ");
+            chassert(scheduled_merge_parts);
+            scheduled_merge_parts->format(ostr, settings, state, frame);
             break;
         }
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
@@ -538,13 +549,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     break;
             }
 
-            bool whitespace = false;
-            for (const auto & param : instrumentation_parameters)
+            for (const auto & arg : instrumentation_arguments)
             {
-                if (!whitespace)
-                    ostr << ' ';
-                else
-                    whitespace = true;
                 std::visit([&](const auto & value)
                 {
                     using T = std::decay_t<decltype(value)>;
@@ -552,7 +558,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                         ostr << ' ' << quoteString(value);
                     else
                         ostr << ' ' << value;
-                }, param);
+                }, arg);
             }
             break;
         }
@@ -605,7 +611,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::JEMALLOC_DISABLE_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
-        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::REPLICA_READY:   /// Obsolete
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
@@ -627,6 +632,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
             break;
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            if (!filesystem_cache_name.empty())
+                ostr << ' ' << quoteString(filesystem_cache_name);
+            break;
+        }
         case Type::UNKNOWN:
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
