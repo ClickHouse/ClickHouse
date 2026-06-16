@@ -4612,6 +4612,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// target with a Nullable Tuple column would pass here and only fail on the next ATTACH.
             new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
             new_merging_params.check(*settings_for_check, metadata_for_check);
+
+            /// registerStorageMergeTree rejects a special-mode MergeTree that has projections when
+            /// deduplicate_merge_projection_mode = throw. The reload-only design keeps the live mode
+            /// Ordinary, so without this the engine could switch to a special mode while projections
+            /// are present (or be added in the same/a later ALTER) and only fail on the next ATTACH.
+            /// metadata_for_check carries any ADD PROJECTION from this ALTER, so this covers an
+            /// explicit MODIFY ENGINE and an engine still pending from an earlier reload-only one.
+            if (new_merging_params.mode != MergingParams::Mode::Ordinary
+                && metadata_for_check.hasProjections()
+                && (*settings_for_check)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY ENGINE to {}MergeTree is not supported with projections and "
+                    "deduplicate_merge_projection_mode = throw. "
+                    "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
+                    new_merging_params.getModeName());
         }
     }
 

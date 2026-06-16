@@ -118,3 +118,39 @@ DETACH TABLE t_pending;
 ATTACH TABLE t_pending;
 SELECT 'pending unrelated alter', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_pending';
 DROP TABLE t_pending;
+
+-- registerStorageMergeTree rejects a special-mode MergeTree with projections when
+-- deduplicate_merge_projection_mode = throw (the default). MODIFY ENGINE must apply the same check,
+-- otherwise switching to a special mode while a projection is present (or adding one in the same/a
+-- later ALTER) persists a CREATE that fails on the next ATTACH.
+
+-- (g) existing projection + MODIFY ENGINE to a special mode is rejected; the table stays loadable.
+CREATE TABLE t_proj (k UInt32, v UInt64, PROJECTION p (SELECT k, sum(v) GROUP BY k)) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_proj MODIFY ENGINE = ReplacingMergeTree; -- { serverError SUPPORT_IS_DISABLED }
+DETACH TABLE t_proj;
+ATTACH TABLE t_proj;
+SELECT 'projection guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_proj';
+DROP TABLE t_proj;
+
+-- (h) MODIFY ENGINE to a special mode and ADD PROJECTION in the same statement is rejected.
+CREATE TABLE t_proj (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_proj ADD PROJECTION p (SELECT k, sum(v) GROUP BY k), MODIFY ENGINE = ReplacingMergeTree; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE t_proj;
+
+-- (i) adding a projection to a table with a pending special engine is rejected before metadata changes.
+CREATE TABLE t_proj (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_proj MODIFY ENGINE = ReplacingMergeTree;
+ALTER TABLE t_proj ADD PROJECTION p (SELECT k, sum(v) GROUP BY k); -- { serverError SUPPORT_IS_DISABLED }
+DETACH TABLE t_proj;
+ATTACH TABLE t_proj;
+SELECT 'pending projection guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_proj';
+DROP TABLE t_proj;
+
+-- (j) with deduplicate_merge_projection_mode = rebuild the special mode + projection is allowed.
+CREATE TABLE t_proj (k UInt32, v UInt64, PROJECTION p (SELECT k, sum(v) GROUP BY k)) ENGINE = MergeTree ORDER BY k
+    SETTINGS deduplicate_merge_projection_mode = 'rebuild';
+ALTER TABLE t_proj MODIFY ENGINE = ReplacingMergeTree;
+DETACH TABLE t_proj;
+ATTACH TABLE t_proj;
+SELECT 'projection rebuild', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_proj';
+DROP TABLE t_proj;

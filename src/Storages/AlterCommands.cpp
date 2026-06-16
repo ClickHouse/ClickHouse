@@ -1089,8 +1089,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_ENGINE)
     {
         /// Carry the new ENGINE clause so the stored CREATE query is rewritten
-        /// (applyMetadataChangesToCreateQuery). The live MergingParams swap is performed by the
-        /// storage's own alter() under an exclusive lock; nothing else in the in-memory metadata changes.
+        /// (applyMetadataChangesToCreateQuery). The new merge semantics take effect on the next table
+        /// load (reload-only); the live MergingParams is not swapped. Nothing else in the metadata changes.
         metadata.new_engine = engine;
     }
     else

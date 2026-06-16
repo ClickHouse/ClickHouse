@@ -1155,11 +1155,12 @@ public:
         return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
     }
 
-    /// Apply ALTER TABLE ... MODIFY ENGINE to the running storage: build the new MergingParams from
-    /// the engine clause AST and swap them in place under an exclusive table lock (which drains all
-    /// readers). If the new merge semantics differ, existing parts keep their data but their merge
-    /// level is reset to 0 so that FINAL/OPTIMIZE re-merge them under the new semantics (reusing the
-    /// part-level-reset rationale of getLevelForAdoptedPart, issue #106798/#107481).
+    /// Validate the target engine of ALTER TABLE ... MODIFY ENGINE against the metadata this same
+    /// ALTER produces. The caller runs this before persisting the rewritten CREATE, so a rejection
+    /// leaves no invalid engine clause on disk. This does NOT swap the live `merging_params` (read
+    /// lock-free from hot paths, which an in-place swap from ALTER would race) or reset part levels:
+    /// the new merge semantics take effect when the storage is next loaded from the persisted
+    /// metadata (reload-only). A live hot-swap is a separate change (issue #107551 open point).
     void applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context);
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
